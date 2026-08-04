@@ -22,6 +22,8 @@ Deliver focused ownership and authentication tests. Exclude account import, publ
 
 Consumes the accepted WP-01 shared application foundation, WP-02 security/authentication foundations, and WP-04 User/Member, protected-identifier, audit, and ownership foundations. It must not reopen WP-04 wholesale.
 
+Implementation evidence is recorded in `docs/mvp/evidence/mvp-01-member-access-and-profile.md`. The bounded Member login, mandatory password replacement, profile, dashboard, logout, and local/testing synthetic-account slice is implemented and focused-tested. MVP-02 has not started.
+
 ## MVP-02 — Shared Admin Shell and Member Administration Foundation
 
 Deliver only:

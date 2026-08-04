@@ -9,6 +9,7 @@ use App\Shared\Audit\AuditEvent;
 use App\Shared\Audit\AuditStore;
 use App\Shared\Context\AuthenticatedContextProvider;
 use App\Shared\Time\Clock;
+use Closure;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\RateLimiter;
 
@@ -27,6 +28,21 @@ final class CredentialVerifier
     }
 
     public function verify(string $identifier, string $password): CredentialVerificationResult
+    {
+        return $this->verifyWithAdmission($identifier, $password, static fn (User $user): bool => $user->canAuthenticate());
+    }
+
+    public function verifyForInteractiveLogin(string $identifier, string $password): CredentialVerificationResult
+    {
+        return $this->verifyWithAdmission(
+            $identifier,
+            $password,
+            static fn (User $user): bool => $user->account_status === 'active' && ($user->login_enabled ?? true),
+        );
+    }
+
+    /** @param Closure(User): bool $admission */
+    private function verifyWithAdmission(string $identifier, string $password, Closure $admission): CredentialVerificationResult
     {
         $identifier = $this->canonicalIdentifier($identifier);
         $throttling = $this->throttlingConfiguration();
@@ -54,7 +70,7 @@ final class CredentialVerifier
         if (
             $user === null
             || ! $validPassword
-            || ! $user->canAuthenticate()
+            || ! $admission($user)
         ) {
             RateLimiter::hit($pairKey, $throttling['decay_seconds']);
             RateLimiter::hit($originKey, $throttling['decay_seconds']);
