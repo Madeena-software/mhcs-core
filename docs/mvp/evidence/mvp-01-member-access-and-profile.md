@@ -7,6 +7,23 @@
 - Execution target: `/var/www/mhcs-core` (`TARGET="."`).
 - No commit, staging, push, deployment, production access, dependency change, or task-file runtime mutation was performed.
 
+## Remediation evidence — password eligibility and dashboard gate
+
+- Remediation baseline: `fc4d71560ca3cbddfb885d556fa1f7bed786ce25`.
+- Execution commit: `734868d6c4d3e2bee16a24022f4d246d9d3c1637`; remediation changes remain uncommitted as required.
+- Password replacement now enforces actor authorization, active account state, login enablement, mandatory-change state, exactly one linked Member, adult eligibility, and current-credential validity inside the transactional mutation boundary. `MemberContextResolver::resolveForUserId()` remains an ownership resolver; the service performs the locked adult-eligibility check explicitly.
+- Direct POST rejection coverage includes unlinked, child-linked, suspended, pending, login-disabled, and invalid-current-credential states. Rejections preserve the original password hash, mandatory-change flag, account state, and login-enabled state, create no success audit, and leave no handled password-replacement operation.
+- Eligible adult password replacement remains successful.
+- Incomplete profiles at 0%, 25%, 50%, and 75% redirect from the dashboard to the profile. A 100% profile renders the approved safe dashboard fields, and incomplete profile drafts remain saveable.
+- Focused test: `php artisan test tests/Feature/Member/Mvp01MemberAccessTest.php` — 13 tests, 152 assertions passed.
+- Targeted regression: `php artisan test tests/Member/Wp04IdentityTest.php --filter=test_child_registration_requires_verified_guardian_and_age_transition_ends_access_atomically` — 1 test, 18 assertions passed.
+- Bounded Pint on changed PHP files — passed.
+- Route-list inspection — the existing eight MVP-01 routes and HTTP methods remain unchanged.
+- `git diff --check` — passed.
+- Static inspection of changed files for credential and protected-identifier handling — completed; no new logging, audit, rendering, or persistence of sensitive values was added.
+- Full PHPUnit, WP-02/WP-04 suites, MySQL, Docker, deployment, npm build, Composer audit, dependency installation, synthetic seeding outside tests, and external integrations were not run.
+- No production-readiness claim is made.
+
 ## Implemented behavior
 
 - Routes: `login`, `login.store`, `password.change-required`, `password.change-required.update`, `member.profile`, `member.profile.update`, `member.dashboard`, and `logout`.

@@ -157,15 +157,58 @@ final class Mvp01MemberAccessTest extends TestCase
         ]);
 
         $this->post('/login', ['identifier' => $user->email, 'password' => 'temporary-password']);
+        $operationCount = DB::table('member_operations')->count();
+        $successAuditCount = DB::table('audit_events')
+            ->where('action', 'member.password-replacement')
+            ->where('outcome', 'success')
+            ->count();
+
         $this->post('/password/change-required', [
             'current_password' => 'wrong-password',
-            'password' => 'weak',
-            'password_confirmation' => 'different',
-        ])->assertSessionHasErrors();
+            'password' => 'replacement-password-1',
+            'password_confirmation' => 'replacement-password-1',
+        ])->assertSessionHasErrors(['current_password']);
 
         $user->refresh();
         $this->assertTrue($user->must_change_password);
         $this->assertTrue(Hash::check('temporary-password', $user->password));
+        $this->assertSame($operationCount, DB::table('member_operations')->count());
+        $this->assertSame($successAuditCount, DB::table('audit_events')->where('action', 'member.password-replacement')->where('outcome', 'success')->count());
+    }
+
+    public function test_direct_password_post_rejects_unlinked_and_child_members(): void
+    {
+        $unlinked = User::factory()->create([
+            'email' => 'unlinked-password@example.test',
+            'password' => Hash::make('temporary-password'),
+            'must_change_password' => true,
+        ]);
+        $this->assertDirectPasswordPostRejected($unlinked);
+
+        [$child] = $this->member([
+            'email' => 'child-password@example.test',
+            'password' => Hash::make('temporary-password'),
+            'must_change_password' => true,
+        ]);
+        DB::table('members')->where('user_id', $child->id)->update(['birth_date' => '2010-08-05']);
+        $this->assertDirectPasswordPostRejected($child);
+    }
+
+    public function test_direct_password_post_fails_closed_for_suspended_pending_and_login_disabled_users(): void
+    {
+        foreach ([
+            'suspended' => ['account_status' => 'suspended'],
+            'pending' => ['account_status' => 'pending_activation'],
+            'login-disabled' => ['login_enabled' => false],
+        ] as $label => $attributes) {
+            [$user] = $this->member(array_merge([
+                'email' => "{$label}-password@example.test",
+                'password' => Hash::make('temporary-password'),
+                'must_change_password' => true,
+            ], $attributes));
+
+            $this->assertDirectPasswordPostRejected($user, true);
+        }
     }
 
     public function test_profile_update_is_server_owned_atomic_and_completion_redirects_to_dashboard(): void
@@ -222,13 +265,41 @@ final class Mvp01MemberAccessTest extends TestCase
     public function test_dashboard_is_safe_and_logout_is_post_only(): void
     {
         [$user, $nik] = $this->member(['email' => 'dashboard-member@example.test', 'password' => Hash::make('member-password')]);
+        DB::table('members')->where('user_id', $user->id)->update([
+            'current_address' => 'Alamat sintetis beta',
+            'emergency_contact_name' => 'Kontak Sintetis',
+            'emergency_contact_relationship' => 'Saudara',
+            'emergency_contact_phone' => '081111111111',
+        ]);
         $response = $this->actingAs($user)->get('/member/dashboard');
-        $response->assertOk()->assertSee('Synthetic Member')->assertSee('Nomor rekam medis')->assertDontSee($nik)->assertDontSee('nik_lookup_digest');
+        $response->assertOk()->assertSee('Synthetic Member')->assertSee('Nomor rekam medis')->assertSee('100%')->assertDontSee($nik)->assertDontSee('nik_lookup_digest');
 
         $this->get('/logout')->assertStatus(405);
         $this->post('/logout')->assertRedirect(route('login'));
         $this->assertGuest();
         $this->get('/member/dashboard')->assertRedirect(route('login'));
+    }
+
+    public function test_incomplete_profiles_are_redirected_to_profile_at_each_partial_completion_level(): void
+    {
+        foreach ([
+            [],
+            ['current_address' => 'Alamat sintetis beta'],
+            ['current_address' => 'Alamat sintetis beta', 'emergency_contact_name' => 'Kontak Sintetis'],
+            ['current_address' => 'Alamat sintetis beta', 'emergency_contact_name' => 'Kontak Sintetis', 'emergency_contact_relationship' => 'Saudara'],
+        ] as $index => $fields) {
+            [$user] = $this->member([
+                'email' => "incomplete-{$index}@example.test",
+                'password' => Hash::make('member-password'),
+            ]);
+            if ($fields !== []) {
+                DB::table('members')->where('user_id', $user->id)->update($fields);
+            }
+
+            $this->actingAs($user)
+                ->get('/member/dashboard')
+                ->assertRedirect(route('member.profile'));
+        }
     }
 
     public function test_synthetic_seeder_is_local_only_idempotent_and_protects_credentials_and_assets(): void
@@ -277,5 +348,38 @@ final class Mvp01MemberAccessTest extends TestCase
         ]);
 
         return [$user->fresh(), $nik, Member::query()->findOrFail($memberId)];
+    }
+
+    private function assertDirectPasswordPostRejected(User $user, bool $expectLogout = false): void
+    {
+        $passwordHash = $user->password;
+        $accountStatus = $user->account_status;
+        $loginEnabled = $user->login_enabled;
+        $operationCount = DB::table('member_operations')->count();
+        $successAuditCount = DB::table('audit_events')
+            ->where('action', 'member.password-replacement')
+            ->where('outcome', 'success')
+            ->count();
+
+        $response = $this->actingAs($user)->post('/password/change-required', [
+            'current_password' => 'temporary-password',
+            'password' => 'replacement-password-1',
+            'password_confirmation' => 'replacement-password-1',
+        ]);
+
+        if ($expectLogout) {
+            $response->assertRedirect(route('login'));
+            $this->assertGuest();
+        } else {
+            $response->assertSessionHasErrors(['current_password']);
+        }
+
+        $user->refresh();
+        $this->assertSame($passwordHash, $user->password);
+        $this->assertTrue($user->must_change_password);
+        $this->assertSame($accountStatus, $user->account_status);
+        $this->assertSame($loginEnabled, $user->login_enabled);
+        $this->assertSame($operationCount, DB::table('member_operations')->count());
+        $this->assertSame($successAuditCount, DB::table('audit_events')->where('action', 'member.password-replacement')->where('outcome', 'success')->count());
     }
 }

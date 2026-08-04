@@ -25,6 +25,10 @@ final class DashboardController extends Controller
             return redirect()->route('login');
         }
 
+        if (! $members->isComplete($member)) {
+            return redirect()->route('member.profile');
+        }
+
         return view('member.dashboard', [
             'memberName' => $member->name,
             'medicalRecordNumber' => $member->medical_record_number,

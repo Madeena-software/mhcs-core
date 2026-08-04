@@ -6,6 +6,7 @@ namespace App\Modules\Member\Application\Services;
 
 use App\Models\User;
 use App\Modules\Member\Domain\MemberIdentityException;
+use App\Modules\Member\Domain\Models\Member;
 use App\Shared\Audit\AuditEvent;
 use App\Shared\Audit\AuditStore;
 use App\Shared\Security\TemporaryCredentialIssuer;
@@ -18,6 +19,7 @@ final readonly class MandatoryPasswordReplacementService
 {
     public function __construct(
         private MemberAuthorization $authorization,
+        private MemberContextResolver $members,
         private TemporaryCredentialIssuer $credentials,
         private AuditStore $audit,
         private Clock $clock,
@@ -27,18 +29,18 @@ final readonly class MandatoryPasswordReplacementService
     {
         $context = $this->authorization->context('member.password-replacement');
 
-        if (
-            (string) $context->actorId !== $userId
-            && ! $this->authorization->hasAdministratorPermission($context, MemberAuthorization::ACCOUNT_STATE_PERMISSION)
-        ) {
-            throw new MemberIdentityException('Password replacement authorization failed.');
-        }
-
         if (trim($temporaryCredential) === '' || trim($replacementPassword) === '' || trim($operationId) === '') {
             throw new MemberIdentityException('Password replacement requires complete credentials.');
         }
 
         DB::transaction(function () use ($userId, $temporaryCredential, $replacementPassword, $operationId, $context): void {
+            if (
+                (string) $context->actorId !== $userId
+                && ! $this->authorization->hasAdministratorPermission($context, MemberAuthorization::ACCOUNT_STATE_PERMISSION)
+            ) {
+                throw new MemberIdentityException('Password replacement authorization failed.');
+            }
+
             $payloadHash = hash('sha256', $userId.'|'.$operationId);
             $operation = DB::table('member_operations')
                 ->where('operation_type', 'password-replacement')
@@ -70,7 +72,26 @@ final readonly class MandatoryPasswordReplacementService
             ]);
 
             $user = User::query()->whereKey($userId)->lockForUpdate()->first();
-            if ($user === null || ! $user->must_change_password || ! Hash::check($temporaryCredential, $user->password)) {
+            if (
+                $user === null
+                || $user->account_status !== 'active'
+                || ! ($user->login_enabled ?? false)
+                || ! $user->must_change_password
+            ) {
+                throw new MemberIdentityException('Password replacement credentials are invalid.');
+            }
+
+            $linkedMembers = Member::query()
+                ->where('user_id', $userId)
+                ->lockForUpdate()
+                ->get();
+            $member = $linkedMembers->count() === 1 ? $linkedMembers->first() : null;
+
+            if ($member === null || ! $this->members->isEligibleAdult($member)) {
+                throw new MemberIdentityException('Password replacement credentials are invalid.');
+            }
+
+            if (! Hash::check($temporaryCredential, $user->password)) {
                 throw new MemberIdentityException('Password replacement credentials are invalid.');
             }
 
