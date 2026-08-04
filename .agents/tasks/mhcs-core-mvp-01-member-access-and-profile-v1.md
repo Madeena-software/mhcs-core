@@ -1,6 +1,6 @@
 ---
 name: mhcs-core-mvp-01-member-access-and-profile
-description: Implement the first controlled-beta Member vertical slice: email-or-NIK login, restricted mandatory password replacement, Member-owned profile completion, dashboard, logout, and local synthetic beta accounts on the accepted MVP-00 and WP-04 foundations.
+description: "Implement the first controlled-beta Member vertical slice: email-or-NIK login, restricted mandatory password replacement, Member-owned profile completion, dashboard, logout, and local synthetic beta accounts on the accepted MVP-00 and WP-04 foundations."
 version: 1
 ---
 
