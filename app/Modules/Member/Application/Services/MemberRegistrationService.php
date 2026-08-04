@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace App\Modules\Member\Application\Services;
 
+use App\Models\User;
 use App\Modules\Member\Application\Data\MemberRegistrationData;
 use App\Modules\Member\Application\Data\MemberRegistrationResult;
 use App\Modules\Member\Domain\Enums\IdentityStatus;
+use App\Modules\Member\Domain\Enums\RegistrationSource;
 use App\Modules\Member\Domain\Enums\VerificationAssetType;
 use App\Modules\Member\Domain\MemberIdentityException;
 use App\Modules\Member\Domain\Models\Member;
@@ -39,7 +41,7 @@ final readonly class MemberRegistrationService
         $context = $this->authorization->registration($data->registrationSource, $adult);
         $this->assertRegistrationAuthorization($data, $context, $adult);
         $approved = $this->authorization->hasAdministratorPermission($context, MemberAuthorization::IDENTITY_VERIFICATION_PERMISSION);
-        $payloadHash = $this->payloadHash($data);
+        $payloadHash = $this->payloadHash($data, (string) $context->actorId);
 
         try {
             return DB::transaction(function () use ($data, $context, $adult, $approved, $payloadHash): MemberRegistrationResult {
@@ -86,22 +88,37 @@ final readonly class MemberRegistrationService
                 $memberId = (string) Str::uuid();
                 $userId = (string) Str::uuid();
                 $medicalRecordNumber = $this->mrn->generate();
-                $password = $data->password ?? bin2hex(random_bytes(32));
                 $accountStatus = $adult && $approved ? 'active' : 'pending_activation';
                 $identityStatus = $approved ? IdentityStatus::Verified->value : IdentityStatus::PendingVerification->value;
 
-                DB::table('users')->insert([
-                    'id' => $userId,
-                    'email' => $this->email($data->email),
-                    'email_verified_at' => null,
-                    'password' => Hash::make($password),
-                    'remember_token' => null,
-                    'account_status' => $accountStatus,
-                    'login_enabled' => $adult && $approved,
-                    'must_change_password' => $data->password === null || ! $adult,
-                    'created_at' => $this->clock->now(),
-                    'updated_at' => $this->clock->now(),
-                ]);
+                if ($data->registrationSource === RegistrationSource::Online) {
+                    $existingUser = User::query()->whereKey((string) $context->actorId)->lockForUpdate()->first();
+                    if ($existingUser === null || DB::table('members')->where('user_id', $existingUser->id)->exists()) {
+                        throw new MemberIdentityException('Online registration requires an existing unbound account.');
+                    }
+
+                    $userId = (string) $existingUser->id;
+                    $existingUser->forceFill([
+                        'account_status' => $accountStatus,
+                        'login_enabled' => $adult && $approved,
+                        'must_change_password' => $existingUser->must_change_password,
+                    ])->save();
+                } else {
+                    $password = $data->password ?? bin2hex(random_bytes(32));
+
+                    DB::table('users')->insert([
+                        'id' => $userId,
+                        'email' => $this->email($data->email),
+                        'email_verified_at' => null,
+                        'password' => Hash::make($password),
+                        'remember_token' => null,
+                        'account_status' => $accountStatus,
+                        'login_enabled' => $adult && $approved,
+                        'must_change_password' => $data->password === null || ! $adult,
+                        'created_at' => $this->clock->now(),
+                        'updated_at' => $this->clock->now(),
+                    ]);
+                }
 
                 DB::table('members')->insert([
                     'id' => $memberId,
@@ -287,10 +304,11 @@ final readonly class MemberRegistrationService
         }
     }
 
-    private function payloadHash(MemberRegistrationData $data): string
+    private function payloadHash(MemberRegistrationData $data, string $actorId): string
     {
         return hash('sha256', json_encode([
             'operation_id' => $data->operationId,
+            'actor_id' => $actorId,
             'email' => $data->email,
             'name' => $data->name,
             'birth_date' => $data->birthDate->format('Y-m-d'),

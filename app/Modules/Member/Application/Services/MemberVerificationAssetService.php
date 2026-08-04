@@ -6,6 +6,7 @@ namespace App\Modules\Member\Application\Services;
 
 use App\Modules\Member\Application\Data\VerificationAssetInput;
 use App\Modules\Member\Domain\Enums\IdentityStatus;
+use App\Modules\Member\Domain\Enums\RegistrationSource;
 use App\Modules\Member\Domain\Enums\VerificationAssetType;
 use App\Modules\Member\Domain\Enums\VerificationReviewStatus;
 use App\Modules\Member\Domain\MemberIdentityException;
@@ -34,15 +35,10 @@ final readonly class MemberVerificationAssetService
     public function recordForRegistration(
         Member $member,
         VerificationAssetInput $input,
-        AuthenticatedContext $context,
+        AuthenticatedContext $callerContext,
     ): string {
-        if (
-            $context->purpose !== 'member.registration'
-            || $context->actorId === null
-            || $context->operationId === null
-        ) {
-            throw new MemberIdentityException('Registration asset recording requires its trusted registration context.');
-        }
+        $context = $this->registrationContext($member);
+        $this->assertCallerContextMatchesTrustedContext($callerContext, $context);
 
         $approved = $this->authorization->hasAdministratorPermission(
             $context,
@@ -296,9 +292,57 @@ final readonly class MemberVerificationAssetService
                 ->where('is_current', true)
                 ->exists();
 
-        DB::table('members')->where('id', $memberId)->update([
+        $updates = [
             'identity_status' => $verified ? IdentityStatus::Verified->value : IdentityStatus::PendingVerification->value,
             'updated_at' => $this->clock->now(),
-        ]);
+        ];
+        $documentType = DB::table('member_verification_assets')
+            ->where('member_id', $memberId)
+            ->whereIn('type', [VerificationAssetType::Ktp->value, VerificationAssetType::Kia->value])
+            ->where('review_status', VerificationReviewStatus::Approved->value)
+            ->where('is_current', true)
+            ->lockForUpdate()
+            ->value('type');
+        if (is_string($documentType)) {
+            $updates['identity_document_type'] = $documentType;
+        }
+
+        DB::table('members')->where('id', $memberId)->update($updates);
+    }
+
+    private function registrationContext(Member $member): AuthenticatedContext
+    {
+        $source = RegistrationSource::tryFrom((string) $member->registration_source);
+        if ($source === null) {
+            throw new MemberIdentityException('The Member registration source is invalid.');
+        }
+
+        $adult = new DateTimeImmutable((string) $member->birth_date)
+            <= $this->clock->now()->modify('-17 years')->setTime(0, 0);
+        $context = $this->authorization->registration($source, $adult);
+
+        if ($source === RegistrationSource::Online && (string) $context->actorId !== (string) $member->user_id) {
+            throw new MemberIdentityException('Online registration assets must belong to the authenticated Member account.');
+        }
+
+        return $context;
+    }
+
+    private function assertCallerContextMatchesTrustedContext(
+        AuthenticatedContext $caller,
+        AuthenticatedContext $trusted,
+    ): void {
+        if (
+            $caller->actorId?->value !== $trusted->actorId?->value
+            || $caller->operationId?->value !== $trusted->operationId?->value
+            || $caller->sessionId?->value !== $trusted->sessionId?->value
+            || $caller->siteId?->value !== $trusted->siteId?->value
+            || $caller->caseId?->value !== $trusted->caseId?->value
+            || $caller->purpose !== $trusted->purpose
+            || $caller->roles !== $trusted->roles
+            || $caller->permissions !== $trusted->permissions
+        ) {
+            throw new MemberIdentityException('Registration asset recording requires the trusted registration context.');
+        }
     }
 }

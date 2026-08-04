@@ -23,11 +23,18 @@
   assisted recovery, and age transition.
 - Assisted recovery rejects dependent or login-disabled accounts; dependent
   credentials are issued only by the approved age-17 transition.
-- Online adult registration uses a trusted non-administrator registration
-  boundary; administrator registration and child registration require the
-  exact registration permission. Adult activation locks the Member and User,
-  requires verified current KTP and profile-photo evidence, is idempotent, and
-  records sanitized audit evidence.
+- Online adult registration completes against the authenticated existing
+  unbound User, creates no second User, attributes registration assets to that
+  User, and rejects a User already bound to a Member. Administrator
+  registration and child registration require the exact registration
+  permission. Adult activation locks the Member and User, requires verified
+  current KTP and profile-photo evidence, is idempotent, and records sanitized
+  audit evidence.
+- Registration asset recording resolves the trusted context through the
+  Member authorization provider; caller-supplied context fields are only
+  checked as assertions and mismatches fail before demotion, insertion, or
+  audit. The operation remains atomic inside registration and transactional
+  when called independently.
 
 ## Verification-asset state invariants
 
@@ -37,11 +44,13 @@
   transaction.
 - Profile photographs have one current slot; KTP and KIA share one current
   identity-document slot. Approval revalidates age eligibility, KTP after age
-  17 demotes KIA, and stale KIA approval fails closed.
+  17 demotes KIA, stale KIA approval fails closed, and `members.identity_document_type`
+  is updated transactionally to the sole approved current KTP or KIA.
 - Concurrent MySQL recording and approval workers leave exactly one approved
-  current asset in the relevant slot. Grants require an allowlisted audience
-  and do not exceed the configured maximum TTL; the exact maximum boundary is
-  accepted and excessive TTL is rejected.
+  current asset in the relevant slot and keep Member document metadata aligned
+  with that asset. Grants require an allowlisted audience and do not exceed the
+  configured maximum TTL; the exact maximum boundary is accepted and
+  excessive TTL is rejected.
 
 ## Schema and migration boundary
 
@@ -67,12 +76,13 @@
 - `composer validate --strict` — passed.
 - `composer audit` — no security vulnerability advisories found.
 - `vendor/bin/pint --test` — passed.
-- `php artisan test` — 78 tests, 975 assertions; 73 passed and 5 MySQL-only
+- `php artisan test` — 79 tests, 987 assertions; 74 passed and 5 MySQL-only
   tests skipped under the SQLite test configuration.
-- `npm run build` — passed.
+- `npm run build` — passed; Vite emitted the existing optional `fontaine`
+  optimization warning.
 - `bash deployment/verify-mysql.sh` — passed: MySQL 8.4 fresh migration;
-  Member suite 16 tests/101 assertions; Integration suite 8 tests/48
-  assertions; full PHP suite 78 tests/1007 assertions; Member identity
+  Member suite 17 tests/113 assertions; Integration suite 8 tests/49
+  assertions; full PHP suite 79 tests/1020 assertions; Member identity
   migration rollback/reapplication; populated legacy users and sessions
   preserved during UUID upgrade; UUID user migration forward-only notice.
 - `bash deployment/validate.sh` — passed, including Docker build, isolated

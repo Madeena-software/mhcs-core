@@ -144,6 +144,7 @@ final readonly class Age17TransitionService
                 ->update(['is_current' => false, 'updated_at' => $now]);
             DB::table('members')->where('id', $memberId)->update([
                 'identity_status' => IdentityStatus::Verified->value,
+                'identity_document_type' => 'ktp',
                 'updated_at' => $now,
             ]);
 

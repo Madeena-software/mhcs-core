@@ -168,7 +168,82 @@ final class Wp04IdentityTest extends TestCase
 
         $this->assertSame('pending_activation', $result->accountStatus);
         $this->assertSame('pending_verification', $result->identityStatus);
+        $this->assertSame((string) $registrant->id, $result->userId);
+        $this->assertSame(1, User::query()->count());
         $this->assertFalse(User::query()->findOrFail($result->userId)->canAuthenticate());
+        $this->assertSame(
+            2,
+            DB::table('member_verification_assets')
+                ->where('member_id', $result->memberId)
+                ->where('uploaded_by_user_id', $registrant->id)
+                ->count(),
+        );
+
+        try {
+            app(MemberRegistrationService::class)->register($this->adultData(
+                'online-bound-account',
+                '900000000025',
+                '9900000000000025',
+                $context,
+                'ignored-password',
+                'ignored@example.test',
+                RegistrationSource::Online,
+            ));
+            $this->fail('An existing Member-bound account cannot complete another online registration.');
+        } catch (MemberIdentityException) {
+            $this->addToAssertionCount(1);
+        }
+    }
+
+    public function test_registration_assets_reject_forged_administrator_context_before_mutation(): void
+    {
+        $admin = User::factory()->create();
+        $trustedContext = $this->bindContext($admin, 'member.registration');
+        $result = $this->registerAdult($admin, $trustedContext, '900000000030', '9900000000000030', null, 'adult-password');
+        $member = Member::query()->findOrFail($result->memberId);
+        $old = DB::table('member_verification_assets')
+            ->where('member_id', $member->id)
+            ->where('type', 'profile_photo')
+            ->where('is_current', true)
+            ->first();
+        $assetCount = DB::table('member_verification_assets')->count();
+        $auditCount = DB::table('audit_events')->count();
+
+        $lowPrivilegeActor = User::factory()->create();
+        $lowPrivilegeContext = $this->bindContext(
+            $lowPrivilegeActor,
+            'member.registration',
+            ['member'],
+            [MemberAuthorization::ONLINE_REGISTRATION_PERMISSION],
+        );
+        $forgedAdministratorContext = new AuthenticatedContext(
+            actorId: LocalId::fromString((string) $admin->id),
+            operationId: new CorrelationId('forged-administrator-operation'),
+            sessionId: LocalId::fromString('forged-administrator-session'),
+            roles: ['administrator'],
+            permissions: [MemberAuthorization::REGISTRATION_PERMISSION, MemberAuthorization::IDENTITY_VERIFICATION_PERMISSION],
+            purpose: 'member.registration',
+        );
+
+        try {
+            app(MemberVerificationAssetService::class)->recordForRegistration(
+                $member,
+                new VerificationAssetInput(
+                    VerificationAssetType::ProfilePhoto,
+                    $this->object($lowPrivilegeContext, 'forged-administrator-asset'),
+                    'image/jpeg',
+                    $old->id,
+                ),
+                $forgedAdministratorContext,
+            );
+            $this->fail('A forged administrator context must not authorize asset recording.');
+        } catch (MemberIdentityException) {
+            $this->addToAssertionCount(1);
+        }
+
+        $this->assertSame($assetCount, DB::table('member_verification_assets')->count());
+        $this->assertSame($auditCount, DB::table('audit_events')->count());
+        $this->assertDatabaseHas('member_verification_assets', ['id' => $old->id, 'is_current' => true]);
     }
 
     public function test_adult_activation_requires_complete_verified_evidence_is_idempotent_and_rejects_conflicts(): void
@@ -209,8 +284,9 @@ final class Wp04IdentityTest extends TestCase
         $replay = $activationService->activate($pending->memberId, 'adult-activation-1');
         $this->assertTrue($replay->replayed);
 
-        $this->bindContext(
-            $registrant,
+        $otherRegistrant = User::factory()->create();
+        $otherContext = $this->bindContext(
+            $otherRegistrant,
             'member.registration',
             ['member'],
             [MemberAuthorization::ONLINE_REGISTRATION_PERMISSION],
@@ -219,7 +295,7 @@ final class Wp04IdentityTest extends TestCase
             'activation-other-registration',
             '900000000022',
             '9900000000000022',
-            $onlineContext,
+            $otherContext,
             'other-password',
             'other-activation@example.test',
             RegistrationSource::Online,
@@ -450,38 +526,39 @@ final class Wp04IdentityTest extends TestCase
             $this->addToAssertionCount(1);
         }
         $this->assertDatabaseHas('member_verification_assets', ['id' => $oldKia->id, 'is_current' => true]);
+        $this->assertDatabaseHas('members', ['id' => $child->memberId, 'identity_document_type' => 'kia']);
 
-        $adultContext = $this->bindContext($admin, 'member.registration');
-        app(MemberVerificationAssetService::class)->recordForRegistration(
+        $adultContext = $this->bindContext($admin, 'member.registration', ['administrator'], ['member.registration.manage']);
+        $pendingKtp = app(MemberVerificationAssetService::class)->recordForRegistration(
             Member::query()->findOrFail($child->memberId),
             new VerificationAssetInput(VerificationAssetType::Ktp, $this->object($adultContext, 'document-slot-ktp'), 'image/jpeg'),
             $adultContext,
         );
+        $this->assertDatabaseHas('members', ['id' => $child->memberId, 'identity_document_type' => 'kia']);
+
+        $this->bindContext($admin, 'member.identity.verify');
+        app(MemberVerificationAssetService::class)->review($pendingKtp, true);
         $this->assertDatabaseHas('member_verification_assets', ['id' => $oldKia->id, 'is_current' => false]);
         $this->assertSame(1, DB::table('member_verification_assets')->where('member_id', $child->memberId)->whereIn('type', ['ktp', 'kia'])->where('review_status', 'approved')->where('is_current', true)->count());
+        $this->assertDatabaseHas('members', ['id' => $child->memberId, 'identity_document_type' => 'ktp']);
     }
 
     public function test_asset_recording_rolls_back_demotion_when_insertion_fails(): void
     {
         $admin = User::factory()->create();
-        $context = $this->bindContext($admin, 'member.registration');
-        $result = $this->registerAdult($admin, $context, '900000000029', '9900000000000029', null, 'adult-password');
+        $registrationContext = $this->bindContext($admin, 'member.registration');
+        $result = $this->registerAdult($admin, $registrationContext, '900000000029', '9900000000000029', null, 'adult-password');
         $member = Member::query()->findOrFail($result->memberId);
         $old = DB::table('member_verification_assets')->where('member_id', $member->id)->where('type', 'profile_photo')->where('is_current', true)->first();
-        $invalidActor = (string) Str::uuid();
-        $invalidContext = new AuthenticatedContext(
-            actorId: LocalId::fromString($invalidActor),
-            operationId: new CorrelationId('asset-rollback'),
-            roles: ['administrator'],
-            permissions: [MemberAuthorization::IDENTITY_VERIFICATION_PERMISSION],
-            purpose: 'member.registration',
-        );
-
+        $uploader = User::factory()->create();
+        $context = $this->bindContext($uploader, 'member.registration');
+        $object = $this->object($context, 'asset-rollback');
+        $uploader->delete();
         try {
             app(MemberVerificationAssetService::class)->recordForRegistration(
                 $member,
-                new VerificationAssetInput(VerificationAssetType::ProfilePhoto, $this->object($context, 'asset-rollback'), $old->format ?? 'image/jpeg', $old->id),
-                $invalidContext,
+                new VerificationAssetInput(VerificationAssetType::ProfilePhoto, $object, 'image/jpeg', $old->id),
+                $context,
             );
             $this->fail('A missing uploader foreign key must fail the asset transaction.');
         } catch (\Throwable) {
@@ -542,6 +619,7 @@ final class Wp04IdentityTest extends TestCase
         $this->assertNotNull($transition->temporaryCredential);
         $this->assertSame('active', User::query()->findOrFail($child->userId)->account_status);
         $this->assertTrue(User::query()->findOrFail($child->userId)->must_change_password);
+        $this->assertDatabaseHas('members', ['id' => $child->memberId, 'identity_document_type' => 'ktp']);
         $this->assertDatabaseHas('member_guardians', ['id' => $relation->id, 'status' => 'ended']);
         $this->assertDatabaseHas('member_verification_assets', ['member_id' => $child->memberId, 'type' => 'kia', 'is_current' => false]);
 

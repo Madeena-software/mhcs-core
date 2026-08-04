@@ -677,6 +677,9 @@ PHP;
             $ktp = $pdo->prepare("select count(*) as total from member_verification_assets where member_id = ? and type = 'ktp' and review_status = 'approved' and is_current = 1");
             $ktp->execute([$memberId]);
             $this->assertSame(1, (int) $ktp->fetch(PDO::FETCH_ASSOC)['total']);
+            $metadata = $pdo->prepare('select identity_document_type from members where id = ?');
+            $metadata->execute([$memberId]);
+            $this->assertSame('ktp', $metadata->fetch(PDO::FETCH_ASSOC)['identity_document_type']);
         } finally {
             if ($pdo->inTransaction()) {
                 $pdo->rollBack();
