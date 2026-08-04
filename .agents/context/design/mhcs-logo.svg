@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="1280" height="1280" viewBox="0 0 1280 1280"
+     role="img" aria-label="Simbol garis biru berbentuk M">
+  <defs>
+    <linearGradient id="blueStroke" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1689D8"/>
+      <stop offset="100%" stop-color="#0871BE"/>
+    </linearGradient>
+
+    <filter id="softShadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3"
+                    flood-color="#0A67A8" flood-opacity="0.16"/>
+    </filter>
+  </defs>
+
+  <g fill="none"
+     stroke="url(#blueStroke)"
+     stroke-width="40"
+     stroke-linecap="round"
+     stroke-linejoin="round"
+     filter="url(#softShadow)">
+
+    <!-- Sisi kiri -->
+    <path d="
+      M 219 1004
+      L 219 430
+      C 219 300, 253 240, 329 240
+      L 438 240
+      C 503 240, 531 286, 531 355
+      L 531 525
+      C 531 579, 550 604, 590 609
+    "/>
+
+    <!-- Sisi kanan -->
+    <path d="
+      M 1029 1004
+      L 1029 430
+      C 1029 300, 995 240, 919 240
+      L 810 240
+      C 745 240, 717 286, 717 355
+      L 717 525
+      C 717 579, 698 604, 658 609
+    "/>
+  </g>
+</svg>
