@@ -32,9 +32,46 @@ The Operator Portal is the primary internal operational interface. Planned respo
 
 The Image Gateway owns the imaging-system boundary: study intake or identification, examination correlation, identifier and routing validation, ingestion/transfer state, external routing, supported callbacks, retryable and terminal failure visibility, idempotency, auditability, and traceability. No DICOM, PACS, RIS, HL7, FHIR, vendor, or teleradiology conformance is claimed without a later bounded task and repository evidence.
 
-### Admin Portal
+### Shared administrator interface and module-owned administration
 
-The Admin Portal is part of the MVP. Its planned responsibilities are organization and site management; Member and Operator account management; approved role, permission, organization, and site assignment; service and operational configuration; controlled account activation/suspension/correction; status and failure visibility; audit and operational records; and beta configuration. It must preserve authorization, audit, account-state, and data-ownership rules and must not become an unrestricted database editor.
+The MVP plans one administrator-facing application interface, which may use the
+shared Filament `/admin` surface where applicable. This is a shared entry and
+presentation surface, not a separate business domain, independently deployed
+administrator application, or claim that a complete panel is already
+implemented. Separate panels or URLs may be introduced later only through an
+explicit architecture decision and implementation task.
+
+One authenticated administrator account may have more than one authorized
+module-administration capability. Authorization remains capability- and
+module-specific. Shared navigation or presentation does not imply shared data
+or business-rule ownership. Each module's administration must invoke its
+approved application boundaries for authorization, state transitions,
+configuration, projections, and audit behavior. Shared platform administration
+is limited to genuinely shared primitives, and a generic administrator must not
+directly edit unrelated module tables.
+
+#### Member administration
+
+Member administration owns Member accounts and Member-owned identity
+administration; Member-owned service offerings, schedules, bookings, and later
+Member commercial configuration when included by an MVP task. It uses Member-
+owned application services and authorization and does not directly mutate
+Operator or Image Gateway records.
+
+#### Operator administration
+
+Operator administration owns Operator accounts and assignments; Operator-owned
+organizations, physical sites, protocol configuration, queue exceptions, and
+operational controls. It uses Operator-owned application services and
+authorization and does not directly mutate Member or Image Gateway records.
+
+#### Image Gateway operational administration
+
+Image Gateway operational administration owns processing status, conversion
+jobs, retry and terminal-failure handling, exceptional compliance operations,
+and storage and publication operational visibility. It is administrator-only
+operational access, not a separate end-user application. It does not directly
+mutate Member bookings or Operator queue ownership.
 
 ## External teleradiology boundary
 
@@ -62,4 +99,3 @@ Every exposed beta flow must retain server-derived actor, role, site, case, purp
 ## Expansion and exit criteria
 
 Expand the beta only after the relevant MVP task has focused tests and evidence, the gap register is updated, ownership and authorization are verified, unresolved approval boundaries are identified, and the owner approves the next scope. Before controlled beta deployment, run the required integration/release verification, resolve critical gaps, approve migration/deployment/privacy/retention decisions, and record the deployment decision. Passing MVP tasks alone is never a production-readiness claim.
-

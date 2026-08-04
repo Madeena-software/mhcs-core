@@ -22,12 +22,26 @@ Repository evidence controls implementation status. A task file, route name, cla
 
 ## Active controlled-beta components
 
-The initial beta contains four components:
+The initial beta contains four application-facing components:
 
 - Member Portal;
 - Operator Portal;
-- Image Gateway; and
-- Admin Portal.
+- Image Gateway module and workers; and
+- a shared administrator interface composed of module-owned administration
+  areas.
+
+The fourth item is an application interface over the modular `mhcs-core`
+application, not a new business domain that owns Member, Operator, or Image
+Gateway records. It may use the shared Filament `/admin` surface where
+applicable; this documentation does not claim that the surface is fully
+implemented or that separate panels or URLs exist.
+
+Administration ownership rule: Member, Operator, and Image Gateway own their
+respective administrative resources, authorization, actions, state
+transitions, configuration, projections, and audit behavior. Shared navigation
+and genuinely shared platform primitives do not transfer that ownership.
+Administration must use the owning module's application boundaries; a generic
+administrator must not directly edit unrelated module tables.
 
 There is no Doctor Portal or internal MHCS doctor workflow in this MVP. Teleradiology physicians and reporting services are external participants or systems. Manual Operator report handling is the fallback until a supported automated contract is approved and implemented.
 
@@ -53,4 +67,3 @@ Gaps are maintained in \`beta-gap-register.md\`. A gap is not closed because cod
 This pivot uses planning baseline \`bc300e158a790a7311c64eb7b20e8e81d4e3ec41\`. The execution commit that published this task is \`1960585472e13e78c8136280d8a76f7a9ad76a30\` on \`main\`. The current repository evidence includes the WP-01/WP-02 foundations and the current WP-04 Member identity foundation; this documentation does not claim long-term Work Package completion.
 
 The online-registration source/state path exists in the Member identity boundary but is not approved for MVP exposure. No public or online registration route may depend on it during the initial beta. It remains unwired and is tracked in the gap register.
-

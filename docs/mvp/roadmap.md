@@ -4,7 +4,7 @@ This is an implementation sequence, not a date plan. MVP-02 through MVP-09 are p
 
 ## MVP-00 — Pivot to Controlled Beta Delivery
 
-Documentation and planning only. Establish the relationship between Work Packages and MVP tasks, the four-component boundary, the Doctor Portal exclusion, the gap register, decision log, and status ledger.
+Documentation and planning only. Establish the relationship between Work Packages and MVP tasks, the shared administrator interface and module-owned administration boundary, the Doctor Portal exclusion, the gap register, decision log, and status ledger.
 
 ## MVP-01 — Member Access and Profile
 
@@ -22,9 +22,18 @@ Deliver focused ownership and authentication tests. Exclude account import, publ
 
 Consumes the accepted WP-01 shared application foundation, WP-02 security/authentication foundations, and WP-04 User/Member, protected-identifier, audit, and ownership foundations. It must not reopen WP-04 wholesale.
 
-## MVP-02 — Admin Portal Foundation
+## MVP-02 — Shared Admin Shell and Member Administration Foundation
 
-Deliver the minimum Admin Portal to view/manage approved account state; manage organizations and examination sites; manage Member and Operator assignments; configure later radiology-service operations; and view foundational audit information. It is not an unrestricted database editor.
+Deliver only:
+
+- the shared administrator-facing shell or navigation needed for MVP;
+- Member module administration needed to manage controlled Member accounts;
+- approved account-state actions through existing application boundaries;
+- Member-owned administrative views required for the initial beta; and
+- foundational audit visibility relevant to that slice.
+
+MVP-02 must not claim ownership of all Operator and Image Gateway
+administration or create a generic cross-module database editor.
 
 ## MVP-03 — Member Radiology Service Request
 
@@ -32,15 +41,27 @@ Deliver the Member-visible service catalogue, examination-site selection where a
 
 ## MVP-04 — Operator Queue and Attendance
 
-Deliver Operator authentication/authorization, operational queue, scheduling, check-in, attendance and examination-state transitions, and operational audit evidence.
+Deliver Operator authentication/authorization, operational queue, scheduling,
+check-in, attendance and examination-state transitions, and operational audit
+evidence. Include the Operator-owned administration required for this slice:
+sites, assignments, protocol and queue exceptions, and operational
+configuration. These actions remain within Operator application boundaries.
 
 ## MVP-05 — Image Gateway Study Intake and Correlation
 
-Deliver the study intake or identification boundary, examination-to-study association, duplicate/mismatch handling, Image Gateway status visibility, and Operator/Admin failure visibility.
+Deliver the study intake or identification boundary, examination-to-study
+association, duplicate/mismatch handling, Image Gateway status visibility, and
+Operator-owned and Image Gateway-owned operational failure visibility. Include
+the Image Gateway operational administration required for this slice: intake
+status, correlation failures, retry visibility, and terminal failures.
 
 ## MVP-06 — Operator Teleradiology Workflow
 
-Deliver study routing/export status, external teleradiology tracking, retry/failure handling, controlled manual report upload as the beta fallback, automated report return only when a supported contract exists, and Operator review/publication controls.
+Deliver study routing/export status, external teleradiology tracking,
+retry/failure handling, controlled manual report upload as the beta fallback,
+automated report return only when a supported contract exists, and Operator
+review/publication controls. MVP-06 may extend Operator and Image Gateway
+administration only within their existing module ownership.
 
 ## MVP-07 — Member Result Visibility
 
@@ -54,3 +75,6 @@ Deliver separately controlled Member and Operator import; validation/rejection r
 
 Deliver cross-MVP regression verification, operational runbook, beta monitoring, backup/restore evidence, migration approval resolution, critical gap review, and the controlled beta deployment decision. MVP completion and deployment readiness do not establish production readiness.
 
+No roadmap task creates a generic cross-module database editor. Shared
+administrator navigation is presentation; module-owned resources and business
+rules remain behind their approved application boundaries.
