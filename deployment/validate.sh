@@ -11,6 +11,7 @@ required=(
   docker/php.ini
   docker/supervisord.conf
   deployment/smoke.sh
+  deployment/verify-mysql.sh
   deployment/README.md
 )
 
@@ -29,6 +30,10 @@ for file in \
   "$root/.dockerignore"; do
   grep -q '569a30d4a089b0ee404ed6e963fdd2dfd96d3787' "$file"
 done
+grep -q 'DB_CONNECTION=mysql' "$root/.env.example"
+grep -q 'mysql:8.4' "$root/.env.example"
+grep -q 'mysql:8.4' "$root/docker-compose.prod.yml"
+grep -q 'mysql:8.4' "$root/deployment/verify-mysql.sh"
 grep -q 'queue:' "$root/docker-compose.prod.yml"
 grep -q 'scheduler:' "$root/docker-compose.prod.yml"
 grep -q 'image-worker:' "$root/docker-compose.prod.yml"
@@ -57,7 +62,6 @@ if rg -n -i --glob '!deployment/README.md' '(ssh|scp|rsync|production\.example|s
 fi
 
 if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
-  DATABASE_IMAGE=validation/database \
   CACHE_IMAGE=validation/cache \
   MHCS_IMAGE=validation/mhcs \
   DB_ROOT_PASSWORD=validation-root \

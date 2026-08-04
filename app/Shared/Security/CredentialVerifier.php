@@ -21,6 +21,7 @@ final class CredentialVerifier
         private readonly AuditStore $audit,
         private readonly AuthenticatedContextProvider $context,
         private readonly Clock $clock,
+        private readonly ?CredentialIdentifierResolver $resolver = null,
     ) {
         $this->dummyHash = Hash::make(bin2hex(random_bytes(24)));
     }
@@ -140,6 +141,10 @@ final class CredentialVerifier
             return User::query()->where('email', strtolower(trim($identifier)))->first();
         }
 
+        if ($this->resolver !== null) {
+            return $this->resolver->resolve($identifier);
+        }
+
         return User::query()
             ->where('identifier_digest', $this->identifiers->lookupDigest($identifier))
             ->first();
@@ -148,6 +153,10 @@ final class CredentialVerifier
     private function canonicalIdentifier(string $identifier): string
     {
         $identifier = trim($identifier);
+
+        if ($identifier === '') {
+            return '__invalid_identifier__';
+        }
 
         return filter_var($identifier, FILTER_VALIDATE_EMAIL) ? strtolower($identifier) : $identifier;
     }

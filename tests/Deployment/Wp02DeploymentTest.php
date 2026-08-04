@@ -14,12 +14,14 @@ final class Wp02DeploymentTest extends TestCase
         $workflow = file_get_contents(base_path('.github/workflows/security-validation.yml'));
         $provenance = file_get_contents(base_path('deployment/README.md'));
         $environment = file_get_contents(base_path('.env.example'));
+        $phpunit = file_get_contents(base_path('phpunit.xml'));
         $validation = file_get_contents(base_path('deployment/validate.sh'));
 
         $this->assertIsString($compose);
         $this->assertIsString($workflow);
         $this->assertIsString($provenance);
         $this->assertIsString($environment);
+        $this->assertIsString($phpunit);
         $this->assertIsString($validation);
         $this->assertStringContainsString('569a30d4a089b0ee404ed6e963fdd2dfd96d3787', $provenance);
         $this->assertStringContainsString('scheduler:', $compose);
@@ -45,6 +47,11 @@ final class Wp02DeploymentTest extends TestCase
         $this->assertStringContainsString('docker compose', $validation);
         $this->assertStringContainsString('docker build', $validation);
         $this->assertStringContainsString('deployment/smoke.sh', $validation);
+        $this->assertStringContainsString('DB_CONNECTION=mysql', $environment);
+        $this->assertStringContainsString('mysql:8.4', $environment);
+        $this->assertStringContainsString('image: mysql:8.4', $compose);
+        $this->assertStringContainsString('value="sqlite"', $phpunit);
+        $this->assertStringContainsString('value=":memory:"', $phpunit);
 
         foreach ([
             'MHCS_IDENTIFIER_KEY',

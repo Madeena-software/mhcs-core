@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
@@ -10,12 +12,16 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 
-#[Fillable(['name', 'email', 'password'])]
-#[Hidden(['password', 'remember_token', 'identifier_digest'])]
+#[Fillable(['email', 'password'])]
+#[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
     use HasFactory, Notifiable;
+
+    public $incrementing = false;
+
+    protected $keyType = 'string';
 
     /**
      * Get the attributes that should be cast.
@@ -27,6 +33,7 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'login_enabled' => 'boolean',
             'must_change_password' => 'boolean',
         ];
     }
@@ -38,6 +45,8 @@ class User extends Authenticatable
 
     public function canAuthenticate(): bool
     {
-        return $this->account_status === 'active' && ! $this->must_change_password;
+        return $this->account_status === 'active'
+            && ($this->login_enabled ?? true)
+            && ! $this->must_change_password;
     }
 }

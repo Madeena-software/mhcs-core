@@ -5,7 +5,7 @@
 # network; the MPIPS service is deployed by its own repository.
 services:
   db:
-    image: ${DATABASE_IMAGE:?approved database image required}
+    image: mysql:8.4
     environment:
       MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?secret required}
       MYSQL_DATABASE: ${DB_DATABASE:?database name required}

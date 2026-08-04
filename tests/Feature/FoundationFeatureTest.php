@@ -10,10 +10,8 @@ use App\Shared\Infrastructure\Idempotency\IdempotencyConflict;
 use App\Shared\Infrastructure\Idempotency\IdempotencyStore;
 use App\Shared\Infrastructure\Outbox\OutboxStore;
 use DateTimeImmutable;
-use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 use RuntimeException;
 use Tests\TestCase;
 
@@ -112,29 +110,28 @@ final class FoundationFeatureTest extends TestCase
 
     public function test_source_change_and_outbox_event_commit_together(): void
     {
-        $this->createSourceTable();
         $event = $this->event('event-commit');
 
         DB::transaction(function () use ($event): void {
-            DB::table('foundation_transaction_probe')->insert(['id' => 'commit']);
+            DB::table('idempotent_consumptions')->insert($this->sourceRow('commit'));
             app(OutboxStore::class)->record($event);
         });
 
-        $this->assertDatabaseHas('foundation_transaction_probe', ['id' => 'commit']);
+        $this->assertDatabaseHas('idempotent_consumptions', [
+            'message_id' => 'commit',
+            'consumer' => 'foundation-source',
+        ]);
         $this->assertDatabaseHas('outbox_messages', ['event_id' => 'event-commit']);
         $this->assertSame('pending', app(OutboxStore::class)->find('event-commit')['status']);
-
-        Schema::dropIfExists('foundation_transaction_probe');
     }
 
     public function test_source_change_and_outbox_event_roll_back_together(): void
     {
-        $this->createSourceTable();
         $event = $this->event('event-rollback');
 
         try {
             DB::transaction(function () use ($event): void {
-                DB::table('foundation_transaction_probe')->insert(['id' => 'rollback']);
+                DB::table('idempotent_consumptions')->insert($this->sourceRow('rollback'));
                 app(OutboxStore::class)->record($event);
                 throw new RuntimeException('test rollback');
             });
@@ -142,21 +139,21 @@ final class FoundationFeatureTest extends TestCase
             $this->addToAssertionCount(1);
         }
 
-        $this->assertDatabaseMissing('foundation_transaction_probe', ['id' => 'rollback']);
+        $this->assertDatabaseMissing('idempotent_consumptions', [
+            'message_id' => 'rollback',
+            'consumer' => 'foundation-source',
+        ]);
         $this->assertDatabaseMissing('outbox_messages', ['event_id' => 'event-rollback']);
-
-        Schema::dropIfExists('foundation_transaction_probe');
     }
 
     public function test_idempotency_replay_does_not_repeat_a_protected_side_effect(): void
     {
-        $this->createSourceTable('idempotency_probe');
         $store = app(IdempotencyStore::class);
         $executions = 0;
 
         $first = $store->run('message-1', 'consumer-a', ['value' => 1], function () use (&$executions): array {
             $executions++;
-            DB::table('idempotency_probe')->insert(['id' => 'side-effect']);
+            DB::table('idempotent_consumptions')->insert($this->sourceRow('side-effect'));
 
             return ['ok' => true];
         });
@@ -170,9 +167,10 @@ final class FoundationFeatureTest extends TestCase
         $this->assertSame('replayed', $replay->status);
         $this->assertSame(['ok' => true], $replay->result);
         $this->assertSame(1, $executions);
-        $this->assertDatabaseCount('idempotency_probe', 1);
-
-        Schema::dropIfExists('idempotency_probe');
+        $this->assertDatabaseHas('idempotent_consumptions', [
+            'message_id' => 'side-effect',
+            'consumer' => 'foundation-source',
+        ]);
     }
 
     public function test_changed_payload_with_the_same_identity_is_a_conflict(): void
@@ -186,14 +184,13 @@ final class FoundationFeatureTest extends TestCase
 
     public function test_failed_attempt_is_recorded_as_failed_and_can_retry(): void
     {
-        $this->createSourceTable('idempotency_retry_probe');
         $store = app(IdempotencyStore::class);
         $executions = 0;
 
         try {
             $store->run('message-3', 'consumer-a', ['value' => 1], function () use (&$executions): never {
                 $executions++;
-                DB::table('idempotency_retry_probe')->insert(['id' => 'rolled-back']);
+                DB::table('idempotent_consumptions')->insert($this->sourceRow('rolled-back'));
                 throw new RuntimeException('expected failure');
             });
         } catch (RuntimeException) {
@@ -207,20 +204,24 @@ final class FoundationFeatureTest extends TestCase
 
         $this->assertSame('failed', $failed->status);
         $this->assertSame(1, $failed->attempts);
-        $this->assertDatabaseCount('idempotency_retry_probe', 0);
+        $this->assertDatabaseMissing('idempotent_consumptions', [
+            'message_id' => 'rolled-back',
+            'consumer' => 'foundation-source',
+        ]);
 
         $result = $store->run('message-3', 'consumer-a', ['value' => 1], function () use (&$executions): array {
             $executions++;
-            DB::table('idempotency_retry_probe')->insert(['id' => 'retried']);
+            DB::table('idempotent_consumptions')->insert($this->sourceRow('retried'));
 
             return ['retried' => true];
         });
 
         $this->assertSame('handled', $result->status);
         $this->assertSame(2, $executions);
-        $this->assertDatabaseHas('idempotency_retry_probe', ['id' => 'retried']);
-
-        Schema::dropIfExists('idempotency_retry_probe');
+        $this->assertDatabaseHas('idempotent_consumptions', [
+            'message_id' => 'retried',
+            'consumer' => 'foundation-source',
+        ]);
     }
 
     private function event(string $id): VersionedDomainEvent
@@ -234,11 +235,20 @@ final class FoundationFeatureTest extends TestCase
         );
     }
 
-    private function createSourceTable(string $name = 'foundation_transaction_probe'): void
+    /** @return array<string, mixed> */
+    private function sourceRow(string $messageId): array
     {
-        Schema::dropIfExists($name);
-        Schema::create($name, function (Blueprint $table): void {
-            $table->string('id')->primary();
-        });
+        return [
+            'message_id' => $messageId,
+            'consumer' => 'foundation-source',
+            'payload_hash' => hash('sha256', $messageId),
+            'status' => 'handled',
+            'result' => null,
+            'attempts' => 1,
+            'last_error' => null,
+            'handled_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ];
     }
 }

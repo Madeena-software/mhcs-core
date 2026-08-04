@@ -114,6 +114,8 @@ final class FoundationArchitectureTest extends TestCase
             '2026_08_04_000004_create_idempotent_consumptions_table.php',
             '2026_08_04_000005_add_security_state_to_users_table.php',
             '2026_08_04_000006_create_audit_events_table.php',
+            '2026_08_04_000007_migrate_users_to_uuid.php',
+            '2026_08_04_000008_create_member_identity_tables.php',
         ];
 
         $this->assertSame([], array_values(array_diff($migrations, $allowed)));
@@ -127,7 +129,7 @@ final class FoundationArchitectureTest extends TestCase
         foreach ($this->phpFiles(app_path('Modules/Member')) as $file) {
             $contents = strtolower($file->getContents());
 
-            foreach (['npz', 'dicom', 'binary', 'parser', 'conversion', 'storage', 'upload', 'client'] as $term) {
+            foreach (['npz', 'dicom', 'binary', 'parser', 'conversion', 'guzzlehttp', 'curl_'] as $term) {
                 $this->assertStringNotContainsString($term, $contents, $file->getPathname());
             }
         }

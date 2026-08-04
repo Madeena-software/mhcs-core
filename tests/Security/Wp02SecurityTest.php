@@ -38,7 +38,6 @@ use App\Shared\Time\FrozenClock;
 use App\Shared\Transactions\TransactionalRowLock;
 use App\Shared\Transactions\TransactionException;
 use DateTimeImmutable;
-use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Encryption\Encrypter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
@@ -46,7 +45,6 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\RateLimiter;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Monolog\Handler\TestHandler;
 use Monolog\Logger;
@@ -332,13 +330,17 @@ final class Wp02SecurityTest extends TestCase
 
     public function test_audit_and_outbox_follow_local_transaction_rollback(): void
     {
-        Schema::create('security_transaction_probe', function (Blueprint $table): void {
-            $table->string('id')->primary();
-        });
-
         try {
             DB::transaction(function (): never {
-                DB::table('security_transaction_probe')->insert(['id' => 'rollback']);
+                DB::table('idempotent_consumptions')->insert([
+                    'message_id' => 'security-rollback',
+                    'consumer' => 'security-source',
+                    'payload_hash' => hash('sha256', 'security-rollback'),
+                    'status' => 'handled',
+                    'attempts' => 1,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
                 app(AuditStore::class)->append($this->auditEvent('audit-rollback'));
                 app(OutboxStore::class)->record($this->event('event-rollback'));
                 throw new \RuntimeException('rollback');
@@ -347,10 +349,12 @@ final class Wp02SecurityTest extends TestCase
             $this->addToAssertionCount(1);
         }
 
-        $this->assertDatabaseMissing('security_transaction_probe', ['id' => 'rollback']);
+        $this->assertDatabaseMissing('idempotent_consumptions', [
+            'message_id' => 'security-rollback',
+            'consumer' => 'security-source',
+        ]);
         $this->assertDatabaseMissing('audit_events', ['event_id' => 'audit-rollback']);
         $this->assertDatabaseMissing('outbox_messages', ['event_id' => 'event-rollback']);
-        Schema::dropIfExists('security_transaction_probe');
     }
 
     public function test_correlated_logs_are_recursive_and_sanitized(): void
@@ -446,20 +450,24 @@ final class Wp02SecurityTest extends TestCase
 
     public function test_transactional_row_lock_and_funding_policy_fail_closed(): void
     {
-        Schema::create('security_lock_probe', function (Blueprint $table): void {
-            $table->string('id')->primary();
-            $table->integer('value');
-        });
-        DB::table('security_lock_probe')->insert(['id' => 'one', 'value' => 1]);
+        $probeId = DB::table('idempotent_consumptions')->insertGetId([
+            'message_id' => 'security-lock',
+            'consumer' => 'security-source',
+            'payload_hash' => hash('sha256', 'security-lock'),
+            'status' => 'pending',
+            'attempts' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
 
         $result = (new TransactionalRowLock)->run(
-            'security_lock_probe',
-            'one',
+            'idempotent_consumptions',
+            $probeId,
             $this->context('quota.reserve'),
-            static function (object $row): int {
-                DB::table('security_lock_probe')->where('id', 'one')->update(['value' => $row->value + 1]);
+            static function (object $row) use ($probeId): int {
+                DB::table('idempotent_consumptions')->where('id', $probeId)->update(['attempts' => $row->attempts + 1]);
 
-                return $row->value + 1;
+                return $row->attempts + 1;
             },
         );
 
@@ -473,13 +481,8 @@ final class Wp02SecurityTest extends TestCase
 
     public function test_row_lock_requires_trusted_context(): void
     {
-        Schema::create('security_lock_probe', function (Blueprint $table): void {
-            $table->string('id')->primary();
-        });
-        DB::table('security_lock_probe')->insert(['id' => 'one']);
-
         $this->expectException(TransactionException::class);
-        (new TransactionalRowLock)->run('security_lock_probe', 'one', AuthenticatedContext::anonymous(), static fn (): null => null);
+        (new TransactionalRowLock)->run('idempotent_consumptions', '999999999', AuthenticatedContext::anonymous(), static fn (): null => null);
     }
 
     public function test_external_adapter_execution_requires_authentication_and_audits_without_credentials(): void
