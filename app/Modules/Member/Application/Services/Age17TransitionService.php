@@ -28,7 +28,7 @@ final readonly class Age17TransitionService
 
     public function transition(string $memberId, string $operationId): AgeTransitionResult
     {
-        $context = $this->authorization->administrator('member.age-transition');
+        $context = $this->authorization->ageTransition();
         if (trim($operationId) === '') {
             throw new MemberIdentityException('An age-transition operation identity is required.');
         }

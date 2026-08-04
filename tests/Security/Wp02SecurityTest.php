@@ -138,6 +138,20 @@ final class Wp02SecurityTest extends TestCase
         $suspended = $verifier->verify('known@example.test', 'correct-password');
         $this->assertFalse($suspended->authenticated);
         $this->assertDatabaseHas('users', ['id' => $user->id, 'account_status' => 'suspended']);
+
+        $pending = User::factory()->create([
+            'email' => 'pending@example.test',
+            'password' => Hash::make('correct-password'),
+            'account_status' => 'pending_activation',
+        ]);
+        $loginDisabled = User::factory()->create([
+            'email' => 'login-disabled@example.test',
+            'password' => Hash::make('correct-password'),
+            'login_enabled' => false,
+        ]);
+
+        $this->assertFalse($verifier->verify($pending->email, 'correct-password')->authenticated);
+        $this->assertFalse($verifier->verify($loginDisabled->email, 'correct-password')->authenticated);
     }
 
     public function test_successful_logins_from_one_origin_do_not_consume_origin_limits(): void
@@ -281,6 +295,16 @@ final class Wp02SecurityTest extends TestCase
             'password' => Hash::make('correct-password'),
             'must_change_password' => true,
         ]);
+        $pending = User::factory()->create([
+            'email' => 'auth-pending@example.test',
+            'password' => Hash::make('correct-password'),
+            'account_status' => 'pending_activation',
+        ]);
+        $loginDisabled = User::factory()->create([
+            'email' => 'auth-login-disabled@example.test',
+            'password' => Hash::make('correct-password'),
+            'login_enabled' => false,
+        ]);
         $active = User::factory()->create([
             'email' => 'auth-active@example.test',
             'password' => Hash::make('correct-password'),
@@ -288,6 +312,8 @@ final class Wp02SecurityTest extends TestCase
 
         $this->assertFalse(Auth::attempt(['email' => $suspended->email, 'password' => 'correct-password']));
         $this->assertFalse(Auth::attempt(['email' => $temporary->email, 'password' => 'correct-password']));
+        $this->assertFalse(Auth::attempt(['email' => $pending->email, 'password' => 'correct-password']));
+        $this->assertFalse(Auth::attempt(['email' => $loginDisabled->email, 'password' => 'correct-password']));
         $this->assertTrue(Auth::attempt(['email' => $active->email, 'password' => 'correct-password']));
         Auth::logout();
     }

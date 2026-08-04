@@ -141,6 +141,106 @@ final class Wp04IdentityTest extends TestCase
         $this->assertNotNull($readContext);
     }
 
+    public function test_asset_grants_require_owner_guardian_or_exact_asset_permission(): void
+    {
+        $admin = User::factory()->create();
+        $registrationContext = $this->bindContext($admin, 'member.registration');
+        $owner = $this->registerAdult($admin, $registrationContext, '900000000010', '9900000000000010', 'owner@example.test', 'owner-password');
+        $asset = DB::table('member_verification_assets')
+            ->where('member_id', $owner->memberId)
+            ->where('type', 'profile_photo')
+            ->where('is_current', true)
+            ->first();
+        $expiresAt = new DateTimeImmutable('2026-08-04T10:01:00+00:00');
+
+        $ownerContext = $this->bindContext(User::query()->findOrFail($owner->userId), 'member.asset.read', [], []);
+        $assets = app(MemberVerificationAssetService::class);
+        $ownerGrant = $assets->grant($asset->id, 'member-owner', 'member.asset.read', $expiresAt);
+        $this->assertSame('synthetic-profile-900000000010', $assets->retrieve($ownerGrant, 'member-owner', 'member.asset.read'));
+
+        $unauthorized = User::factory()->create();
+        $this->bindContext($unauthorized, 'member.asset.read', [], []);
+        $assets = app(MemberVerificationAssetService::class);
+        $this->expectException(MemberIdentityException::class);
+        $assets->grant($asset->id, 'member-unauthorized', 'member.asset.read', $expiresAt);
+        $this->assertNotNull($ownerContext);
+    }
+
+    public function test_authorized_guardian_and_exact_asset_permission_can_grant_a_dependent_asset(): void
+    {
+        $admin = User::factory()->create();
+        $registrationContext = $this->bindContext($admin, 'member.registration');
+        $guardian = $this->registerAdult($admin, $registrationContext, '900000000011', '9900000000000011', 'guardian-asset@example.test', 'guardian-password');
+        $childContext = $this->bindContext($admin, 'member.registration');
+        $child = app(MemberRegistrationService::class)->register(new MemberRegistrationData(
+            operationId: 'dependent-asset-registration',
+            email: null,
+            password: null,
+            name: 'Synthetic Dependent',
+            birthDate: new DateTimeImmutable('2012-08-05'),
+            administrativeGender: 'unspecified',
+            nik: '900000000012',
+            kk: '9900000000000011',
+            phone: null,
+            registrationSource: RegistrationSource::Administrator,
+            identityDocument: new VerificationAssetInput(VerificationAssetType::Kia, $this->object($childContext, 'dependent-kia'), 'image/jpeg'),
+            profilePhoto: new VerificationAssetInput(VerificationAssetType::ProfilePhoto, $this->object($childContext, 'dependent-profile'), 'image/jpeg'),
+            guardianMemberIds: [$guardian->memberId],
+        ));
+        $asset = DB::table('member_verification_assets')
+            ->where('member_id', $child->memberId)
+            ->where('type', 'kia')
+            ->where('is_current', true)
+            ->first();
+        $expiresAt = new DateTimeImmutable('2026-08-04T10:01:00+00:00');
+
+        $this->bindContext(User::query()->findOrFail($guardian->userId), 'member.asset.read', [], []);
+        $assets = app(MemberVerificationAssetService::class);
+        $guardianGrant = $assets->grant($asset->id, 'member-guardian', 'member.asset.read', $expiresAt);
+        $this->assertSame('synthetic-dependent-kia', $assets->retrieve($guardianGrant, 'member-guardian', 'member.asset.read'));
+
+        $this->bindContext($admin, 'member.asset.read', ['administrator'], ['member.asset.read']);
+        $assets = app(MemberVerificationAssetService::class);
+        $adminGrant = $assets->grant($asset->id, 'member-admin', 'member.asset.read', $expiresAt);
+        $this->assertSame('member-admin', $adminGrant->claims()['audience']);
+    }
+
+    public function test_pending_replacement_keeps_approved_current_until_approval(): void
+    {
+        $admin = User::factory()->create();
+        $registrationContext = $this->bindContext($admin, 'member.registration');
+        $memberResult = $this->registerAdult($admin, $registrationContext, '900000000013', '9900000000000013', null, 'adult-password');
+        $member = Member::query()->findOrFail($memberResult->memberId);
+        $old = DB::table('member_verification_assets')
+            ->where('member_id', $member->id)
+            ->where('type', 'profile_photo')
+            ->where('is_current', true)
+            ->first();
+        $replacementContext = $this->bindContext($admin, 'member.registration');
+        $replacement = app(MemberVerificationAssetService::class)->recordInTransaction(
+            $member,
+            new VerificationAssetInput(
+                VerificationAssetType::ProfilePhoto,
+                $this->object($replacementContext, 'pending-profile'),
+                'image/jpeg',
+                $old->id,
+            ),
+            $replacementContext,
+            false,
+        );
+
+        $this->assertDatabaseHas('member_verification_assets', ['id' => $old->id, 'review_status' => 'approved', 'is_current' => true]);
+        $this->assertDatabaseHas('member_verification_assets', ['id' => $replacement, 'review_status' => 'pending', 'is_current' => false]);
+        $this->assertDatabaseHas('members', ['id' => $member->id, 'identity_status' => 'verified']);
+
+        $this->bindContext($admin, 'member.identity.verify');
+        app(MemberVerificationAssetService::class)->review($replacement, true);
+
+        $this->assertDatabaseHas('member_verification_assets', ['id' => $old->id, 'is_current' => false]);
+        $this->assertDatabaseHas('member_verification_assets', ['id' => $replacement, 'review_status' => 'approved', 'is_current' => true, 'replaces_id' => $old->id]);
+        $this->assertSame(1, DB::table('member_verification_assets')->where('member_id', $member->id)->where('type', 'profile_photo')->where('review_status', 'approved')->where('is_current', true)->count());
+    }
+
     public function test_child_registration_requires_verified_guardian_and_age_transition_ends_access_atomically(): void
     {
         $admin = User::factory()->create();
@@ -247,6 +347,85 @@ final class Wp04IdentityTest extends TestCase
         $this->assertNotNull($recoveryContext);
     }
 
+    public function test_assisted_recovery_rejects_dependent_without_issuing_a_credential(): void
+    {
+        $admin = User::factory()->create();
+        $adultContext = $this->bindContext($admin, 'member.registration');
+        $guardian = $this->registerAdult($admin, $adultContext, '900000000014', '9900000000000014', null, 'guardian-password');
+        $childContext = $this->bindContext($admin, 'member.registration');
+        $child = app(MemberRegistrationService::class)->register(new MemberRegistrationData(
+            operationId: 'dependent-recovery-registration',
+            email: null,
+            password: null,
+            name: 'Synthetic Recovery Dependent',
+            birthDate: new DateTimeImmutable('2012-08-05'),
+            administrativeGender: 'unspecified',
+            nik: '900000000015',
+            kk: '9900000000000014',
+            phone: null,
+            registrationSource: RegistrationSource::Administrator,
+            identityDocument: new VerificationAssetInput(VerificationAssetType::Kia, $this->object($childContext, 'recovery-kia'), 'image/jpeg'),
+            profilePhoto: new VerificationAssetInput(VerificationAssetType::ProfilePhoto, $this->object($childContext, 'recovery-profile'), 'image/jpeg'),
+            guardianMemberIds: [$guardian->memberId],
+        ));
+        $identity = DB::table('member_verification_assets')->where('member_id', $child->memberId)->where('type', 'kia')->where('is_current', true)->first();
+        $profile = DB::table('member_verification_assets')->where('member_id', $child->memberId)->where('type', 'profile_photo')->where('is_current', true)->first();
+        $childUser = User::query()->findOrFail($child->userId);
+        $passwordHash = $childUser->password;
+
+        $this->bindContext($admin, 'member.assisted-recovery');
+        try {
+            app(AssistedRecoveryService::class)->recover(new AssistedRecoveryData(
+                'dependent-recovery',
+                '900000000015',
+                '9900000000000014',
+                $identity->id,
+                $profile->id,
+            ));
+            $this->fail('Dependent recovery must be rejected.');
+        } catch (MemberIdentityException) {
+            $this->addToAssertionCount(1);
+        }
+        $childUser->refresh();
+        $this->assertSame($passwordHash, $childUser->password);
+        $this->assertTrue($childUser->login_enabled === false);
+        $this->assertSame(0, DB::table('audit_events')->where('action', 'member.assisted-recovery')->where('outcome', 'success')->count());
+    }
+
+    public function test_identity_verification_permission_cannot_run_unrelated_administrator_operations(): void
+    {
+        $admin = User::factory()->create();
+        $registrationContext = $this->bindContext($admin, 'member.registration');
+        $member = $this->registerAdult($admin, $registrationContext, '900000000016', '9900000000000016', null, 'adult-password');
+        $asset = DB::table('member_verification_assets')->where('member_id', $member->memberId)->where('type', 'profile_photo')->where('is_current', true)->first();
+        $rejected = function (callable $operation): void {
+            try {
+                $operation();
+                $this->fail('A narrow verification permission must not authorize this operation.');
+            } catch (MemberIdentityException) {
+                $this->addToAssertionCount(1);
+            }
+        };
+
+        $this->bindContext($admin, 'member.account-state', ['administrator'], ['member.identity.verify']);
+        $rejected(fn () => app(AccountStateService::class)->suspend($member->userId));
+
+        $this->bindContext($admin, 'member.guardian.manage', ['administrator'], ['member.identity.verify']);
+        $rejected(fn () => app(MemberGuardianService::class)->add('missing-child', 'missing-guardian'));
+
+        $this->bindContext($admin, 'member.assisted-recovery', ['administrator'], ['member.identity.verify']);
+        $rejected(fn () => app(AssistedRecoveryService::class)->recover(new AssistedRecoveryData('narrow-recovery', 'nik', 'kk', 'identity', 'profile')));
+
+        $this->bindContext($admin, 'member.age-transition', ['administrator'], ['member.identity.verify']);
+        $rejected(fn () => app(Age17TransitionService::class)->transition($member->memberId, 'narrow-age-transition'));
+
+        $this->bindContext($admin, 'member.registration', ['administrator'], ['member.identity.verify']);
+        $rejected(fn () => app(MemberRegistrationService::class)->register($this->adultData('narrow-registration', '900000000017', '9900000000000017', $registrationContext, 'adult-password')));
+
+        $this->bindContext($admin, 'member.asset.read', ['administrator'], ['member.identity.verify']);
+        $rejected(fn () => app(MemberVerificationAssetService::class)->grant($asset->id, 'narrow-admin', 'member.asset.read', new DateTimeImmutable('2026-08-04T10:01:00+00:00')));
+    }
+
     public function test_duplicate_nik_rolls_back_member_audit_and_operation_state_and_immutable_identity_fields_reject_mutation(): void
     {
         $admin = User::factory()->create();
@@ -305,15 +484,24 @@ final class Wp04IdentityTest extends TestCase
     }
 
     /** @param list<string>|null $roles */
-    private function bindContext(User $user, string $purpose, ?array $roles = null): AuthenticatedContext
+    private function bindContext(User $user, string $purpose, ?array $roles = null, ?array $permissions = null): AuthenticatedContext
     {
         $roles ??= ['administrator'];
+        $permissions ??= [
+            'member.registration.manage',
+            'member.identity.verify',
+            'member.asset.read',
+            'member.guardian.manage',
+            'member.account.manage',
+            'member.assisted-recovery',
+            'member.age-transition',
+        ];
         $context = new AuthenticatedContext(
             actorId: LocalId::fromString((string) $user->id),
             operationId: new CorrelationId('operation-'.strtolower(str_replace('-', '', (string) Str::uuid()))),
             sessionId: LocalId::fromString('session-'.(string) $user->id),
             roles: $roles,
-            permissions: ['member.identity.manage', 'member.identity.verify', 'member.account.manage'],
+            permissions: $permissions,
             purpose: $purpose,
         );
         $this->app->instance(AuthenticatedContextProvider::class, new class($context) implements AuthenticatedContextProvider

@@ -27,7 +27,10 @@ final readonly class MandatoryPasswordReplacementService
     {
         $context = $this->authorization->context('member.password-replacement');
 
-        if ((string) $context->actorId !== $userId && ! $this->authorization->isAdministrator($context)) {
+        if (
+            (string) $context->actorId !== $userId
+            && ! $this->authorization->hasAdministratorPermission($context, MemberAuthorization::ACCOUNT_STATE_PERMISSION)
+        ) {
             throw new MemberIdentityException('Password replacement authorization failed.');
         }
 

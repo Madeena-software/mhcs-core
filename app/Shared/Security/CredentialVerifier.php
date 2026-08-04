@@ -54,8 +54,7 @@ final class CredentialVerifier
         if (
             $user === null
             || ! $validPassword
-            || $user->isSuspended()
-            || $user->must_change_password
+            || ! $user->canAuthenticate()
         ) {
             RateLimiter::hit($pairKey, $throttling['decay_seconds']);
             RateLimiter::hit($originKey, $throttling['decay_seconds']);

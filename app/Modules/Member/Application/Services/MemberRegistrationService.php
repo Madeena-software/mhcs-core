@@ -7,7 +7,6 @@ namespace App\Modules\Member\Application\Services;
 use App\Modules\Member\Application\Data\MemberRegistrationData;
 use App\Modules\Member\Application\Data\MemberRegistrationResult;
 use App\Modules\Member\Domain\Enums\IdentityStatus;
-use App\Modules\Member\Domain\Enums\RegistrationSource;
 use App\Modules\Member\Domain\Enums\VerificationAssetType;
 use App\Modules\Member\Domain\MemberIdentityException;
 use App\Modules\Member\Domain\Models\Member;
@@ -36,10 +35,10 @@ final readonly class MemberRegistrationService
 
     public function register(MemberRegistrationData $data): MemberRegistrationResult
     {
-        $context = $this->authorization->context('member.registration');
-        $this->assertRegistrationAuthorization($data, $context);
+        $context = $this->authorization->registration();
+        $this->assertRegistrationAuthorization($data);
         $adult = $this->isAdult($data->birthDate);
-        $approved = $this->authorization->isAdministrator($context);
+        $approved = $this->authorization->hasPermission($context, MemberAuthorization::IDENTITY_VERIFICATION_PERMISSION);
         $payloadHash = $this->payloadHash($data);
 
         try {
@@ -181,14 +180,8 @@ final readonly class MemberRegistrationService
         }
     }
 
-    private function assertRegistrationAuthorization(MemberRegistrationData $data, AuthenticatedContext $context): void
+    private function assertRegistrationAuthorization(MemberRegistrationData $data): void
     {
-        if ($data->registrationSource === RegistrationSource::Administrator || ! $this->isAdult($data->birthDate)) {
-            if (! $this->authorization->isAdministrator($context)) {
-                throw new MemberIdentityException('Administrator authorization is required for this registration.');
-            }
-        }
-
         if ($data->identityDocument->type === VerificationAssetType::ProfilePhoto || $data->profilePhoto->type !== VerificationAssetType::ProfilePhoto) {
             throw new MemberIdentityException('Registration requires one identity document and one profile photograph.');
         }

@@ -31,7 +31,7 @@ final readonly class AccountStateService
 
     private function transition(string $userId, string $target, string $reason): void
     {
-        $context = $this->authorization->administrator('member.account-state');
+        $context = $this->authorization->accountState();
 
         DB::transaction(function () use ($userId, $target, $reason, $context): void {
             $user = User::query()->whereKey($userId)->lockForUpdate()->first();

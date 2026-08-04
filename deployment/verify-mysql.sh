@@ -74,4 +74,5 @@ php artisan migrate:rollback --step=1 --force
 test "$(php artisan tinker --execute='echo \Illuminate\Support\Facades\Schema::hasTable("members") ? "present" : "absent";')" = 'absent'
 php artisan migrate --force
 test "$(php artisan tinker --execute='echo \Illuminate\Support\Facades\Schema::hasTable("members") ? "present" : "absent";')" = 'present'
-echo 'MySQL migration rollback and reapplication passed'
+echo 'MySQL Member identity migration rollback and reapplication passed'
+echo 'UUID user migration remains forward-only; only the Member identity migration was rolled back above'

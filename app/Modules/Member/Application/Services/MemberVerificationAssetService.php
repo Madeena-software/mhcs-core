@@ -60,10 +60,11 @@ final readonly class MemberVerificationAssetService
             }
         }
 
+        DB::table('members')->where('id', $member->id)->lockForUpdate()->first();
         $now = $this->clock->now();
         $assetId = (string) Str::uuid();
         $status = $approved ? VerificationReviewStatus::Approved : VerificationReviewStatus::Pending;
-        $current = $input->type->isIdentityDocument() || $approved;
+        $current = $approved;
 
         if ($current) {
             DB::table('member_verification_assets')
@@ -108,14 +109,23 @@ final readonly class MemberVerificationAssetService
 
     public function review(string $assetId, bool $approve, string $purpose = 'member.identity.verify'): void
     {
-        $context = $this->authorization->administrator($purpose);
+        if ($purpose !== 'member.identity.verify') {
+            throw new MemberIdentityException('The verification review purpose is not supported.');
+        }
+
+        $context = $this->authorization->identityVerification();
         DB::transaction(function () use ($assetId, $approve, $context): void {
-            $asset = DB::table('member_verification_assets')->where('id', $assetId)->lockForUpdate()->first();
+            $asset = DB::table('member_verification_assets')->where('id', $assetId)->first();
 
             if ($asset === null) {
                 throw new MemberIdentityException('The verification asset was not found.');
             }
 
+            DB::table('members')->where('id', $asset->member_id)->lockForUpdate()->first();
+            $asset = DB::table('member_verification_assets')->where('id', $assetId)->lockForUpdate()->first();
+            if ($asset === null) {
+                throw new MemberIdentityException('The verification asset was not found.');
+            }
             $now = $this->clock->now();
             if ($approve) {
                 DB::table('member_verification_assets')
@@ -149,12 +159,13 @@ final readonly class MemberVerificationAssetService
 
     public function grant(string $assetId, string $audience, string $purpose, DateTimeImmutable $expiresAt): AccessGrant
     {
-        $context = $this->authorization->context($purpose);
         $asset = DB::table('member_verification_assets')->where('id', $assetId)->first();
 
         if ($asset === null || $asset->review_status !== VerificationReviewStatus::Approved->value) {
             throw new MemberIdentityException('The requested verification asset is unavailable.');
         }
+
+        $context = $this->authorization->assetAccess($asset->member_id, $purpose);
 
         return $this->objects->grant(
             new PrivateObject(

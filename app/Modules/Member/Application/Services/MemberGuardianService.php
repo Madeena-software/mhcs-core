@@ -25,7 +25,7 @@ final readonly class MemberGuardianService
 
     public function add(string $childMemberId, string $guardianMemberId): string
     {
-        $context = $this->authorization->administrator('member.guardian.manage');
+        $context = $this->authorization->guardianManagement();
 
         return DB::transaction(function () use ($childMemberId, $guardianMemberId, $context): string {
             if ($childMemberId === $guardianMemberId) {
@@ -90,7 +90,7 @@ final readonly class MemberGuardianService
 
     public function end(string $relationId): void
     {
-        $context = $this->authorization->administrator('member.guardian.manage');
+        $context = $this->authorization->guardianManagement();
         DB::transaction(function () use ($relationId, $context): void {
             $relation = DB::table('member_guardians')->where('id', $relationId)->lockForUpdate()->first();
             if ($relation === null) {

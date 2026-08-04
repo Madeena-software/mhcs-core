@@ -32,7 +32,7 @@ final readonly class AssistedRecoveryService
 
     public function recover(AssistedRecoveryData $data): RecoveryResult
     {
-        $context = $this->authorization->administrator('member.assisted-recovery');
+        $context = $this->authorization->assistedRecovery();
         if (trim($data->operationId) === '') {
             throw new MemberIdentityException('A recovery operation identity is required.');
         }
@@ -125,6 +125,10 @@ final readonly class AssistedRecoveryService
                     throw new MemberIdentityException('Recovery evidence could not be verified.');
                 }
 
+                if (! $this->isAdult($member->birth_date) || ! $user->login_enabled) {
+                    throw new MemberIdentityException('Dependent credentials require the approved age-17 transition.');
+                }
+
                 $temporaryCredential = $this->credentials->issue($user);
                 $now = $this->clock->now();
                 $this->audit->append(AuditEvent::fromContext(
@@ -176,5 +180,10 @@ final readonly class AssistedRecoveryService
             occurredAt: $this->clock->now(),
             metadata: ['reason_code' => 'evidence_rejected'],
         ));
+    }
+
+    private function isAdult(string $birthDate): bool
+    {
+        return new \DateTimeImmutable($birthDate) <= $this->clock->now()->modify('-17 years')->setTime(0, 0);
     }
 }
