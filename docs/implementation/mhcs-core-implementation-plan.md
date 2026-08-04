@@ -9,7 +9,7 @@ This bounded future implementation plan performs no product implementation and d
 | Declared source context commit | `e9f5e9f76b09f0327f50c88e926813566efd60c0` |
 | Source-commit correspondence | unverified — declared object unavailable locally; no direct comparison performed. |
 | Draft baseline commit | `8bf34637bea1420b9968bb6d995f1703770e1b51` |
-| Current target commit / branch | `31a629a6ec9e7bf9974ea33aa25657e7d8e6c73c` / main |
+| Current target commit / branch | `423df7b0c1b95d41a28e084ea0d8c13bff818788` / main |
 | Analysis date | 2026-08-04 |
 | Initial working tree | Clean at task start; no staged, modified, or untracked paths. Draft outputs existed unchanged from the supplied baseline. |
 | Repository evidence | `E0: No application source, Composer/frontend manifests, configuration, migrations, routes, queues, adapters, storage, or executable tests exist in the target repository; conformance documents and approved context are not implementation evidence.` |
@@ -30,10 +30,10 @@ This bounded future implementation plan performs no product implementation and d
 - Previous draft identifiers: 982.
 - Remediated active requirements: 594; all applicable and not-started; verified: 0.
 - Prefix counts: {'ARCH': 41, 'DES': 22, 'DOC': 66, 'IMG': 59, 'MEM': 225, 'OPR': 134, 'UIL': 47}.
-- Source counts: {'.agents/context/project.md': 41, '.agents/context/design/mhcs-core-design.html': 22, '.agents/context/modules/doctor/project.md': 66, '.agents/context/modules/image-gateway/project.md': 59, '.agents/context/modules/member/project.md': 228, '.agents/context/modules/operator/project.md': 134, '.agents/context/ui-language.md': 47}.
-- Authority counts: {'Architecture / Shared': 41, 'Design reference': 22, 'Doctor': 66, 'Image Gateway': 59, 'Member': 228, 'Operator': 134, 'UI language': 47}.
-- Applicability: applicable 597, not-applicable 0, ambiguous 0.
-- Classification: not-started 597, all other classifications 0.
+- Source counts: {'.agents/context/project.md': 41, '.agents/context/design/mhcs-core-design.html': 22, '.agents/context/modules/doctor/project.md': 66, '.agents/context/modules/image-gateway/project.md': 59, '.agents/context/modules/member/project.md': 225, '.agents/context/modules/operator/project.md': 134, '.agents/context/ui-language.md': 47}.
+- Authority counts: {'Architecture / Shared': 41, 'Design reference': 22, 'Doctor': 66, 'Image Gateway': 59, 'Member': 225, 'Operator': 134, 'UI language': 47}.
+- Applicability: applicable 594, not-applicable 0, ambiguous 0.
+- Classification: not-started 594, all other classifications 0.
 - ID lifecycle dispositions: {'rewritten': 549, 'retired-non-normative': 10, 'moved-to-register': 7, 'merged-into': 416}; work-package totals previous/remediated: 25 / 25.
 
 ## Ordered critical path

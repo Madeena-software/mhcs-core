@@ -9,7 +9,7 @@ This index records full source audit and ID lifecycle for the local approved bas
 | Declared source context commit | `e9f5e9f76b09f0327f50c88e926813566efd60c0` |
 | Source-commit correspondence | unverified — declared object unavailable locally; no direct comparison performed. |
 | Draft baseline commit | `8bf34637bea1420b9968bb6d995f1703770e1b51` |
-| Current target commit / branch | `31a629a6ec9e7bf9974ea33aa25657e7d8e6c73c` / main |
+| Current target commit / branch | `423df7b0c1b95d41a28e084ea0d8c13bff818788` / main |
 | Analysis date | 2026-08-04 |
 | Initial working tree | Clean at task start; no staged, modified, or untracked paths. Draft outputs existed unchanged from the supplied baseline. |
 | Repository evidence | `E0: No application source, Composer/frontend manifests, configuration, migrations, routes, queues, adapters, storage, or executable tests exist in the target repository; conformance documents and approved context are not implementation evidence.` |
@@ -2099,6 +2099,8 @@ All 25 previous package IDs remain stable. WP-26 is narrowed to governing UI rul
 |---|---|---|
 | Total identifiers | 982 | 594 |
 | Prefix counts | {'ARCH': 36, 'MEM': 212, 'OPR': 128, 'DOC': 66, 'IMG': 55, 'UIL': 463, 'DES': 22} | {'ARCH': 41, 'DES': 22, 'DOC': 66, 'IMG': 59, 'MEM': 225, 'OPR': 134, 'UIL': 47} |
+| Source counts | — | {'.agents/context/project.md': 41, '.agents/context/design/mhcs-core-design.html': 22, '.agents/context/modules/doctor/project.md': 66, '.agents/context/modules/image-gateway/project.md': 59, '.agents/context/modules/member/project.md': 225, '.agents/context/modules/operator/project.md': 134, '.agents/context/ui-language.md': 47} |
+| Authority counts | — | {'Architecture / Shared': 41, 'Design reference': 22, 'Doctor': 66, 'Image Gateway': 59, 'Member': 225, 'Operator': 134, 'UI language': 47} |
 | Applicability | applicable: 982 | applicable: 594 |
 | Classification | not-started: 982 | not-started: 594 |
 | Lifecycle dispositions | — | {'rewritten': 549, 'retired-non-normative': 10, 'moved-to-register': 7, 'merged-into': 416} |
