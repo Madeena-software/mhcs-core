@@ -27,6 +27,7 @@ use App\Shared\Logging\CorrelatedLogger;
 use App\Shared\Security\CredentialVerifier;
 use App\Shared\Security\KeyMaterial;
 use App\Shared\Security\ProtectedIdentifierService;
+use App\Shared\Security\SensitiveDataSanitizer;
 use App\Shared\Security\SensitivePayloadException;
 use App\Shared\Security\TemporaryCredentialIssuer;
 use App\Shared\Storage\AccessGrant;
@@ -39,6 +40,7 @@ use DateTimeImmutable;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Encryption\Encrypter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -133,6 +135,47 @@ final class Wp02SecurityTest extends TestCase
         $this->assertDatabaseHas('users', ['id' => $user->id, 'account_status' => 'suspended']);
     }
 
+    public function test_credential_throttling_uses_server_origin_without_trusting_forwarded_headers_and_keeps_identifier_limit(): void
+    {
+        config([
+            'mhcs.security.login.max_attempts' => 2,
+            'mhcs.security.login.origin_max_attempts' => 2,
+        ]);
+        $provider = $this->bindContext('credential.verify');
+        $identifiers = new ProtectedIdentifierService(
+            new Encrypter(str_repeat('e', 32), 'AES-256-CBC'),
+            KeyMaterial::from(str_repeat('i', 32)),
+        );
+        $verifier = new CredentialVerifier($identifiers, app(AuditStore::class), $provider, app('App\\Shared\\Time\\Clock'));
+
+        $this->app->instance('request', Request::create('/', 'POST', [], [], [], [
+            'REMOTE_ADDR' => '198.51.100.10',
+            'HTTP_X_FORWARDED_FOR' => '203.0.113.10',
+        ]));
+        $verifier->verify('origin-one@example.test', 'wrong-password');
+
+        $this->app->instance('request', Request::create('/', 'POST', [], [], [], [
+            'REMOTE_ADDR' => '198.51.100.10',
+            'HTTP_X_FORWARDED_FOR' => '203.0.113.11',
+        ]));
+        $verifier->verify('origin-two@example.test', 'wrong-password');
+
+        $this->app->instance('request', Request::create('/', 'POST', [], [], [], [
+            'REMOTE_ADDR' => '198.51.100.10',
+            'HTTP_X_FORWARDED_FOR' => '203.0.113.12',
+        ]));
+        $this->assertTrue($verifier->verify('origin-three@example.test', 'wrong-password')->rateLimited);
+
+        config(['mhcs.security.login.origin_max_attempts' => 100]);
+        foreach (['198.51.100.20', '198.51.100.21'] as $origin) {
+            $this->app->instance('request', Request::create('/', 'POST', [], [], [], ['REMOTE_ADDR' => $origin]));
+            $verifier->verify('identifier@example.test', 'wrong-password');
+        }
+
+        $this->app->instance('request', Request::create('/', 'POST', [], [], [], ['REMOTE_ADDR' => '198.51.100.22']));
+        $this->assertTrue($verifier->verify('identifier@example.test', 'wrong-password')->rateLimited);
+    }
+
     public function test_laravel_authentication_denies_suspended_and_temporary_accounts(): void
     {
         $suspended = User::factory()->create([
@@ -170,6 +213,26 @@ final class Wp02SecurityTest extends TestCase
     {
         $this->expectException(SensitivePayloadException::class);
         $this->auditEvent('audit-sensitive', ['password' => 'do-not-store']);
+    }
+
+    public function test_sensitive_scalar_audit_payloads_are_rejected_under_neutral_keys(): void
+    {
+        foreach ([
+            'nik' => '3201010101010001',
+            'kk' => '3201010101010002',
+            'bearer' => 'Bearer eyJhbGciOiJIUzI1NiJ9.synthetic-signature',
+            'credentials' => 'username=operator@example.test password=not-for-audit',
+            'clinical' => 'Patient reports chest pain and shortness of breath.',
+            'npz' => "PK\x03\x04 synthetic NPZ payload",
+            'dicom' => str_repeat("\x00", 128).'DICM'.'synthetic payload',
+        ] as $label => $value) {
+            try {
+                SensitiveDataSanitizer::assertSafe(['neutral_value' => $value]);
+                $this->fail("Sensitive scalar [{$label}] was accepted.");
+            } catch (SensitivePayloadException) {
+                $this->addToAssertionCount(1);
+            }
+        }
     }
 
     public function test_audit_and_outbox_follow_local_transaction_rollback(): void
@@ -252,7 +315,12 @@ final class Wp02SecurityTest extends TestCase
             caseId: $context->caseId,
             purpose: 'object.read',
         );
-        $this->assertSame('private clinical bytes', $store->get($grant, $otherOperation, 'member-view', 'object.read'));
+        try {
+            $store->get($grant, $otherOperation, 'member-view', 'object.read');
+            $this->fail('An access grant must not cross operation boundaries.');
+        } catch (ObjectAccessException) {
+            $this->addToAssertionCount(1);
+        }
 
         $wrongPurpose = $this->context('wrong-purpose');
         $this->expectException(ObjectAccessException::class);

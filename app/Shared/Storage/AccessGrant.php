@@ -89,6 +89,7 @@ final readonly class AccessGrant
             || $this->claims['audience'] !== $audience
             || $this->claims['purpose'] !== $purpose
             || $this->claims['target'] !== $target
+            || $this->claims['correlation_id'] !== (string) $context->operationId
         ) {
             throw new ObjectAccessException('Access grant claims do not authorize this request.');
         }

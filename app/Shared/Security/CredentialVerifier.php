@@ -29,10 +29,15 @@ final class CredentialVerifier
     {
         $identifier = $this->canonicalIdentifier($identifier);
         $key = 'credential:'.$this->identifiers->lookupDigest($identifier);
+        $originKey = 'credential-origin:'.hash('sha256', $this->requestOrigin());
         $maxAttempts = (int) config('mhcs.security.login.max_attempts', 5);
+        $originMaxAttempts = (int) config('mhcs.security.login.origin_max_attempts', $maxAttempts);
         $decaySeconds = (int) config('mhcs.security.login.decay_seconds', 60);
 
-        if (RateLimiter::tooManyAttempts($key, $maxAttempts)) {
+        if (
+            RateLimiter::tooManyAttempts($key, $maxAttempts)
+            || RateLimiter::tooManyAttempts($originKey, $originMaxAttempts)
+        ) {
             $this->recordFailure($key, 'rate_limited');
 
             return CredentialVerificationResult::failure(true);
@@ -43,6 +48,7 @@ final class CredentialVerifier
         $validPassword = Hash::check($password, $hash);
 
         RateLimiter::hit($key, $decaySeconds);
+        RateLimiter::hit($originKey, $decaySeconds);
 
         if (
             $user === null
@@ -68,6 +74,17 @@ final class CredentialVerifier
         ));
 
         return CredentialVerificationResult::success($user);
+    }
+
+    private function requestOrigin(): string
+    {
+        if (! app()->bound('request')) {
+            return 'unknown';
+        }
+
+        $origin = request()->server('REMOTE_ADDR');
+
+        return is_string($origin) && trim($origin) !== '' ? $origin : 'unknown';
     }
 
     private function findUser(string $identifier): ?User

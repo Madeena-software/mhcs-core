@@ -10,6 +10,7 @@ required=(
   docker/nginx.conf
   docker/php.ini
   docker/supervisord.conf
+  deployment/smoke.sh
   deployment/README.md
 )
 
@@ -38,6 +39,12 @@ grep -q 'cp -rT /var/www/html/public/. /var/www/public-files/' "$root/docker/ent
 grep -q 'ports:' "$root/docker-compose.prod.yml"
 grep -q 'MPIPS_NETWORK_NAME' "$root/docker-compose.prod.yml"
 grep -q 'MHCS_ENV_FILE' "$root/docker-compose.prod.yml"
+grep -q 'app_cache:/var/www/html/bootstrap/cache' "$root/docker-compose.prod.yml"
+grep -q 'MHCS_IMAGE_WORKER_CPU_LIMIT' "$root/docker-compose.prod.yml"
+grep -q 'MHCS_IMAGE_WORKER_MEMORY_LIMIT' "$root/docker-compose.prod.yml"
+grep -q 'MHCS_IMAGE_WORKER_PIDS_LIMIT' "$root/docker-compose.prod.yml"
+grep -q 'MHCS_IMAGE_WORKER_EXECUTION_TIMEOUT_SECONDS' "$root/docker-compose.prod.yml"
+grep -q 'MHCS_IMAGE_WORKER_TMPFS_SIZE' "$root/docker-compose.prod.yml"
 
 if grep -q '^  mpips:' "$root/docker-compose.prod.yml"; then
   echo 'MHCS deployment must not define the separately owned MPIPS service' >&2
@@ -60,7 +67,15 @@ if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; 
   APP_PORT=18080 \
   MPIPS_NETWORK_NAME=validation-mpips \
   MHCS_ENV_FILE=/dev/null \
+  MHCS_IMAGE_WORKER_CPU_LIMIT=1 \
+  MHCS_IMAGE_WORKER_MEMORY_LIMIT=512M \
+  MHCS_IMAGE_WORKER_PIDS_LIMIT=64 \
+  MHCS_IMAGE_WORKER_EXECUTION_TIMEOUT_SECONDS=90 \
+  MHCS_IMAGE_WORKER_TMPFS_SIZE=64M \
     docker compose --env-file /dev/null -f "$root/docker-compose.prod.yml" config >/dev/null
+  validation_image=mhcs-core:validation
+  docker build --tag "$validation_image" "$root"
+  bash "$root/deployment/smoke.sh" "$validation_image"
 else
   echo 'docker compose validation skipped: Docker Compose is unavailable'
 fi

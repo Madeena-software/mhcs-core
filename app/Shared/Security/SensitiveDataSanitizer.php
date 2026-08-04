@@ -39,7 +39,7 @@ final class SensitiveDataSanitizer
             return '[RESOURCE]';
         }
 
-        if (is_string($value) && preg_match('/\A\d{10,20}\z/', $value) === 1) {
+        if (self::isSensitiveScalar($value)) {
             return '[REDACTED]';
         }
 
@@ -48,6 +48,10 @@ final class SensitiveDataSanitizer
 
     public static function sanitizeLogMessage(string $message): string
     {
+        if (self::isSensitiveScalar($message)) {
+            return '[REDACTED]';
+        }
+
         $message = preg_replace(
             '/((?:password|passphrase|secret|token|authorization|cookie|credential)\s*[:=]\s*)\S+/i',
             '$1[REDACTED]',
@@ -61,14 +65,7 @@ final class SensitiveDataSanitizer
 
     public static function assertSafeString(?string $value): void
     {
-        if ($value === null) {
-            return;
-        }
-
-        if (
-            preg_match('/\b\d{10,20}\b/', $value) === 1
-            || preg_match('/(?:password|passphrase|secret|token|authorization|cookie|credential)\s*[:=]/i', $value) === 1
-        ) {
+        if ($value !== null && self::isSensitiveScalar($value)) {
             throw new SensitivePayloadException('Sensitive data is not allowed in a security record.');
         }
     }
@@ -103,8 +100,38 @@ final class SensitiveDataSanitizer
             return;
         }
 
+        if (self::isSensitiveScalar($value)) {
+            throw new SensitivePayloadException('Sensitive scalar values are not allowed in audit metadata.');
+        }
+
         if (is_object($value) || is_resource($value)) {
             throw new SensitivePayloadException('Objects and resources are not allowed in audit metadata.');
         }
+    }
+
+    private static function isSensitiveScalar(mixed $value): bool
+    {
+        if (is_int($value)) {
+            $value = (string) $value;
+        }
+
+        if (! is_string($value)) {
+            return false;
+        }
+
+        $value = trim($value);
+
+        if ($value === '') {
+            return false;
+        }
+
+        return preg_match('/\b\d{10,20}\b/', $value) === 1
+            || preg_match('/\bBearer\s+\S+/i', $value) === 1
+            || preg_match('/(?:password|passphrase|secret|token|authorization|cookie|credential|api[_ -]?key|client[_ -]?secret)/i', $value) === 1
+            || preg_match('/(?:patient|clinical|diagnos(?:is|ed)|symptom|medical|radiograph|x[- ]?ray|treatment|medication|disease|history|chest pain|shortness of breath|cough|fever|tuberculosis)/i', $value) === 1
+            || preg_match('/(?:npz|dicom|DICM|payload|application\/(?:x-npz|dicom))/i', $value) === 1
+            || str_contains($value, "PK\x03\x04")
+            || preg_match('/\Adata:[^;]+;base64,/i', $value) === 1
+            || preg_match('/[\x00-\x08\x0B\x0C\x0E-\x1F]/', $value) === 1;
     }
 }

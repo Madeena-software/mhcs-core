@@ -65,6 +65,7 @@ return [
         'manifest_key_id' => env('MHCS_MANIFEST_KEY_ID'),
         'login' => [
             'max_attempts' => (int) env('MHCS_LOGIN_MAX_ATTEMPTS', 5),
+            'origin_max_attempts' => (int) env('MHCS_LOGIN_ORIGIN_MAX_ATTEMPTS', 5),
             'decay_seconds' => (int) env('MHCS_LOGIN_DECAY_SECONDS', 60),
         ],
     ],

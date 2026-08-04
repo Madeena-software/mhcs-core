@@ -32,6 +32,7 @@ services:
       - /tmp
     volumes:
       - app_storage:/var/www/html/storage
+      - app_cache:/var/www/html/bootstrap/cache
       - app_public:/var/www/public-files
     networks: [application]
     depends_on:
@@ -81,11 +82,14 @@ services:
   image-worker:
     image: ${MHCS_IMAGE:?approved application image required}
     env_file: ${MHCS_ENV_FILE:?approved MHCS environment file required}
-    command: ["php", "artisan", "queue:work", "--queue=image", "--sleep=3", "--tries=3", "--timeout=90"]
+    cpus: ${MHCS_IMAGE_WORKER_CPU_LIMIT:?approved image-worker CPU limit required}
+    mem_limit: ${MHCS_IMAGE_WORKER_MEMORY_LIMIT:?approved image-worker memory limit required}
+    pids_limit: ${MHCS_IMAGE_WORKER_PIDS_LIMIT:?approved image-worker PID limit required}
+    command: ["php", "artisan", "queue:work", "--queue=image", "--sleep=3", "--tries=3", "--timeout=${MHCS_IMAGE_WORKER_EXECUTION_TIMEOUT_SECONDS:?approved image-worker execution timeout required}"]
     read_only: true
     healthcheck: { disable: true }
     tmpfs:
-      - /tmp
+      - /tmp:size=${MHCS_IMAGE_WORKER_TMPFS_SIZE:?approved image-worker tmpfs size required}
     volumes:
       - app_storage:/var/www/html/storage
     networks: [application, mpips_private]
@@ -111,6 +115,7 @@ services:
 
 volumes:
   app_storage:
+  app_cache:
   app_public:
   db_data:
 
