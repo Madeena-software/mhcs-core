@@ -41,25 +41,41 @@ final class FoundationArchitectureTest extends TestCase
 
     public function test_modules_do_not_reference_another_modules_internal_layers(): void
     {
+        $violations = [];
+
         foreach (glob(app_path('Modules/*'), GLOB_ONLYDIR) as $modulePath) {
             $module = basename($modulePath);
 
             foreach ($this->phpFiles($modulePath) as $file) {
                 preg_match_all(
-                    '/App\\\\Modules\\\\([A-Za-z]+)\\\\(Domain|Infrastructure|Presentation)/',
+                    '/App\\\\Modules\\\\(?<target>[A-Za-z_][A-Za-z0-9_]*)(?:\\\\(?<reference>[A-Za-z_][A-Za-z0-9_]*(?:\\\\[A-Za-z_][A-Za-z0-9_]*)*))?/',
                     $file->getContents(),
                     $matches,
+                    PREG_SET_ORDER,
                 );
 
-                foreach ($matches[1] as $targetModule) {
-                    $this->assertSame(
-                        $module,
-                        $targetModule,
-                        "{$file->getPathname()} references another module's internal namespace.",
-                    );
+                foreach ($matches as $match) {
+                    if ($module === $match['target']) {
+                        continue;
+                    }
+
+                    $reference = $match['reference'] ?? '';
+
+                    if (preg_match(
+                        '/^Application\\\\Contracts\\\\[A-Za-z_][A-Za-z0-9_]*(?:\\\\[A-Za-z_][A-Za-z0-9_]*)*$/',
+                        $reference,
+                    ) !== 1) {
+                        $violations[] = sprintf('%s: %s', $file->getPathname(), $match[0]);
+                    }
                 }
             }
         }
+
+        $this->assertSame(
+            [],
+            $violations,
+            "Cross-module references must use Application\\Contracts only:\n".implode("\n", $violations),
+        );
     }
 
     public function test_module_code_has_no_network_or_external_adapter_implementation(): void
