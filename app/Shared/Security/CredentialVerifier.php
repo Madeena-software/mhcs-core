@@ -28,17 +28,20 @@ final class CredentialVerifier
     public function verify(string $identifier, string $password): CredentialVerificationResult
     {
         $identifier = $this->canonicalIdentifier($identifier);
-        $key = 'credential:'.$this->identifiers->lookupDigest($identifier);
-        $originKey = 'credential-origin:'.hash('sha256', $this->requestOrigin());
-        $maxAttempts = (int) config('mhcs.security.login.max_attempts', 5);
-        $originMaxAttempts = (int) config('mhcs.security.login.origin_max_attempts', $maxAttempts);
-        $decaySeconds = (int) config('mhcs.security.login.decay_seconds', 60);
+        $throttling = $this->throttlingConfiguration();
+        $identifierDigest = $this->identifiers->lookupDigest($identifier);
+        $origin = $this->requestOrigin();
+        $originDigest = hash('sha256', $origin);
+        $pairKey = 'credential:pair:'.hash('sha256', $identifierDigest.'|'.$originDigest);
+        $originKey = 'credential:origin:'.$originDigest;
+        $identifierKey = 'credential:identifier:'.$identifierDigest;
 
         if (
-            RateLimiter::tooManyAttempts($key, $maxAttempts)
-            || RateLimiter::tooManyAttempts($originKey, $originMaxAttempts)
+            RateLimiter::tooManyAttempts($pairKey, $throttling['pair_max_attempts'])
+            || RateLimiter::tooManyAttempts($originKey, $throttling['origin_max_attempts'])
+            || RateLimiter::tooManyAttempts($identifierKey, $throttling['identifier_max_attempts'])
         ) {
-            $this->recordFailure($key, 'rate_limited');
+            $this->recordFailure($pairKey, 'rate_limited');
 
             return CredentialVerificationResult::failure(true);
         }
@@ -47,21 +50,22 @@ final class CredentialVerifier
         $hash = $user?->password ?? $this->dummyHash;
         $validPassword = Hash::check($password, $hash);
 
-        RateLimiter::hit($key, $decaySeconds);
-        RateLimiter::hit($originKey, $decaySeconds);
-
         if (
             $user === null
             || ! $validPassword
             || $user->isSuspended()
             || $user->must_change_password
         ) {
-            $this->recordFailure($key, $user === null ? 'unknown' : 'rejected');
+            RateLimiter::hit($pairKey, $throttling['decay_seconds']);
+            RateLimiter::hit($originKey, $throttling['decay_seconds']);
+            RateLimiter::hit($identifierKey, $throttling['decay_seconds']);
+            $this->recordFailure($pairKey, $user === null ? 'unknown' : 'rejected');
 
             return CredentialVerificationResult::failure();
         }
 
-        RateLimiter::clear($key);
+        RateLimiter::clear($pairKey);
+        RateLimiter::clear($identifierKey);
         $this->audit->append(AuditEvent::fromContext(
             $this->context->current(),
             action: 'credential.verify',
@@ -70,10 +74,53 @@ final class CredentialVerifier
             occurredAt: $this->clock->now(),
             targetType: User::class,
             targetId: (string) $user->getAuthIdentifier(),
-            metadata: ['rate_key_digest' => hash('sha256', $key)],
+            metadata: ['rate_key_digest' => hash('sha256', $pairKey)],
         ));
 
         return CredentialVerificationResult::success($user);
+    }
+
+    /** @return array{pair_max_attempts: int, origin_max_attempts: int, identifier_max_attempts: int, decay_seconds: int} */
+    private function throttlingConfiguration(): array
+    {
+        $configuration = config('mhcs.security.login');
+        if (! is_array($configuration)) {
+            throw new SecurityException('Credential throttling configuration is missing.');
+        }
+
+        $pairMaxAttempts = $this->positiveInteger($configuration['pair_max_attempts'] ?? null, 'pair_max_attempts');
+        $originMaxAttempts = $this->positiveInteger($configuration['origin_max_attempts'] ?? null, 'origin_max_attempts');
+        $identifierMaxAttempts = $this->positiveInteger($configuration['identifier_max_attempts'] ?? null, 'identifier_max_attempts');
+        $decaySeconds = $this->positiveInteger($configuration['decay_seconds'] ?? null, 'decay_seconds');
+
+        if ($identifierMaxAttempts <= $pairMaxAttempts || $identifierMaxAttempts <= $originMaxAttempts) {
+            throw new SecurityException('Credential identifier throttling must be broader than pair and origin throttling.');
+        }
+
+        return [
+            'pair_max_attempts' => $pairMaxAttempts,
+            'origin_max_attempts' => $originMaxAttempts,
+            'identifier_max_attempts' => $identifierMaxAttempts,
+            'decay_seconds' => $decaySeconds,
+        ];
+    }
+
+    private function positiveInteger(mixed $value, string $name): int
+    {
+        if (is_int($value) && $value > 0) {
+            return $value;
+        }
+
+        if (! is_string($value) || ! preg_match('/^[1-9][0-9]*$/D', $value)) {
+            throw new SecurityException("Credential throttling [{$name}] must be a positive integer.");
+        }
+
+        $parsed = filter_var($value, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+        if ($parsed === false) {
+            throw new SecurityException("Credential throttling [{$name}] must be a positive integer.");
+        }
+
+        return $parsed;
     }
 
     private function requestOrigin(): string

@@ -1,5 +1,7 @@
 <?php
 
+$localLoginDefaults = in_array(env('APP_ENV', 'production'), ['local', 'testing'], true);
+
 return [
     'modules' => [
         'Member',
@@ -64,9 +66,11 @@ return [
         'manifest_key' => env('MHCS_MANIFEST_KEY'),
         'manifest_key_id' => env('MHCS_MANIFEST_KEY_ID'),
         'login' => [
-            'max_attempts' => (int) env('MHCS_LOGIN_MAX_ATTEMPTS', 5),
-            'origin_max_attempts' => (int) env('MHCS_LOGIN_ORIGIN_MAX_ATTEMPTS', 5),
-            'decay_seconds' => (int) env('MHCS_LOGIN_DECAY_SECONDS', 60),
+            // Safe local/test defaults; production values must be injected and approved.
+            'pair_max_attempts' => env('MHCS_LOGIN_PAIR_MAX_ATTEMPTS', $localLoginDefaults ? 5 : null),
+            'origin_max_attempts' => env('MHCS_LOGIN_ORIGIN_MAX_ATTEMPTS', $localLoginDefaults ? 10 : null),
+            'identifier_max_attempts' => env('MHCS_LOGIN_IDENTIFIER_MAX_ATTEMPTS', $localLoginDefaults ? 20 : null),
+            'decay_seconds' => env('MHCS_LOGIN_DECAY_SECONDS', $localLoginDefaults ? 60 : null),
         ],
     ],
 

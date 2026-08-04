@@ -27,6 +27,7 @@ use App\Shared\Logging\CorrelatedLogger;
 use App\Shared\Security\CredentialVerifier;
 use App\Shared\Security\KeyMaterial;
 use App\Shared\Security\ProtectedIdentifierService;
+use App\Shared\Security\SecurityException;
 use App\Shared\Security\SensitiveDataSanitizer;
 use App\Shared\Security\SensitivePayloadException;
 use App\Shared\Security\TemporaryCredentialIssuer;
@@ -62,6 +63,12 @@ final class Wp02SecurityTest extends TestCase
             'mhcs.security.identifier_key' => str_repeat('i', 32),
             'mhcs.security.object_key' => str_repeat('o', 32),
             'mhcs.security.grant_key' => str_repeat('g', 32),
+            'mhcs.security.login' => [
+                'pair_max_attempts' => 5,
+                'origin_max_attempts' => 10,
+                'identifier_max_attempts' => 20,
+                'decay_seconds' => 60,
+            ],
         ]);
         RateLimiter::clear('credential:'.hash('sha256', 'test'));
     }
@@ -135,45 +142,133 @@ final class Wp02SecurityTest extends TestCase
         $this->assertDatabaseHas('users', ['id' => $user->id, 'account_status' => 'suspended']);
     }
 
-    public function test_credential_throttling_uses_server_origin_without_trusting_forwarded_headers_and_keeps_identifier_limit(): void
+    public function test_successful_logins_from_one_origin_do_not_consume_origin_limits(): void
     {
         config([
-            'mhcs.security.login.max_attempts' => 2,
-            'mhcs.security.login.origin_max_attempts' => 2,
+            'mhcs.security.login.pair_max_attempts' => 1,
+            'mhcs.security.login.origin_max_attempts' => 1,
+            'mhcs.security.login.identifier_max_attempts' => 2,
         ]);
-        $provider = $this->bindContext('credential.verify');
-        $identifiers = new ProtectedIdentifierService(
-            new Encrypter(str_repeat('e', 32), 'AES-256-CBC'),
-            KeyMaterial::from(str_repeat('i', 32)),
-        );
-        $verifier = new CredentialVerifier($identifiers, app(AuditStore::class), $provider, app('App\\Shared\\Time\\Clock'));
+        $user = User::factory()->create([
+            'email' => 'shared-origin@example.test',
+            'password' => Hash::make('correct-password'),
+        ]);
+        $verifier = $this->credentialVerifier();
 
-        $this->app->instance('request', Request::create('/', 'POST', [], [], [], [
-            'REMOTE_ADDR' => '198.51.100.10',
-            'HTTP_X_FORWARDED_FOR' => '203.0.113.10',
-        ]));
-        $verifier->verify('origin-one@example.test', 'wrong-password');
+        $this->requestFrom('198.51.100.10');
+        for ($attempt = 0; $attempt < 3; $attempt++) {
+            $result = $verifier->verify($user->email, 'correct-password');
 
-        $this->app->instance('request', Request::create('/', 'POST', [], [], [], [
-            'REMOTE_ADDR' => '198.51.100.10',
-            'HTTP_X_FORWARDED_FOR' => '203.0.113.11',
-        ]));
-        $verifier->verify('origin-two@example.test', 'wrong-password');
+            $this->assertTrue($result->authenticated);
+            $this->assertFalse($result->rateLimited);
+        }
+    }
 
-        $this->app->instance('request', Request::create('/', 'POST', [], [], [], [
-            'REMOTE_ADDR' => '198.51.100.10',
-            'HTTP_X_FORWARDED_FOR' => '203.0.113.12',
-        ]));
-        $this->assertTrue($verifier->verify('origin-three@example.test', 'wrong-password')->rateLimited);
+    public function test_failed_attempts_from_one_trusted_origin_are_bounded_even_with_forwarded_headers(): void
+    {
+        config([
+            'mhcs.security.login.pair_max_attempts' => 5,
+            'mhcs.security.login.origin_max_attempts' => 2,
+            'mhcs.security.login.identifier_max_attempts' => 10,
+        ]);
+        $verifier = $this->credentialVerifier();
 
-        config(['mhcs.security.login.origin_max_attempts' => 100]);
-        foreach (['198.51.100.20', '198.51.100.21'] as $origin) {
-            $this->app->instance('request', Request::create('/', 'POST', [], [], [], ['REMOTE_ADDR' => $origin]));
-            $verifier->verify('identifier@example.test', 'wrong-password');
+        foreach (['203.0.113.10', '203.0.113.11'] as $forwarded) {
+            $this->requestFrom('198.51.100.20', $forwarded);
+            $this->assertFalse($verifier->verify('origin-'.$forwarded.'@example.test', 'wrong-password')->rateLimited);
         }
 
-        $this->app->instance('request', Request::create('/', 'POST', [], [], [], ['REMOTE_ADDR' => '198.51.100.22']));
-        $this->assertTrue($verifier->verify('identifier@example.test', 'wrong-password')->rateLimited);
+        $this->requestFrom('198.51.100.20', '203.0.113.12');
+        $this->assertTrue($verifier->verify('third-origin-attempt@example.test', 'wrong-password')->rateLimited);
+    }
+
+    public function test_distributed_failures_reach_the_broader_identifier_threshold(): void
+    {
+        config([
+            'mhcs.security.login.pair_max_attempts' => 2,
+            'mhcs.security.login.origin_max_attempts' => 2,
+            'mhcs.security.login.identifier_max_attempts' => 3,
+        ]);
+        $verifier = $this->credentialVerifier();
+
+        foreach (['198.51.100.30', '198.51.100.31', '198.51.100.32'] as $origin) {
+            $this->requestFrom($origin);
+            $this->assertFalse($verifier->verify('distributed@example.test', 'wrong-password')->rateLimited);
+        }
+
+        $this->requestFrom('198.51.100.33');
+        $this->assertTrue($verifier->verify('distributed@example.test', 'wrong-password')->rateLimited);
+    }
+
+    public function test_success_clears_pair_and_identifier_failures_but_not_origin_abuse(): void
+    {
+        config([
+            'mhcs.security.login.pair_max_attempts' => 2,
+            'mhcs.security.login.origin_max_attempts' => 3,
+            'mhcs.security.login.identifier_max_attempts' => 4,
+        ]);
+        $user = User::factory()->create([
+            'email' => 'cleared@example.test',
+            'password' => Hash::make('correct-password'),
+        ]);
+        $verifier = $this->credentialVerifier();
+
+        $this->requestFrom('198.51.100.40');
+        $this->assertFalse($verifier->verify($user->email, 'wrong-password')->rateLimited);
+        $this->assertTrue($verifier->verify($user->email, 'correct-password')->authenticated);
+        $this->assertFalse($verifier->verify($user->email, 'wrong-password')->rateLimited);
+        $this->assertFalse($verifier->verify($user->email, 'wrong-password')->rateLimited);
+        $this->assertTrue($verifier->verify($user->email, 'wrong-password')->rateLimited);
+    }
+
+    public function test_successful_login_does_not_clear_unrelated_origin_failures(): void
+    {
+        config([
+            'mhcs.security.login.pair_max_attempts' => 5,
+            'mhcs.security.login.origin_max_attempts' => 2,
+            'mhcs.security.login.identifier_max_attempts' => 10,
+        ]);
+        $user = User::factory()->create([
+            'email' => 'origin-success@example.test',
+            'password' => Hash::make('correct-password'),
+        ]);
+        $verifier = $this->credentialVerifier();
+        $origin = '198.51.100.50';
+
+        $this->requestFrom($origin);
+        $this->assertFalse($verifier->verify('unrelated-one@example.test', 'wrong-password')->rateLimited);
+        $this->assertTrue($verifier->verify($user->email, 'correct-password')->authenticated);
+        $this->assertFalse($verifier->verify('unrelated-two@example.test', 'wrong-password')->rateLimited);
+        $this->assertTrue($verifier->verify('unrelated-three@example.test', 'wrong-password')->rateLimited);
+    }
+
+    public function test_invalid_credential_throttling_configuration_fails_closed(): void
+    {
+        $base = [
+            'pair_max_attempts' => 2,
+            'origin_max_attempts' => 2,
+            'identifier_max_attempts' => 3,
+            'decay_seconds' => 60,
+        ];
+        $invalidConfigurations = [
+            'missing' => array_diff_key($base, ['pair_max_attempts' => true]),
+            'zero' => ['pair_max_attempts' => 0] + $base,
+            'negative' => ['pair_max_attempts' => -1] + $base,
+            'blank' => ['pair_max_attempts' => ''] + $base,
+            'malformed' => ['pair_max_attempts' => 'not-an-integer'] + $base,
+            'inconsistent' => ['identifier_max_attempts' => 2] + $base,
+        ];
+
+        foreach ($invalidConfigurations as $name => $configuration) {
+            config(['mhcs.security.login' => $configuration]);
+
+            try {
+                $this->credentialVerifier()->verify('invalid-config@example.test', 'wrong-password');
+                $this->fail("Configuration [{$name}] must fail closed.");
+            } catch (SecurityException) {
+                $this->addToAssertionCount(1);
+            }
+        }
     }
 
     public function test_laravel_authentication_denies_suspended_and_temporary_accounts(): void
@@ -466,6 +561,29 @@ final class Wp02SecurityTest extends TestCase
             $this->context('attendance.read'),
             'attendance.read',
         );
+    }
+
+    private function credentialVerifier(): CredentialVerifier
+    {
+        return new CredentialVerifier(
+            new ProtectedIdentifierService(
+                new Encrypter(str_repeat('e', 32), 'AES-256-CBC'),
+                KeyMaterial::from(str_repeat('i', 32)),
+            ),
+            app(AuditStore::class),
+            $this->bindContext('credential.verify'),
+            app('App\\Shared\\Time\\Clock'),
+        );
+    }
+
+    private function requestFrom(string $origin, ?string $forwarded = null): void
+    {
+        $server = ['REMOTE_ADDR' => $origin];
+        if ($forwarded !== null) {
+            $server['HTTP_X_FORWARDED_FOR'] = $forwarded;
+        }
+
+        $this->app->instance('request', Request::create('/', 'POST', [], [], [], $server));
     }
 
     private function bindContext(string $purpose): AuthenticatedContextProvider

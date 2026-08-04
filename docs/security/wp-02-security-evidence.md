@@ -38,8 +38,12 @@ MPIPS verification, or deployment record.
 - Temporary credentials use random bytes, persist only a hash and mandatory
   replacement state, and support replacement/invalidation.
 - Credential verification uses a dummy hash for unknown identifiers, one public
-  failure, privacy-safe rate keys, suspension checks, and sanitized audit
-  records.
+  failure, privacy-safe pair/origin/identifier rate keys, suspension checks,
+  and sanitized audit records. Only failed authentication increments the
+  identifier-plus-trusted-origin, trusted-origin, and broader identifier-only
+  counters; success clears the pair and identifier counters without clearing
+  origin abuse evidence. Invalid or inconsistent throttling configuration
+  fails closed.
 - Audit events are append-only through the application interface, carry
   context/times/source/outcome, reject duplicate IDs and sensitive metadata,
   and participate in the caller's transaction.
@@ -73,20 +77,23 @@ attach to an externally managed private MPIPS network; MHCS does not define
 the MPIPS service, image, credentials, storage, or resource limits. MPIPS
 deployment and isolation remain owned by the separate MPIPS repository.
 
-CI runs Composer validation/audit, formatting, the complete PHP suite, the
-frontend build, and deployment static validation. It has no deployment,
-production, staging, SSH, or secret-writing step.
+The versioned validation workflow runs Composer validation/audit, formatting,
+the complete PHP suite, the frontend build, and deployment validation. It has
+no deployment, production, staging, SSH, or secret-writing step.
 
 ## Observed verification
 
 - WP-01 baseline before changes: Composer validation, Composer audit, 19
   PHPUnit tests/67 assertions, and Vite build passed.
-- WP-02 local suite: 47 tests/419 assertions passed.
-- PHP lint passed for all application, migration, test, and shell files.
-- Pint formatting passed after applying mechanical fixes.
-- Deployment static validation passed; it explicitly reported that Docker
-  Compose validation was skipped because Docker is unavailable in the current
-  WSL runtime.
+- `composer validate --strict` passed.
+- `composer audit` passed with no security vulnerability advisories.
+- `vendor/bin/pint --test` passed.
+- `php artisan test` passed: 54 tests/493 assertions.
+- `npm run build` passed; Vite reported only the existing optional `fontaine`
+  optimization notice.
+- `bash deployment/validate.sh` passed, including Docker Compose config
+  validation, the Docker image build, and the isolated application
+  startup/health smoke test.
 
 ## Unresolved decisions and dependencies
 
