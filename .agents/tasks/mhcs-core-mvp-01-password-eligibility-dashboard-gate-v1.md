@@ -1,5 +1,5 @@
 ---
-name: mhcs-core-mvp-01-remediation-password-eligibility-and-dashboard-gate
+name: mhcs-core-mvp-01-password-eligibility-dashboard-gate
 description: "Close the MVP-01 mandatory-password replacement eligibility gap, enforce the required profile-before-dashboard sequence, add focused regression tests, and correct bounded evidence without expanding MVP scope."
 version: 1
 ---
