@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Modules\Member\Application\Services;
 
+use App\Modules\Member\Domain\Enums\RegistrationSource;
 use App\Modules\Member\Domain\MemberIdentityException;
 use App\Shared\Authorization\AuthorizationGuard;
 use App\Shared\Context\AuthenticatedContext;
@@ -12,6 +13,8 @@ use Illuminate\Support\Facades\DB;
 final readonly class MemberAuthorization
 {
     public const REGISTRATION_PERMISSION = 'member.registration.manage';
+
+    public const ONLINE_REGISTRATION_PERMISSION = 'member.registration.self';
 
     public const IDENTITY_VERIFICATION_PERMISSION = 'member.identity.verify';
 
@@ -36,9 +39,23 @@ final readonly class MemberAuthorization
         }
     }
 
-    public function registration(): AuthenticatedContext
+    public function registration(RegistrationSource $source, bool $adult): AuthenticatedContext
     {
-        return $this->requireAdministrator('member.registration', self::REGISTRATION_PERMISSION);
+        $context = $this->context('member.registration');
+
+        if (
+            $source === RegistrationSource::Online
+            && $adult
+            && $this->hasPermission($context, self::ONLINE_REGISTRATION_PERMISSION)
+        ) {
+            return $context;
+        }
+
+        if (! $this->hasAdministratorPermission($context, self::REGISTRATION_PERMISSION)) {
+            throw new MemberIdentityException('The requested registration source is not authorized.');
+        }
+
+        return $context;
     }
 
     public function identityVerification(): AuthenticatedContext

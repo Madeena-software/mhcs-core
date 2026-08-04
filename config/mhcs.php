@@ -65,6 +65,13 @@ return [
         'grant_key' => env('MHCS_ACCESS_GRANT_KEY'),
         'manifest_key' => env('MHCS_MANIFEST_KEY'),
         'manifest_key_id' => env('MHCS_MANIFEST_KEY_ID'),
+        'asset_grants' => [
+            'max_ttl_seconds' => env('MHCS_ASSET_GRANT_MAX_TTL_SECONDS', $localLoginDefaults ? 300 : null),
+            'audiences' => array_values(array_filter(array_map(
+                'trim',
+                explode(',', (string) env('MHCS_ASSET_GRANT_AUDIENCES', $localLoginDefaults ? 'member-view' : '')),
+            ), static fn (string $audience): bool => $audience !== '')),
+        ],
         'login' => [
             // Safe local/test defaults; production values must be injected and approved.
             'pair_max_attempts' => env('MHCS_LOGIN_PAIR_MAX_ATTEMPTS', $localLoginDefaults ? 5 : null),

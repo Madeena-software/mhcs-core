@@ -35,10 +35,10 @@ final readonly class MemberRegistrationService
 
     public function register(MemberRegistrationData $data): MemberRegistrationResult
     {
-        $context = $this->authorization->registration();
-        $this->assertRegistrationAuthorization($data);
         $adult = $this->isAdult($data->birthDate);
-        $approved = $this->authorization->hasPermission($context, MemberAuthorization::IDENTITY_VERIFICATION_PERMISSION);
+        $context = $this->authorization->registration($data->registrationSource, $adult);
+        $this->assertRegistrationAuthorization($data, $context, $adult);
+        $approved = $this->authorization->hasAdministratorPermission($context, MemberAuthorization::IDENTITY_VERIFICATION_PERMISSION);
         $payloadHash = $this->payloadHash($data);
 
         try {
@@ -122,8 +122,8 @@ final readonly class MemberRegistrationService
                 ]);
 
                 $member = Member::query()->findOrFail($memberId);
-                $this->assets->recordInTransaction($member, $data->identityDocument, $context, $approved);
-                $this->assets->recordInTransaction($member, $data->profilePhoto, $context, $approved);
+                $this->assets->recordForRegistration($member, $data->identityDocument, $context);
+                $this->assets->recordForRegistration($member, $data->profilePhoto, $context);
                 $this->externalIdentifiers($memberId, $data->externalIdentifiers);
                 $this->guardians($memberId, $data->guardianMemberIds, $adult, $context);
 
@@ -180,21 +180,25 @@ final readonly class MemberRegistrationService
         }
     }
 
-    private function assertRegistrationAuthorization(MemberRegistrationData $data): void
+    private function assertRegistrationAuthorization(MemberRegistrationData $data, AuthenticatedContext $context, bool $adult): void
     {
         if ($data->identityDocument->type === VerificationAssetType::ProfilePhoto || $data->profilePhoto->type !== VerificationAssetType::ProfilePhoto) {
             throw new MemberIdentityException('Registration requires one identity document and one profile photograph.');
         }
 
-        if ($data->kk === null && ! $this->isAdult($data->birthDate)) {
+        if ($data->kk === null && ! $adult) {
             throw new MemberIdentityException('Child registration requires a family card.');
         }
 
-        if (! $this->isAdult($data->birthDate) && $data->guardianMemberIds === []) {
+        if (! $adult && $data->guardianMemberIds === []) {
             throw new MemberIdentityException('Child registration requires a verified guardian.');
         }
 
-        $expected = $this->isAdult($data->birthDate) ? VerificationAssetType::Ktp : VerificationAssetType::Kia;
+        if (! $adult && ! $this->authorization->hasAdministratorPermission($context, MemberAuthorization::REGISTRATION_PERMISSION)) {
+            throw new MemberIdentityException('Child registration requires authorized administrator assistance.');
+        }
+
+        $expected = $adult ? VerificationAssetType::Ktp : VerificationAssetType::Kia;
         if ($data->identityDocument->type !== $expected) {
             throw new MemberIdentityException('The identity document does not match the standard age path.');
         }

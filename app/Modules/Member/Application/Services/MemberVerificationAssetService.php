@@ -31,80 +31,25 @@ final readonly class MemberVerificationAssetService
         private Clock $clock,
     ) {}
 
-    public function recordInTransaction(
+    public function recordForRegistration(
         Member $member,
         VerificationAssetInput $input,
         AuthenticatedContext $context,
-        bool $approved,
     ): string {
-        $this->assertType($member, $input->type);
-
         if (
-            $input->object->encryption !== 'AES-256-GCM'
-            || $input->object->bytes < 1
-            || preg_match('/\A[0-9a-f]{64}\z/i', $input->object->checksum) !== 1
-            || ! str_starts_with((string) $input->object->key, 'objects/')
+            $context->purpose !== 'member.registration'
+            || $context->actorId === null
+            || $context->operationId === null
         ) {
-            throw new MemberIdentityException('Verification assets must come from the private encrypted-object boundary.');
+            throw new MemberIdentityException('Registration asset recording requires its trusted registration context.');
         }
 
-        if ($input->replacesId !== null) {
-            $replacement = DB::table('member_verification_assets')
-                ->where('id', $input->replacesId)
-                ->where('member_id', $member->id)
-                ->where('type', $input->type->value)
-                ->first();
-
-            if ($replacement === null) {
-                throw new MemberIdentityException('A replacement asset must belong to the same Member and type.');
-            }
-        }
-
-        DB::table('members')->where('id', $member->id)->lockForUpdate()->first();
-        $now = $this->clock->now();
-        $assetId = (string) Str::uuid();
-        $status = $approved ? VerificationReviewStatus::Approved : VerificationReviewStatus::Pending;
-        $current = $approved;
-
-        if ($current) {
-            DB::table('member_verification_assets')
-                ->where('member_id', $member->id)
-                ->where('type', $input->type->value)
-                ->where('is_current', true)
-                ->update(['is_current' => false, 'updated_at' => $now]);
-        }
-
-        DB::table('member_verification_assets')->insert([
-            'id' => $assetId,
-            'member_id' => $member->id,
-            'type' => $input->type->value,
-            'private_object_key' => (string) $input->object->key,
-            'checksum' => $input->object->checksum,
-            'bytes' => $input->object->bytes,
-            'format' => $input->format,
-            'review_status' => $status->value,
-            'is_current' => $current,
-            'uploaded_by_user_id' => (string) $context->actorId,
-            'reviewed_by_user_id' => $approved ? (string) $context->actorId : null,
-            'reviewed_at' => $approved ? $now : null,
-            'replaces_id' => $input->replacesId,
-            'created_at' => $now,
-            'updated_at' => $now,
-        ]);
-
-        $this->syncIdentityStatus($member->id, $member->birth_date->format('Y-m-d'));
-        $this->audit->append(AuditEvent::fromContext(
+        $approved = $this->authorization->hasAdministratorPermission(
             $context,
-            action: 'member.verification-asset.recorded',
-            source: 'member',
-            outcome: $status->value,
-            occurredAt: $now,
-            targetType: Member::class,
-            targetId: (string) $member->id,
-            metadata: ['asset_type' => $input->type->value, 'current' => $current],
-        ));
+            MemberAuthorization::IDENTITY_VERIFICATION_PERMISSION,
+        );
 
-        return $assetId;
+        return DB::transaction(fn (): string => $this->record($member, $input, $context, $approved));
     }
 
     public function review(string $assetId, bool $approve, string $purpose = 'member.identity.verify'): void
@@ -121,18 +66,20 @@ final readonly class MemberVerificationAssetService
                 throw new MemberIdentityException('The verification asset was not found.');
             }
 
-            DB::table('members')->where('id', $asset->member_id)->lockForUpdate()->first();
+            $member = DB::table('members')->where('id', $asset->member_id)->lockForUpdate()->first();
+            if ($member === null) {
+                throw new MemberIdentityException('The Member identity was not found.');
+            }
+
             $asset = DB::table('member_verification_assets')->where('id', $assetId)->lockForUpdate()->first();
             if ($asset === null) {
                 throw new MemberIdentityException('The verification asset was not found.');
             }
+
             $now = $this->clock->now();
             if ($approve) {
-                DB::table('member_verification_assets')
-                    ->where('member_id', $asset->member_id)
-                    ->where('type', $asset->type)
-                    ->where('is_current', true)
-                    ->update(['is_current' => false, 'updated_at' => $now]);
+                $this->assertTypeForBirthDate((string) $member->birth_date, VerificationAssetType::from($asset->type));
+                $this->demoteCurrent($asset->member_id, VerificationAssetType::from($asset->type), $now);
             }
 
             DB::table('member_verification_assets')->where('id', $assetId)->update([
@@ -143,7 +90,7 @@ final readonly class MemberVerificationAssetService
                 'updated_at' => $now,
             ]);
 
-            $this->syncIdentityStatus($asset->member_id);
+            $this->syncIdentityStatus($asset->member_id, (string) $member->birth_date);
             $this->audit->append(AuditEvent::fromContext(
                 $context,
                 action: 'member.verification-asset.reviewed',
@@ -161,11 +108,16 @@ final readonly class MemberVerificationAssetService
     {
         $asset = DB::table('member_verification_assets')->where('id', $assetId)->first();
 
-        if ($asset === null || $asset->review_status !== VerificationReviewStatus::Approved->value) {
+        if (
+            $asset === null
+            || $asset->review_status !== VerificationReviewStatus::Approved->value
+            || ! (bool) $asset->is_current
+        ) {
             throw new MemberIdentityException('The requested verification asset is unavailable.');
         }
 
         $context = $this->authorization->assetAccess($asset->member_id, $purpose);
+        $this->assertGrantBounds($audience, $expiresAt);
 
         return $this->objects->grant(
             new PrivateObject(
@@ -187,16 +139,138 @@ final readonly class MemberVerificationAssetService
         return $this->objects->get($grant, $this->authorization->context($purpose), $audience, $purpose);
     }
 
-    private function assertType(Member $member, VerificationAssetType $type): void
+    private function record(
+        Member $member,
+        VerificationAssetInput $input,
+        AuthenticatedContext $context,
+        bool $approved,
+    ): string {
+        $lockedMember = DB::table('members')->where('id', $member->id)->lockForUpdate()->first();
+        if ($lockedMember === null) {
+            throw new MemberIdentityException('The Member identity was not found.');
+        }
+
+        $this->assertTypeForBirthDate((string) $lockedMember->birth_date, $input->type);
+        $this->assertPrivateObject($input);
+
+        if ($input->replacesId !== null) {
+            $replacement = DB::table('member_verification_assets')
+                ->where('id', $input->replacesId)
+                ->where('member_id', $lockedMember->id)
+                ->first();
+
+            if ($replacement === null || ! $this->sameAssetSlot($replacement->type, $input->type)) {
+                throw new MemberIdentityException('A replacement asset must belong to the same Member and asset slot.');
+            }
+        }
+
+        $now = $this->clock->now();
+        $assetId = (string) Str::uuid();
+        $status = $approved ? VerificationReviewStatus::Approved : VerificationReviewStatus::Pending;
+
+        if ($approved) {
+            $this->demoteCurrent($lockedMember->id, $input->type, $now);
+        }
+
+        DB::table('member_verification_assets')->insert([
+            'id' => $assetId,
+            'member_id' => $lockedMember->id,
+            'type' => $input->type->value,
+            'private_object_key' => (string) $input->object->key,
+            'checksum' => $input->object->checksum,
+            'bytes' => $input->object->bytes,
+            'format' => $input->format,
+            'review_status' => $status->value,
+            'is_current' => $approved,
+            'uploaded_by_user_id' => (string) $context->actorId,
+            'reviewed_by_user_id' => $approved ? (string) $context->actorId : null,
+            'reviewed_at' => $approved ? $now : null,
+            'replaces_id' => $input->replacesId,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        $this->syncIdentityStatus($lockedMember->id, (string) $lockedMember->birth_date);
+        $this->audit->append(AuditEvent::fromContext(
+            $context,
+            action: 'member.verification-asset.recorded',
+            source: 'member',
+            outcome: $status->value,
+            occurredAt: $now,
+            targetType: Member::class,
+            targetId: (string) $lockedMember->id,
+            metadata: ['asset_type' => $input->type->value, 'current' => $approved],
+        ));
+
+        return $assetId;
+    }
+
+    private function assertPrivateObject(VerificationAssetInput $input): void
     {
-        $age = $member->birth_date->diff($this->clock->now())->y;
+        if (
+            $input->object->encryption !== 'AES-256-GCM'
+            || $input->object->bytes < 1
+            || preg_match('/\A[0-9a-f]{64}\z/i', $input->object->checksum) !== 1
+            || ! str_starts_with((string) $input->object->key, 'objects/')
+        ) {
+            throw new MemberIdentityException('Verification assets must come from the private encrypted-object boundary.');
+        }
+    }
+
+    private function assertTypeForBirthDate(string $birthDate, VerificationAssetType $type): void
+    {
         if ($type === VerificationAssetType::ProfilePhoto) {
             return;
         }
 
+        $age = (new DateTimeImmutable($birthDate))->diff($this->clock->now())->y;
         $expected = $age >= 17 ? VerificationAssetType::Ktp : VerificationAssetType::Kia;
         if ($type !== $expected) {
             throw new MemberIdentityException('The identity document does not match the standard age path.');
+        }
+    }
+
+    private function sameAssetSlot(string $existingType, VerificationAssetType $newType): bool
+    {
+        if ($newType === VerificationAssetType::ProfilePhoto) {
+            return $existingType === VerificationAssetType::ProfilePhoto->value;
+        }
+
+        return in_array($existingType, [VerificationAssetType::Ktp->value, VerificationAssetType::Kia->value], true);
+    }
+
+    private function demoteCurrent(string $memberId, VerificationAssetType $type, DateTimeImmutable $now): void
+    {
+        $query = DB::table('member_verification_assets')
+            ->where('member_id', $memberId)
+            ->where('is_current', true);
+
+        if ($type === VerificationAssetType::ProfilePhoto) {
+            $query->where('type', $type->value);
+        } else {
+            $query->whereIn('type', [VerificationAssetType::Ktp->value, VerificationAssetType::Kia->value]);
+        }
+
+        $query->update(['is_current' => false, 'updated_at' => $now]);
+    }
+
+    private function assertGrantBounds(string $audience, DateTimeImmutable $expiresAt): void
+    {
+        $policy = config('mhcs.security.asset_grants');
+        $maximum = is_array($policy) ? $policy['max_ttl_seconds'] ?? null : null;
+        $audiences = is_array($policy) ? $policy['audiences'] ?? null : null;
+
+        if (! is_int($maximum) && ! (is_string($maximum) && ctype_digit($maximum))) {
+            throw new MemberIdentityException('Verification asset grant policy is not configured.');
+        }
+
+        if (! is_array($audiences) || $audiences === [] || ! in_array($audience, $audiences, true)) {
+            throw new MemberIdentityException('The verification asset grant audience is not trusted.');
+        }
+
+        $ttl = $expiresAt->getTimestamp() - $this->clock->now()->getTimestamp();
+        if ($ttl <= 0 || $ttl > (int) $maximum) {
+            throw new MemberIdentityException('The verification asset grant lifetime exceeds the approved boundary.');
         }
     }
 

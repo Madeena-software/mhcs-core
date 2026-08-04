@@ -5,7 +5,7 @@
 | Requirements | Evidence |
 |---|---|
 | MEM-014..MEM-019 | UUID `users` and Member-owned `members` records; immutable UUID MRN; namespaced external identifiers; nullable email/phone; keyed NIK lookup. |
-| MEM-084..MEM-085 | Private verification-asset references, approved-current state, replacement lineage/history, target-specific owner/guardian/administrator access, and short-lived grants. |
+| MEM-084..MEM-085 | Private verification-asset references, approved-current state, replacement lineage/history, target-specific owner/guardian/administrator access, and bounded allowlisted grants. |
 | MEM-213 | Atomic child registration, protected family grouping, verified guardian relations, dependent authorization, dependent-recovery rejection, age-17 transition, and audit records. |
 | MEM-219 | One shared authentication-eligibility policy, independent account/login state, exact-purpose administrator permissions, asset-state locks, idempotent operations, and rollback tests. |
 
@@ -23,6 +23,11 @@
   assisted recovery, and age transition.
 - Assisted recovery rejects dependent or login-disabled accounts; dependent
   credentials are issued only by the approved age-17 transition.
+- Online adult registration uses a trusted non-administrator registration
+  boundary; administrator registration and child registration require the
+  exact registration permission. Adult activation locks the Member and User,
+  requires verified current KTP and profile-photo evidence, is idempotent, and
+  records sanitized audit evidence.
 
 ## Verification-asset state invariants
 
@@ -30,8 +35,13 @@
 - Approval locks the Member row, demotes the previous approved current asset,
   promotes the replacement, and retains `replaces_id` lineage in one
   transaction.
-- Concurrent MySQL approval workers leave exactly one approved current asset
-  for a Member and asset type.
+- Profile photographs have one current slot; KTP and KIA share one current
+  identity-document slot. Approval revalidates age eligibility, KTP after age
+  17 demotes KIA, and stale KIA approval fails closed.
+- Concurrent MySQL recording and approval workers leave exactly one approved
+  current asset in the relevant slot. Grants require an allowlisted audience
+  and do not exceed the configured maximum TTL; the exact maximum boundary is
+  accepted and excessive TTL is rejected.
 
 ## Schema and migration boundary
 
@@ -46,8 +56,8 @@
 - `2026_08_04_000007_migrate_users_to_uuid` remains forward-only. The upgrade
   preservation test observed legacy authentication fields retained and legacy
   session user references remapped to UUIDs; `down()` refuses to run rather
-  than discard identity data. Explicit approval is still required for any
-  irreversible migration boundary.
+  than discard identity data. This irreversible boundary is awaiting explicit
+  approval; no reversible strategy is claimed.
 - `2026_08_04_000008_create_member_identity_tables` is the final Member-table
   migration and is the only migration rolled back by the MySQL verification
   script.
@@ -57,13 +67,14 @@
 - `composer validate --strict` — passed.
 - `composer audit` — no security vulnerability advisories found.
 - `vendor/bin/pint --test` — passed.
-- `php artisan test` — 69 tests, 929 assertions; 67 passed and 2 MySQL-only
+- `php artisan test` — 78 tests, 975 assertions; 73 passed and 5 MySQL-only
   tests skipped under the SQLite test configuration.
 - `npm run build` — passed.
 - `bash deployment/verify-mysql.sh` — passed: MySQL 8.4 fresh migration;
-  Member suite 10 tests/79 assertions; Integration suite 5 tests/26
-  assertions; full PHP suite 69 tests/939 assertions; Member identity
-  migration rollback/reapplication; UUID user migration forward-only notice.
+  Member suite 16 tests/101 assertions; Integration suite 8 tests/48
+  assertions; full PHP suite 78 tests/1007 assertions; Member identity
+  migration rollback/reapplication; populated legacy users and sessions
+  preserved during UUID upgrade; UUID user migration forward-only notice.
 - `bash deployment/validate.sh` — passed, including Docker build, isolated
   application startup, health check, and static validation.
 
