@@ -1,0 +1,122 @@
+# Source: Madeena-software/deploy-templates/templates/prod/standard-docker-compose.prod.yml
+# @ 569a30d4a089b0ee404ed6e963fdd2dfd96d3787
+# MHCS specialization: web, queue, scheduler, and image-worker roles. The
+# Image Gateway worker attaches to the externally managed private MPIPS
+# network; the MPIPS service is deployed by its own repository.
+services:
+  db:
+    image: ${DATABASE_IMAGE:?approved database image required}
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?secret required}
+      MYSQL_DATABASE: ${DB_DATABASE:?database name required}
+      MYSQL_USER: ${DB_USERNAME:?database user required}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?secret required}
+    volumes:
+      - db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+    networks: [application]
+
+  cache:
+    image: ${CACHE_IMAGE:?approved cache image required}
+    networks: [application]
+
+  app:
+    image: ${MHCS_IMAGE:?approved application image required}
+    env_file: ${MHCS_ENV_FILE:?approved MHCS environment file required}
+    read_only: true
+    tmpfs:
+      - /tmp
+    volumes:
+      - app_storage:/var/www/html/storage
+      - app_public:/var/www/public-files
+    networks: [application]
+    depends_on:
+      db:
+        condition: service_healthy
+      cache:
+        condition: service_started
+
+  queue:
+    image: ${MHCS_IMAGE:?approved application image required}
+    env_file: ${MHCS_ENV_FILE:?approved MHCS environment file required}
+    command: ["php", "artisan", "queue:work", "--sleep=3", "--tries=3", "--timeout=90"]
+    read_only: true
+    healthcheck: { disable: true }
+    tmpfs:
+      - /tmp
+    volumes:
+      - app_storage:/var/www/html/storage
+    networks: [application]
+    depends_on:
+      app:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+      cache:
+        condition: service_started
+
+  scheduler:
+    image: ${MHCS_IMAGE:?approved application image required}
+    env_file: ${MHCS_ENV_FILE:?approved MHCS environment file required}
+    command: ["php", "artisan", "schedule:work"]
+    read_only: true
+    healthcheck: { disable: true }
+    tmpfs:
+      - /tmp
+    volumes:
+      - app_storage:/var/www/html/storage
+    networks: [application]
+    depends_on:
+      app:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+      cache:
+        condition: service_started
+
+  image-worker:
+    image: ${MHCS_IMAGE:?approved application image required}
+    env_file: ${MHCS_ENV_FILE:?approved MHCS environment file required}
+    command: ["php", "artisan", "queue:work", "--queue=image", "--sleep=3", "--tries=3", "--timeout=90"]
+    read_only: true
+    healthcheck: { disable: true }
+    tmpfs:
+      - /tmp
+    volumes:
+      - app_storage:/var/www/html/storage
+    networks: [application, mpips_private]
+    depends_on:
+      app:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+      cache:
+        condition: service_started
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "${APP_PORT:?public port required}:80"
+    volumes:
+      - ./docker/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - app_public:/var/www/html/public:ro
+    networks: [application]
+    depends_on:
+      app:
+        condition: service_healthy
+
+volumes:
+  app_storage:
+  app_public:
+  db_data:
+
+networks:
+  application:
+    internal: true
+  mpips_private:
+    name: ${MPIPS_NETWORK_NAME:?approved external MPIPS network required}
+    external: true

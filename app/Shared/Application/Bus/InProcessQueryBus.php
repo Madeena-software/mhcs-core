@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace App\Shared\Application\Bus;
 
+use App\Shared\Application\Contracts\ContextAwareQueryHandler;
 use App\Shared\Application\Contracts\Query;
 use App\Shared\Application\Contracts\QueryBus;
 use App\Shared\Application\Contracts\QueryHandler;
 use App\Shared\Application\Exceptions\DuplicateHandler;
 use App\Shared\Application\Exceptions\InvalidHandler;
 use App\Shared\Application\Exceptions\MissingHandler;
+use App\Shared\Context\AuthenticatedContextProvider;
 use Illuminate\Contracts\Container\Container;
 
 final class InProcessQueryBus implements QueryBus
@@ -45,6 +47,15 @@ final class InProcessQueryBus implements QueryBus
             throw new MissingHandler("No query handler is registered for {$queryType}.");
         }
 
-        return $this->container->make($handlerType)->handle($query);
+        $handler = $this->container->make($handlerType);
+
+        if ($handler instanceof ContextAwareQueryHandler) {
+            return $handler->handleWithContext(
+                $query,
+                $this->container->make(AuthenticatedContextProvider::class)->current(),
+            );
+        }
+
+        return $handler->handle($query);
     }
 }

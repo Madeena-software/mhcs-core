@@ -86,8 +86,10 @@ final class FoundationArchitectureTest extends TestCase
             $this->assertStringNotContainsString('guzzlehttp', $contents, $file->getPathname());
             $this->assertStringNotContainsString('curl_', $contents, $file->getPathname());
             $this->assertStringNotContainsString('http::', $contents, $file->getPathname());
-            $this->assertStringNotContainsString('mpips', $contents, $file->getPathname());
-            $this->assertStringNotContainsString('npz', $contents, $file->getPathname());
+            if ($file->getPathname() !== app_path('Modules/ImageGateway/Infrastructure/ImageWorkerBoundary.php')) {
+                $this->assertStringNotContainsString('mpips', $contents, $file->getPathname());
+                $this->assertStringNotContainsString('npz', $contents, $file->getPathname());
+            }
         }
     }
 
@@ -104,17 +106,31 @@ final class FoundationArchitectureTest extends TestCase
             glob(database_path('migrations/*.php'), GLOB_NOSORT),
         );
 
-        $this->assertCount(5, $migrations);
-        $this->assertSame(
-            [],
-            array_values(array_filter($migrations, static fn (string $file): bool => str_contains(
-                $file,
-                'create_'
-            ) && ! str_contains($file, 'users_table') && ! str_contains($file, 'cache_table') && ! str_contains($file, 'jobs_table') && ! str_contains($file, 'outbox_messages') && ! str_contains($file, 'idempotent_consumptions'))),
-        );
+        $allowed = [
+            '0001_01_01_000000_create_users_table.php',
+            '0001_01_01_000001_create_cache_table.php',
+            '0001_01_01_000002_create_jobs_table.php',
+            '2026_08_04_000003_create_outbox_messages_table.php',
+            '2026_08_04_000004_create_idempotent_consumptions_table.php',
+            '2026_08_04_000005_add_security_state_to_users_table.php',
+            '2026_08_04_000006_create_audit_events_table.php',
+        ];
+
+        $this->assertSame([], array_values(array_diff($migrations, $allowed)));
 
         $this->assertDirectoryDoesNotExist(app_path('Providers/Filament'));
         $this->assertDirectoryDoesNotExist(app_path('Filament'));
+    }
+
+    public function test_member_boundary_contains_only_opaque_reference_contracts(): void
+    {
+        foreach ($this->phpFiles(app_path('Modules/Member')) as $file) {
+            $contents = strtolower($file->getContents());
+
+            foreach (['npz', 'dicom', 'binary', 'parser', 'conversion', 'storage', 'upload', 'client'] as $term) {
+                $this->assertStringNotContainsString($term, $contents, $file->getPathname());
+            }
+        }
     }
 
     /** @return list<\SplFileInfo> */

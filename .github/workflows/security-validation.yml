@@ -1,0 +1,50 @@
+name: Security and validation
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, sqlite, pdo_sqlite
+          tools: composer:v2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install PHP dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Validate Composer metadata
+        run: composer validate --strict
+
+      - name: Audit Composer dependencies
+        run: composer audit
+
+      - name: Check PHP formatting
+        run: vendor/bin/pint --test
+
+      - name: Run complete PHP verification
+        run: php artisan test
+
+      - name: Build frontend
+        run: |
+          npm ci --ignore-scripts
+          npm run build
+
+      - name: Validate deployment policy
+        run: bash deployment/validate.sh

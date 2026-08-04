@@ -42,6 +42,20 @@ final readonly class AuthenticatedContext
         return new self;
     }
 
+    public function forPurpose(string $purpose): self
+    {
+        return new self(
+            actorId: $this->actorId,
+            operationId: $this->operationId,
+            sessionId: $this->sessionId,
+            roles: $this->roles,
+            permissions: $this->permissions,
+            siteId: $this->siteId,
+            caseId: $this->caseId,
+            purpose: $purpose,
+        );
+    }
+
     /**
      * @param  array<int|string, mixed>  $claims
      * @return list<string>

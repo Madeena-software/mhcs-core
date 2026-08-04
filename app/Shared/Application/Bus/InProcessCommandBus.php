@@ -7,9 +7,11 @@ namespace App\Shared\Application\Bus;
 use App\Shared\Application\Contracts\Command;
 use App\Shared\Application\Contracts\CommandBus;
 use App\Shared\Application\Contracts\CommandHandler;
+use App\Shared\Application\Contracts\ContextAwareCommandHandler;
 use App\Shared\Application\Exceptions\DuplicateHandler;
 use App\Shared\Application\Exceptions\InvalidHandler;
 use App\Shared\Application\Exceptions\MissingHandler;
+use App\Shared\Context\AuthenticatedContextProvider;
 use Illuminate\Contracts\Container\Container;
 
 final class InProcessCommandBus implements CommandBus
@@ -45,6 +47,15 @@ final class InProcessCommandBus implements CommandBus
             throw new MissingHandler("No command handler is registered for {$commandType}.");
         }
 
-        return $this->container->make($handlerType)->handle($command);
+        $handler = $this->container->make($handlerType);
+
+        if ($handler instanceof ContextAwareCommandHandler) {
+            return $handler->handleWithContext(
+                $command,
+                $this->container->make(AuthenticatedContextProvider::class)->current(),
+            );
+        }
+
+        return $handler->handle($command);
     }
 }

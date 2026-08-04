@@ -1,0 +1,24 @@
+# Source: Madeena-software/deploy-templates/templates/prod/standard-dockerignore
+# @ 569a30d4a089b0ee404ed6e963fdd2dfd96d3787
+node_modules/
+vendor/
+public/build/
+.git/
+.env
+.env.*
+!.env.example
+tests/
+.github/
+docs/
+storage/logs/*.log
+storage/app/
+storage/framework/testing/
+database/*.sqlite
+.phpunit.result.cache
+bootstrap/cache/*.php
+storage/framework/cache/*
+storage/framework/sessions/*
+storage/framework/views/*
+docker-compose*.yml
+deployment/
+*.md

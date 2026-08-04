@@ -53,7 +53,37 @@ return [
 
     'mpips' => [
         'boundary' => 'private black-box external service',
-        'caller' => 'Image Gateway worker',
+        'caller' => 'image-worker',
         'direct_application_clients' => [],
+    ],
+
+    'security' => [
+        'identifier_key' => env('MHCS_IDENTIFIER_KEY'),
+        'object_key' => env('MHCS_OBJECT_ENCRYPTION_KEY'),
+        'grant_key' => env('MHCS_ACCESS_GRANT_KEY'),
+        'manifest_key' => env('MHCS_MANIFEST_KEY'),
+        'manifest_key_id' => env('MHCS_MANIFEST_KEY_ID'),
+        'login' => [
+            'max_attempts' => (int) env('MHCS_LOGIN_MAX_ATTEMPTS', 5),
+            'decay_seconds' => (int) env('MHCS_LOGIN_DECAY_SECONDS', 60),
+        ],
+    ],
+
+    'image_policy' => [
+        'file_count' => env('MHCS_IMAGE_FILE_COUNT'),
+        'per_file_bytes' => env('MHCS_IMAGE_PER_FILE_BYTES'),
+        'total_bytes' => env('MHCS_IMAGE_TOTAL_BYTES'),
+        'decompressed_bytes' => env('MHCS_IMAGE_DECOMPRESSED_BYTES'),
+        'max_width' => env('MHCS_IMAGE_MAX_WIDTH'),
+        'max_height' => env('MHCS_IMAGE_MAX_HEIGHT'),
+        'field_count' => env('MHCS_IMAGE_FIELD_COUNT'),
+        'cpu_seconds' => env('MHCS_IMAGE_CPU_SECONDS'),
+        'memory_bytes' => env('MHCS_IMAGE_MEMORY_BYTES'),
+        'execution_seconds' => env('MHCS_IMAGE_EXECUTION_SECONDS'),
+        'process_count' => env('MHCS_IMAGE_PROCESS_COUNT'),
+        'temporary_storage_bytes' => env('MHCS_IMAGE_TEMPORARY_STORAGE_BYTES'),
+        'accepted_forms' => env('MHCS_IMAGE_ACCEPTED_FORMS'),
+        'recovery_window_seconds' => env('MHCS_IMAGE_RECOVERY_WINDOW_SECONDS'),
+        'max_attempts' => env('MHCS_IMAGE_MAX_ATTEMPTS'),
     ],
 ];

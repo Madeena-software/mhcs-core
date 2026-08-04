@@ -6,15 +6,24 @@ use App\Shared\Application\Bus\InProcessCommandBus;
 use App\Shared\Application\Bus\InProcessQueryBus;
 use App\Shared\Application\Contracts\CommandBus;
 use App\Shared\Application\Contracts\QueryBus;
+use App\Shared\Audit\AuditStore;
+use App\Shared\Audit\DatabaseAuditStore;
+use App\Shared\Auth\AccountStateUserProvider;
 use App\Shared\Context\AuthenticatedContextProvider;
-use App\Shared\Context\NullAuthenticatedContextProvider;
+use App\Shared\Context\LaravelAuthenticatedContextProvider;
 use App\Shared\Infrastructure\Idempotency\DatabaseIdempotencyStore;
 use App\Shared\Infrastructure\Idempotency\IdempotencyStore;
 use App\Shared\Infrastructure\Outbox\DatabaseOutboxStore;
 use App\Shared\Infrastructure\Outbox\OutboxStore;
+use App\Shared\Security\KeyMaterial;
+use App\Shared\Security\ProtectedIdentifierService;
+use App\Shared\Storage\EncryptedLocalObjectStore;
+use App\Shared\Storage\PrivateObjectStore;
 use App\Shared\Time\Clock;
 use App\Shared\Time\SystemClock;
 use App\Shared\Topology\ModuleRegistry;
+use Illuminate\Contracts\Encryption\Encrypter;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -26,7 +35,21 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->app->singleton(ModuleRegistry::class);
         $this->app->singleton(Clock::class, SystemClock::class);
-        $this->app->singleton(AuthenticatedContextProvider::class, NullAuthenticatedContextProvider::class);
+        $this->app->singleton(AuthenticatedContextProvider::class, LaravelAuthenticatedContextProvider::class);
+        $this->app->singleton(AuditStore::class, DatabaseAuditStore::class);
+        $this->app->singleton(ProtectedIdentifierService::class, function ($app): ProtectedIdentifierService {
+            return new ProtectedIdentifierService(
+                $app->make(Encrypter::class),
+                KeyMaterial::fromConfig(config('mhcs.security.identifier_key')),
+            );
+        });
+        $this->app->singleton(PrivateObjectStore::class, function ($app): PrivateObjectStore {
+            return new EncryptedLocalObjectStore(
+                KeyMaterial::fromConfig(config('mhcs.security.object_key')),
+                KeyMaterial::fromConfig(config('mhcs.security.grant_key')),
+                $app->make(Clock::class),
+            );
+        });
         $this->app->singleton(CommandBus::class, fn ($app) => new InProcessCommandBus($app));
         $this->app->singleton(QueryBus::class, fn ($app) => new InProcessQueryBus($app));
         $this->app->singleton(OutboxStore::class, DatabaseOutboxStore::class);
@@ -38,6 +61,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        //
+        Auth::provider('mhcs-eloquent', function ($app, array $config): AccountStateUserProvider {
+            return new AccountStateUserProvider($app['hash'], $config['model']);
+        });
     }
 }
