@@ -53,10 +53,12 @@ Numbering gaps such as WP-03, WP-13, and WP-25 are preserved because they are ab
 ## MVP-04A remediation addendum — 2026-08-05
 
 The prior remediation is committed at
-`2e08eae74e49b0ba54461ba8787a0ec8e0ece062`. The bounded closure task runs from
-that baseline with `TARGET="."` in the working tree. WP-07 remains
-`not-started` except for the exact bounded attendance/arrival contract used by
-MVP-04. WP-11, WP-12, and WP-17 remain `partially-implemented`; the corrected
-confirmation lifecycle, trusted site resolver, site-switch policy, and
-confirmation-only arrival surface do not close their remaining staffing,
-queue, clinical, FHIR, or broader Operator-administration requirements.
+`2e08eae74e49b0ba54461ba8787a0ec8e0ece062`. The committed closure candidate is
+`f49da5991b21b9a13abb435539db1955362ef639`; the evidence-verification task
+made only uncommitted documentation changes in the working tree and did not
+create an execution commit. WP-07 remains `not-started` except for the exact
+bounded attendance/arrival contract used by MVP-04. WP-11, WP-12, and WP-17
+remain `partially-implemented`; the corrected confirmation lifecycle, trusted
+site resolver, site-switch policy, and confirmation-only arrival surface do
+not close their remaining staffing, queue, clinical, FHIR, or broader
+Operator-administration requirements.

@@ -44,8 +44,11 @@ Gateway, privacy, deployment, CI, and production gaps remain unchanged.
 
 The prior remediation is committed at
 `2e08eae74e49b0ba54461ba8787a0ec8e0ece062`. The bounded closure task runs from
-that baseline in the working tree and corrects confirmation lifecycle, site
-switching, trusted local/stable site correspondence, and the public arrival
-mutation boundary. `MVP-GAP-009`, `MVP-GAP-012`, and `MVP-GAP-024` remain open:
-MVP-04 is still partial, and queue, check-in, ticketing, clinical, broader
-attendance, and complete Operator administration remain out of scope.
+that baseline. The committed closure candidate is
+`f49da5991b21b9a13abb435539db1955362ef639`; the evidence-verification task
+made only uncommitted documentation changes and did not create an execution
+commit. It corrects confirmation lifecycle, site switching, trusted
+local/stable site correspondence, and the public arrival mutation boundary.
+`MVP-GAP-009`, `MVP-GAP-012`, and `MVP-GAP-024` remain open: MVP-04 is still
+partial, and queue, check-in, ticketing, clinical, broader attendance, and
+complete Operator administration remain out of scope.
