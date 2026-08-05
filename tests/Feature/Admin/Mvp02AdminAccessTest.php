@@ -7,12 +7,14 @@ namespace Tests\Feature\Admin;
 use App\Models\User;
 use App\Providers\Filament\Pages\AdminLogin;
 use App\Shared\Context\AuthenticatedContextProvider;
+use Database\Seeders\DatabaseSeeder;
 use Database\Seeders\MvpAdminSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Livewire\Livewire;
+use RuntimeException;
 use Tests\TestCase;
 
 final class Mvp02AdminAccessTest extends TestCase
@@ -43,6 +45,9 @@ final class Mvp02AdminAccessTest extends TestCase
 
         $admin->trusted_roles = ['administrator'];
         $admin->trusted_permissions = ['not-trusted'];
+        request()->attributes->set('trusted_roles', ['administrator']);
+        request()->attributes->set('trusted_permissions', ['not-trusted']);
+        session()->put(['trusted_roles' => ['administrator'], 'trusted_permissions' => ['not-trusted']]);
         $this->actingAs($admin);
 
         $context = app(AuthenticatedContextProvider::class)->current();
@@ -98,6 +103,62 @@ final class Mvp02AdminAccessTest extends TestCase
         ]);
     }
 
+    public function test_admin_login_rejects_all_unauthorized_states_with_one_generic_failure(): void
+    {
+        $this->get('/admin/login')->assertOk();
+        $known = $this->userWithClaims(['email' => 'known-admin@example.test']);
+        $roleOnly = User::factory()->create([
+            'email' => 'role-only@example.test',
+            'password' => Hash::make('admin-password'),
+        ]);
+        $permissionOnly = User::factory()->create([
+            'email' => 'permission-only@example.test',
+            'password' => Hash::make('admin-password'),
+        ]);
+        $this->grant($roleOnly, ['administrator'], []);
+        $this->grant($permissionOnly, [], ['member.admin.access']);
+
+        $attempt = static fn (string $email): mixed => Livewire::test(AdminLogin::class)
+            ->fillForm(['email' => $email, 'password' => 'admin-password'])
+            ->call('authenticate');
+
+        $wrong = Livewire::test(AdminLogin::class)
+            ->fillForm(['email' => $known->email, 'password' => 'wrong-password'])
+            ->call('authenticate');
+        $unknown = Livewire::test(AdminLogin::class)
+            ->fillForm(['email' => 'unknown-admin@example.test', 'password' => 'wrong-password'])
+            ->call('authenticate');
+
+        $message = $wrong->errors()->first('data.email');
+        $this->assertNotNull($message);
+        $this->assertSame($message, $unknown->errors()->first('data.email'));
+
+        foreach ([$roleOnly, $permissionOnly] as $user) {
+            $attempt($user->email)->assertHasErrors(['data.email']);
+        }
+
+        foreach (['suspended', 'pending_activation'] as $status) {
+            $user = $this->userWithClaims([
+                'email' => $status.'-admin@example.test',
+                'account_status' => $status,
+            ]);
+            $attempt($user->email)->assertHasErrors(['data.email']);
+        }
+
+        foreach ([
+            ['email' => 'disabled-admin@example.test', 'login_enabled' => false],
+            ['email' => 'change-admin@example.test', 'must_change_password' => true],
+        ] as $attributes) {
+            $user = $this->userWithClaims($attributes);
+            $attempt($user->email)->assertHasErrors(['data.email']);
+        }
+
+        $this->assertGuest();
+        $audit = DB::table('audit_events')->where('action', 'credential.verify')->get()->toJson();
+        $this->assertStringNotContainsString('known-admin@example.test', $audit);
+        $this->assertStringNotContainsString('admin-password', $audit);
+    }
+
     public function test_authenticated_panel_access_redirects_to_the_explicit_member_resource(): void
     {
         $this->actingAs($this->userWithClaims())
@@ -145,6 +206,156 @@ final class Mvp02AdminAccessTest extends TestCase
         ]);
 
         return $user->fresh();
+    }
+
+    public function test_claim_resolution_filters_inactive_blank_and_wildcard_assignments_and_observes_deactivation_next_request(): void
+    {
+        $admin = $this->userWithClaims();
+        DB::table('authorization_role_assignments')->insert([
+            'id' => (string) Str::uuid(),
+            'user_id' => $admin->id,
+            'role' => 'inactive-role',
+            'assigned_by_user_id' => null,
+            'active' => false,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('authorization_permission_assignments')->insert([
+            'id' => (string) Str::uuid(),
+            'user_id' => $admin->id,
+            'permission' => 'member.*',
+            'assigned_by_user_id' => null,
+            'active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('authorization_permission_assignments')->insert([
+            'id' => (string) Str::uuid(),
+            'user_id' => $admin->id,
+            'permission' => ' ',
+            'assigned_by_user_id' => null,
+            'active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->actingAs($admin)->get('/admin')->assertRedirect('/admin/members');
+
+        DB::table('authorization_permission_assignments')
+            ->where('user_id', $admin->id)
+            ->where('permission', 'member.admin.access')
+            ->update(['active' => false]);
+
+        app()->forgetScopedInstances();
+        $this->get('/admin')->assertStatus(403);
+    }
+
+    public function test_existing_admin_reconciles_only_missing_claims_and_preserves_password_hash(): void
+    {
+        $this->seed(MvpAdminSeeder::class);
+        $admin = User::query()->where('email', 'mvp-admin@example.test')->firstOrFail();
+        $password = $admin->password;
+
+        DB::table('authorization_role_assignments')->where('user_id', $admin->id)->delete();
+        DB::table('authorization_permission_assignments')
+            ->where('user_id', $admin->id)
+            ->where('permission', 'member.audit.read')
+            ->delete();
+
+        $this->seed(MvpAdminSeeder::class);
+
+        $this->assertSame($password, $admin->fresh()->password);
+        $this->assertDatabaseHas('authorization_role_assignments', [
+            'user_id' => $admin->id,
+            'role' => 'administrator',
+            'assigned_by_user_id' => null,
+            'active' => true,
+        ]);
+        $this->assertDatabaseHas('authorization_permission_assignments', [
+            'user_id' => $admin->id,
+            'permission' => 'member.audit.read',
+            'assigned_by_user_id' => null,
+            'active' => true,
+        ]);
+        $this->assertDatabaseCount('authorization_role_assignments', 1);
+        $this->assertDatabaseCount('authorization_permission_assignments', 4);
+    }
+
+    public function test_existing_admin_stops_on_inactive_or_unrelated_claims_without_reactivating_them(): void
+    {
+        $this->seed(MvpAdminSeeder::class);
+        $admin = User::query()->where('email', 'mvp-admin@example.test')->firstOrFail();
+
+        DB::table('authorization_role_assignments')
+            ->where('user_id', $admin->id)
+            ->where('role', 'administrator')
+            ->update(['active' => false]);
+
+        try {
+            $this->seed(MvpAdminSeeder::class);
+            $this->fail('An inactive role assignment must stop reconciliation.');
+        } catch (RuntimeException) {
+            // Expected fail-closed behavior.
+        }
+
+        $this->assertDatabaseHas('authorization_role_assignments', [
+            'user_id' => $admin->id,
+            'role' => 'administrator',
+            'active' => false,
+        ]);
+    }
+
+    public function test_existing_admin_stops_on_an_inactive_permission(): void
+    {
+        $this->seed(MvpAdminSeeder::class);
+        $admin = User::query()->where('email', 'mvp-admin@example.test')->firstOrFail();
+
+        DB::table('authorization_permission_assignments')
+            ->where('user_id', $admin->id)
+            ->where('permission', 'member.audit.read')
+            ->update(['active' => false]);
+
+        try {
+            $this->seed(MvpAdminSeeder::class);
+            $this->fail('An inactive permission assignment must stop reconciliation.');
+        } catch (RuntimeException) {
+            // Expected fail-closed behavior.
+        }
+
+        $this->assertDatabaseHas('authorization_permission_assignments', [
+            'user_id' => $admin->id,
+            'permission' => 'member.audit.read',
+            'active' => false,
+        ]);
+    }
+
+    public function test_existing_admin_stops_on_unrelated_assignments(): void
+    {
+        $this->seed(MvpAdminSeeder::class);
+        $admin = User::query()->where('email', 'mvp-admin@example.test')->firstOrFail();
+
+        DB::table('authorization_permission_assignments')->insert([
+            'id' => (string) Str::uuid(),
+            'user_id' => $admin->id,
+            'permission' => 'unrelated.permission',
+            'assigned_by_user_id' => null,
+            'active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->expectException(RuntimeException::class);
+        $this->seed(MvpAdminSeeder::class);
+    }
+
+    public function test_mvp_admin_seeder_is_not_invoked_by_database_seeder_and_refuses_non_local_environments(): void
+    {
+        (new DatabaseSeeder)->run();
+        $this->assertDatabaseMissing('users', ['email' => 'mvp-admin@example.test']);
+
+        app()->instance('env', 'production');
+        $this->expectException(RuntimeException::class);
+        (new MvpAdminSeeder)->run();
     }
 
     /** @param list<string> $roles @param list<string> $permissions */

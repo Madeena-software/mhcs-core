@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Modules\Member\Filament\Resources\Members;
 
+use App\Models\User;
 use App\Modules\Member\Application\Services\AccountStateService;
 use App\Modules\Member\Application\Services\MemberAuthorization;
 use App\Modules\Member\Domain\Models\Member;
@@ -20,6 +21,7 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
+use Livewire\Component;
 use Throwable;
 use UnitEnum;
 
@@ -129,9 +131,10 @@ final class MemberResource extends Resource
                     ->requiresConfirmation()
                     ->schema([self::reasonField()])
                     ->visible(fn (Member $record): bool => $record->user?->account_status === 'active' && self::canManage($record))
-                    ->action(function (Member $record, array $data): void {
+                    ->action(function (Member $record, array $data, Component $livewire): void {
                         try {
-                            app(AccountStateService::class)->suspend((string) $record->user_id, (string) $data['reason']);
+                            self::transitionAccount($record, 'suspended', $data);
+                            $livewire->resetTable();
                             Notification::make()->title('Akun ditangguhkan')->success()->send();
                         } catch (Throwable) {
                             Notification::make()->title('Perubahan akun tidak dapat dilakukan')->danger()->send();
@@ -143,9 +146,10 @@ final class MemberResource extends Resource
                     ->requiresConfirmation()
                     ->schema([self::reasonField()])
                     ->visible(fn (Member $record): bool => $record->user?->account_status === 'suspended' && self::canManage($record))
-                    ->action(function (Member $record, array $data): void {
+                    ->action(function (Member $record, array $data, Component $livewire): void {
                         try {
-                            app(AccountStateService::class)->restore((string) $record->user_id, (string) $data['reason']);
+                            self::transitionAccount($record, 'active', $data);
+                            $livewire->resetTable();
                             Notification::make()->title('Akun dipulihkan')->success()->send();
                         } catch (Throwable) {
                             Notification::make()->title('Perubahan akun tidak dapat dilakukan')->danger()->send();
@@ -247,6 +251,54 @@ final class MemberResource extends Resource
         } catch (Throwable) {
             return false;
         }
+    }
+
+    /** @param array<string, mixed> $data */
+    private static function transitionAccount(Member $record, string $target, array $data): void
+    {
+        $reason = $data['reason'] ?? null;
+        if (! in_array($target, ['active', 'suspended'], true)) {
+            throw new \RuntimeException('The requested account-state transition is not supported.');
+        }
+
+        if (! is_string($reason) || ($reason = trim($reason)) === '' || mb_strlen($reason, 'UTF-8') > 1000) {
+            throw new \RuntimeException('A valid account-state reason is required.');
+        }
+
+        $administratorId = Auth::id();
+        $administrator = $administratorId === null ? null : User::query()->whereKey($administratorId)->first();
+        if (! $administrator instanceof User || ! $administrator->canAuthenticate()) {
+            throw new \RuntimeException('An authenticated administrator is required.');
+        }
+
+        $member = Member::query()->with('user')->whereKey($record->getKey())->first();
+        if (
+            $member === null
+            || ! $member->user instanceof User
+            || (string) $member->user->getKey() !== (string) $member->user_id
+        ) {
+            throw new \RuntimeException('The Member-to-User linkage is inconsistent.');
+        }
+
+        app(MemberAuthorization::class)->accountState();
+
+        $user = User::query()->whereKey($member->user->getKey())->first();
+        if (
+            $user === null
+            || (string) $administrator->getAuthIdentifier() === (string) $user->getAuthIdentifier()
+            || (string) $user->getKey() !== (string) $member->user_id
+            || (string) $user->account_status !== ($target === 'suspended' ? 'active' : 'suspended')
+        ) {
+            throw new \RuntimeException('The account-state transition is no longer allowed.');
+        }
+
+        if ($target === 'suspended') {
+            app(AccountStateService::class)->suspend((string) $user->getKey(), $reason);
+
+            return;
+        }
+
+        app(AccountStateService::class)->restore((string) $user->getKey(), $reason);
     }
 
     private static function reasonField(): Textarea

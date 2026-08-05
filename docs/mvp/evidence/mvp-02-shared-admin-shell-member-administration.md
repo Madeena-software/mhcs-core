@@ -2,11 +2,12 @@
 
 ## Execution
 
-- Accepted baseline: `4efe6994a4b4823fba2aca21d1edba8f0bd7808c`.
-- Execution commit observed at task start: `f2bbe19908b31e9489179fc5ffd49697164f1bda`.
+- Accepted remediation baseline: `e4bb004b92645a7392e76c0fca5fa49cfd42d60c`.
+- Execution commit observed at task start: `e4bb004b92645a7392e76c0fca5fa49cfd42d60c` (working tree changes were uncommitted).
 - Target: `.`.
 - Filament observed: `v5.7.5`.
-- No commit, push, dependency change, deployment, or production configuration change was performed.
+- The published task validator passed before execution.
+- No commit, push, route, migration, dependency, deployment, local-deployment, or production configuration change was performed.
 
 ## Implemented boundary
 
@@ -28,7 +29,9 @@ The Member resource exposes only safe name, medical record number, email, birth 
 
 Member create/edit/delete/replicate/reorder/bulk/export surfaces are absent. Suspend and restore are confirmation actions with a required reason capped at 1000 characters, reject self-suspension, require `member.account.manage`, and call `AccountStateService`; they do not write User state directly. Unsupported pending transitions are not exposed.
 
-The read-only audit table requires `member.audit.read`, selects only occurrence time, action, outcome, actor ID, target label/ID, reason, and correlation ID, and restricts rows to `source=member` events targeting the selected Member or linked User. No generic application-wide audit explorer was added.
+The read-only audit table requires `member.audit.read` at its server-side query boundary, selects only occurrence time, action, outcome, actor ID, target label/ID, reason, and correlation ID, orders newest first with deterministic tie-breakers, and restricts rows to `source=member` events targeting the selected Member or linked User. Unauthorized Livewire table initialization returns an empty query and cannot retrieve audit values. No generic application-wide audit explorer was added.
+
+Suspend and restore re-authorize the authenticated administrator, Member-to-User linkage, self-target condition, current account state, exact transition, and trimmed reason at action execution time. Unexpected action payload fields cannot choose another User or target state. Successful transitions still use `AccountStateService`, and failed execution-time checks do not create a success audit.
 
 ## Seeder
 
@@ -38,21 +41,21 @@ Run only in local/testing environments with:
 php artisan db:seed --class=MvpAdminSeeder
 ```
 
-`Database\Seeders\MvpAdminSeeder` creates one synthetic `.test` administrator without a Member row, hashes a generated credential, prints it only once to an interactive console, and does not run through `DatabaseSeeder`. Repeated execution preserves the password and claims; inconsistent existing account, Member link, or claim state causes a stop rather than repair. No generated plaintext credential is recorded here.
+`Database\Seeders\MvpAdminSeeder` creates one synthetic `.test` administrator without a Member row, hashes a generated credential, prints it only once to an interactive console, and does not run through `DatabaseSeeder`. Repeated execution preserves the password, inserts only missing expected claims, creates no duplicates, and leaves valid existing claims unchanged. Inactive, assigned, duplicate, unrelated, or otherwise inconsistent claims stop reconciliation rather than being reactivated or silently repaired. The seeder remains local/testing-only. No generated plaintext credential is recorded here.
 
 ## Verification evidence
 
-- MVP-02 focused tests: `tests/Feature/Admin/Mvp02AdminAccessTest.php` and `tests/Feature/Admin/Mvp02MemberAdministrationTest.php` — 10 tests, 68 assertions, passed.
-- MVP-01 regression: `tests/Feature/Member/Mvp01MemberAccessTest.php` — 13 tests, 152 assertions, passed.
-- Shared security regression: `tests/Security/Wp02SecurityTest.php` — 23 tests, 94 assertions, passed.
-- Member account/identity regression: `tests/Member/Wp04IdentityTest.php` — 17 tests, 113 assertions, passed when run independently.
-- `php artisan route:list --path=admin` shows only the admin home redirect, login, POST logout, Member index, and Member view routes.
-- `php artisan package:discover` passed.
-- `git diff --check` passed.
-- PHP syntax checks passed for changed PHP files.
+- Validator: `python3 .agents/skills/agent-task/scripts/validate_task.py .agents/tasks/mhcs-core-mvp-02-remediation-admin-enforcement-v1.md` — passed.
+- MVP-02 focused command: `php artisan test tests/Feature/Admin/Mvp02AdminAccessTest.php tests/Feature/Admin/Mvp02MemberAdministrationTest.php --no-coverage` — 22 tests, 143 assertions, passed.
+- Direct MVP-01 regression: `php artisan test tests/Feature/Member/Mvp01MemberAccessTest.php --no-coverage` — 13 tests, 152 assertions, passed.
+- Filtered WP-02 regression: `php artisan test tests/Security/Wp02SecurityTest.php --filter='test_(credential_verification_is_generic_rate_limited_and_denies_suspension|laravel_authentication_denies_suspended_and_temporary_accounts|audit_is_append_only_rejects_sensitive_metadata_and_rolls_back_with_state|sensitive_audit_payloads_are_rejected|sensitive_scalar_audit_payloads_are_rejected_under_neutral_keys|audit_and_outbox_follow_local_transaction_rollback|correlated_logs_are_recursive_and_sanitized|caller_claims_cannot_replace_trusted_actor|caller_claims_cannot_replace_trusted_scope)' --no-coverage` — 9 tests, 38 assertions, passed.
+- Filtered WP-04 regression: `php artisan test tests/Member/Wp04IdentityTest.php --filter='test_(adult_activation|assisted_recovery|identity_verification_permission)' --no-coverage` — 5 tests, 30 assertions, passed.
+- Bounded formatting: `vendor/bin/pint --test` on the five changed PHP files — passed.
+- `php artisan route:list --path=admin` shows only 5 routes: admin home redirect, login, POST logout, Member index, and Member view. Provider/resource inspection shows only `AdminPanelProvider` and `MemberResource` in the admin surface.
+- `git diff --check` passed. Static review found no newly exposed protected values, credentials, metadata, session IDs, or untrusted claim sources.
 
 ## Changed files
 
-Application changes are limited to the shared claim resolver/context binding, admin panel provider/login/access service, User and Member authorization hooks, Member Filament resource/pages/audit projection, assignment migration, and `MvpAdminSeeder`. Focused tests are under `tests/Feature/Admin/`. MVP documentation changes are limited to the roadmap, gap register, Work Package ledger, and this evidence file.
+Remediation application changes are limited to `app/Modules/Member/Filament/Resources/Members/MemberResource.php`, `app/Modules/Member/Filament/Resources/Members/Pages/ViewMember.php`, and `database/seeders/MvpAdminSeeder.php`. Focused tests changed are `tests/Feature/Admin/Mvp02AdminAccessTest.php` and `tests/Feature/Admin/Mvp02MemberAdministrationTest.php`. MVP documentation changes are limited to the roadmap, gap register, Work Package ledger, and this evidence file.
 
-The full test suite, full WP-02/WP-04 validation, production configuration, deployment, and production-readiness checks were not run or claimed. MVP-GAP-010 is closed only for this bounded shell and Member administration foundation. MVP-GAP-003, MVP-GAP-006, MVP-GAP-020, MVP-GAP-024, MVP-GAP-025, and unrelated gaps remain open/deferred as recorded in the gap register.
+The full test suite, full WP-02/WP-04 validation, MySQL, Docker, npm, Composer audit, external integrations, production configuration, deployment, and production-readiness checks were not run or claimed. MVP-GAP-010 is closed again only for this bounded remediation after the corrected focused checks passed. MVP-GAP-003, MVP-GAP-006, MVP-GAP-020, MVP-GAP-024, MVP-GAP-025, and unrelated gaps remain open/deferred as recorded in the gap register.

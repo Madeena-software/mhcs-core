@@ -39,7 +39,10 @@ administration or create a generic cross-module database editor.
 
 The bounded shared shell, persistent administrator claims, Member account
 administration, and relevant audit visibility are implemented and focused-tested.
-Evidence: `docs/mvp/evidence/mvp-02-shared-admin-shell-member-administration.md`.
+The published admin-enforcement remediation was completed against the recorded
+baseline; query authorization, execution-time account-action checks, and safe
+bootstrap-claim reconciliation are covered by the evidence below. Evidence:
+`docs/mvp/evidence/mvp-02-shared-admin-shell-member-administration.md`.
 MVP-03 has not started.
 
 ## MVP-03 — Member Radiology Service Request

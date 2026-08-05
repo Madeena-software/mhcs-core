@@ -32,7 +32,15 @@ final class MvpAdminSeeder extends Seeder
         $existing = User::query()->where('email', self::EMAIL)->first();
 
         if ($existing !== null) {
-            $this->assertExisting($existing);
+            DB::transaction(function () use ($existing): void {
+                $user = User::query()->whereKey($existing->getKey())->lockForUpdate()->first();
+                if ($user === null) {
+                    throw new RuntimeException('The existing MVP admin account disappeared during reconciliation.');
+                }
+
+                $this->assertExistingAccount($user);
+                $this->reconcileClaims($user->getKey());
+            });
             $this->command?->info(self::EMAIL.' already exists; its credential and claims were not changed.');
 
             return;
@@ -84,7 +92,7 @@ final class MvpAdminSeeder extends Seeder
         }
     }
 
-    private function assertExisting(User $user): void
+    private function assertExistingAccount(User $user): void
     {
         if (
             $user->account_status !== 'active'
@@ -95,21 +103,81 @@ final class MvpAdminSeeder extends Seeder
             throw new RuntimeException('The existing MVP admin account has inconsistent account or Member state.');
         }
 
-        $roles = DB::table('authorization_role_assignments')->where('user_id', $user->getKey())->get();
-        if ($roles->count() !== 1 || $roles->first()->role !== 'administrator' || ! $roles->first()->active || $roles->first()->assigned_by_user_id !== null) {
+    }
+
+    private function reconcileClaims(string $userId): void
+    {
+        $roles = DB::table('authorization_role_assignments')
+            ->where('user_id', $userId)
+            ->lockForUpdate()
+            ->get();
+        $expectedRole = $roles->where('role', 'administrator');
+
+        if ($expectedRole->count() > 1 || $roles->contains(static fn (object $row): bool => $row->role !== 'administrator')) {
             throw new RuntimeException('The existing MVP admin account has inconsistent role assignments.');
         }
 
-        $permissions = DB::table('authorization_permission_assignments')->where('user_id', $user->getKey())->get();
-        $actual = $permissions->map(static fn (object $row): string => (string) $row->permission)->sort()->values()->all();
-        $expected = collect(self::PERMISSIONS)->sort()->values()->all();
+        if ($expectedRole->isNotEmpty()) {
+            $role = $expectedRole->first();
+            if (! $role->active || $role->assigned_by_user_id !== null) {
+                throw new RuntimeException('The existing MVP admin account has an inactive or non-bootstrap role assignment.');
+            }
+        } else {
+            $this->insertRole($userId);
+        }
 
-        if (
-            $permissions->count() !== count(self::PERMISSIONS)
-            || $actual !== $expected
-            || $permissions->contains(static fn (object $row): bool => ! $row->active || $row->assigned_by_user_id !== null)
-        ) {
+        $permissions = DB::table('authorization_permission_assignments')
+            ->where('user_id', $userId)
+            ->lockForUpdate()
+            ->get();
+        $expected = collect(self::PERMISSIONS);
+
+        if ($permissions->contains(static fn (object $row): bool => ! $expected->contains($row->permission))) {
             throw new RuntimeException('The existing MVP admin account has inconsistent permission assignments.');
         }
+
+        foreach (self::PERMISSIONS as $permission) {
+            $matching = $permissions->where('permission', $permission);
+            if ($matching->count() > 1) {
+                throw new RuntimeException('The existing MVP admin account has duplicate permission assignments.');
+            }
+
+            if ($matching->isEmpty()) {
+                $this->insertPermission($userId, $permission);
+
+                continue;
+            }
+
+            $assignment = $matching->first();
+            if (! $assignment->active || $assignment->assigned_by_user_id !== null) {
+                throw new RuntimeException('The existing MVP admin account has an inactive or non-bootstrap permission assignment.');
+            }
+        }
+    }
+
+    private function insertRole(string $userId): void
+    {
+        DB::table('authorization_role_assignments')->insert([
+            'id' => (string) Str::uuid(),
+            'user_id' => $userId,
+            'role' => 'administrator',
+            'assigned_by_user_id' => null,
+            'active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    }
+
+    private function insertPermission(string $userId, string $permission): void
+    {
+        DB::table('authorization_permission_assignments')->insert([
+            'id' => (string) Str::uuid(),
+            'user_id' => $userId,
+            'permission' => $permission,
+            'assigned_by_user_id' => null,
+            'active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
     }
 }

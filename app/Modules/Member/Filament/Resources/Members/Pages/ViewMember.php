@@ -69,6 +69,10 @@ final class ViewMember extends ViewRecord implements HasTable
 
     protected function getTableQuery(): Builder
     {
+        if (! $this->canReadAudit()) {
+            return MemberAuditRecord::query()->whereNull('event_id');
+        }
+
         /** @var Member $member */
         $member = $this->getRecord();
 
@@ -93,7 +97,10 @@ final class ViewMember extends ViewRecord implements HasTable
                     ->orWhere(function (Builder $query) use ($member): void {
                         $query->where('target_type', User::class)->where('target_id', $member->user_id);
                     });
-            });
+            })
+            ->orderByDesc('occurred_at')
+            ->orderByDesc('recorded_at')
+            ->orderByDesc('event_id');
     }
 
     private function canReadAudit(): bool
