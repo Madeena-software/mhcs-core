@@ -4,7 +4,9 @@ use App\Http\Controllers\Member\AuthenticationController;
 use App\Http\Controllers\Member\DashboardController;
 use App\Http\Controllers\Member\Mvp03BookingController;
 use App\Http\Controllers\Member\ProfileController;
+use App\Http\Controllers\Operator\PortalController as OperatorPortalController;
 use App\Http\Middleware\EnsureMemberPortalAccess;
+use App\Http\Middleware\EnsureOperatorPortalAccess;
 use Illuminate\Support\Facades\Route;
 
 Route::redirect('/', '/login');
@@ -33,6 +35,16 @@ Route::middleware(['auth', EnsureMemberPortalAccess::class])->group(function ():
     Route::post('/member/bookings', [Mvp03BookingController::class, 'store'])->name('member.bookings.store');
     Route::get('/member/bookings', [Mvp03BookingController::class, 'index'])->name('member.bookings');
     Route::get('/member/bookings/{booking}', [Mvp03BookingController::class, 'show'])->name('member.bookings.show');
+});
+
+Route::middleware(['auth', EnsureOperatorPortalAccess::class])->group(function (): void {
+    Route::get('/operator', [OperatorPortalController::class, 'dashboard'])->name('operator.dashboard');
+    Route::get('/operator/site', [OperatorPortalController::class, 'site'])->name('operator.site');
+    Route::post('/operator/site', [OperatorPortalController::class, 'selectSite'])->name('operator.site.select');
+    Route::get('/operator/eligible-shifts', [OperatorPortalController::class, 'eligible'])->name('operator.eligible-shifts');
+    Route::get('/operator/attendance/{schedule}', [OperatorPortalController::class, 'attendance'])->name('operator.attendance');
+    Route::post('/operator/arrivals', [OperatorPortalController::class, 'recordArrival'])->name('operator.arrivals.store');
+    Route::get('/operator/verification-worklist', [OperatorPortalController::class, 'worklist'])->name('operator.verification-worklist');
 });
 
 Route::post('/logout', [AuthenticationController::class, 'logout'])

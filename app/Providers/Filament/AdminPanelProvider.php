@@ -10,6 +10,12 @@ use App\Modules\Member\Filament\Resources\ExaminationSites\ExaminationSiteRefere
 use App\Modules\Member\Filament\Resources\Members\MemberResource;
 use App\Modules\Member\Filament\Resources\ServiceOfferings\ServiceOfferingResource;
 use App\Modules\Member\Filament\Resources\ShiftSchedules\ShiftScheduleResource;
+use App\Modules\Operator\Filament\Resources\OperatorArrivals\OperatorArrivalResource;
+use App\Modules\Operator\Filament\Resources\OperatorEligibleShifts\OperatorEligibleShiftResource;
+use App\Modules\Operator\Filament\Resources\OperatorProfiles\OperatorProfileResource;
+use App\Modules\Operator\Filament\Resources\OperatorShiftAssignments\OperatorShiftAssignmentResource;
+use App\Modules\Operator\Filament\Resources\OperatorSiteAssignments\OperatorSiteAssignmentResource;
+use App\Modules\Operator\Filament\Resources\OperatorSites\OperatorSiteResource;
 use App\Providers\Filament\Pages\AdminLogin;
 use Filament\Http\Middleware\Authenticate as FilamentAuthenticate;
 use Filament\Http\Middleware\AuthenticateSession;
@@ -39,9 +45,16 @@ final class AdminPanelProvider extends PanelProvider
                 ExaminationSiteReferenceResource::class,
                 ShiftScheduleResource::class,
                 BookingResource::class,
+                OperatorSiteResource::class,
+                OperatorProfileResource::class,
+                OperatorSiteAssignmentResource::class,
+                OperatorEligibleShiftResource::class,
+                OperatorShiftAssignmentResource::class,
+                OperatorArrivalResource::class,
             ])
             ->navigationGroups([
                 'Member',
+                'Operator',
             ])
             ->middleware([
                 EncryptCookies::class,

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Shared\Context;
 
+use App\Shared\Authorization\ActiveSiteResolver;
 use App\Shared\Authorization\AuthorizationClaimResolver;
 use App\Shared\Identity\LocalId;
 use Illuminate\Contracts\Auth\Factory as AuthFactory;
@@ -13,6 +14,7 @@ final readonly class LaravelAuthenticatedContextProvider implements Authenticate
     public function __construct(
         private AuthFactory $auth,
         private AuthorizationClaimResolver $claims,
+        private ActiveSiteResolver $activeSite,
     ) {}
 
     public function current(): AuthenticatedContext
@@ -29,13 +31,23 @@ final readonly class LaravelAuthenticatedContextProvider implements Authenticate
             $sessionId = hash('sha256', (string) session()->getId());
         }
 
-        return new AuthenticatedContext(
+        $context = new AuthenticatedContext(
             actorId: LocalId::fromString((string) $user->getAuthIdentifier()),
             operationId: $this->operationId(),
             sessionId: $sessionId === null || $sessionId === '' ? null : LocalId::fromString($sessionId),
             roles: $this->claims->roles((string) $user->getAuthIdentifier()),
             permissions: $this->claims->permissions((string) $user->getAuthIdentifier()),
             purpose: 'authenticated-session',
+        );
+
+        return new AuthenticatedContext(
+            actorId: $context->actorId,
+            operationId: $context->operationId,
+            sessionId: $context->sessionId,
+            roles: $context->roles,
+            permissions: $context->permissions,
+            siteId: $this->activeSite->resolve($context),
+            purpose: $context->purpose,
         );
     }
 

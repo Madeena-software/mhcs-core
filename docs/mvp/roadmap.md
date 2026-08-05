@@ -70,7 +70,8 @@ context, freezes booked schedule site/service/time/quota fields except for
 close or no-op updates, compares signed four-decimal point amounts without
 numeric coercion, restricts booking audit queries, records controlled failure
 categories, and verifies Filament service-bound mutations with execution-time
-authorization. MVP-04 is not started.
+authorization. MVP-04 is now started through the bounded Operator foundation
+and arrival slice below; it remains incomplete.
 
 The follow-up admin, audit, and browser closure task was executed from baseline
 `5dee2a1db3595d321c5a4a339d2d6f387111fc64` with `TARGET="."`. It adds the
@@ -82,11 +83,16 @@ bounded evidence, not a claim of production readiness or completion of MVP-04.
 
 ## MVP-04 — Operator Queue and Attendance
 
-Deliver Operator authentication/authorization, operational queue, scheduling,
-check-in, attendance and examination-state transitions, and operational audit
-evidence. Include the Operator-owned administration required for this slice:
-sites, assignments, protocol and queue exceptions, and operational
-configuration. These actions remain within Operator application boundaries.
+Started with the bounded Operator foundation and arrival slice. The current
+slice implements shared Operator access, Operator-owned sites and profiles,
+site assignments and active-site context, eligible-shift intake, manual shift
+assignment, site-scoped attendance, physical arrival recording, the Member
+`confirmed` to `arrived` transition, a verification worklist, bounded portal
+routes, and Operator-owned administration. MVP-04 remains incomplete:
+check-in, ticketing, queue stages, consent, identity decisions, clinical
+workflow, and remaining queue/attendance behavior are deferred.
+
+Pest/Playwright browser-platform work is deferred to post-MVP hardening.
 
 ## MVP-05 — Image Gateway Study Intake and Correlation
 

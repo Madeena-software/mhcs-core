@@ -119,6 +119,7 @@ final class FoundationArchitectureTest extends TestCase
             '2026_08_05_000001_add_mvp01_profile_fields_to_members.php',
             '2026_08_05_000002_create_authorization_assignment_tables.php',
             '2026_08_05_000003_create_mvp03_booking_tables.php',
+            '2026_08_05_000004_create_mvp04_operator_foundation_tables.php',
         ];
 
         $this->assertSame([], array_values(array_diff($migrations, $allowed)));

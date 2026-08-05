@@ -217,6 +217,7 @@ final readonly class Mvp03BookingService
                         $this->outbox->record(new VersionedDomainEvent(LocalId::fromString((string) Str::uuid()), 'shift_eligible', 1, $now, [
                             'schedule_id' => $scheduleId,
                             'site_reference_id' => $site->id,
+                            'operator_site_id' => $site->operator_site_id,
                             'starts_at' => $schedule->starts_at,
                             'ends_at' => $schedule->ends_at,
                             'confirmed_count' => $afterCount,
