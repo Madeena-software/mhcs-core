@@ -41,6 +41,8 @@
             <div class="nav-links">
                 @if (! auth()->user()->must_change_password)
                     <a href="{{ route('member.dashboard') }}">Dashboard</a>
+                    <a href="{{ route('member.services') }}">Sesi Foto Radiografi</a>
+                    <a href="{{ route('member.bookings') }}">Sesi Saya</a>
                     <a href="{{ route('member.profile') }}">Profil</a>
                 @endif
                 <form method="POST" action="{{ route('logout') }}">

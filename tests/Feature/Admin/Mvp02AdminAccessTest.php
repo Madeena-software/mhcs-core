@@ -197,7 +197,7 @@ final class Mvp02AdminAccessTest extends TestCase
         $this->assertDatabaseCount('users', 1);
         $this->assertDatabaseCount('members', 0);
         $this->assertDatabaseCount('authorization_role_assignments', 1);
-        $this->assertDatabaseCount('authorization_permission_assignments', 4);
+        $this->assertDatabaseCount('authorization_permission_assignments', 11);
         $this->assertTrue(Hash::check('admin-password', $password) === false);
     }
 
@@ -445,7 +445,7 @@ final class Mvp02AdminAccessTest extends TestCase
             'active' => true,
         ]);
         $this->assertDatabaseCount('authorization_role_assignments', 1);
-        $this->assertDatabaseCount('authorization_permission_assignments', 4);
+        $this->assertDatabaseCount('authorization_permission_assignments', 11);
     }
 
     public function test_existing_admin_stops_on_inactive_or_unrelated_claims_without_reactivating_them(): void

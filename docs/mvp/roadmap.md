@@ -48,11 +48,20 @@ The focused evidence-closure task ran from baseline
 `f7a3eaeb54b97642bd61d545ebcbf5e26f69f93c`; its 32 focused tests and 283
 assertions passed. This remains a bounded MVP-02 evidence claim, not a
 production-readiness claim.
-MVP-03 has not started.
+The bounded MVP-03 controlled adult B2C radiology-booking slice is implemented
+and focused-tested. It uses local/testing synthetic personal-point funding,
+Member-owned catalogue and schedule administration, read-only site references,
+atomic booking/order creation, and safe Member booking status. Evidence:
+`docs/mvp/evidence/mvp-03-controlled-b2c-radiology-booking.md`.
 
 ## MVP-03 — Member Radiology Service Request
 
-Deliver the Member-visible service catalogue, examination-site selection where applicable, examination request or booking, and Member request status.
+The controlled first slice is implemented: an eligible adult Member can browse
+active services and sites, select an open future schedule, spend only local/test
+personal Madeena Points, create one confirmed B2C booking and local imaging
+order atomically, and view the safe booking status. Real payment, B2B,
+cancellation/refund, Operator, Image Gateway, FHIR, and production behavior
+remain later work.
 
 ## MVP-04 — Operator Queue and Attendance
 

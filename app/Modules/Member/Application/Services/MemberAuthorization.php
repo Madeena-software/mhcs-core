@@ -34,6 +34,20 @@ final readonly class MemberAuthorization
 
     public const AGE_TRANSITION_PERMISSION = 'member.age-transition';
 
+    public const CATALOGUE_READ_PERMISSION = 'member.catalogue.read';
+
+    public const CATALOGUE_MANAGE_PERMISSION = 'member.catalogue.manage';
+
+    public const SCHEDULE_READ_PERMISSION = 'member.schedule.read';
+
+    public const SCHEDULE_MANAGE_PERMISSION = 'member.schedule.manage';
+
+    public const BOOKING_READ_PERMISSION = 'member.booking.read';
+
+    public const BOOKING_MANAGE_PERMISSION = 'member.booking.manage';
+
+    public const BOOKING_AUDIT_READ_PERMISSION = 'member.booking.audit.read';
+
     public function __construct(private AuthorizationGuard $guard) {}
 
     public function context(string $purpose): AuthenticatedContext
@@ -97,6 +111,41 @@ final readonly class MemberAuthorization
     public function ageTransition(): AuthenticatedContext
     {
         return $this->requireAdministrator('member.age-transition', self::AGE_TRANSITION_PERMISSION);
+    }
+
+    public function catalogueRead(): AuthenticatedContext
+    {
+        return $this->requireAdministrator('member.catalogue.read', self::CATALOGUE_READ_PERMISSION);
+    }
+
+    public function catalogueManage(): AuthenticatedContext
+    {
+        return $this->requireAdministrator('member.catalogue.manage', self::CATALOGUE_MANAGE_PERMISSION);
+    }
+
+    public function scheduleRead(): AuthenticatedContext
+    {
+        return $this->requireAdministrator('member.schedule.read', self::SCHEDULE_READ_PERMISSION);
+    }
+
+    public function scheduleManage(): AuthenticatedContext
+    {
+        return $this->requireAdministrator('member.schedule.manage', self::SCHEDULE_MANAGE_PERMISSION);
+    }
+
+    public function bookingRead(): AuthenticatedContext
+    {
+        return $this->requireAdministrator('member.booking.read', self::BOOKING_READ_PERMISSION);
+    }
+
+    public function bookingManage(): AuthenticatedContext
+    {
+        return $this->requireAdministrator('member.booking.manage', self::BOOKING_MANAGE_PERMISSION);
+    }
+
+    public function bookingAuditRead(): AuthenticatedContext
+    {
+        return $this->requireAdministrator('member.booking.audit.read', self::BOOKING_AUDIT_READ_PERMISSION);
     }
 
     public function hasAdministratorPermission(AuthenticatedContext $context, string $permission): bool

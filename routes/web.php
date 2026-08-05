@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Member\AuthenticationController;
 use App\Http\Controllers\Member\DashboardController;
+use App\Http\Controllers\Member\Mvp03BookingController;
 use App\Http\Controllers\Member\ProfileController;
 use App\Http\Middleware\EnsureMemberPortalAccess;
 use Illuminate\Support\Facades\Route;
@@ -26,6 +27,12 @@ Route::middleware(['auth', EnsureMemberPortalAccess::class])->group(function ():
     Route::get('/member/profile', [ProfileController::class, 'edit'])->name('member.profile');
     Route::patch('/member/profile', [ProfileController::class, 'update'])->name('member.profile.update');
     Route::get('/member/dashboard', [DashboardController::class, 'show'])->name('member.dashboard');
+    Route::get('/member/services', [Mvp03BookingController::class, 'services'])->name('member.services');
+    Route::get('/member/services/{service}', [Mvp03BookingController::class, 'service'])->name('member.services.show');
+    Route::get('/member/schedules', [Mvp03BookingController::class, 'schedules'])->name('member.schedules');
+    Route::post('/member/bookings', [Mvp03BookingController::class, 'store'])->name('member.bookings.store');
+    Route::get('/member/bookings', [Mvp03BookingController::class, 'index'])->name('member.bookings');
+    Route::get('/member/bookings/{booking}', [Mvp03BookingController::class, 'show'])->name('member.bookings.show');
 });
 
 Route::post('/logout', [AuthenticationController::class, 'logout'])

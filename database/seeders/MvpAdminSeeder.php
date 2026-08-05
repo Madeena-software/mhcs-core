@@ -21,6 +21,13 @@ final class MvpAdminSeeder extends Seeder
         'member.account.read',
         'member.account.manage',
         'member.audit.read',
+        'member.catalogue.read',
+        'member.catalogue.manage',
+        'member.schedule.read',
+        'member.schedule.manage',
+        'member.booking.read',
+        'member.booking.manage',
+        'member.booking.audit.read',
     ];
 
     public function run(): void
