@@ -6,9 +6,7 @@ use App\Http\Controllers\Member\ProfileController;
 use App\Http\Middleware\EnsureMemberPortalAccess;
 use Illuminate\Support\Facades\Route;
 
-Route::get('/', function () {
-    return view('welcome');
-});
+Route::redirect('/', '/login');
 
 Route::get('/login', [AuthenticationController::class, 'showLogin'])
     ->middleware('guest')

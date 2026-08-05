@@ -21,6 +21,12 @@ npm install
 npm run build
 ```
 
+Run the local web server on port `8013` with:
+
+```bash
+php artisan serve --host=0.0.0.0 --port=8013
+```
+
 Run the foundation checks with:
 
 ```bash

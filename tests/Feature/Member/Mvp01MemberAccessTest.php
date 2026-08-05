@@ -42,6 +42,7 @@ final class Mvp01MemberAccessTest extends TestCase
 
     public function test_required_routes_and_guest_login_form_exist(): void
     {
+        $this->get('/')->assertRedirect('/login');
         $this->get('/login')->assertOk()->assertSee('name="identifier"', false)->assertSee('name="password"', false);
 
         foreach ([
