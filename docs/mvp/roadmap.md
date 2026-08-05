@@ -72,6 +72,14 @@ numeric coercion, restricts booking audit queries, records controlled failure
 categories, and verifies Filament service-bound mutations with execution-time
 authorization. MVP-04 is not started.
 
+The follow-up admin, audit, and browser closure task was executed from baseline
+`5dee2a1db3595d321c5a4a339d2d6f387111fc64` with `TARGET="."`. It adds the
+bounded Member-owned offering and schedule create/edit action surface, exact
+audit association and actor-state regression coverage, and Pest 4 browser
+coverage. Its focused MVP-03 suite passed with 21 tests and 257 assertions;
+the Chromium browser suite passed with 3 tests and 38 assertions. This remains
+bounded evidence, not a claim of production readiness or completion of MVP-04.
+
 ## MVP-04 — Operator Queue and Attendance
 
 Deliver Operator authentication/authorization, operational queue, scheduling,

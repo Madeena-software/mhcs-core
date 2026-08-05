@@ -32,7 +32,7 @@ final class FoundationFeatureTest extends TestCase
         sort($requireDev);
         $this->assertSame(['filament/filament', 'laravel/framework', 'laravel/tinker', 'php'], $require);
         $this->assertSame(
-            ['fakerphp/faker', 'laravel/pail', 'laravel/pao', 'laravel/pint', 'mockery/mockery', 'nunomaduro/collision', 'phpunit/phpunit'],
+            ['fakerphp/faker', 'laravel/pail', 'laravel/pao', 'laravel/pint', 'mockery/mockery', 'nunomaduro/collision', 'pestphp/pest', 'pestphp/pest-plugin-browser', 'pestphp/pest-plugin-laravel', 'phpunit/phpunit'],
             $requireDev,
         );
         $this->assertSame(

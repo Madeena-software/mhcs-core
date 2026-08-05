@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Modules\Member\Application\Services\Mvp03BookingService;
 use App\Modules\Member\Application\Services\Mvp03ScheduleService;
 use App\Modules\Member\Domain\Models\Booking;
+use App\Modules\Member\Domain\Models\Member;
 use App\Modules\Member\Domain\Models\ShiftSchedule;
 use App\Modules\Member\Domain\Mvp03BookingFailure;
 use App\Modules\Member\Domain\Mvp03Exception;
@@ -17,6 +18,7 @@ use App\Shared\Infrastructure\Idempotency\IdempotencyConflict;
 use App\Shared\Infrastructure\Outbox\OutboxStore;
 use Database\Seeders\MvpBookingSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Tests\TestCase;
@@ -136,6 +138,75 @@ final class Mvp03BookingDomainTest extends TestCase
             'member_id' => $fixture['member_id'],
             'status' => 'confirmed',
         ]);
+        $this->assertDatabaseMissing('bookings', ['member_id' => $other['member_id']]);
+    }
+
+    public function test_booking_service_denies_each_required_actor_state_without_partial_success(): void
+    {
+        foreach (['anonymous', 'administrator-only', 'missing-member', 'suspended', 'login-disabled', 'mandatory-change', 'child', 'identity-incomplete', 'profile-incomplete'] as $state) {
+            $fixture = $this->fixture('actor-'.$state.'@example.test', '2.5000', '10.0000', code: 'STATE-'.strtoupper(str_replace('-', '_', $state)));
+            $memberId = null;
+
+            if ($state === 'anonymous') {
+                Auth::logout();
+            } elseif ($state === 'administrator-only') {
+                $actor = User::factory()->create(['email' => 'admin-only-actor@example.test']);
+                $this->grant($actor, ['administrator'], []);
+                $this->actingAs($actor);
+            } elseif ($state === 'missing-member') {
+                $this->actingAs(User::factory()->create(['email' => 'missing-member-actor@example.test']));
+            } else {
+                $memberId = $fixture['member_id'];
+                $this->actingAs($fixture['user']);
+                match ($state) {
+                    'suspended' => DB::table('users')->where('id', $fixture['user']->id)->update(['account_status' => 'suspended']),
+                    'login-disabled' => DB::table('users')->where('id', $fixture['user']->id)->update(['login_enabled' => false]),
+                    'mandatory-change' => DB::table('users')->where('id', $fixture['user']->id)->update(['must_change_password' => true]),
+                    'child' => DB::table('members')->where('id', $fixture['member_id'])->update(['birth_date' => '2010-01-01']),
+                    'identity-incomplete' => DB::table('members')->where('id', $fixture['member_id'])->update(['identity_status' => 'pending']),
+                    'profile-incomplete' => DB::table('members')->where('id', $fixture['member_id'])->update(['current_address' => null]),
+                    default => null,
+                };
+            }
+
+            try {
+                app(Mvp03BookingService::class)->createForCurrentMember($fixture['schedule_id'], 'actor-state-'.$state, '2.5000');
+                $this->fail("The {$state} actor must be denied.");
+            } catch (\Throwable) {
+                $this->addToAssertionCount(1);
+            }
+
+            $this->assertDatabaseCount('bookings', 0);
+            $this->assertDatabaseCount('local_imaging_orders', 0);
+            $this->assertDatabaseCount('outbox_messages', 0);
+            $this->assertDatabaseMissing('point_ledger_entries', ['entry_type' => 'charge']);
+            $this->assertDatabaseMissing('audit_events', ['action' => 'member.booking.confirmed']);
+            $this->assertDatabaseMissing('audit_events', ['action' => 'member.point-charge']);
+            $this->assertDatabaseMissing('audit_events', ['action' => 'member.imaging-order.create']);
+            $this->assertDatabaseMissing('idempotent_consumptions', ['message_id' => 'actor-state-'.$state, 'status' => 'handled']);
+
+            if ($memberId === null) {
+                $this->assertDatabaseMissing('audit_events', ['action' => 'member.booking.failed', 'reason' => 'member_unavailable']);
+            } else {
+                $failure = DB::table('audit_events')->where('action', 'member.booking.failed')->where('target_id', $memberId)->first();
+                $this->assertNotNull($failure);
+                $this->assertContains($failure->reason, Mvp03BookingFailure::CATEGORIES);
+                $this->assertSame(Member::class, $failure->target_type);
+                $this->assertSame('[]', $failure->metadata);
+            }
+        }
+    }
+
+    public function test_an_eligible_dual_role_member_books_for_the_trusted_member_only(): void
+    {
+        $fixture = $this->fixture('dual-role@example.test', '2.5000', '10.0000');
+        $other = $this->memberFixture('dual-role-other@example.test');
+        $this->grant($fixture['user'], ['administrator'], []);
+        $this->actingAs($fixture['user']);
+
+        $result = app(Mvp03BookingService::class)->createForCurrentMember($fixture['schedule_id'], 'dual-role-booking', '2.5000');
+
+        $this->assertDatabaseHas('bookings', ['id' => $result['booking_id'], 'member_id' => $fixture['member_id']]);
         $this->assertDatabaseMissing('bookings', ['member_id' => $other['member_id']]);
     }
 
@@ -379,7 +450,7 @@ final class Mvp03BookingDomainTest extends TestCase
     }
 
     /** @return array<string, mixed> */
-    private function fixture(string $email, string $price, string $credit, string $start = '2030-01-10 03:00:00', string $end = '2030-01-10 04:00:00', int $quota = 5): array
+    private function fixture(string $email, string $price, string $credit, string $start = '2030-01-10 03:00:00', string $end = '2030-01-10 04:00:00', int $quota = 5, string $code = 'SYNTHETIC'): array
     {
         $member = $this->memberFixture($email);
         $organizationId = (string) Str::uuid();
@@ -390,7 +461,7 @@ final class Mvp03BookingDomainTest extends TestCase
         $now = now();
         DB::table('operator_organization_refs')->insert(['id' => $organizationId, 'operator_organization_id' => 'operator-'.$siteId, 'name' => 'Synthetic Organization', 'active' => true, 'created_at' => $now, 'updated_at' => $now]);
         DB::table('examination_site_refs')->insert(['id' => $siteId, 'operator_site_id' => 'site-'.$siteId, 'operator_organization_ref_id' => $organizationId, 'code' => 'SITE-'.substr($siteId, 0, 8), 'display_name' => 'Synthetic Site', 'timezone' => 'Asia/Jakarta', 'active' => true, 'created_at' => $now, 'updated_at' => $now]);
-        DB::table('service_offerings')->insert(['id' => $serviceId, 'code' => 'SYNTHETIC', 'name' => 'Synthetic Service', 'includes_ai' => true, 'includes_doctor' => true, 'point_price' => $price, 'active' => true, 'created_at' => $now, 'updated_at' => $now]);
+        DB::table('service_offerings')->insert(['id' => $serviceId, 'code' => $code, 'name' => 'Synthetic Service', 'includes_ai' => true, 'includes_doctor' => true, 'point_price' => $price, 'active' => true, 'created_at' => $now, 'updated_at' => $now]);
         DB::table('point_exchange_rates')->insert(['id' => $rateId, 'rupiah_per_point' => 10000, 'status' => 'active', 'effective_at' => $now, 'configured_by_admin_id' => null, 'created_at' => $now, 'updated_at' => $now]);
         DB::table('shift_schedules')->insert(['id' => $scheduleId, 'examination_site_id' => $siteId, 'service_offering_id' => $serviceId, 'starts_at' => $start, 'ends_at' => $end, 'quota' => $quota, 'status' => 'open', 'eligible_at' => null, 'created_at' => $now, 'updated_at' => $now]);
         DB::table('point_ledger_entries')->insert(['id' => (string) Str::uuid(), 'member_id' => $member['member_id'], 'booking_id' => null, 'funding_source' => 'personal', 'entry_type' => 'credit', 'point_delta' => $credit, 'source_reference' => 'test:credit:'.$email, 'reverses_id' => null, 'created_at' => $now]);

@@ -127,6 +127,43 @@ deployment, and production readiness remain open.
 Full PHPUnit, npm build, Composer audit, Docker, external integrations,
 deployment, and production checks were not run.
 
+## MVP-03 admin, audit, and browser closure — 2026-08-05
+
+- Published task: `.agents/tasks/mhcs-core-mvp-03-admin-audit-browser-closure-v1.md`.
+- Target: `.` resolved to `/var/www/mhcs-core`; required baseline and current
+  execution `HEAD` were `5dee2a1db3595d321c5a4a339d2d6f387111fc64`.
+- The task validator passed. No commit, push, deployment, production access,
+  task-file edit, or generated browser artifact was performed.
+- Pest 4.7.8, `pest-plugin-laravel` 4.1.0, `pest-plugin-browser` 4.3.1,
+  PHPUnit 12.5.33, and Playwright 1.62.1 are installed within the task's
+  dependency allowance. PHP remains `^8.4`; no migration or runtime
+  dependency was added.
+- Trusted dual-role Member ownership, the actor-state matrix, exact successful
+  booking audit association, and Member-scoped failure audit behavior are
+  covered by the focused domain and feature tests.
+- Member-owned offering and schedule create/edit actions are visible only to
+  the permitted admin claim and route their mutations through the existing
+  application services. Read-only admins retain no mutation actions.
+
+### Closure verification
+
+- `python3 .agents/skills/agent-task/scripts/validate_task.py .agents/tasks/mhcs-core-mvp-03-admin-audit-browser-closure-v1.md` — passed.
+- Focused MVP-03 suite — 21 tests, 257 assertions passed.
+- Pest browser suite with Chromium — 3 tests, 38 assertions passed; final
+  pages reported no browser console or JavaScript smoke errors.
+- MVP-01/MVP-02 regression batch — 45 tests, 437 assertions passed.
+- Foundation/shared/security/identity regression checks — 33 tests, 1,312
+  assertions passed across the bounded commands.
+- Bounded Pint, PHP syntax, route-surface, static mutation-path, and
+  `git diff --check` verification passed.
+
+The browser layer exercises the visible schedule-create entry point and
+schedule-edit action; the persisted schedule create/edit mutation path is
+covered by the focused Livewire/service test because the custom Filament
+select interaction is not stable in the browser harness. Full PHPUnit, npm
+build, Composer audit, Docker/MySQL concurrency, deployment, and production
+checks remain outside this task's verification boundary.
+
 ## MVP-03 remediation — booking ownership and schedule integrity
 
 - Task: `.agents/tasks/mhcs-core-mvp-03-booking-ownership-schedule-integrity-v1.md`.

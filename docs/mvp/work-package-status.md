@@ -36,4 +36,16 @@ Statuses are evidence-based and describe the current foundation, not complete lo
 | WP-27 | Approved visual design implementation and visual verification | DES-001..DES-022 | Approved design references exist, but no product visual implementation or rendered verification exists | MVP-01 onward when UI is implemented | not-started | Entire package | Do not treat the reference as product behavior. |
 | WP-28 | Final MHCS Core conformance audit | None; verification-only | No final audit has been run; implementation plan says it cannot pass while applicable requirements remain unverified | Release gate only | unverified | All unresolved requirements, evidence, dependencies, and approvals | No completion claim. |
 
+## MVP-03 admin, audit, and browser closure addendum — 2026-08-05
+
+The bounded MVP-03 closure task was executed from baseline
+`5dee2a1db3595d321c5a4a339d2d6f387111fc64` with `TARGET="."`. WP-05, WP-06,
+and WP-10 now have focused evidence for trusted Member ownership, actor-state
+denials, exact booking audit association, Member-scoped failure auditing, and
+claim-gated Member-owned catalogue/schedule administration. Pest 4 browser
+coverage passed in Chromium (3 tests, 38 assertions) with no final-page
+console or JavaScript smoke errors. The work-package statuses remain
+`partially-implemented`; broader financial, clinical, Operator, Image Gateway,
+deployment, and production requirements are not closed.
+
 Numbering gaps such as WP-03, WP-13, and WP-25 are preserved because they are absent from the current 25-package implementation plan; no new Work Package is invented here.

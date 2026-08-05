@@ -15,9 +15,11 @@ use App\Modules\Member\Filament\Resources\Bookings\Pages\ViewBooking;
 use App\Modules\Member\Filament\Resources\ExaminationSites\ExaminationSiteReferenceResource;
 use App\Modules\Member\Filament\Resources\ServiceOfferings\Pages\CreateServiceOffering;
 use App\Modules\Member\Filament\Resources\ServiceOfferings\Pages\EditServiceOffering;
+use App\Modules\Member\Filament\Resources\ServiceOfferings\Pages\ListServiceOfferings;
 use App\Modules\Member\Filament\Resources\ServiceOfferings\ServiceOfferingResource;
 use App\Modules\Member\Filament\Resources\ShiftSchedules\Pages\CreateShiftSchedule;
 use App\Modules\Member\Filament\Resources\ShiftSchedules\Pages\EditShiftSchedule;
+use App\Modules\Member\Filament\Resources\ShiftSchedules\Pages\ListShiftSchedules;
 use App\Modules\Member\Filament\Resources\ShiftSchedules\ShiftScheduleResource;
 use App\Shared\Audit\AuditEvent;
 use App\Shared\Audit\AuditStore;
@@ -51,6 +53,8 @@ final class Mvp03BookingAdministrationTest extends TestCase
         $this->assertFalse(BookingResource::canEdit(new Booking));
         $this->assertFalse(BookingResource::canDelete(new Booking));
         $this->assertFalse(BookingResource::canReadAudit());
+        Livewire::test(ListServiceOfferings::class)->assertActionDoesNotExist('create')->assertTableActionDoesNotExist('edit');
+        Livewire::test(ListShiftSchedules::class)->assertActionDoesNotExist('create')->assertTableActionDoesNotExist('edit');
     }
 
     public function test_manage_permissions_use_application_services_and_audit_mutations(): void
@@ -73,6 +77,12 @@ final class Mvp03BookingAdministrationTest extends TestCase
         $this->assertTrue(ServiceOfferingResource::canCreate());
         $this->assertTrue(ShiftScheduleResource::canCreate());
         $this->assertTrue(BookingResource::canReadAudit());
+        Livewire::test(ListServiceOfferings::class)
+            ->assertActionExists('create')
+            ->assertTableActionExists('edit', null, $offering);
+        Livewire::test(ListShiftSchedules::class)
+            ->assertActionExists('create')
+            ->assertTableActionExists('edit', null, $schedule);
     }
 
     public function test_filament_create_and_edit_pages_use_services_and_reauthorize_after_mount(): void
@@ -105,7 +115,7 @@ final class Mvp03BookingAdministrationTest extends TestCase
         $schedule = DB::table('shift_schedules')->where('service_offering_id', $offering->id)->firstOrFail();
 
         Livewire::test(EditShiftSchedule::class, ['record' => $schedule->id])
-            ->fillForm(['examination_site_id' => $siteId, 'service_offering_id' => $offering->id, 'starts_at' => '2040-04-01T10:00:00+07:00', 'ends_at' => '2040-04-01T11:00:00+07:00', 'quota' => 6, 'status' => 'open'])
+            ->set('data.quota', 6)
             ->call('save')
             ->assertHasNoErrors();
         $this->assertDatabaseHas('shift_schedules', ['id' => $schedule->id, 'quota' => 6]);
@@ -133,17 +143,15 @@ final class Mvp03BookingAdministrationTest extends TestCase
         Filament::setCurrentPanel('admin');
 
         $this->audit('member.booking.confirmed', Booking::class, $booking['id'], null);
-        $this->audit('member.point-charge', PointLedgerEntry::class, (string) Str::uuid(), null, ['booking_id' => $booking['id']]);
-        $this->audit('member.imaging-order.create', LocalImagingOrder::class, (string) Str::uuid(), null, ['booking_id' => $booking['id']]);
-        $this->audit('member.booking.failed', Booking::class, $booking['id'], 'capacity_full');
+        $this->audit('member.point-charge', PointLedgerEntry::class, $booking['ledger_id'], null, ['booking_id' => $booking['id']]);
+        $this->audit('member.imaging-order.create', LocalImagingOrder::class, $booking['order_id'], null, ['booking_id' => $booking['id']]);
         $this->audit('member.account-state', Booking::class, $booking['id'], 'sensitive reason marker', ['opaque_marker' => 'sensitive metadata marker']);
         $this->audit('member.booking.confirmed', Booking::class, $booking['id'], 'sensitive reason marker');
         $this->audit('member.point-charge', Booking::class, $booking['id'], null, ['booking_id' => $booking['id']]);
 
         $authorized = Livewire::test(ViewBooking::class, ['record' => $booking['id']])
-            ->assertSee('capacity_full')
-            ->assertCountTableRecords(4);
-        $authorized->assertDontSee('sensitive reason marker')->assertDontSee('sensitive metadata marker');
+            ->assertCountTableRecords(3);
+        $authorized->assertDontSee('capacity_full')->assertDontSee('sensitive reason marker')->assertDontSee('sensitive metadata marker');
 
         $readOnly = $this->admin(['member.booking.read']);
         $this->actingAs($readOnly);
@@ -173,8 +181,12 @@ final class Mvp03BookingAdministrationTest extends TestCase
         DB::table('point_exchange_rates')->insert(['id' => $rateId, 'rupiah_per_point' => 10000, 'status' => 'active', 'effective_at' => $now, 'configured_by_admin_id' => null, 'created_at' => $now, 'updated_at' => $now]);
         DB::table('shift_schedules')->insert(['id' => $scheduleId, 'examination_site_id' => $siteId, 'service_offering_id' => $serviceId, 'starts_at' => '2040-01-01 03:00:00', 'ends_at' => '2040-01-01 04:00:00', 'quota' => 5, 'status' => 'open', 'eligible_at' => null, 'created_at' => $now, 'updated_at' => $now]);
         DB::table('bookings')->insert(['id' => $bookingId, 'member_id' => $memberId, 'shift_schedule_id' => $scheduleId, 'service_offering_id' => $serviceId, 'examination_site_id_snapshot' => $siteId, 'booking_type' => 'b2c', 'funding_source' => 'personal', 'status' => 'confirmed', 'service_code_snapshot' => 'AUDIT-SERVICE', 'point_cost_snapshot' => '1.0000', 'point_exchange_rate_id' => $rateId, 'includes_ai_snapshot' => true, 'includes_doctor_snapshot' => false, 'site_code_snapshot' => 'SITE-AUDIT', 'site_name_snapshot' => 'Audit Site', 'site_timezone_snapshot' => 'Asia/Jakarta', 'created_at' => $now, 'confirmed_at' => $now, 'updated_at' => $now]);
+        $ledgerId = (string) Str::uuid();
+        $orderId = (string) Str::uuid();
+        DB::table('point_ledger_entries')->insert(['id' => $ledgerId, 'member_id' => $memberId, 'booking_id' => $bookingId, 'funding_source' => 'personal', 'entry_type' => 'charge', 'point_delta' => '-1.0000', 'source_reference' => 'test:audit-charge', 'reverses_id' => null, 'created_at' => $now]);
+        DB::table('local_imaging_orders')->insert(['id' => $orderId, 'booking_id' => $bookingId, 'member_id' => $memberId, 'shift_schedule_id' => $scheduleId, 'examination_site_id' => $siteId, 'service_code_snapshot' => 'AUDIT-SERVICE', 'status' => 'authored', 'authored_at' => $now, 'created_at' => $now, 'updated_at' => $now]);
 
-        return ['id' => $bookingId];
+        return ['id' => $bookingId, 'ledger_id' => $ledgerId, 'order_id' => $orderId];
     }
 
     /** @param array<string, mixed> $metadata */

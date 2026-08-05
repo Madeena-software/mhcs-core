@@ -257,7 +257,6 @@ final readonly class Mvp03BookingService
             ! $user instanceof User
             || $context->actorId === null
             || (string) $context->actorId !== (string) $user->getAuthIdentifier()
-            || in_array('administrator', $context->roles, true)
         ) {
             $this->fail('member_unavailable', 'Member access is unavailable.');
         }

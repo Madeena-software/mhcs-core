@@ -6,6 +6,7 @@ namespace App\Modules\Member\Filament\Resources\ServiceOfferings;
 
 use App\Modules\Member\Application\Services\MemberAuthorization;
 use App\Modules\Member\Domain\Models\ServiceOffering;
+use Filament\Actions\EditAction;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Resources\Resource;
@@ -20,9 +21,13 @@ use UnitEnum;
 final class ServiceOfferingResource extends Resource
 {
     protected static ?string $model = ServiceOffering::class;
+
     protected static string|UnitEnum|null $navigationGroup = 'Member';
+
     protected static ?string $navigationLabel = 'Layanan Member';
+
     protected static ?string $modelLabel = 'Layanan';
+
     protected static ?string $pluralModelLabel = 'Layanan Member';
 
     public static function form(Schema $schema): Schema
@@ -46,7 +51,10 @@ final class ServiceOfferingResource extends Resource
             TextColumn::make('name')->label('Nama')->searchable(),
             TextColumn::make('point_price')->label('Harga Points'),
             TextColumn::make('active')->label('Status')->formatStateUsing(fn (bool $state): string => $state ? 'Aktif' : 'Tidak aktif'),
-        ])->actions([])->headerActions([])->toolbarActions([])->defaultSort('name')->emptyStateHeading('Belum ada layanan');
+        ])->actions(self::authorized('catalogueManage') ? [
+            EditAction::make()
+                ->url(fn (ServiceOffering $record): string => self::getUrl('edit', ['record' => $record])),
+        ] : [])->headerActions([])->toolbarActions([])->defaultSort('name')->emptyStateHeading('Belum ada layanan');
     }
 
     public static function getPages(): array
@@ -64,16 +72,36 @@ final class ServiceOfferingResource extends Resource
         return self::authorized('catalogueRead');
     }
 
-    public static function canView(Model $record): bool { return self::canViewAny(); }
-    public static function canCreate(): bool { return self::authorized('catalogueManage'); }
-    public static function canEdit(Model $record): bool { return self::authorized('catalogueManage'); }
-    public static function canDelete(Model $record): bool { return false; }
-    public static function canDeleteAny(): bool { return false; }
+    public static function canView(Model $record): bool
+    {
+        return self::canViewAny();
+    }
+
+    public static function canCreate(): bool
+    {
+        return self::authorized('catalogueManage');
+    }
+
+    public static function canEdit(Model $record): bool
+    {
+        return self::authorized('catalogueManage');
+    }
+
+    public static function canDelete(Model $record): bool
+    {
+        return false;
+    }
+
+    public static function canDeleteAny(): bool
+    {
+        return false;
+    }
 
     private static function authorized(string $method): bool
     {
         try {
             app(MemberAuthorization::class)->{$method}();
+
             return true;
         } catch (Throwable) {
             return false;

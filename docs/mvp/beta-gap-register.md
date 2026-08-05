@@ -29,3 +29,13 @@ Open gaps are deliberate visibility, not completion claims. A seeded gap may be 
 | MVP-GAP-023 | CI/release and deployment evidence gaps remain for the beta model | CI/deployment | No complete MVP integration/release evidence | Run focused checks per task; reserve full pipeline for gates | MVP-09 | open | Integration/release verification produces current evidence | Existing validation scripts are evidence of checks, not deployment approval. |
 | MVP-GAP-024 | Operator-owned administration required by Operator MVP flows not yet implemented | Operator administration / MVP-04 queue and attendance | No Operator-owned administration for sites, assignments, protocol or queue exceptions, and operational configuration | Do not expose Operator administration; retain controlled configuration and module boundaries | MVP-04 | open | Operator-owned administration, authorization, audit, and focused flow tests pass | The shared administrator interface does not transfer Operator records or rules to a generic owner. |
 | MVP-GAP-025 | Image Gateway operational administration required by Image Gateway MVP flows not yet implemented | Image Gateway operational administration / MVP-05 study intake and correlation | No administrator visibility for intake status, correlation failures, retries, or terminal failures | Keep operational access administrator-only and do not expose a separate end-user application or direct Member/Operator mutation | MVP-05 | open | Image Gateway operational administration, authorization, audit, and failure-flow tests pass | Storage, processing, retry, publication, and compliance operations remain Image Gateway-owned. |
+
+## MVP-03 admin, audit, and browser closure addendum — 2026-08-05
+
+MVP-GAP-011 remains closed for the bounded controlled adult B2C booking slice.
+The published closure task verified trusted dual-role Member ownership, the
+actor-state denial matrix, exact successful-booking audit association,
+Member-scoped failure auditing, permitted Member-owned offering and schedule
+admin actions, and a Chromium browser layer with no final-page console or
+JavaScript smoke errors. Broader payment, cancellation, Operator, Image
+Gateway, privacy, deployment, CI, and production gaps remain unchanged.
