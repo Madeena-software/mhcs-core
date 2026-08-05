@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Modules\Member\Application\Services;
 
 use App\Modules\Member\Application\Contracts\OperatorAttendanceContract;
+use App\Modules\Member\Application\Contracts\TrustedOperatorSiteContextResolver;
 use App\Modules\Member\Domain\Enums\BookingStatus;
 use App\Modules\Member\Domain\Models\Booking;
 use App\Modules\Member\Domain\Mvp03Exception;
@@ -29,13 +30,14 @@ final readonly class Mvp04AttendanceService implements OperatorAttendanceContrac
         private AuditStore $audit,
         private OutboxStore $outbox,
         private ProtectedIdentifierService $identifiers,
+        private TrustedOperatorSiteContextResolver $trustedSite,
         private Clock $clock,
     ) {}
 
     /** @return list<array<string, mixed>> */
     public function query(AuthenticatedContext $context, string $operatorSiteId, string $scheduleId, string $at): array
     {
-        $this->assertOperatorContext($context, 'operator.attendance.read');
+        $this->assertOperatorContext($context, $operatorSiteId, 'operator.attendance.read');
         $atUtc = $this->instant($at);
         $site = $this->site($operatorSiteId);
         $schedule = DB::table('shift_schedules')->where('id', $scheduleId)->first();
@@ -101,8 +103,9 @@ final readonly class Mvp04AttendanceService implements OperatorAttendanceContrac
     }
 
     /** @return array<string, mixed> */
-    public function resolveBookingForArrival(string $operatorSiteId, string $bookingId, string $occurrenceAt): array
+    public function resolveBookingForArrival(AuthenticatedContext $context, string $operatorSiteId, string $bookingId, string $occurrenceAt): array
     {
+        $this->assertOperatorContext($context, $operatorSiteId, 'operator.arrival.record');
         $occurrence = $this->instant($occurrenceAt);
         $site = $this->site($operatorSiteId);
         $row = $this->eligibleBookingQuery($site)
@@ -158,7 +161,7 @@ final readonly class Mvp04AttendanceService implements OperatorAttendanceContrac
         string $recordedAt,
         string $operationId,
     ): array {
-        $this->assertOperatorContext($context, 'operator.arrival.record');
+        $this->assertOperatorContext($context, $operatorSiteId, 'operator.arrival.record');
         $occurrence = $this->instant($occurrenceAt);
         $recorded = $this->instant($recordedAt, allowMissingOffset: true);
         $site = $this->site($operatorSiteId);
@@ -287,14 +290,14 @@ final readonly class Mvp04AttendanceService implements OperatorAttendanceContrac
         return str_repeat('*', strlen($value) - 4).substr($value, -4);
     }
 
-    private function assertOperatorContext(AuthenticatedContext $context, string $permission): void
+    private function assertOperatorContext(AuthenticatedContext $context, string $operatorSiteId, string $permission): void
     {
         if (
             $context->actorId === null
             || $context->operationId === null
-            || $context->siteId === null
             || ! in_array('operator', $context->roles, true)
             || ! in_array($permission, $context->permissions, true)
+            || ! $this->trustedSite->matches($context, $operatorSiteId, $permission)
         ) {
             throw new Mvp03Exception('A trusted Operator attendance context is required.');
         }

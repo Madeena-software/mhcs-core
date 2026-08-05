@@ -27,10 +27,11 @@ final readonly class OperatorArrivalService
         private IdempotencyStore $idempotency,
         private AuditStore $audit,
         private Clock $clock,
+        private OperatorArrivalConfirmationService $confirmations,
     ) {}
 
     /** @return array{arrival_id: string, booking_id: string, schedule_id: string, status: string} */
-    public function record(string $bookingId, string $occurrenceAt, string $idempotencyKey): array
+    private function recordUnconfirmed(string $bookingId, string $occurrenceAt, string $idempotencyKey, string $expectedScheduleId): array
     {
         $portal = null;
         try {
@@ -48,9 +49,17 @@ final readonly class OperatorArrivalService
                 'operator_site_id' => (string) $site->getKey(),
             ];
 
-            return $this->idempotency->run($operation, 'operator.arrival.record', $payload, function () use ($portal, $site, $bookingId, $occurrence, $operation): array {
-                return DB::transaction(function () use ($portal, $site, $bookingId, $occurrence, $operation): array {
-                    $target = $this->memberAttendance->resolveBookingForArrival($site->operator_site_id, trim($bookingId), $occurrence->format(DATE_ATOM));
+            return $this->idempotency->run($operation, 'operator.arrival.record', $payload, function () use ($portal, $site, $bookingId, $occurrence, $operation, $expectedScheduleId): array {
+                return DB::transaction(function () use ($portal, $site, $bookingId, $occurrence, $operation, $expectedScheduleId): array {
+                    $target = $this->memberAttendance->resolveBookingForArrival(
+                        $portal['context']->forPurpose(OperatorAuthorization::ARRIVAL_RECORD),
+                        $site->operator_site_id,
+                        trim($bookingId),
+                        $occurrence->format(DATE_ATOM),
+                    );
+                    if ($target['schedule_id'] !== $expectedScheduleId) {
+                        throw new OperatorException('arrival_confirmation_invalid', 'The arrival confirmation is no longer valid.');
+                    }
                     if (! $this->assignments->isAssigned((string) $portal['profile']->getKey(), $target['schedule_id'], $site->operator_site_id)) {
                         throw new OperatorException('arrival_assignment_denied', 'The Operator is not assigned to this schedule.');
                     }
@@ -99,7 +108,12 @@ final readonly class OperatorArrivalService
         $portal = $this->authorization->portal();
         $site = $this->authorization->portalSite($portal);
         $occurrence = $this->instant($occurrenceAt);
-        $target = $this->memberAttendance->resolveBookingForArrival($site->operator_site_id, trim($bookingId), $occurrence->format(DATE_ATOM));
+        $target = $this->memberAttendance->resolveBookingForArrival(
+            $portal['context']->forPurpose(OperatorAuthorization::ARRIVAL_RECORD),
+            $site->operator_site_id,
+            trim($bookingId),
+            $occurrence->format(DATE_ATOM),
+        );
         if (! $this->assignments->isAssigned((string) $portal['profile']->getKey(), $target['schedule_id'], $site->operator_site_id)) {
             throw new OperatorException('arrival_assignment_denied', 'The Operator is not assigned to this schedule.');
         }
@@ -110,7 +124,7 @@ final readonly class OperatorArrivalService
         }
 
         $token = (string) Str::uuid();
-        session()->put('operator.arrival_confirmation', [
+        $this->confirmations->store([
             'token' => $token,
             'booking_id' => $target['booking_id'],
             'occurrence_at' => $occurrence->format(DATE_ATOM),
@@ -134,52 +148,42 @@ final readonly class OperatorArrivalService
     {
         $portal = $this->authorization->portal();
         $site = $this->authorization->portalSite($portal);
-        $state = session()->get('operator.arrival_confirmation');
-        if (! is_array($state) || ($state['token'] ?? null) !== trim($confirmationToken)) {
-            throw new OperatorException('arrival_confirmation_invalid', 'The arrival confirmation is missing or invalid.');
+        $inspection = $this->confirmations->inspect((string) $portal['profile']->getKey(), (string) $site->getKey(), $confirmationToken);
+        if ($inspection['status'] === 'consumed' && is_array($inspection['state']['result'] ?? null)) {
+            return $inspection['state']['result'];
         }
-        if (($state['operator_profile_id'] ?? null) !== (string) $portal['profile']->getKey() || ($state['operator_site_id'] ?? null) !== (string) $site->getKey()) {
-            throw new OperatorException('arrival_confirmation_invalid', 'The arrival confirmation is no longer valid for this Operator context.');
-        }
-        try {
-            $expiresValue = $state['expires_at'] ?? null;
-            if (! is_string($expiresValue) || trim($expiresValue) === '') {
-                throw new OperatorException('arrival_confirmation_invalid', 'The arrival confirmation is invalid.');
-            }
-            $expiresAt = new DateTimeImmutable($expiresValue);
-        } catch (Throwable $exception) {
-            if ($exception instanceof OperatorException) {
-                throw $exception;
-            }
-            throw new OperatorException('arrival_confirmation_invalid', 'The arrival confirmation is invalid.', $exception);
-        }
-        if ($this->clock->now() >= $expiresAt) {
-            session()->forget('operator.arrival_confirmation');
-            throw new OperatorException('arrival_confirmation_expired', 'The arrival confirmation has expired.');
-        }
-        if (($state['consumed'] ?? false) === true && is_array($state['result'] ?? null)) {
-            return $state['result'];
+        if ($inspection['status'] !== 'active' || ! is_array($inspection['state'] ?? null)) {
+            throw new OperatorException(
+                $inspection['status'] === 'expired' ? 'arrival_confirmation_expired' : 'arrival_confirmation_invalid',
+                $inspection['status'] === 'expired' ? 'The arrival confirmation has expired.' : 'The arrival confirmation is missing or invalid.',
+            );
         }
 
-        $result = $this->record(
+        $state = $inspection['state'];
+        $result = $this->recordUnconfirmed(
             (string) $state['booking_id'],
             (string) $state['occurrence_at'],
             (string) $state['idempotency_key'],
+            (string) $state['schedule_id'],
         );
-        session()->put('operator.arrival_confirmation', [...$state, 'consumed' => true, 'result' => $result]);
+        $this->confirmations->store([...$state, 'consumed' => true, 'result' => $result]);
 
         return $result;
     }
 
     public function cancelConfirmation(string $confirmationToken): void
     {
-        $this->authorization->portal();
-        $state = session()->get('operator.arrival_confirmation');
-        if (! is_array($state) || ($state['token'] ?? null) !== trim($confirmationToken)) {
+        $portal = $this->authorization->portal();
+        $site = $this->authorization->portalSite($portal);
+        $inspection = $this->confirmations->inspect((string) $portal['profile']->getKey(), (string) $site->getKey(), $confirmationToken);
+        if ($inspection['status'] === 'consumed') {
+            return;
+        }
+        if ($inspection['status'] !== 'active') {
             throw new OperatorException('arrival_confirmation_invalid', 'The arrival confirmation is missing or invalid.');
         }
 
-        session()->forget('operator.arrival_confirmation');
+        $this->confirmations->clear();
     }
 
     private function instant(string $value): DateTimeImmutable

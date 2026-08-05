@@ -17,6 +17,7 @@ final readonly class OperatorActiveSiteService
         private OperatorAuthorization $authorization,
         private AuditStore $audit,
         private Clock $clock,
+        private OperatorArrivalConfirmationService $confirmations,
     ) {}
 
     /** @return list<OperatorSite> */
@@ -62,12 +63,17 @@ final readonly class OperatorActiveSiteService
         $previous = session()->get('operator.active_site_id');
         if (is_string($previous) && $previous !== (string) $site->getKey()) {
             try {
-                $this->assertNoUnresolvedWork((string) $portal['profile']->getKey(), (string) $previous);
+                $currentSite = $this->authorization->portalSite($portal);
+                if ((string) $currentSite->getKey() !== $previous) {
+                    throw new OperatorException('active_site_required', 'Select an authorized active site before continuing.');
+                }
+                $this->assertNoUnresolvedWork((string) $portal['profile']->getKey(), (string) $currentSite->getKey());
             } catch (OperatorException $exception) {
                 $this->audit->append(AuditEvent::fromContext($portal['context'], 'operator.active-site.switch', 'operator', 'failure', $this->clock->now(), OperatorSite::class, (string) $site->getKey(), reason: $exception->category, metadata: ['previous_site_id' => $previous, 'operator_site_id' => $site->operator_site_id]));
                 throw $exception;
             }
         }
+        $this->confirmations->inspect((string) $portal['profile']->getKey(), (string) $site->getKey());
         session()->put('operator.active_site_id', (string) $site->getKey());
         session()->forget(['operator.active_schedule_id', 'operator.work_context']);
         $this->audit->append(AuditEvent::fromContext($portal['context'], 'operator.active-site.'.($previous === null ? 'select' : 'switch'), 'operator', 'success', $this->clock->now(), OperatorSite::class, (string) $site->getKey(), metadata: ['previous_site_id' => is_string($previous) ? $previous : null, 'operator_site_id' => $site->operator_site_id]));
@@ -77,7 +83,7 @@ final readonly class OperatorActiveSiteService
 
     private function assertNoUnresolvedWork(string $profileId, string $currentSiteId): void
     {
-        if (DB::table('operator_arrivals')->where('operator_profile_id', $profileId)->where('operator_site_id', $currentSiteId)->where('status', 'recorded')->exists()) {
+        if ($this->confirmations->inspect($profileId, $currentSiteId)['status'] === 'active') {
             throw new OperatorException('active_site_blocked', 'Site switching is blocked while arrival work is unresolved.');
         }
     }

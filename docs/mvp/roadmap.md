@@ -96,12 +96,14 @@ Pest/Playwright browser-platform work is deferred to post-MVP hardening.
 
 ### MVP-04A remediation addendum — 2026-08-05
 
-The published Operator foundation and arrival remediation was executed against
-baseline `eb12e2a6d533adb19b2cef120919b30fdd28e609` with `TARGET="."`. It
-corrects the bounded shared login, Operator-only password replacement, exact
-shift-assignment permission, recorded-arrival site switching, unified arrival
-eligibility, explicit confirmation, and server-derived redirect behavior.
-Evidence: `docs/mvp/evidence/mvp-04-operator-foundation-arrival.md`.
+The published Operator foundation and arrival remediation is committed at
+`2e08eae74e49b0ba54461ba8787a0ec8e0ece062`. The follow-up closure task uses
+that SHA as its baseline with `TARGET="."` and remains an uncommitted working
+tree change. It centralizes confirmation lifecycle validation, blocks only an
+active unconsumed confirmation during site switching, makes recorded arrivals
+non-blocking worklist entries, proves local/stable Operator site correspondence
+through an Operator-owned resolver, and removes the public unconfirmed arrival
+mutation. Evidence: `docs/mvp/evidence/mvp-04-operator-foundation-arrival.md`.
 MVP-04 remains incomplete and its queue, check-in, ticketing, consent,
 identity-decision, clinical, and broader attendance work remains deferred.
 

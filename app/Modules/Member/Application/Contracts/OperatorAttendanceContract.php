@@ -12,7 +12,7 @@ interface OperatorAttendanceContract
     public function query(AuthenticatedContext $context, string $operatorSiteId, string $scheduleId, string $at): array;
 
     /** @return array<string, mixed> */
-    public function resolveBookingForArrival(string $operatorSiteId, string $bookingId, string $occurrenceAt): array;
+    public function resolveBookingForArrival(AuthenticatedContext $context, string $operatorSiteId, string $bookingId, string $occurrenceAt): array;
 
     /** @return array<string, mixed>|null */
     public function safeArrivalSummary(string $bookingId): ?array;
