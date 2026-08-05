@@ -2,9 +2,9 @@
 
 set -Eeuo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE_FILE="${ROOT_DIR}/docker-compose.local.yml"
-ENV_TEMPLATE="${ROOT_DIR}/.env.local"
+ENV_TEMPLATE="${ROOT_DIR}/.env.example"
 ENV_FILE="${ROOT_DIR}/.env"
 APP_SLUG="mhcs_core"
 DB_CONTAINER="${APP_SLUG}-mysql-local"
@@ -122,7 +122,7 @@ for secret in APP_KEY DB_PASSWORD DB_ROOT_PASSWORD MHCS_IDENTIFIER_KEY MHCS_OBJE
     ensure_secret "$secret"
 done
 
-docker compose -f "$COMPOSE_FILE" up -d db
+docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d db
 
 for attempt in $(seq 1 30); do
     health="$(docker inspect --format '{{.State.Health.Status}}' "$DB_CONTAINER" 2>/dev/null || true)"
