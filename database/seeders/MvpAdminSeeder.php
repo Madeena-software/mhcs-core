@@ -32,16 +32,20 @@ final class MvpAdminSeeder extends Seeder
         $existing = User::query()->where('email', self::EMAIL)->first();
 
         if ($existing !== null) {
-            DB::transaction(function () use ($existing): void {
+            $claimsReconciled = false;
+
+            DB::transaction(function () use ($existing, &$claimsReconciled): void {
                 $user = User::query()->whereKey($existing->getKey())->lockForUpdate()->first();
                 if ($user === null) {
                     throw new RuntimeException('The existing MVP admin account disappeared during reconciliation.');
                 }
 
                 $this->assertExistingAccount($user);
-                $this->reconcileClaims($user->getKey());
+                $claimsReconciled = $this->reconcileClaims($user->getKey());
             });
-            $this->command?->info(self::EMAIL.' already exists; its credential and claims were not changed.');
+            $this->command?->info($claimsReconciled
+                ? self::EMAIL.' already exists; missing bootstrap claims were reconciled.'
+                : self::EMAIL.' already exists; its credential and claims were unchanged.');
 
             return;
         }
@@ -105,8 +109,9 @@ final class MvpAdminSeeder extends Seeder
 
     }
 
-    private function reconcileClaims(string $userId): void
+    private function reconcileClaims(string $userId): bool
     {
+        $claimsReconciled = false;
         $roles = DB::table('authorization_role_assignments')
             ->where('user_id', $userId)
             ->lockForUpdate()
@@ -124,6 +129,7 @@ final class MvpAdminSeeder extends Seeder
             }
         } else {
             $this->insertRole($userId);
+            $claimsReconciled = true;
         }
 
         $permissions = DB::table('authorization_permission_assignments')
@@ -144,6 +150,7 @@ final class MvpAdminSeeder extends Seeder
 
             if ($matching->isEmpty()) {
                 $this->insertPermission($userId, $permission);
+                $claimsReconciled = true;
 
                 continue;
             }
@@ -153,6 +160,8 @@ final class MvpAdminSeeder extends Seeder
                 throw new RuntimeException('The existing MVP admin account has an inactive or non-bootstrap permission assignment.');
             }
         }
+
+        return $claimsReconciled;
     }
 
     private function insertRole(string $userId): void

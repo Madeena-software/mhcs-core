@@ -43,6 +43,11 @@ The published admin-enforcement remediation was completed against the recorded
 baseline; query authorization, execution-time account-action checks, and safe
 bootstrap-claim reconciliation are covered by the evidence below. Evidence:
 `docs/mvp/evidence/mvp-02-shared-admin-shell-member-administration.md`.
+The focused evidence-closure task ran from baseline
+`03ba160f2080a6924ae64402e48be990cc9c7ffd` at execution commit
+`f7a3eaeb54b97642bd61d545ebcbf5e26f69f93c`; its 32 focused tests and 283
+assertions passed. This remains a bounded MVP-02 evidence claim, not a
+production-readiness claim.
 MVP-03 has not started.
 
 ## MVP-03 — Member Radiology Service Request

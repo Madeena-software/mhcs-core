@@ -6,10 +6,14 @@ namespace Tests\Feature\Admin;
 
 use App\Models\User;
 use App\Providers\Filament\Pages\AdminLogin;
+use App\Shared\Authorization\AuthorizationClaimResolver;
+use App\Shared\Authorization\DatabaseAuthorizationClaimResolver;
 use App\Shared\Context\AuthenticatedContextProvider;
 use Database\Seeders\DatabaseSeeder;
 use Database\Seeders\MvpAdminSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
+use Illuminate\Routing\Route;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
@@ -107,6 +111,10 @@ final class Mvp02AdminAccessTest extends TestCase
     {
         $this->get('/admin/login')->assertOk();
         $known = $this->userWithClaims(['email' => 'known-admin@example.test']);
+        $noClaims = User::factory()->create([
+            'email' => 'no-claims@example.test',
+            'password' => Hash::make('admin-password'),
+        ]);
         $roleOnly = User::factory()->create([
             'email' => 'role-only@example.test',
             'password' => Hash::make('admin-password'),
@@ -118,31 +126,20 @@ final class Mvp02AdminAccessTest extends TestCase
         $this->grant($roleOnly, ['administrator'], []);
         $this->grant($permissionOnly, [], ['member.admin.access']);
 
-        $attempt = static fn (string $email): mixed => Livewire::test(AdminLogin::class)
-            ->fillForm(['email' => $email, 'password' => 'admin-password'])
-            ->call('authenticate');
-
-        $wrong = Livewire::test(AdminLogin::class)
-            ->fillForm(['email' => $known->email, 'password' => 'wrong-password'])
-            ->call('authenticate');
-        $unknown = Livewire::test(AdminLogin::class)
-            ->fillForm(['email' => 'unknown-admin@example.test', 'password' => 'wrong-password'])
-            ->call('authenticate');
-
-        $message = $wrong->errors()->first('data.email');
-        $this->assertNotNull($message);
-        $this->assertSame($message, $unknown->errors()->first('data.email'));
-
-        foreach ([$roleOnly, $permissionOnly] as $user) {
-            $attempt($user->email)->assertHasErrors(['data.email']);
-        }
+        $attempts = [
+            [$known->email, 'wrong-password'],
+            ['unknown-admin@example.test', 'wrong-password'],
+            [$noClaims->email, 'admin-password'],
+            [$roleOnly->email, 'admin-password'],
+            [$permissionOnly->email, 'admin-password'],
+        ];
 
         foreach (['suspended', 'pending_activation'] as $status) {
             $user = $this->userWithClaims([
                 'email' => $status.'-admin@example.test',
                 'account_status' => $status,
             ]);
-            $attempt($user->email)->assertHasErrors(['data.email']);
+            $attempts[] = [$user->email, 'admin-password'];
         }
 
         foreach ([
@@ -150,10 +147,21 @@ final class Mvp02AdminAccessTest extends TestCase
             ['email' => 'change-admin@example.test', 'must_change_password' => true],
         ] as $attributes) {
             $user = $this->userWithClaims($attributes);
-            $attempt($user->email)->assertHasErrors(['data.email']);
+            $attempts[] = [$user->email, 'admin-password'];
         }
 
-        $this->assertGuest();
+        $messages = [];
+        foreach ($attempts as [$email, $password]) {
+            $component = Livewire::test(AdminLogin::class)
+                ->fillForm(['email' => $email, 'password' => $password])
+                ->call('authenticate')
+                ->assertHasErrors(['data.email']);
+
+            $this->assertGuest();
+            $messages[] = $component->errors()->first('data.email');
+        }
+
+        $this->assertSame(array_fill(0, count($attempts), 'Email atau kata sandi tidak sesuai.'), $messages);
         $audit = DB::table('audit_events')->where('action', 'credential.verify')->get()->toJson();
         $this->assertStringNotContainsString('known-admin@example.test', $audit);
         $this->assertStringNotContainsString('admin-password', $audit);
@@ -181,7 +189,9 @@ final class Mvp02AdminAccessTest extends TestCase
         $first = User::query()->where('email', 'mvp-admin@example.test')->firstOrFail();
         $password = $first->password;
 
-        $this->seed(MvpAdminSeeder::class);
+        $this->artisan('db:seed', ['--class' => MvpAdminSeeder::class, '--no-interaction' => true])
+            ->expectsOutputToContain('credential and claims were unchanged.')
+            ->assertExitCode(0);
 
         $this->assertSame($password, $first->fresh()->password);
         $this->assertDatabaseCount('users', 1);
@@ -250,6 +260,159 @@ final class Mvp02AdminAccessTest extends TestCase
         $this->get('/admin')->assertStatus(403);
     }
 
+    public function test_claim_resolver_returns_exact_claim_arrays_and_does_not_mix_users(): void
+    {
+        $first = User::factory()->create();
+        $second = User::factory()->create();
+        $this->grant($first, ['member-manager', 'administrator'], ['member.account.read', 'member.admin.access']);
+        $this->grant($second, ['operator'], ['operator.queue.read']);
+
+        DB::table('authorization_role_assignments')->insert([
+            'id' => (string) Str::uuid(),
+            'user_id' => $first->id,
+            'role' => 'inactive-role',
+            'assigned_by_user_id' => null,
+            'active' => false,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('authorization_permission_assignments')->insert([
+            'id' => (string) Str::uuid(),
+            'user_id' => $first->id,
+            'permission' => ' ',
+            'assigned_by_user_id' => null,
+            'active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('authorization_permission_assignments')->insert([
+            'id' => (string) Str::uuid(),
+            'user_id' => $first->id,
+            'permission' => 'member.*',
+            'assigned_by_user_id' => null,
+            'active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $resolver = new DatabaseAuthorizationClaimResolver;
+
+        $this->assertSame(['administrator', 'member-manager'], $resolver->roles($first));
+        $this->assertSame(['member.account.read', 'member.admin.access'], $resolver->permissions($first));
+        $this->assertSame(['operator'], $resolver->roles($second));
+        $this->assertSame(['operator.queue.read'], $resolver->permissions($second));
+        $this->assertSame([], $resolver->roles((string) Str::uuid()));
+        $this->assertSame([], $resolver->permissions((string) Str::uuid()));
+    }
+
+    public function test_claim_resolver_fails_closed_when_assignment_storage_is_unavailable(): void
+    {
+        DB::shouldReceive('table')->andThrow(new RuntimeException('assignment storage unavailable'));
+
+        $resolver = new DatabaseAuthorizationClaimResolver;
+
+        $this->assertSame([], $resolver->roles((string) Str::uuid()));
+        $this->assertSame([], $resolver->permissions((string) Str::uuid()));
+    }
+
+    public function test_new_scoped_claim_resolver_observes_deactivation_and_untrusted_inputs_add_no_claims(): void
+    {
+        $admin = $this->userWithClaims();
+
+        request()->attributes->set('trusted_roles', ['attacker']);
+        request()->merge(['trusted_permissions' => ['attacker.permission']]);
+        session()->put(['trusted_roles' => ['attacker'], 'trusted_permissions' => ['attacker.permission']]);
+        $route = new Route('GET', '/admin/{trusted_permissions}', static fn (): string => '');
+        $route->bind(Request::create('/admin/attacker.permission'));
+        $route->setParameter('trusted_permissions', ['attacker.permission']);
+        request()->setRouteResolver(static fn (): Route => $route);
+        filament()->setCurrentPanel('admin');
+        Livewire::test(AdminLogin::class)
+            ->set('data.trusted_roles', ['attacker'])
+            ->set('data.trusted_permissions', ['attacker.permission']);
+        $this->actingAs($admin);
+
+        $resolver = app(AuthorizationClaimResolver::class);
+        $this->assertSame(['administrator'], $resolver->roles($admin));
+        $this->assertSame([
+            'member.account.manage',
+            'member.account.read',
+            'member.admin.access',
+            'member.audit.read',
+        ], $resolver->permissions($admin));
+
+        DB::table('authorization_permission_assignments')
+            ->where('user_id', $admin->id)
+            ->where('permission', 'member.admin.access')
+            ->update(['active' => false]);
+
+        app()->forgetScopedInstances();
+        $nextRequestResolver = app(AuthorizationClaimResolver::class);
+        $this->assertSame(['administrator'], $nextRequestResolver->roles($admin));
+        $this->assertSame([
+            'member.account.manage',
+            'member.account.read',
+            'member.audit.read',
+        ], $nextRequestResolver->permissions($admin));
+    }
+
+    public function test_admin_login_uses_pair_origin_and_identifier_throttles(): void
+    {
+        filament()->setCurrentPanel('admin');
+
+        config(['mhcs.security.login' => [
+            'pair_max_attempts' => 1,
+            'origin_max_attempts' => 5,
+            'identifier_max_attempts' => 10,
+            'decay_seconds' => 60,
+        ]]);
+        request()->server->set('REMOTE_ADDR', '10.0.0.1');
+
+        Livewire::test(AdminLogin::class)
+            ->fillForm(['email' => 'pair@example.test', 'password' => 'wrong'])
+            ->call('authenticate')
+            ->assertHasErrors(['data.email']);
+        Livewire::test(AdminLogin::class)
+            ->fillForm(['email' => 'pair@example.test', 'password' => 'wrong'])
+            ->call('authenticate')
+            ->assertHasErrors(['data.email']);
+
+        config(['mhcs.security.login' => [
+            'pair_max_attempts' => 5,
+            'origin_max_attempts' => 1,
+            'identifier_max_attempts' => 10,
+            'decay_seconds' => 60,
+        ]]);
+        request()->server->set('REMOTE_ADDR', '10.0.0.2');
+        foreach (['origin-one@example.test', 'origin-two@example.test'] as $email) {
+            Livewire::test(AdminLogin::class)
+                ->fillForm(['email' => $email, 'password' => 'wrong'])
+                ->call('authenticate')
+                ->assertHasErrors(['data.email']);
+        }
+
+        config(['mhcs.security.login' => [
+            'pair_max_attempts' => 1,
+            'origin_max_attempts' => 2,
+            'identifier_max_attempts' => 3,
+            'decay_seconds' => 60,
+        ]]);
+        foreach (range(1, 4) as $attempt) {
+            request()->server->set('REMOTE_ADDR', '10.0.0.'.$attempt);
+            Livewire::test(AdminLogin::class)
+                ->fillForm(['email' => 'identifier@example.test', 'password' => 'wrong'])
+                ->call('authenticate')
+                ->assertHasErrors(['data.email']);
+        }
+
+        $this->assertGreaterThanOrEqual(3, DB::table('audit_events')
+            ->where('action', 'credential.verify')
+            ->where('outcome', 'failure')
+            ->where('metadata', 'like', '%rate_limited%')
+            ->count());
+        $this->assertGuest();
+    }
+
     public function test_existing_admin_reconciles_only_missing_claims_and_preserves_password_hash(): void
     {
         $this->seed(MvpAdminSeeder::class);
@@ -262,7 +425,11 @@ final class Mvp02AdminAccessTest extends TestCase
             ->where('permission', 'member.audit.read')
             ->delete();
 
-        $this->seed(MvpAdminSeeder::class);
+        $this->artisan('db:seed', ['--class' => MvpAdminSeeder::class, '--no-interaction' => true])
+            ->expectsOutputToContain('missing bootstrap claims were reconciled.')
+            ->doesntExpectOutputToContain('credential and claims were unchanged.')
+            ->doesntExpectOutputToContain('admin-password')
+            ->assertExitCode(0);
 
         $this->assertSame($password, $admin->fresh()->password);
         $this->assertDatabaseHas('authorization_role_assignments', [

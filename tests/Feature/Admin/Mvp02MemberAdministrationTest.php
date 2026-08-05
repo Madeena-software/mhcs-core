@@ -26,6 +26,10 @@ final class Mvp02MemberAdministrationTest extends TestCase
     {
         $admin = $this->admin(['member.account.read', 'member.audit.read']);
         [$member, $nik] = $this->member();
+        $memberUser = User::query()->findOrFail($member->user_id);
+        $rememberToken = 'remember-token-marker';
+        DB::table('users')->where('id', $memberUser->id)->update(['remember_token' => $rememberToken]);
+        $nikDigest = (string) DB::table('members')->where('id', $member->id)->value('nik_lookup_digest');
 
         $this->actingAs($admin)
             ->get('/admin/members')
@@ -33,9 +37,12 @@ final class Mvp02MemberAdministrationTest extends TestCase
             ->assertSee($member->name)
             ->assertSee($member->medical_record_number)
             ->assertDontSee($nik)
-            ->assertDontSee('encrypted_nik')
-            ->assertDontSee('nik_lookup_digest')
-            ->assertDontSee('remember_token')
+            ->assertDontSee('synthetic-protected-value')
+            ->assertDontSee($nikDigest)
+            ->assertDontSee('Private address should not render')
+            ->assertDontSee('Private contact should not render')
+            ->assertDontSee($memberUser->password)
+            ->assertDontSee($rememberToken)
             ->assertDontSee('name="data[password]"', false);
 
         $this->actingAs($admin)
@@ -45,10 +52,48 @@ final class Mvp02MemberAdministrationTest extends TestCase
             ->assertSee('Kelengkapan profil')
             ->assertSee('Audit Member')
             ->assertDontSee($nik)
-            ->assertDontSee('current_address')
+            ->assertDontSee($nikDigest)
+            ->assertDontSee('Private address should not render')
+            ->assertDontSee('Private contact should not render')
+            ->assertDontSee($memberUser->password)
+            ->assertDontSee($rememberToken)
             ->assertDontSee('session_id')
             ->assertDontSee('roles')
             ->assertDontSee('permissions');
+    }
+
+    public function test_member_name_mrn_and_email_search_each_isolates_the_intended_record(): void
+    {
+        $admin = $this->admin(['member.account.read']);
+        [$byName] = $this->member(null, [
+            'name' => 'Search Name Alpha',
+            'medical_record_number' => 'MRN-SEARCH-ALPHA',
+        ]);
+        [$byMrn] = $this->member(null, [
+            'name' => 'Search MRN Beta',
+            'medical_record_number' => 'MRN-SEARCH-BETA',
+        ]);
+        $emailUser = User::factory()->create(['email' => 'search-email@example.test']);
+        [$byEmail] = $this->member($emailUser, [
+            'name' => 'Search Email Gamma',
+            'medical_record_number' => 'MRN-SEARCH-GAMMA',
+        ]);
+
+        $this->actingAs($admin);
+        Filament::setCurrentPanel('admin');
+
+        Livewire::test(ListMembers::class)
+            ->searchTable('Search Name Alpha')
+            ->assertCanSeeTableRecords([$byName])
+            ->assertCanNotSeeTableRecords([$byMrn, $byEmail]);
+        Livewire::test(ListMembers::class)
+            ->searchTable('MRN-SEARCH-BETA')
+            ->assertCanSeeTableRecords([$byMrn])
+            ->assertCanNotSeeTableRecords([$byName, $byEmail]);
+        Livewire::test(ListMembers::class)
+            ->searchTable('search-email@example.test')
+            ->assertCanSeeTableRecords([$byEmail])
+            ->assertCanNotSeeTableRecords([$byName, $byMrn]);
     }
 
     public function test_member_read_and_audit_permissions_are_independent_and_mutations_are_not_registered(): void
@@ -120,42 +165,141 @@ final class Mvp02MemberAdministrationTest extends TestCase
             ->assertCountTableRecords(0);
     }
 
-    public function test_account_actions_reauthorize_at_execution_and_reject_invalid_targets_and_reasons(): void
+    public function test_authorized_member_detail_does_not_serialize_audit_claim_session_digest_or_metadata_values(): void
+    {
+        $admin = $this->admin(['member.account.read', 'member.account.manage', 'member.audit.read']);
+        [$member] = $this->member();
+
+        $this->actingAs($admin);
+        Filament::setCurrentPanel('admin');
+        app(AccountStateService::class)->suspend((string) $member->user_id, 'visible audit reason');
+        $event = DB::table('audit_events')
+            ->where('action', 'member.account-state')
+            ->where('target_id', $member->user_id)
+            ->firstOrFail();
+        DB::table('audit_events')->where('event_id', $event->event_id)->update([
+            'metadata' => json_encode(['opaque_marker' => 'audit-forbidden-metadata-marker'], JSON_THROW_ON_ERROR),
+        ]);
+
+        $component = Livewire::test(ViewMember::class, ['record' => $member->id])
+            ->assertSee('visible audit reason');
+
+        foreach (array_filter([
+            'administrator',
+            'member.account.manage',
+            $event->session_id,
+            $event->previous_state_digest,
+            $event->new_state_digest,
+            'audit-forbidden-metadata-marker',
+        ]) as $forbiddenValue) {
+            $component->assertDontSee($forbiddenValue);
+        }
+    }
+
+    public function test_suspend_action_rechecks_permission_after_mount(): void
     {
         [$member] = $this->member();
-        $readOnly = $this->admin(['member.account.read']);
+        $admin = $this->admin(['member.account.read', 'member.account.manage']);
 
-        $this->actingAs($readOnly);
+        $this->actingAs($admin);
         Filament::setCurrentPanel('admin');
-        Livewire::test(ListMembers::class)
-            ->assertTableActionHidden('suspend', $member)
+        $component = Livewire::test(ListMembers::class)
+            ->assertTableActionVisible('suspend', $member)
             ->mountTableAction('suspend', $member)
-            ->setTableActionData(['reason' => 'read-only execution attempt'])
-            ->callMountedTableAction();
+            ->setTableActionData(['reason' => 'revoked permission attempt'])
+            ->assertSet('mountedActions.0.context.recordKey', $member->id);
+        $this->assertTrue($component->instance()->getMountedAction()?->isVisible());
+
+        DB::table('authorization_permission_assignments')
+            ->where('user_id', $admin->id)
+            ->where('permission', 'member.account.manage')
+            ->update(['active' => false]);
+        app()->forgetScopedInstances();
+
+        $component->instance()->callMountedTableAction();
+        $component->assertNotified();
         $this->assertDatabaseHas('users', ['id' => $member->user_id, 'account_status' => 'active']);
-
-        $self = $this->admin(['member.account.read', 'member.account.manage']);
-        [$selfMember] = $this->member($self);
-        $this->actingAs($self);
-        Livewire::test(ListMembers::class)
-            ->assertTableActionHidden('suspend', $selfMember)
-            ->mountTableAction('suspend', $selfMember)
-            ->setTableActionData(['reason' => 'self execution attempt'])
-            ->callMountedTableAction();
-        $this->assertDatabaseHas('users', ['id' => $self->id, 'account_status' => 'active']);
-
-        [$pending] = $this->member();
-        DB::table('users')->where('id', $pending->user_id)->update(['account_status' => 'pending_activation']);
-        Livewire::test(ListMembers::class)
-            ->mountTableAction('suspend', $pending)
-            ->setTableActionData(['reason' => 'pending execution attempt'])
-            ->callMountedTableAction();
-        $this->assertDatabaseHas('users', ['id' => $pending->user_id, 'account_status' => 'pending_activation']);
+        $this->assertDatabaseHas('users', ['id' => $admin->id, 'account_status' => 'active']);
         $this->assertDatabaseMissing('audit_events', [
             'action' => 'member.account-state',
-            'target_id' => $pending->user_id,
+            'target_id' => $member->user_id,
             'outcome' => 'suspended',
         ]);
+    }
+
+    public function test_suspend_action_rechecks_server_linkage_after_mount(): void
+    {
+        $admin = $this->admin(['member.account.read', 'member.account.manage']);
+        [$member] = $this->member();
+        $originalUserId = (string) $member->user_id;
+
+        $this->actingAs($admin);
+        Filament::setCurrentPanel('admin');
+        $component = Livewire::test(ListMembers::class)
+            ->assertTableActionVisible('suspend', $member)
+            ->mountTableAction('suspend', $member)
+            ->setTableActionData(['reason' => 'self linkage attempt'])
+            ->assertSet('mountedActions.0.context.recordKey', $member->id);
+
+        DB::table('members')->where('id', $member->id)->update(['user_id' => $admin->id]);
+
+        $component->instance()->callMountedTableAction();
+        $component->assertNotified();
+        $this->assertDatabaseHas('users', ['id' => $admin->id, 'account_status' => 'active']);
+        $this->assertDatabaseHas('users', ['id' => $originalUserId, 'account_status' => 'active']);
+        $this->assertDatabaseMissing('audit_events', [
+            'action' => 'member.account-state',
+            'target_id' => $admin->id,
+            'outcome' => 'suspended',
+        ]);
+    }
+
+    public function test_suspend_action_rechecks_source_state_after_mount(): void
+    {
+        $admin = $this->admin(['member.account.read', 'member.account.manage']);
+        [$member] = $this->member();
+
+        $this->actingAs($admin);
+        Filament::setCurrentPanel('admin');
+        $component = Livewire::test(ListMembers::class)
+            ->assertTableActionVisible('suspend', $member)
+            ->mountTableAction('suspend', $member)
+            ->setTableActionData(['reason' => 'changed state attempt'])
+            ->assertSet('mountedActions.0.context.recordKey', $member->id);
+
+        DB::table('users')->where('id', $member->user_id)->update(['account_status' => 'pending_activation']);
+
+        $component->instance()->callMountedTableAction();
+        $component->assertNotified();
+        $this->assertDatabaseHas('users', ['id' => $member->user_id, 'account_status' => 'pending_activation']);
+        $this->assertDatabaseHas('users', ['id' => $admin->id, 'account_status' => 'active']);
+        $this->assertDatabaseMissing('audit_events', [
+            'action' => 'member.account-state',
+            'target_id' => $member->user_id,
+            'outcome' => 'suspended',
+        ]);
+    }
+
+    public function test_account_actions_reject_blank_whitespace_and_overlong_reasons(): void
+    {
+        $admin = $this->admin(['member.account.read', 'member.account.manage']);
+
+        foreach (['', '   ', str_repeat('x', 1001)] as $reason) {
+            [$member] = $this->member();
+            $this->actingAs($admin);
+            Filament::setCurrentPanel('admin');
+
+            Livewire::test(ListMembers::class)
+                ->callTableAction('suspend', $member, ['reason' => $reason])
+                ->assertHasErrors(['mountedActions.0.data.reason']);
+
+            $this->assertDatabaseHas('users', ['id' => $member->user_id, 'account_status' => 'active']);
+            $this->assertDatabaseMissing('audit_events', [
+                'action' => 'member.account-state',
+                'target_id' => $member->user_id,
+                'outcome' => 'suspended',
+            ]);
+        }
     }
 
     public function test_suspend_and_restore_use_the_server_record_and_keep_member_access_closed_after_suspension(): void
@@ -219,6 +363,22 @@ final class Mvp02MemberAdministrationTest extends TestCase
             ->assertDontSee('unrelated audit value');
     }
 
+    public function test_member_resource_has_no_mutation_bulk_or_export_actions(): void
+    {
+        $admin = $this->admin(['member.account.read', 'member.account.manage']);
+        [$member] = $this->member();
+
+        $this->actingAs($admin);
+        Filament::setCurrentPanel('admin');
+        Livewire::test(ListMembers::class)
+            ->assertTableActionDoesNotExist('create', null, $member)
+            ->assertTableActionDoesNotExist('edit', null, $member)
+            ->assertTableActionDoesNotExist('delete', null, $member)
+            ->assertTableActionDoesNotExist('replicate', null, $member)
+            ->assertTableBulkActionDoesNotExist('delete')
+            ->assertTableBulkActionDoesNotExist('export');
+    }
+
     /** @param list<string> $permissions */
     private function admin(array $permissions): User
     {
@@ -253,13 +413,13 @@ final class Mvp02MemberAdministrationTest extends TestCase
     }
 
     /** @return array{0: Member, 1: string} */
-    private function member(?User $existingUser = null): array
+    private function member(?User $existingUser = null, array $attributes = []): array
     {
         $user = $existingUser ?? User::factory()->create(['email' => 'member-'.Str::random(8).'@example.test']);
         $nik = '900000000'.str_pad((string) User::query()->count(), 3, '0', STR_PAD_LEFT);
         $memberId = (string) Str::uuid();
 
-        DB::table('members')->insert([
+        DB::table('members')->insert(array_merge([
             'id' => $memberId,
             'user_id' => $user->id,
             'family_id' => null,
@@ -279,7 +439,7 @@ final class Mvp02MemberAdministrationTest extends TestCase
             'emergency_contact_phone' => null,
             'created_at' => now(),
             'updated_at' => now(),
-        ]);
+        ], $attributes));
 
         return [Member::query()->findOrFail($memberId), $nik];
     }

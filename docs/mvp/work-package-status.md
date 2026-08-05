@@ -1,5 +1,11 @@
 # Work Package status ledger
 
+Current MVP-02 evidence-closure status: baseline
+03ba160f2080a6924ae64402e48be990cc9c7ffd was confirmed as an ancestor of
+execution commit f7a3eaeb54b97642bd61d545ebcbf5e26f69f93c; 32 focused tests
+and 283 assertions passed. WP-10 remains partially implemented because broad
+Member administration and B2B import are out of scope.
+
 Statuses are evidence-based and describe the current foundation, not complete long-term conformance. Requirement assignments below reproduce the current implementation plan; this ledger does not alter them. \`accepted-foundation\` means the repository contains the consumed, tested foundation and its accepted baseline language, not that every assigned requirement is complete.
 
 | Work Package | Title | Requirement assignment | Repository evidence | MVP relevance | Status | Deferred items | Notes |
