@@ -17,6 +17,12 @@ return [
         'administrator',
     ],
 
+    'admin_panel' => [
+        'access_permissions' => [
+            'member.admin.access',
+        ],
+    ],
+
     'queue_purposes' => [
         'notifications',
         'image orchestration',

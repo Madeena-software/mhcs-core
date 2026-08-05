@@ -4,12 +4,16 @@ declare(strict_types=1);
 
 namespace App\Shared\Context;
 
+use App\Shared\Authorization\AuthorizationClaimResolver;
 use App\Shared\Identity\LocalId;
 use Illuminate\Contracts\Auth\Factory as AuthFactory;
 
 final readonly class LaravelAuthenticatedContextProvider implements AuthenticatedContextProvider
 {
-    public function __construct(private AuthFactory $auth) {}
+    public function __construct(
+        private AuthFactory $auth,
+        private AuthorizationClaimResolver $claims,
+    ) {}
 
     public function current(): AuthenticatedContext
     {
@@ -29,8 +33,8 @@ final readonly class LaravelAuthenticatedContextProvider implements Authenticate
             actorId: LocalId::fromString((string) $user->getAuthIdentifier()),
             operationId: $this->operationId(),
             sessionId: $sessionId === null || $sessionId === '' ? null : LocalId::fromString($sessionId),
-            roles: self::claims($user, 'trusted_roles'),
-            permissions: self::claims($user, 'trusted_permissions'),
+            roles: $this->claims->roles((string) $user->getAuthIdentifier()),
+            permissions: $this->claims->permissions((string) $user->getAuthIdentifier()),
             purpose: 'authenticated-session',
         );
     }
@@ -52,13 +56,5 @@ final readonly class LaravelAuthenticatedContextProvider implements Authenticate
         }
 
         return CorrelationId::random();
-    }
-
-    /** @return list<string> */
-    private static function claims(object $user, string $attribute): array
-    {
-        $claims = $user->{$attribute} ?? [];
-
-        return is_array($claims) ? array_values(array_filter($claims, 'is_string')) : [];
     }
 }

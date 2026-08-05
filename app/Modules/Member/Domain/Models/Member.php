@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Modules\Member\Domain\Models;
 
+use App\Models\User;
 use App\Modules\Member\Domain\MemberIdentityException;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -40,6 +41,11 @@ final class Member extends Model
     public function family(): BelongsTo
     {
         return $this->belongsTo(Family::class);
+    }
+
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class);
     }
 
     public function verificationAssets(): HasMany

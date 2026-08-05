@@ -12,6 +12,10 @@ use Illuminate\Support\Facades\DB;
 
 final readonly class MemberAuthorization
 {
+    public const ADMIN_PANEL_ACCESS_PERMISSION = 'member.admin.access';
+
+    public const ACCOUNT_READ_PERMISSION = 'member.account.read';
+
     public const REGISTRATION_PERMISSION = 'member.registration.manage';
 
     public const ONLINE_REGISTRATION_PERMISSION = 'member.registration.self';
@@ -23,6 +27,8 @@ final readonly class MemberAuthorization
     public const GUARDIAN_MANAGEMENT_PERMISSION = 'member.guardian.manage';
 
     public const ACCOUNT_STATE_PERMISSION = 'member.account.manage';
+
+    public const AUDIT_READ_PERMISSION = 'member.audit.read';
 
     public const ASSISTED_RECOVERY_PERMISSION = 'member.assisted-recovery';
 
@@ -71,6 +77,16 @@ final readonly class MemberAuthorization
     public function accountState(): AuthenticatedContext
     {
         return $this->requireAdministrator('member.account-state', self::ACCOUNT_STATE_PERMISSION);
+    }
+
+    public function accountRead(): AuthenticatedContext
+    {
+        return $this->requireAdministrator('member.account-read', self::ACCOUNT_READ_PERMISSION);
+    }
+
+    public function auditRead(): AuthenticatedContext
+    {
+        return $this->requireAdministrator('member.audit-read', self::AUDIT_READ_PERMISSION);
     }
 
     public function assistedRecovery(): AuthenticatedContext

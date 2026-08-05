@@ -9,6 +9,9 @@ use App\Shared\Application\Contracts\QueryBus;
 use App\Shared\Audit\AuditStore;
 use App\Shared\Audit\DatabaseAuditStore;
 use App\Shared\Auth\AccountStateUserProvider;
+use App\Shared\Authorization\AdminPanelAccessService;
+use App\Shared\Authorization\AuthorizationClaimResolver;
+use App\Shared\Authorization\DatabaseAuthorizationClaimResolver;
 use App\Shared\Context\AuthenticatedContextProvider;
 use App\Shared\Context\LaravelAuthenticatedContextProvider;
 use App\Shared\Infrastructure\Idempotency\DatabaseIdempotencyStore;
@@ -35,7 +38,9 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->app->singleton(ModuleRegistry::class);
         $this->app->singleton(Clock::class, SystemClock::class);
-        $this->app->singleton(AuthenticatedContextProvider::class, LaravelAuthenticatedContextProvider::class);
+        $this->app->scoped(AuthorizationClaimResolver::class, DatabaseAuthorizationClaimResolver::class);
+        $this->app->scoped(AuthenticatedContextProvider::class, LaravelAuthenticatedContextProvider::class);
+        $this->app->scoped(AdminPanelAccessService::class);
         $this->app->singleton(AuditStore::class, DatabaseAuditStore::class);
         $this->app->singleton(ProtectedIdentifierService::class, function ($app): ProtectedIdentifierService {
             return new ProtectedIdentifierService(
