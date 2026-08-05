@@ -65,28 +65,45 @@ final readonly class Mvp03ScheduleService
     public function update(ShiftSchedule $schedule, array $attributes): ShiftSchedule
     {
         $context = $this->authorization->scheduleManage();
-        $siteId = $this->id($attributes['examination_site_id'] ?? $schedule->examination_site_id);
-        $serviceId = $this->id($attributes['service_offering_id'] ?? $schedule->service_offering_id);
-        $times = $this->times($attributes['starts_at'] ?? (string) $schedule->starts_at, $attributes['ends_at'] ?? (string) $schedule->ends_at);
-        $quota = $this->quota($attributes['quota'] ?? $schedule->quota);
-        $status = $attributes['status'] ?? $schedule->status;
-        if (! is_string($status) || ! in_array($status, ['open', 'closed'], true)) {
-            throw new Mvp03Exception('Schedule status is invalid.');
-        }
 
-        return DB::transaction(function () use ($schedule, $siteId, $serviceId, $times, $quota, $status, $context): ShiftSchedule {
+        return DB::transaction(function () use ($schedule, $attributes, $context): ShiftSchedule {
             $record = ShiftSchedule::query()->whereKey($schedule->getKey())->lockForUpdate()->first();
             if ($record === null) {
                 throw new Mvp03Exception('Schedule is unavailable.');
             }
+
+            $siteId = $this->id($attributes['examination_site_id'] ?? $record->examination_site_id);
+            $serviceId = $this->id($attributes['service_offering_id'] ?? $record->service_offering_id);
+            $times = $this->timesForUpdate($attributes, $record);
+            $quota = $this->quota($attributes['quota'] ?? $record->quota);
+            $status = $attributes['status'] ?? $record->status;
+            if (! is_string($status) || ! in_array($status, ['open', 'closed'], true)) {
+                throw new Mvp03Exception('Schedule status is invalid.');
+            }
+
             $hasBookings = DB::table('bookings')->where('shift_schedule_id', $record->getKey())->exists();
-            if ($hasBookings && ($siteId !== $record->examination_site_id || $serviceId !== $record->service_offering_id)) {
-                throw new Mvp03Exception('A booked schedule cannot change its site or service.');
+            $frozenChanged = $siteId !== $record->examination_site_id
+                || $serviceId !== $record->service_offering_id
+                || $times['starts_at'] !== $this->storedInstant($record->starts_at)
+                || $times['ends_at'] !== $this->storedInstant($record->ends_at)
+                || $quota !== (int) $record->quota;
+            if ($hasBookings && $frozenChanged) {
+                throw new Mvp03Exception('A booked schedule cannot change its appointment data.');
+            }
+            if ($hasBookings && $status !== $record->status && $status !== 'closed') {
+                throw new Mvp03Exception('A booked schedule may only be closed.');
             }
             $site = ExaminationSiteReference::query()->whereKey($siteId)->lockForUpdate()->first();
             $service = ServiceOffering::query()->whereKey($serviceId)->first();
             if ($site === null || ! $site->active || $service === null || ! $service->active) {
                 throw new Mvp03Exception('The selected site or service is unavailable.');
+            }
+            $capacity = DB::table('bookings')
+                ->where('shift_schedule_id', $record->getKey())
+                ->whereIn('status', Mvp03BookingService::capacityStatuses())
+                ->count();
+            if (! $hasBookings && $quota < $capacity) {
+                throw new Mvp03Exception('Schedule quota cannot be below its current occupancy.');
             }
             if ($status === 'open') {
                 $this->assertFuture($times['starts_at']);
@@ -105,6 +122,29 @@ final readonly class Mvp03ScheduleService
 
             return $record->refresh();
         });
+    }
+
+    /** @param array<string, mixed> $attributes @return array{starts_at: string, ends_at: string} */
+    private function timesForUpdate(array $attributes, ShiftSchedule $record): array
+    {
+        $start = array_key_exists('starts_at', $attributes)
+            ? $this->instant($attributes['starts_at'])
+            : $this->storedInstant($record->starts_at);
+        $end = array_key_exists('ends_at', $attributes)
+            ? $this->instant($attributes['ends_at'])
+            : $this->storedInstant($record->ends_at);
+        if ($end <= $start) {
+            throw new Mvp03Exception('Schedule end must be after its start.');
+        }
+
+        return ['starts_at' => $start, 'ends_at' => $end];
+    }
+
+    private function storedInstant(mixed $value): string
+    {
+        return (new DateTimeImmutable((string) $value, new DateTimeZone('UTC')))
+            ->setTimezone(new DateTimeZone('UTC'))
+            ->format('Y-m-d H:i:s');
     }
 
     /** @return array{starts_at: string, ends_at: string} */
@@ -157,6 +197,9 @@ final readonly class Mvp03ScheduleService
 
     private function quota(mixed $value): int
     {
+        if (is_float($value) && is_finite($value) && fmod($value, 1.0) === 0.0) {
+            $value = (int) $value;
+        }
         if ((is_string($value) && preg_match('/\A[0-9]+\z/', trim($value)) !== 1) || (! is_string($value) && ! is_int($value))) {
             throw new Mvp03Exception('Schedule quota must be an integer from 5 through 20.');
         }

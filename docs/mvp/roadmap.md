@@ -63,6 +63,15 @@ order atomically, and view the safe booking status. Real payment, B2B,
 cancellation/refund, Operator, Image Gateway, FHIR, and production behavior
 remain later work.
 
+The booking-ownership and schedule-integrity remediation was executed from
+baseline `a1360f4307d7d339779a48fd519755b360f52052` in the working tree. The
+corrected evidence binds booking ownership to the trusted authenticated Member
+context, freezes booked schedule site/service/time/quota fields except for
+close or no-op updates, compares signed four-decimal point amounts without
+numeric coercion, restricts booking audit queries, records controlled failure
+categories, and verifies Filament service-bound mutations with execution-time
+authorization. MVP-04 is not started.
+
 ## MVP-04 — Operator Queue and Attendance
 
 Deliver Operator authentication/authorization, operational queue, scheduling,

@@ -76,8 +76,7 @@ final class Mvp03BookingController extends Controller
         }
 
         try {
-            $result = $bookings->create(
-                (string) $member->getKey(),
+            $result = $bookings->createForCurrentMember(
                 $validator->validated()['schedule_id'],
                 $validator->validated()['idempotency_key'] ?? null,
                 $validator->validated()['point_cost'] ?? null,

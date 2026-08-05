@@ -8,8 +8,13 @@ use App\Models\User;
 use App\Modules\Member\Application\Services\Mvp03BookingService;
 use App\Modules\Member\Application\Services\Mvp03ScheduleService;
 use App\Modules\Member\Domain\Models\Booking;
+use App\Modules\Member\Domain\Models\ShiftSchedule;
+use App\Modules\Member\Domain\Mvp03BookingFailure;
+use App\Modules\Member\Domain\Mvp03Exception;
 use App\Modules\Member\Domain\PointAmount;
+use App\Shared\Events\DomainEvent;
 use App\Shared\Infrastructure\Idempotency\IdempotencyConflict;
+use App\Shared\Infrastructure\Outbox\OutboxStore;
 use Database\Seeders\MvpBookingSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -20,6 +25,16 @@ final class Mvp03BookingDomainTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_point_comparison_handles_signs_negative_zero_and_large_magnitudes_without_numeric_coercion(): void
+    {
+        $this->assertGreaterThan(0, PointAmount::fromString('-1.0000')->compare(PointAmount::fromString('-2.0000')));
+        $this->assertLessThan(0, PointAmount::fromString('-2.0000')->compare(PointAmount::fromString('-1.0000')));
+        $this->assertLessThan(0, PointAmount::fromString('-1.0001')->compare(PointAmount::fromString('-1.0000')));
+        $this->assertSame(0, PointAmount::fromString('0.0000')->compare(PointAmount::fromString('-0.0000')));
+        $this->assertGreaterThan(0, PointAmount::fromString('9999999999999999.9999')->compare(PointAmount::fromString('9999999999999999.9998')));
+        $this->assertLessThan(0, PointAmount::fromString('9999999999999999.9998')->compare(PointAmount::fromString('9999999999999999.9999')));
+    }
+
     public function test_point_arithmetic_and_booking_charge_are_four_decimal_and_float_free(): void
     {
         $this->assertSame('12.5000', (string) PointAmount::fromString('10.2500')->add(PointAmount::fromString('2.25')));
@@ -27,7 +42,7 @@ final class Mvp03BookingDomainTest extends TestCase
 
         $fixture = $this->fixture('decimal@example.test', '12.5000', '20.1234');
         $this->actingAs($fixture['user']);
-        $result = app(Mvp03BookingService::class)->create($fixture['member_id'], $fixture['schedule_id'], 'mvp03-decimal-request', '12.5000');
+        $result = app(Mvp03BookingService::class)->createForCurrentMember($fixture['schedule_id'], 'mvp03-decimal-request', '12.5000');
 
         $this->assertSame('12.5000', $result['point_cost']);
         $this->assertSame('7.6234', $result['remaining_personal_points']);
@@ -51,7 +66,7 @@ final class Mvp03BookingDomainTest extends TestCase
         $this->actingAs($fixture['user']);
 
         try {
-            app(Mvp03BookingService::class)->create($fixture['member_id'], $fixture['schedule_id'], 'mvp03-insufficient-request');
+            app(Mvp03BookingService::class)->createForCurrentMember($fixture['schedule_id'], 'mvp03-insufficient-request');
             $this->fail('Business-funded points must not fund a B2C booking.');
         } catch (\Throwable $exception) {
             $this->assertStringContainsString('tidak mencukupi', $exception->getMessage());
@@ -62,6 +77,11 @@ final class Mvp03BookingDomainTest extends TestCase
         $this->assertDatabaseCount('outbox_messages', 0);
         $this->assertDatabaseMissing('point_ledger_entries', ['entry_type' => 'charge']);
         $this->assertDatabaseHas('idempotent_consumptions', ['message_id' => 'mvp03-insufficient-request', 'status' => 'failed']);
+        $this->assertDatabaseHas('audit_events', [
+            'action' => 'member.booking.failed',
+            'target_id' => $fixture['member_id'],
+            'reason' => 'insufficient_personal_points',
+        ]);
     }
 
     public function test_booking_is_atomic_idempotent_and_preserves_snapshots_and_one_active_booking(): void
@@ -69,8 +89,8 @@ final class Mvp03BookingDomainTest extends TestCase
         $fixture = $this->fixture('booking@example.test', '12.5000', '50.0000');
         $this->actingAs($fixture['user']);
         $service = app(Mvp03BookingService::class);
-        $first = $service->create($fixture['member_id'], $fixture['schedule_id'], 'mvp03-same-request', '12.5000');
-        $replay = $service->create($fixture['member_id'], $fixture['schedule_id'], 'mvp03-same-request', '12.5000');
+        $first = $service->createForCurrentMember($fixture['schedule_id'], 'mvp03-same-request', '12.5000');
+        $replay = $service->createForCurrentMember($fixture['schedule_id'], 'mvp03-same-request', '12.5000');
 
         $this->assertSame($first, $replay);
         $this->assertDatabaseCount('bookings', 1);
@@ -85,11 +105,174 @@ final class Mvp03BookingDomainTest extends TestCase
         $this->assertSame('12.5000', (string) $snapshot->point_cost_snapshot);
 
         try {
-            $service->create($fixture['member_id'], $fixture['schedule_id'], 'mvp03-same-request', '99.0000');
+            $service->createForCurrentMember($fixture['schedule_id'], 'mvp03-same-request', '99.0000');
             $this->fail('Changed idempotency input must conflict.');
         } catch (IdempotencyConflict) {
             $this->addToAssertionCount(1);
         }
+        $this->assertDatabaseHas('audit_events', [
+            'action' => 'member.booking.failed',
+            'target_id' => $fixture['member_id'],
+            'reason' => 'idempotency_conflict',
+        ]);
+    }
+
+    public function test_booking_uses_the_authenticated_member_even_when_request_ids_name_another_member(): void
+    {
+        $fixture = $this->fixture('owner@example.test', '2.5000', '10.0000');
+        $other = $this->memberFixture('other-owner@example.test');
+        $this->actingAs($fixture['user']);
+
+        $this->post('/member/bookings', [
+            'schedule_id' => $fixture['schedule_id'],
+            'point_cost' => '2.5000',
+            'confirmation' => '1',
+            'idempotency_key' => 'mvp03-owner-bound',
+            'member_id' => $other['member_id'],
+            'user_id' => $other['user']->id,
+        ])->assertRedirect();
+
+        $this->assertDatabaseHas('bookings', [
+            'member_id' => $fixture['member_id'],
+            'status' => 'confirmed',
+        ]);
+        $this->assertDatabaseMissing('bookings', ['member_id' => $other['member_id']]);
+    }
+
+    public function test_booking_failure_categories_are_sanitized_and_unexpected_failures_roll_back(): void
+    {
+        $fixture = $this->fixture('unexpected@example.test', '2.5000', '10.0000');
+        $this->actingAs($fixture['user']);
+        $this->app->instance(OutboxStore::class, new class implements OutboxStore
+        {
+            public function record(DomainEvent $event): void
+            {
+                throw new \RuntimeException('raw exception marker must not enter audit');
+            }
+
+            public function find(string $eventId): ?array
+            {
+                return null;
+            }
+
+            public function markPublished(string $eventId): void {}
+        });
+
+        try {
+            app(Mvp03BookingService::class)->createForCurrentMember($fixture['schedule_id'], 'mvp03-unexpected-failure', '2.5000');
+            $this->fail('Unexpected booking failures must be reported.');
+        } catch (Mvp03Exception|Mvp03BookingFailure $exception) {
+            $this->assertStringNotContainsString('raw exception marker', $exception->getMessage());
+        }
+        $this->app->forgetInstance(OutboxStore::class);
+
+        $this->assertDatabaseCount('bookings', 0);
+        $this->assertDatabaseCount('local_imaging_orders', 0);
+        $this->assertDatabaseMissing('audit_events', ['reason' => 'raw exception marker must not enter audit']);
+        $this->assertDatabaseHas('audit_events', [
+            'action' => 'member.booking.failed',
+            'target_id' => $fixture['member_id'],
+            'reason' => 'unexpected_failure',
+        ]);
+    }
+
+    public function test_stale_price_and_active_booking_failures_are_audited_by_controlled_category(): void
+    {
+        $fixture = $this->fixture('controlled-failure@example.test', '2.5000', '10.0000');
+        $this->actingAs($fixture['user']);
+
+        try {
+            app(Mvp03BookingService::class)->createForCurrentMember($fixture['schedule_id'], 'mvp03-stale-price', '3.0000');
+            $this->fail('A stale displayed price must be rejected.');
+        } catch (Mvp03BookingFailure $exception) {
+            $this->assertSame('price_changed', $exception->category);
+        }
+
+        app(Mvp03BookingService::class)->createForCurrentMember($fixture['schedule_id'], 'mvp03-active-booking', '2.5000');
+        try {
+            app(Mvp03BookingService::class)->createForCurrentMember($fixture['schedule_id'], 'mvp03-active-booking-retry', '2.5000');
+            $this->fail('An active booking must block another booking.');
+        } catch (Mvp03BookingFailure $exception) {
+            $this->assertSame('active_booking_exists', $exception->category);
+        }
+
+        $this->assertDatabaseHas('audit_events', ['action' => 'member.booking.failed', 'target_id' => $fixture['member_id'], 'reason' => 'price_changed']);
+        $this->assertDatabaseHas('audit_events', ['action' => 'member.booking.failed', 'target_id' => $fixture['member_id'], 'reason' => 'active_booking_exists']);
+    }
+
+    public function test_booked_schedule_freezes_appointment_fields_but_allows_noop_and_close(): void
+    {
+        $fixture = $this->fixture('schedule-integrity@example.test', '2.5000', '10.0000', '2040-01-10 03:00:00', '2040-01-10 04:00:00');
+        $this->actingAs($fixture['user']);
+        app(Mvp03BookingService::class)->createForCurrentMember($fixture['schedule_id'], 'mvp03-schedule-integrity', '2.5000');
+
+        $otherSiteId = (string) Str::uuid();
+        $otherServiceId = (string) Str::uuid();
+        $now = now();
+        DB::table('examination_site_refs')->insert([
+            'id' => $otherSiteId,
+            'operator_site_id' => 'site-'.$otherSiteId,
+            'operator_organization_ref_id' => DB::table('examination_site_refs')->where('id', $fixture['site_id'])->value('operator_organization_ref_id'),
+            'code' => 'OTHER-'.substr($otherSiteId, 0, 8),
+            'display_name' => 'Other Site',
+            'timezone' => 'Asia/Jakarta',
+            'active' => true,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+        DB::table('service_offerings')->insert([
+            'id' => $otherServiceId,
+            'code' => 'OTHER-'.substr($otherServiceId, 0, 8),
+            'name' => 'Other Service',
+            'includes_ai' => false,
+            'includes_doctor' => false,
+            'point_price' => '3.0000',
+            'active' => true,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        $admin = User::factory()->create(['email' => 'schedule-integrity-admin@example.test']);
+        $this->grant($admin, ['administrator'], ['member.schedule.read', 'member.schedule.manage']);
+        $this->actingAs($admin);
+        $service = app(Mvp03ScheduleService::class);
+        $record = ShiftSchedule::query()->findOrFail($fixture['schedule_id']);
+        $before = DB::table('audit_events')->where('action', 'member.schedule.update')->count();
+        $service->update($record, []);
+
+        foreach ([
+            ['examination_site_id' => $otherSiteId],
+            ['service_offering_id' => $otherServiceId],
+            ['starts_at' => '2040-01-10T11:00:00+07:00'],
+            ['ends_at' => '2040-01-10T12:00:00+07:00'],
+            ['quota' => 6],
+        ] as $change) {
+            try {
+                $service->update($record, $change);
+                $this->fail('Booked schedule appointment data must be immutable.');
+            } catch (Mvp03Exception) {
+                $this->addToAssertionCount(1);
+            }
+            $this->assertSame($before + 1, DB::table('audit_events')->where('action', 'member.schedule.update')->count());
+        }
+
+        $service->update($record, ['status' => 'closed']);
+        $stored = DB::table('shift_schedules')->where('id', $fixture['schedule_id'])->first();
+        $this->assertSame('closed', $stored->status);
+        $this->assertSame('2040-01-10 03:00:00', $stored->starts_at);
+        $this->assertSame('2040-01-10 04:00:00', $stored->ends_at);
+        $this->assertSame(5, (int) $stored->quota);
+    }
+
+    public function test_unbooked_schedule_can_be_updated_through_the_application_service(): void
+    {
+        $fixture = $this->fixture('unbooked-schedule@example.test', '2.5000', '10.0000', '2040-01-11 03:00:00', '2040-01-11 04:00:00', 20);
+        $admin = User::factory()->create(['email' => 'unbooked-schedule-admin@example.test']);
+        $this->grant($admin, ['administrator'], ['member.schedule.read', 'member.schedule.manage']);
+        $this->actingAs($admin);
+
+        $updated = app(Mvp03ScheduleService::class)->update(ShiftSchedule::query()->findOrFail($fixture['schedule_id']), ['quota' => 5]);
+        $this->assertSame(5, $updated->quota);
     }
 
     public function test_schedule_overlap_boundary_and_quota_are_enforced_by_member_application_service(): void
@@ -130,7 +313,7 @@ final class Mvp03BookingDomainTest extends TestCase
                 'created_at' => now(),
             ]);
             $this->actingAs($member['user']);
-            $service->create($member['member_id'], $fixture['schedule_id'], 'threshold-request-'.$index, '1.0000');
+            $service->createForCurrentMember($fixture['schedule_id'], 'threshold-request-'.$index, '1.0000');
         }
 
         $this->assertDatabaseHas('shift_schedules', ['id' => $fixture['schedule_id']]);
@@ -156,11 +339,16 @@ final class Mvp03BookingDomainTest extends TestCase
         ]);
         $this->actingAs($sixth['user']);
         try {
-            $service->create($sixth['member_id'], $fixture['schedule_id'], 'threshold-request-sixth', '1.0000');
+            $service->createForCurrentMember($fixture['schedule_id'], 'threshold-request-sixth', '1.0000');
             $this->fail('A sixth active booking must exceed the configured quota.');
         } catch (\Throwable $exception) {
             $this->assertStringContainsString('full', $exception->getMessage());
         }
+        $this->assertDatabaseHas('audit_events', [
+            'action' => 'member.booking.failed',
+            'target_id' => $sixth['member_id'],
+            'reason' => 'capacity_full',
+        ]);
         $this->assertSame(5, DB::table('bookings')->where('shift_schedule_id', $fixture['schedule_id'])->count());
     }
 

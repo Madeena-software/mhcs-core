@@ -126,3 +126,58 @@ deployment, and production readiness remain open.
 
 Full PHPUnit, npm build, Composer audit, Docker, external integrations,
 deployment, and production checks were not run.
+
+## MVP-03 remediation — booking ownership and schedule integrity
+
+- Task: `.agents/tasks/mhcs-core-mvp-03-booking-ownership-schedule-integrity-v1.md`.
+- Target: `.` resolved to `/var/www/mhcs-core`; the corrected task validator passed.
+- Required baseline and current execution `HEAD`: `a1360f4307d7d339779a48fd519755b360f52052`; execution remained in the working tree and created no commit.
+- Only the published remediation task was untracked before implementation. Published task files, `.agents/context/**`, dependencies, production configuration, deployment files, and external systems were not changed.
+
+The remediation now resolves booking ownership from the authenticated User and
+trusted Member context, rejects administrator context, resolves exactly one
+Member, and ignores caller-supplied Member identifiers. It records sanitized
+controlled failure categories after rollback and keeps idempotency ownership
+server-derived. Booked schedules are reloaded and locked; site, service, UTC
+start/end, and quota are frozen, while close and no-op updates remain allowed.
+Signed point comparison uses scaled decimal magnitude comparison without
+numeric coercion. Booking audit queries use exact approved action, target,
+source, association, and controlled-reason filters with a minimal projection.
+Existing Filament create/edit pages continue through the Member application
+services; focused Livewire checks prove execution-time authorization after
+permission revocation.
+
+## Remediation changed files
+
+- `app/Http/Controllers/Member/Mvp03BookingController.php`
+- `app/Modules/Member/Application/Services/Mvp03BookingService.php`
+- `app/Modules/Member/Application/Services/Mvp03ScheduleService.php`
+- `app/Modules/Member/Domain/Mvp03BookingFailure.php`
+- `app/Modules/Member/Domain/PointAmount.php`
+- `app/Modules/Member/Filament/Resources/Bookings/Pages/ViewBooking.php`
+- `app/Shared/Authorization/DatabaseAuthorizationClaimResolver.php`
+- `tests/Member/Mvp03BookingDomainTest.php`
+- `tests/Feature/Admin/Mvp03BookingAdministrationTest.php`
+- the four permitted MVP documentation files, including this evidence file
+
+## Remediation verification
+
+- `python3 .agents/skills/agent-task/scripts/validate_task.py .agents/tasks/mhcs-core-mvp-03-booking-ownership-schedule-integrity-v1.md` — passed.
+- `php artisan test tests/Member/Mvp03BookingDomainTest.php tests/Feature/Member/Mvp03CatalogueBookingTest.php tests/Feature/Admin/Mvp03BookingAdministrationTest.php --compact` — 19 tests, 138 assertions passed.
+- `php artisan test tests/Feature/Member/Mvp01MemberAccessTest.php tests/Feature/Admin/Mvp02AdminAccessTest.php tests/Feature/Admin/Mvp02MemberAdministrationTest.php --compact` — 45 tests, 437 assertions passed.
+- `php artisan test tests/Feature/FoundationFeatureTest.php tests/Unit/SharedFoundationTest.php tests/Architecture/FoundationArchitectureTest.php --compact` — 23 tests, 1,261 assertions passed.
+- `php artisan test tests/Security/Wp02SecurityTest.php --filter='audit|authoriz|transaction|outbox|idempot|decimal|money' --compact` — 6 tests, 22 assertions passed.
+- `php artisan test tests/Member/Wp04IdentityTest.php --filter='account|authoriz|audit|state|access' --compact` — 4 tests, 29 assertions passed.
+- Bounded `vendor/bin/pint --test` on changed PHP files, PHP syntax checks, and `git diff --check` — passed.
+- Member and admin route surfaces were inspected; admin create/edit routes are
+  bounded to offerings and schedules, while sites and bookings remain read-only.
+- Static resource inspection found only application-service mutation calls and
+  no direct model mutation, bulk, import, or export path in the bounded resources.
+- `php artisan migrate:status --no-ansi` on the normal database showed the
+  existing MVP-03 migration pending; no migration was added or changed. The
+  focused test database migration boundary was used for verification.
+
+Full PHPUnit, full WP suites, MySQL/Docker concurrency or conformance checks,
+npm build, Composer audit, external integrations, deployment, and production
+checks remain unrun. WP-05, WP-06, and WP-10 remain partial, and MVP-04 is
+untouched.

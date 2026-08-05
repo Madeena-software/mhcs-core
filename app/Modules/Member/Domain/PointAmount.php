@@ -58,7 +58,9 @@ final readonly class PointAmount implements JsonSerializable, Stringable
             return $leftNegative ? -1 : 1;
         }
 
-        $comparison = self::compareAbs($this->scaled, $other->scaled);
+        $left = $leftNegative ? substr($this->scaled, 1) : $this->scaled;
+        $right = $rightNegative ? substr($other->scaled, 1) : $other->scaled;
+        $comparison = self::compareAbs($left, $right);
 
         return $leftNegative ? -$comparison : $comparison;
     }
@@ -163,6 +165,16 @@ final readonly class PointAmount implements JsonSerializable, Stringable
         $left = ltrim($left, '0') ?: '0';
         $right = ltrim($right, '0') ?: '0';
 
-        return strlen($left) === strlen($right) ? ($left <=> $right) : (strlen($left) <=> strlen($right));
+        if (strlen($left) !== strlen($right)) {
+            return strlen($left) <=> strlen($right);
+        }
+
+        for ($index = 0, $length = strlen($left); $index < $length; $index++) {
+            if ($left[$index] !== $right[$index]) {
+                return $left[$index] < $right[$index] ? -1 : 1;
+            }
+        }
+
+        return 0;
     }
 }

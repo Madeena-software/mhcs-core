@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace App\Modules\Member\Filament\Resources\Bookings\Pages;
 
+use App\Modules\Member\Domain\Models\Booking;
+use App\Modules\Member\Domain\Models\LocalImagingOrder;
+use App\Modules\Member\Domain\Models\PointLedgerEntry;
+use App\Modules\Member\Domain\Mvp03BookingFailure;
 use App\Modules\Member\Filament\Resources\Bookings\BookingAuditRecord;
 use App\Modules\Member\Filament\Resources\Bookings\BookingResource;
-use App\Modules\Member\Domain\Models\Booking;
 use Filament\Resources\Pages\ViewRecord;
 use Filament\Schemas\Components\EmbeddedTable;
 use Filament\Schemas\Components\Section;
@@ -62,8 +65,34 @@ final class ViewBooking extends ViewRecord implements HasTable
             ->select(['event_id', 'occurred_at', 'action', 'outcome', 'reason'])
             ->where('source', 'member')
             ->where(function (Builder $query) use ($booking): void {
-                $query->where('target_id', $booking->getKey())
-                    ->orWhereJsonContains('metadata', ['booking_id' => $booking->getKey()]);
+                $query->where(function (Builder $query) use ($booking): void {
+                    $query->where('action', 'member.booking.confirmed')
+                        ->where('target_type', Booking::class)
+                        ->where('target_id', $booking->getKey());
+                })->orWhere(function (Builder $query) use ($booking): void {
+                    $query->where('action', 'member.point-charge')
+                        ->where('target_type', PointLedgerEntry::class)
+                        ->whereJsonContains('metadata', ['booking_id' => $booking->getKey()]);
+                })->orWhere(function (Builder $query) use ($booking): void {
+                    $query->where('action', 'member.imaging-order.create')
+                        ->where('target_type', LocalImagingOrder::class)
+                        ->whereJsonContains('metadata', ['booking_id' => $booking->getKey()]);
+                })->orWhere(function (Builder $query) use ($booking): void {
+                    $query->where('action', 'member.booking.failed')
+                        ->where('target_type', Booking::class)
+                        ->where('target_id', $booking->getKey())
+                        ->whereIn('reason', Mvp03BookingFailure::CATEGORIES);
+                });
+            })
+            ->where(function (Builder $query): void {
+                $query->whereIn('action', [
+                    'member.booking.confirmed',
+                    'member.point-charge',
+                    'member.imaging-order.create',
+                ])->whereNull('reason')->orWhere(function (Builder $query): void {
+                    $query->where('action', 'member.booking.failed')
+                        ->whereIn('reason', Mvp03BookingFailure::CATEGORIES);
+                });
             })
             ->orderByDesc('occurred_at');
     }
