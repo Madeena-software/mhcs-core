@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Modules\Member\Application\Services;
 
 use App\Models\User;
+use App\Modules\Member\Application\Contracts\InteractiveOperatorAccessResolver;
 use App\Modules\Member\Domain\MemberIdentityException;
 use App\Modules\Member\Domain\Models\Member;
 use App\Shared\Audit\AuditEvent;
@@ -20,6 +21,7 @@ final readonly class MandatoryPasswordReplacementService
     public function __construct(
         private MemberAuthorization $authorization,
         private MemberContextResolver $members,
+        private InteractiveOperatorAccessResolver $operators,
         private TemporaryCredentialIssuer $credentials,
         private AuditStore $audit,
         private Clock $clock,
@@ -87,7 +89,9 @@ final readonly class MandatoryPasswordReplacementService
                 ->get();
             $member = $linkedMembers->count() === 1 ? $linkedMembers->first() : null;
 
-            if ($member === null || ! $this->members->isEligibleAdult($member)) {
+            $memberEligible = $member !== null && $this->members->isEligibleAdult($member);
+            $operatorEligible = $this->operators->canAccess($user);
+            if (! $memberEligible && ! $operatorEligible) {
                 throw new MemberIdentityException('Password replacement credentials are invalid.');
             }
 
@@ -99,8 +103,8 @@ final readonly class MandatoryPasswordReplacementService
             $now = $this->clock->now();
             $this->audit->append(AuditEvent::fromContext(
                 $context,
-                action: 'member.password-replacement',
-                source: 'member',
+                action: $memberEligible ? 'member.password-replacement' : 'operator.password-replacement',
+                source: $memberEligible ? 'member' : 'operator',
                 outcome: 'success',
                 occurredAt: $now,
                 targetType: User::class,

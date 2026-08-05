@@ -9,7 +9,6 @@ use App\Models\User;
 use App\Modules\Member\Application\Data\InteractiveLoginState;
 use App\Modules\Member\Application\Services\InteractiveMemberLoginService;
 use App\Modules\Member\Application\Services\MandatoryPasswordReplacementService;
-use App\Modules\Member\Application\Services\MemberContextResolver;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -24,7 +23,7 @@ final class AuthenticationController extends Controller
         return view('member.auth.login');
     }
 
-    public function store(Request $request, InteractiveMemberLoginService $login, MemberContextResolver $members): RedirectResponse
+    public function store(Request $request, InteractiveMemberLoginService $login): RedirectResponse
     {
         $validator = Validator::make($request->all(), [
             'identifier' => ['required', 'string', 'max:255'],
@@ -40,7 +39,7 @@ final class AuthenticationController extends Controller
 
         $credentials = $validator->validated();
 
-        $result = $login->authenticate($credentials['identifier'], $credentials['password']);
+        $result = $login->authenticate($credentials['identifier'], $credentials['password'], $this->intendedPath($request));
 
         if ($result->state === InteractiveLoginState::Failure || $result->user === null) {
             return back()->withErrors(['identifier' => 'Email atau NIK dan kata sandi tidak sesuai.']);
@@ -48,21 +47,17 @@ final class AuthenticationController extends Controller
 
         Auth::guard('web')->login($result->user);
         $request->session()->regenerate();
-        $request->session()->forget('url.intended');
 
         if ($result->state === InteractiveLoginState::PasswordChangeRequired) {
             return redirect()->route('password.change-required');
         }
 
-        $member = $members->resolveForUserId((string) $result->user->getAuthIdentifier());
-        if ($member === null) {
-            return $this->terminate($request);
-        }
+        $request->session()->forget('url.intended');
 
-        return redirect()->route($members->isComplete($member) ? 'member.dashboard' : 'member.profile');
+        return redirect()->to($result->destination ?? '/login');
     }
 
-    public function showPasswordChange(Request $request, MemberContextResolver $members): View|RedirectResponse
+    public function showPasswordChange(Request $request, InteractiveMemberLoginService $login): View|RedirectResponse
     {
         $user = $request->user();
         if (! $user instanceof User) {
@@ -71,22 +66,21 @@ final class AuthenticationController extends Controller
 
         $user->refresh();
         if (! $user->must_change_password) {
-            $member = $members->resolveForUserId((string) $user->getAuthIdentifier());
+            $destination = $login->destinationFor($user);
 
-            return $member === null
+            return $destination === null
                 ? $this->terminate($request)
-                : redirect()->route($members->isComplete($member) ? 'member.dashboard' : 'member.profile');
+                : redirect()->to($destination);
         }
 
-        $member = $members->resolveForUserId((string) $user->getAuthIdentifier());
-        if ($member === null || ! $members->isEligibleAdult($member)) {
+        if ($login->destinationFor($user) === null) {
             return $this->terminate($request);
         }
 
-        return view('member.auth.change-required', ['memberName' => $member->name]);
+        return view('member.auth.change-required');
     }
 
-    public function updatePassword(Request $request, MandatoryPasswordReplacementService $replacement, MemberContextResolver $members): RedirectResponse
+    public function updatePassword(Request $request, MandatoryPasswordReplacementService $replacement, InteractiveMemberLoginService $login): RedirectResponse
     {
         $validated = $request->validate([
             'current_password' => ['required', 'string'],
@@ -133,15 +127,15 @@ final class AuthenticationController extends Controller
         $user->refresh();
         Auth::guard('web')->setUser($user);
         $request->session()->regenerate();
+        $intendedPath = $this->intendedPath($request);
         $request->session()->forget('url.intended');
-        $member = $members->resolveForUserId((string) $user->getAuthIdentifier());
-
-        if ($member === null) {
+        $destination = $login->destinationFor($user, $intendedPath);
+        if ($destination === null) {
             return $this->terminate($request);
         }
 
         return redirect()
-            ->route($members->isComplete($member) ? 'member.dashboard' : 'member.profile')
+            ->to($destination)
             ->with('status', 'Kata sandi berhasil diperbarui.');
     }
 
@@ -163,5 +157,29 @@ final class AuthenticationController extends Controller
         return redirect()->route('login')->withErrors([
             'identifier' => 'Akun Member tidak dapat diakses saat ini.',
         ]);
+    }
+
+    private function intendedPath(Request $request): ?string
+    {
+        $intended = $request->session()->get('url.intended');
+        if (! is_string($intended) || trim($intended) === '') {
+            return null;
+        }
+
+        $parts = parse_url($intended);
+        if ($parts === false) {
+            return null;
+        }
+
+        if (isset($parts['host']) && $parts['host'] !== $request->getHost()) {
+            return null;
+        }
+        if (isset($parts['port']) && $parts['port'] !== $request->getPort()) {
+            return null;
+        }
+
+        $path = $parts['path'] ?? null;
+
+        return is_string($path) && str_starts_with($path, '/') && ! str_starts_with($path, '//') ? $path : null;
     }
 }

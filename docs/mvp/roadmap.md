@@ -94,6 +94,17 @@ workflow, and remaining queue/attendance behavior are deferred.
 
 Pest/Playwright browser-platform work is deferred to post-MVP hardening.
 
+### MVP-04A remediation addendum — 2026-08-05
+
+The published Operator foundation and arrival remediation was executed against
+baseline `eb12e2a6d533adb19b2cef120919b30fdd28e609` with `TARGET="."`. It
+corrects the bounded shared login, Operator-only password replacement, exact
+shift-assignment permission, recorded-arrival site switching, unified arrival
+eligibility, explicit confirmation, and server-derived redirect behavior.
+Evidence: `docs/mvp/evidence/mvp-04-operator-foundation-arrival.md`.
+MVP-04 remains incomplete and its queue, check-in, ticketing, consent,
+identity-decision, clinical, and broader attendance work remains deferred.
+
 ## MVP-05 — Image Gateway Study Intake and Correlation
 
 Deliver the study intake or identification boundary, examination-to-study

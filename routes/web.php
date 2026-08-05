@@ -43,7 +43,9 @@ Route::middleware(['auth', EnsureOperatorPortalAccess::class])->group(function (
     Route::post('/operator/site', [OperatorPortalController::class, 'selectSite'])->name('operator.site.select');
     Route::get('/operator/eligible-shifts', [OperatorPortalController::class, 'eligible'])->name('operator.eligible-shifts');
     Route::get('/operator/attendance/{schedule}', [OperatorPortalController::class, 'attendance'])->name('operator.attendance');
+    Route::post('/operator/arrivals/confirm', [OperatorPortalController::class, 'confirmArrival'])->name('operator.arrivals.confirm');
     Route::post('/operator/arrivals', [OperatorPortalController::class, 'recordArrival'])->name('operator.arrivals.store');
+    Route::post('/operator/arrivals/cancel', [OperatorPortalController::class, 'cancelArrival'])->name('operator.arrivals.cancel');
     Route::get('/operator/verification-worklist', [OperatorPortalController::class, 'worklist'])->name('operator.verification-worklist');
 });
 

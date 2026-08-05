@@ -39,3 +39,13 @@ Member-scoped failure auditing, permitted Member-owned offering and schedule
 admin actions, and a Chromium browser layer with no final-page console or
 JavaScript smoke errors. Broader payment, cancellation, Operator, Image
 Gateway, privacy, deployment, CI, and production gaps remain unchanged.
+
+## MVP-04A remediation addendum — 2026-08-05
+
+The bounded remediation was executed from baseline
+`eb12e2a6d533adb19b2cef120919b30fdd28e609` in the working tree. The reviewed
+login, permission, site-switch, arrival-eligibility, confirmation, redirect,
+and evidence defects were corrected and focused-tested. `MVP-GAP-009`,
+`MVP-GAP-012`, and `MVP-GAP-024` remain open: MVP-04 is still partial, and
+queue, check-in, ticketing, clinical, broader attendance, and complete
+Operator administration remain out of scope.

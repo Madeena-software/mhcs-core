@@ -29,7 +29,7 @@ final readonly class OperatorShiftAssignmentService
 
     public function assign(string $eligibleShiftId, string $profileId): OperatorShiftAssignment
     {
-        $context = $this->authorization->assignmentManage();
+        $context = $this->authorization->shiftManage();
 
         return DB::transaction(function () use ($eligibleShiftId, $profileId, $context): OperatorShiftAssignment {
             $eligible = OperatorEligibleShift::query()->whereKey($eligibleShiftId)->where('sync_status', 'eligible')->lockForUpdate()->first();
@@ -72,7 +72,7 @@ final readonly class OperatorShiftAssignmentService
 
     public function revoke(OperatorShiftAssignment $assignment, string $reason): OperatorShiftAssignment
     {
-        $context = $this->authorization->assignmentManage();
+        $context = $this->authorization->shiftManage();
         $reason = trim($reason);
         if ($reason === '' || strlen($reason) > 1000) {
             throw new OperatorException('shift_assignment_reason_required', 'A reason is required to revoke a shift assignment.');

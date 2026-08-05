@@ -27,13 +27,11 @@
                         <td>{{ $row['service_name'] }} ({{ $row['service_code'] }})</td>
                         <td class="status">{{ $row['booking_status'] }}</td>
                         <td>
-                            <form method="POST" action="{{ route('operator.arrivals.store') }}">
+                            <form method="POST" action="{{ route('operator.arrivals.confirm') }}">
                                 @csrf
                                 <input type="hidden" name="booking_id" value="{{ $row['booking_id'] }}">
-                                <input type="hidden" name="schedule_id" value="{{ $row['schedule_id'] }}">
                                 <input type="hidden" name="occurrence_at" value="{{ $at }}">
-                                <input type="hidden" name="idempotency_key" value="{{ (string) \Illuminate\Support\Str::uuid() }}">
-                                <button type="submit">Record physical arrival</button>
+                                <button type="submit">Confirm physical arrival</button>
                             </form>
                         </td>
                     </tr>

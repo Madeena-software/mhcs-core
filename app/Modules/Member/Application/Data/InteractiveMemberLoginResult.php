@@ -12,20 +12,21 @@ final readonly class InteractiveMemberLoginResult
         public InteractiveLoginState $state,
         public ?User $user,
         public bool $rateLimited,
+        public ?string $destination,
     ) {}
 
-    public static function normal(User $user): self
+    public static function normal(User $user, string $destination): self
     {
-        return new self(InteractiveLoginState::NormalMemberSession, $user, false);
+        return new self(InteractiveLoginState::NormalMemberSession, $user, false, $destination);
     }
 
     public static function passwordChangeRequired(User $user): self
     {
-        return new self(InteractiveLoginState::PasswordChangeRequired, $user, false);
+        return new self(InteractiveLoginState::PasswordChangeRequired, $user, false, null);
     }
 
     public static function failure(bool $rateLimited = false): self
     {
-        return new self(InteractiveLoginState::Failure, null, $rateLimited);
+        return new self(InteractiveLoginState::Failure, null, $rateLimited, null);
     }
 }

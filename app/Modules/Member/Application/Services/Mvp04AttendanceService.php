@@ -18,6 +18,7 @@ use App\Shared\Security\ProtectedIdentifierService;
 use App\Shared\Time\Clock;
 use DateTimeImmutable;
 use DateTimeZone;
+use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Throwable;
@@ -45,20 +46,10 @@ final readonly class Mvp04AttendanceService implements OperatorAttendanceContrac
             throw new Mvp03Exception('Attendance time is outside the schedule window.');
         }
 
-        $rows = DB::table('bookings')
+        $rows = $this->eligibleBookingQuery($site)
             ->join('members', 'members.id', '=', 'bookings.member_id')
             ->join('service_offerings', 'service_offerings.id', '=', 'bookings.service_offering_id')
             ->where('bookings.shift_schedule_id', $scheduleId)
-            ->where('bookings.examination_site_id_snapshot', $site->id)
-            ->where('bookings.status', BookingStatus::Confirmed->value)
-            ->where('bookings.funding_source', 'personal')
-            ->whereExists(function ($query): void {
-                $query->selectRaw('1')
-                    ->from('point_ledger_entries')
-                    ->whereColumn('point_ledger_entries.booking_id', 'bookings.id')
-                    ->where('point_ledger_entries.entry_type', 'charge')
-                    ->where('point_ledger_entries.point_delta', '<', 0);
-            })
             ->select([
                 'bookings.id as booking_id',
                 'bookings.shift_schedule_id as schedule_id',
@@ -114,10 +105,8 @@ final readonly class Mvp04AttendanceService implements OperatorAttendanceContrac
     {
         $occurrence = $this->instant($occurrenceAt);
         $site = $this->site($operatorSiteId);
-        $row = DB::table('bookings')
-            ->join('shift_schedules', 'shift_schedules.id', '=', 'bookings.shift_schedule_id')
+        $row = $this->eligibleBookingQuery($site)
             ->where('bookings.id', $bookingId)
-            ->where('bookings.examination_site_id_snapshot', $site->id)
             ->select(['bookings.*', 'shift_schedules.starts_at as schedule_starts_at', 'shift_schedules.ends_at as schedule_ends_at', 'shift_schedules.examination_site_id as schedule_site_id'])
             ->first();
         if ($row === null || (string) $row->schedule_site_id !== (string) $site->id) {
@@ -130,15 +119,7 @@ final readonly class Mvp04AttendanceService implements OperatorAttendanceContrac
             throw new Mvp03Exception('Arrival time is outside the schedule window.');
         }
 
-        return [
-            'booking_id' => (string) $row->id,
-            'schedule_id' => (string) $row->shift_schedule_id,
-            'site_id' => (string) $site->id,
-            'operator_site_id' => $operatorSiteId,
-            'occurrence_at' => $occurrence->format('Y-m-d H:i:s'),
-            'schedule_starts_at' => (string) $row->schedule_starts_at,
-            'schedule_ends_at' => (string) $row->schedule_ends_at,
-        ];
+        return $this->arrivalTarget($row, $site, $operatorSiteId, $occurrence);
     }
 
     /** @return array<string, mixed>|null */
@@ -178,13 +159,18 @@ final readonly class Mvp04AttendanceService implements OperatorAttendanceContrac
         string $operationId,
     ): array {
         $this->assertOperatorContext($context, 'operator.arrival.record');
-        $target = $this->resolveBookingForArrival($operatorSiteId, $bookingId, $occurrenceAt);
         $occurrence = $this->instant($occurrenceAt);
         $recorded = $this->instant($recordedAt, allowMissingOffset: true);
-        $booking = DB::table('bookings')->where('id', $bookingId)->lockForUpdate()->first();
-        if ($booking === null || $booking->status !== BookingStatus::Confirmed->value) {
+        $site = $this->site($operatorSiteId);
+        $booking = $this->eligibleBookingQuery($site)
+            ->where('bookings.id', $bookingId)
+            ->select(['bookings.*', 'shift_schedules.starts_at as schedule_starts_at', 'shift_schedules.ends_at as schedule_ends_at', 'shift_schedules.examination_site_id as schedule_site_id'])
+            ->lockForUpdate()
+            ->first();
+        if ($booking === null || (string) $booking->schedule_site_id !== (string) $site->id || ! $this->inWindow($occurrence, $booking->schedule_starts_at, $booking->schedule_ends_at)) {
             throw new Mvp03Exception('The booking is no longer eligible for arrival.');
         }
+        $target = $this->arrivalTarget($booking, $site, $operatorSiteId, $occurrence);
 
         DB::table('bookings')->where('id', $bookingId)->update(['status' => BookingStatus::Arrived->value, 'updated_at' => $recorded]);
         DB::table('booking_status_events')->insert([
@@ -230,6 +216,37 @@ final readonly class Mvp04AttendanceService implements OperatorAttendanceContrac
         }
 
         return $site;
+    }
+
+    private function eligibleBookingQuery(object $site): Builder
+    {
+        return DB::table('bookings')
+            ->join('shift_schedules', 'shift_schedules.id', '=', 'bookings.shift_schedule_id')
+            ->where('shift_schedules.examination_site_id', $site->id)
+            ->where('bookings.examination_site_id_snapshot', $site->id)
+            ->where('bookings.status', BookingStatus::Confirmed->value)
+            ->where('bookings.funding_source', 'personal')
+            ->whereExists(function (Builder $query): void {
+                $query->selectRaw('1')
+                    ->from('point_ledger_entries')
+                    ->whereColumn('point_ledger_entries.booking_id', 'bookings.id')
+                    ->where('point_ledger_entries.entry_type', 'charge')
+                    ->where('point_ledger_entries.point_delta', '<', 0);
+            });
+    }
+
+    /** @return array<string, mixed> */
+    private function arrivalTarget(object $row, object $site, string $operatorSiteId, DateTimeImmutable $occurrence): array
+    {
+        return [
+            'booking_id' => (string) $row->id,
+            'schedule_id' => (string) $row->shift_schedule_id,
+            'site_id' => (string) $site->id,
+            'operator_site_id' => $operatorSiteId,
+            'occurrence_at' => $occurrence->format('Y-m-d H:i:s'),
+            'schedule_starts_at' => (string) $row->schedule_starts_at,
+            'schedule_ends_at' => (string) $row->schedule_ends_at,
+        ];
     }
 
     private function instant(string $value, bool $allowMissingOffset = false): DateTimeImmutable

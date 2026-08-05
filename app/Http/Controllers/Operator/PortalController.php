@@ -98,28 +98,57 @@ final class PortalController extends Controller
         }
     }
 
-    public function recordArrival(Request $request, OperatorArrivalService $arrivals): RedirectResponse
+    public function confirmArrival(Request $request, OperatorArrivalService $arrivals): View|RedirectResponse
     {
         $validator = Validator::make($request->all(), [
             'booking_id' => ['required', 'uuid'],
             'occurrence_at' => ['required', 'string', 'max:64'],
-            'idempotency_key' => ['required', 'string', 'max:191'],
-            'schedule_id' => ['required', 'uuid'],
         ]);
         if ($validator->fails()) {
             return back()->withErrors($validator)->withInput();
         }
 
         try {
-            $result = $arrivals->record(
+            $result = $arrivals->confirm(
                 (string) $validator->validated()['booking_id'],
                 (string) $validator->validated()['occurrence_at'],
-                (string) $validator->validated()['idempotency_key'],
             );
 
-            return redirect()->route('operator.attendance', $validator->validated()['schedule_id'])->with('status', 'Arrival recorded for '.$result['booking_id'].'.');
+            return view('operator.arrival-confirmation', $result);
+        } catch (Throwable $exception) {
+            return back()->withErrors(['arrival' => $exception instanceof OperatorException ? $exception->getMessage() : 'The arrival could not be confirmed.'])->withInput();
+        }
+    }
+
+    public function recordArrival(Request $request, OperatorArrivalService $arrivals): RedirectResponse
+    {
+        $validator = Validator::make($request->all(), ['confirmation_token' => ['required', 'uuid']]);
+        if ($validator->fails()) {
+            return back()->withErrors($validator)->withInput();
+        }
+
+        try {
+            $result = $arrivals->recordConfirmed((string) $validator->validated()['confirmation_token']);
+
+            return redirect()->route('operator.attendance', $result['schedule_id'])->with('status', 'Arrival recorded for '.$result['booking_id'].'.');
         } catch (Throwable $exception) {
             return back()->withErrors(['arrival' => $exception instanceof OperatorException ? $exception->getMessage() : 'The arrival could not be recorded.'])->withInput();
+        }
+    }
+
+    public function cancelArrival(Request $request, OperatorArrivalService $arrivals): RedirectResponse
+    {
+        $validator = Validator::make($request->all(), ['confirmation_token' => ['required', 'uuid']]);
+        if ($validator->fails()) {
+            return back()->withErrors($validator);
+        }
+
+        try {
+            $arrivals->cancelConfirmation((string) $validator->validated()['confirmation_token']);
+
+            return redirect()->route('operator.dashboard');
+        } catch (Throwable $exception) {
+            return back()->withErrors(['arrival' => $exception instanceof OperatorException ? $exception->getMessage() : 'The arrival confirmation could not be cancelled.']);
         }
     }
 

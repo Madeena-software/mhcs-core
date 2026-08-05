@@ -10,7 +10,12 @@ use App\Modules\Member\Domain\Mvp03Exception;
 use App\Modules\Operator\Application\Services\EligibleShiftIntakeService;
 use App\Modules\Operator\Application\Services\OperatorActiveSiteService;
 use App\Modules\Operator\Application\Services\OperatorArrivalService;
+use App\Modules\Operator\Application\Services\OperatorShiftAssignmentService;
+use App\Modules\Operator\Application\Services\OperatorSiteAssignmentService;
 use App\Modules\Operator\Application\Services\OperatorSiteService;
+use App\Modules\Operator\Domain\Models\OperatorShiftAssignment;
+use App\Modules\Operator\Domain\OperatorException;
+use App\Modules\Operator\Filament\Resources\OperatorShiftAssignments\OperatorShiftAssignmentResource;
 use App\Shared\Infrastructure\Idempotency\IdempotencyConflict;
 use Database\Seeders\MvpOperatorSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -67,6 +72,127 @@ final class Mvp04OperatorFoundationTest extends TestCase
 
         $this->expectException(IdempotencyConflict::class);
         $service->record($fixture['bookingId'], '2040-01-10T10:16:00+07:00', 'arrival-operation-1');
+    }
+
+    public function test_shift_assignment_uses_shift_manage_and_stays_separate_from_site_assignment_manage(): void
+    {
+        $fixture = $this->operatorFixture();
+        $this->actingAs($fixture['operator']);
+        $shiftAssignments = app(OperatorShiftAssignmentService::class);
+        $assignment = OperatorShiftAssignment::query()->where('operator_eligible_shift_id', $fixture['eligibleId'])->where('operator_profile_id', $fixture['profileId'])->firstOrFail();
+
+        DB::table('authorization_permission_assignments')->where('user_id', $fixture['operator']->id)->where('permission', 'operator.assignment.manage')->update(['active' => false]);
+        $this->assertTrue(OperatorShiftAssignmentResource::canCreate());
+        $shiftAssignments->revoke($assignment, 'permission separation test');
+        $shiftAssignments->assign($fixture['eligibleId'], $fixture['profileId']);
+        $this->assertDatabaseHas('operator_shift_assignments', ['operator_eligible_shift_id' => $fixture['eligibleId'], 'operator_profile_id' => $fixture['profileId'], 'status' => 'active']);
+
+        try {
+            app(OperatorSiteAssignmentService::class)->assign($fixture['profileId'], $fixture['siteLocalId']);
+            $this->fail('Site assignment unexpectedly used shift permission.');
+        } catch (OperatorException) {
+            $this->assertTrue(true);
+        }
+
+        DB::table('authorization_permission_assignments')->where('user_id', $fixture['operator']->id)->where('permission', 'operator.shift.manage')->update(['active' => false]);
+        $this->assertFalse(OperatorShiftAssignmentResource::canCreate());
+        $auditCount = DB::table('audit_events')->where('action', 'operator.shift-assignment.create')->where('outcome', 'success')->count();
+
+        try {
+            $shiftAssignments->assign($fixture['eligibleId'], $fixture['profileId']);
+            $this->fail('Shift assignment unexpectedly used assignment permission.');
+        } catch (OperatorException) {
+            $this->assertSame($auditCount, DB::table('audit_events')->where('action', 'operator.shift-assignment.create')->where('outcome', 'success')->count());
+        }
+    }
+
+    public function test_recorded_arrival_blocks_only_the_current_site_switch_until_resolved(): void
+    {
+        $fixture = $this->operatorFixture();
+        $this->startSession();
+        $this->actingAs($fixture['operator']);
+        $sites = app(OperatorActiveSiteService::class);
+        $sites->select($fixture['siteLocalId']);
+        app(OperatorArrivalService::class)->record($fixture['bookingId'], '2040-01-10T10:15:00+07:00', 'site-switch-arrival');
+
+        $secondSiteId = (string) Str::uuid();
+        DB::table('operator_sites')->insert([
+            'id' => $secondSiteId,
+            'operator_site_id' => 'operator-site-second',
+            'organization_id' => 'operator-org-second',
+            'organization_name' => 'Second organization',
+            'code' => 'SECOND-SITE',
+            'display_name' => 'Second site',
+            'address_line' => null,
+            'timezone' => 'Asia/Jakarta',
+            'active' => true,
+            'source_version' => '1',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('operator_site_assignments')->insert([
+            'id' => (string) Str::uuid(),
+            'operator_profile_id' => $fixture['profileId'],
+            'operator_site_id' => $secondSiteId,
+            'active' => true,
+            'assigned_by_user_id' => $fixture['operator']->id,
+            'assigned_at' => now(),
+            'revoked_at' => null,
+            'reason' => null,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        try {
+            $sites->select($secondSiteId);
+            $this->fail('Unresolved current-site work did not block switching.');
+        } catch (OperatorException $exception) {
+            $this->assertSame('active_site_blocked', $exception->category);
+        }
+        $this->assertSame($fixture['siteLocalId'], session('operator.active_site_id'));
+        $this->assertDatabaseHas('audit_events', ['action' => 'operator.active-site.switch', 'outcome' => 'failure', 'reason' => 'active_site_blocked']);
+
+        DB::table('operator_arrivals')->where('booking_id', $fixture['bookingId'])->update(['status' => 'resolved']);
+        $sites->select($secondSiteId);
+        $this->assertSame($secondSiteId, session('operator.active_site_id'));
+        $this->assertDatabaseHas('audit_events', ['action' => 'operator.active-site.switch', 'outcome' => 'success']);
+    }
+
+    public function test_uncharged_bookings_cannot_create_arrival_side_effects(): void
+    {
+        $this->assertIneligibleArrival(static function (array $fixture): void {
+            DB::table('point_ledger_entries')->where('booking_id', $fixture['bookingId'])->delete();
+        }, 'uncharged');
+    }
+
+    public function test_unsupported_funding_cannot_create_arrival_side_effects(): void
+    {
+        $this->assertIneligibleArrival(static function (array $fixture): void {
+            DB::table('bookings')->where('id', $fixture['bookingId'])->update(['funding_source' => 'business']);
+        }, 'unsupported');
+    }
+
+    /** @param callable(array<string, mixed>): void $mutate */
+    private function assertIneligibleArrival(callable $mutate, string $case): void
+    {
+        $fixture = $this->operatorFixture();
+        $mutate($fixture);
+        $this->startSession();
+        $this->actingAs($fixture['operator']);
+        app(OperatorActiveSiteService::class)->select($fixture['siteLocalId']);
+        $eventCount = DB::table('booking_status_events')->count();
+        $outboxCount = DB::table('outbox_messages')->count();
+
+        try {
+            app(OperatorArrivalService::class)->record($fixture['bookingId'], '2040-01-10T10:15:00+07:00', 'ineligible-'.$case);
+            $this->fail("{$case} booking unexpectedly arrived.");
+        } catch (OperatorException) {
+            $this->assertDatabaseHas('bookings', ['id' => $fixture['bookingId'], 'status' => 'confirmed']);
+            $this->assertDatabaseCount('operator_arrivals', 0);
+            $this->assertSame($eventCount, DB::table('booking_status_events')->count());
+            $this->assertSame($outboxCount, DB::table('outbox_messages')->count());
+            $this->assertSame(0, DB::table('audit_events')->where('action', 'operator.arrival.record')->where('outcome', 'success')->count());
+        }
     }
 
     public function test_site_mutation_syncs_member_reference_and_deactivation_preserves_existing_schedule(): void

@@ -49,3 +49,13 @@ console or JavaScript smoke errors. The work-package statuses remain
 deployment, and production requirements are not closed.
 
 Numbering gaps such as WP-03, WP-13, and WP-25 are preserved because they are absent from the current 25-package implementation plan; no new Work Package is invented here.
+
+## MVP-04A remediation addendum — 2026-08-05
+
+The bounded remediation was executed from baseline
+`eb12e2a6d533adb19b2cef120919b30fdd28e609` with `TARGET="."`. WP-07 remains
+`not-started` except for the exact bounded attendance/arrival contract used by
+MVP-04. WP-11, WP-12, and WP-17 remain `partially-implemented`; the corrected
+login, authorization, site-switch, arrival, confirmation, and redirect slice
+does not close their remaining staffing, queue, clinical, FHIR, or broader
+Operator-administration requirements.
