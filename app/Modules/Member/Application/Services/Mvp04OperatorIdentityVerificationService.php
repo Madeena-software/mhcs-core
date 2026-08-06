@@ -151,7 +151,7 @@ final readonly class Mvp04OperatorIdentityVerificationService implements Operato
             'latest_profile_photo' => $this->assetMetadata($assets->get(VerificationAssetType::ProfilePhoto->value)),
         ];
         if ($result['identity_document'] === null || $result['latest_profile_photo'] === null) {
-            throw new MemberIdentityException('Current approved identity evidence is unavailable.');
+            return ['evidence_status' => 'unavailable', 'view' => null];
         }
 
         $this->audit->append(AuditEvent::fromContext(
@@ -170,7 +170,7 @@ final readonly class Mvp04OperatorIdentityVerificationService implements Operato
             ],
         ));
 
-        return $result;
+        return ['evidence_status' => 'available', 'view' => $result];
     }
 
     public function revealPreviousPhotos(

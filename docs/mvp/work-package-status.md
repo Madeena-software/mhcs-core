@@ -74,3 +74,12 @@ audit reasons. WP-11, WP-12, and WP-17 remain `partially-implemented`; WP-07 rem
 `not-started` except for the bounded contracts consumed by MVP-04. No consent,
 check-in, ticket, queue, clinical, FHIR, imaging, deployment, or production
 behavior is included.
+
+## MVP-04B final boundary closure addendum — 2026-08-06
+
+The final boundary task strengthens the existing partial MVP-04B slice with a
+safe unavailable-evidence page, current-evidence gating for `matched`, direct
+asset-grant slot enforcement, and persisted authentication/portal checks. WP-11,
+WP-12, and WP-17 remain `partially-implemented`; WP-07 remains `not-started`
+except for the bounded contracts consumed by MVP-04. No later MVP, clinical,
+deployment, or production behavior is claimed.

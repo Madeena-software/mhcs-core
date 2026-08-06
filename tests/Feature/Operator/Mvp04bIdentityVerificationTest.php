@@ -6,6 +6,7 @@ namespace Tests\Feature\Operator;
 
 use App\Models\User;
 use App\Modules\Member\Application\Contracts\OperatorIdentityVerificationContract;
+use App\Modules\Member\Application\Services\MemberVerificationAssetService;
 use App\Modules\Member\Domain\MemberIdentityException;
 use App\Modules\Operator\Application\Services\OperatorActiveSiteService;
 use App\Modules\Operator\Application\Services\OperatorArrivalService;
@@ -15,6 +16,7 @@ use App\Shared\Context\AuthenticatedContext;
 use App\Shared\Context\CorrelationId;
 use App\Shared\Identity\LocalId;
 use App\Shared\Storage\PrivateObjectStore;
+use DateTimeImmutable;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -319,6 +321,158 @@ final class Mvp04bIdentityVerificationTest extends TestCase
         $this->assertDatabaseCount('operator_identity_verification_events', 1);
     }
 
+    public function test_unavailable_evidence_renders_safe_summary_without_protected_actions(): void
+    {
+        $fixture = $this->identityFixture();
+        $this->startSession();
+        $this->actingAs($fixture['operator']);
+        $this->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
+        $case = $this->arriveAndStart($fixture);
+        DB::table('member_verification_assets')->where('member_id', $fixture['memberId'])->where('type', 'profile_photo')->where('is_current', true)->update(['review_status' => 'rejected', 'is_current' => false]);
+
+        $response = $this->get(route('operator.identity-verification.show', $case['case_id']));
+        $response->assertOk()
+            ->assertSee('Current identity evidence is unavailable')
+            ->assertSee('Report mismatch')
+            ->assertSee('Insufficient evidence')
+            ->assertSee('Cancel verification')
+            ->assertDontSee('Current identity document')
+            ->assertDontSee('Verify exact NIK')
+            ->assertDontSee('Reveal previous photographs')
+            ->assertDontSee('Matched')
+            ->assertDontSee('/asset/');
+    }
+
+    public function test_unavailable_evidence_renders_safe_summary_when_current_document_is_missing(): void
+    {
+        $fixture = $this->identityFixture();
+        $this->startSession();
+        $this->actingAs($fixture['operator']);
+        $this->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
+        $case = $this->arriveAndStart($fixture);
+        DB::table('member_verification_assets')->where('member_id', $fixture['memberId'])->where('type', 'ktp')->update(['is_current' => false]);
+
+        $this->get(route('operator.identity-verification.show', $case['case_id']))
+            ->assertOk()
+            ->assertSee('Current identity evidence is unavailable')
+            ->assertDontSee('Masked NIK')
+            ->assertDontSee('Verify exact NIK');
+    }
+
+    public function test_unavailable_evidence_allows_only_failure_decisions_or_cancel_and_keeps_site_blocked(): void
+    {
+        $fixture = $this->identityFixture();
+        $this->startSession();
+        $this->actingAs($fixture['operator']);
+        $this->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
+        $case = $this->arriveAndStart($fixture);
+        DB::table('member_verification_assets')->where('member_id', $fixture['memberId'])->where('type', 'profile_photo')->where('is_current', true)->update(['review_status' => 'rejected', 'is_current' => false]);
+        $secondSiteId = $this->addSecondSite($fixture);
+
+        try {
+            app(OperatorActiveSiteService::class)->select($secondSiteId);
+            $this->fail('An unavailable-evidence case did not block a site switch.');
+        } catch (OperatorException $exception) {
+            $this->assertSame('active_site_blocked', $exception->category);
+        }
+
+        $this->post(route('operator.identity-verification.decision', $case['case_id']), [
+            'state' => OperatorIdentityVerificationService::MISMATCH_REPORTED,
+            'reason' => 'Evidence unavailable for this visit.',
+            'operation_id' => (string) Str::uuid(),
+        ])->assertRedirect();
+
+        $this->assertDatabaseHas('operator_identity_verifications', ['id' => $case['case_id'], 'state' => OperatorIdentityVerificationService::MISMATCH_REPORTED, 'active_claim_operator_profile_id' => null]);
+        app(OperatorActiveSiteService::class)->select($secondSiteId);
+        $this->assertSame($secondSiteId, session('operator.active_site_id'));
+    }
+
+    public function test_direct_asset_grant_rejects_wrong_age_unsupported_historical_and_cross_member_assets(): void
+    {
+        $fixture = $this->identityFixture();
+        $this->startSession();
+        $this->actingAs($fixture['operator']);
+        $this->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
+        $case = $this->arriveAndStart($fixture);
+        $wrongAge = $this->insertAsset($fixture, 'kia', 'synthetic-wrong-age-document', true);
+        $unsupported = $this->insertAsset($fixture, 'passport', 'synthetic-unsupported-document', true);
+        $historicalIdentity = $this->insertAsset($fixture, 'ktp', 'synthetic-historical-document', false);
+        $otherMember = $this->insertOtherMember($fixture);
+        $crossMember = $this->insertAsset($fixture, 'ktp', 'synthetic-cross-member-document', true, $otherMember);
+        $unrevealedPhoto = (string) DB::table('member_verification_assets')
+            ->where('member_id', $fixture['memberId'])
+            ->where('type', 'profile_photo')
+            ->where('is_current', false)
+            ->value('id');
+        $context = $this->identityContext($fixture, $case['case_id'], 'operator.identity.asset');
+        $service = app(MemberVerificationAssetService::class);
+
+        foreach ([$wrongAge, $unsupported, $historicalIdentity, $crossMember, $unrevealedPhoto] as $assetId) {
+            try {
+                $service->grantForOperator(
+                    $assetId,
+                    $context,
+                    $fixture['siteStableId'],
+                    $fixture['scheduleId'],
+                    $fixture['bookingId'],
+                    $case['case_id'],
+                    'operator-identity',
+                    new DateTimeImmutable('+60 seconds'),
+                );
+                $this->fail('The direct Member grant accepted a forbidden verification asset.');
+            } catch (MemberIdentityException $exception) {
+                $this->assertStringContainsString('requested verification asset', $exception->getMessage());
+            }
+        }
+    }
+
+    public function test_member_contract_rechecks_persisted_authentication_and_portal_authority(): void
+    {
+        $fixture = $this->identityFixture();
+        $this->startSession();
+        $this->actingAs($fixture['operator']);
+        $this->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
+        $case = $this->arriveAndStart($fixture);
+        $context = $this->identityContext($fixture, $case['case_id'], 'operator.identity.view');
+        $contract = app(OperatorIdentityVerificationContract::class);
+        $arguments = [$context, $fixture['siteStableId'], $fixture['scheduleId'], $fixture['bookingId'], $case['case_id']];
+        $contract->currentView(...$arguments);
+
+        DB::table('authorization_permission_assignments')
+            ->where('user_id', $fixture['operator']->id)
+            ->where('permission', 'operator.portal.access')
+            ->update(['active' => false]);
+        try {
+            $contract->currentView(...$arguments);
+            $this->fail('A revoked portal permission retained Member contract access.');
+        } catch (MemberIdentityException) {
+            $this->assertTrue(true);
+        }
+        DB::table('authorization_permission_assignments')
+            ->where('user_id', $fixture['operator']->id)
+            ->where('permission', 'operator.portal.access')
+            ->update(['active' => true]);
+
+        foreach ([
+            ['account_status' => 'suspended'],
+            ['login_enabled' => false],
+            ['must_change_password' => true],
+        ] as $change) {
+            DB::table('users')->where('id', $fixture['operator']->id)->update($change);
+            try {
+                $contract->currentView(...$arguments);
+                $this->fail('A non-authenticatable User retained Member contract access.');
+            } catch (MemberIdentityException) {
+                $this->assertTrue(true);
+            }
+            DB::table('users')->where('id', $fixture['operator']->id)->update([
+                'account_status' => 'active',
+                'login_enabled' => true,
+                'must_change_password' => false,
+            ]);
+        }
+    }
+
     public function test_identity_free_text_is_local_and_shared_audit_reason_is_controlled(): void
     {
         $fixture = $this->identityFixture();
@@ -430,7 +584,7 @@ final class Mvp04bIdentityVerificationTest extends TestCase
             actorId: LocalId::fromString((string) $fixture['operator']->id),
             operationId: CorrelationId::random(),
             roles: ['operator'],
-            permissions: ['operator.identity.verify'],
+            permissions: ['operator.portal.access', 'operator.identity.verify'],
             siteId: LocalId::fromString($fixture['siteLocalId']),
             purpose: 'operator.identity.asset',
         );
@@ -482,7 +636,7 @@ final class Mvp04bIdentityVerificationTest extends TestCase
             actorId: LocalId::fromString((string) $fixture['operator']->id),
             operationId: CorrelationId::random(),
             roles: ['operator'],
-            permissions: ['operator.identity.verify'],
+            permissions: ['operator.portal.access', 'operator.identity.verify'],
             siteId: LocalId::fromString($fixture['siteLocalId']),
             caseId: LocalId::fromString($caseId),
             purpose: $purpose,

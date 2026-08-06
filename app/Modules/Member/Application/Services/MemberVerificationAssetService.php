@@ -149,14 +149,28 @@ final readonly class MemberVerificationAssetService
     ): AccessGrant {
         $assertion = $this->trustedCase->resolve($caller, $operatorSiteId, $scheduleId, $bookingId, $caseId);
         $asset = DB::table('member_verification_assets')->where('id', $assetId)->first();
+        $member = $assertion === null
+            ? null
+            : DB::table('members')->where('id', $assertion['member_id'])->first();
+        $expectedDocument = $member === null
+            ? null
+            : ((new DateTimeImmutable((string) $member->birth_date))->diff($this->clock->now())->y >= 17 ? 'ktp' : 'kia');
+        $isCurrentAllowed = $asset !== null
+            && (bool) $asset->is_current
+            && ((string) $asset->type === VerificationAssetType::ProfilePhoto->value
+                || ((string) $asset->type === $expectedDocument && in_array((string) $asset->type, ['ktp', 'kia'], true)));
+        $isPreviousAllowed = $asset !== null
+            && ! (bool) $asset->is_current
+            && (string) $asset->type === VerificationAssetType::ProfilePhoto->value
+            && (bool) ($assertion['prior_photos_revealed'] ?? false);
 
         if (
             $assertion === null
             || $asset === null
+            || $member === null
             || (string) $asset->member_id !== $assertion['member_id']
             || $asset->review_status !== VerificationReviewStatus::Approved->value
-            || (! (bool) $asset->is_current
-                && ((string) $asset->type !== VerificationAssetType::ProfilePhoto->value || ! $assertion['prior_photos_revealed']))
+            || (! $isCurrentAllowed && ! $isPreviousAllowed)
         ) {
             throw new MemberIdentityException('The requested verification asset is unavailable.');
         }

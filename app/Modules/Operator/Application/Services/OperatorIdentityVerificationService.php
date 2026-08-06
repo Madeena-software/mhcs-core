@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Modules\Operator\Application\Services;
 
+use App\Modules\Member\Application\Contracts\OperatorAttendanceContract;
 use App\Modules\Member\Application\Contracts\OperatorIdentityVerificationContract;
 use App\Modules\Operator\Domain\OperatorException;
 use App\Shared\Audit\AuditEvent;
@@ -31,6 +32,7 @@ final readonly class OperatorIdentityVerificationService
     public function __construct(
         private OperatorAuthorization $authorization,
         private OperatorShiftAssignmentService $assignments,
+        private OperatorAttendanceContract $memberAttendance,
         private OperatorIdentityVerificationContract $memberIdentity,
         private AuditStore $audit,
         private Clock $clock,
@@ -152,17 +154,35 @@ final readonly class OperatorIdentityVerificationService
         $site = $this->authorization->portalSite($identity);
         $case = $this->caseForOperator($identity, $site->getKey(), $caseId);
         if ($case->state !== self::OPEN) {
-            return ['case' => $this->caseResult($case), 'view' => null];
+            return ['case' => $this->caseResult($case), 'safeSummary' => null, 'evidenceStatus' => 'closed', 'allowedDecisions' => [], 'view' => null];
         }
 
         try {
-            $view = $this->memberIdentity->currentView(
+            $memberView = $this->memberIdentity->currentView(
                 $this->context($identity['context'], 'operator.identity.view', (string) $case->id),
                 $site->operator_site_id,
                 (string) $case->member_schedule_id,
                 (string) $case->booking_id,
                 (string) $case->id,
             );
+            if ($memberView['evidence_status'] === 'unavailable') {
+                $safeSummary = $this->memberAttendance->safeArrivalSummary((string) $case->booking_id);
+                if ($safeSummary === null) {
+                    throw new OperatorException('identity_view_unavailable', 'The identity verification view is unavailable.');
+                }
+
+                return [
+                    'case' => $this->caseResult($case),
+                    'safeSummary' => $safeSummary,
+                    'evidenceStatus' => 'unavailable',
+                    'allowedDecisions' => [self::MISMATCH_REPORTED, self::INSUFFICIENT_EVIDENCE],
+                    'view' => null,
+                ];
+            }
+            $view = $memberView['view'];
+            if (! is_array($view)) {
+                throw new OperatorException('identity_view_unavailable', 'The identity verification view is unavailable.');
+            }
             if (DB::table('operator_identity_verification_events')
                 ->where('verification_id', $case->id)
                 ->where('event_type', 'previous_photos_revealed')
@@ -171,7 +191,13 @@ final readonly class OperatorIdentityVerificationService
                 $view['previous_profile_photos'] = $this->previousPhotos($identity, $site, $case);
             }
 
-            return ['case' => $this->caseResult($case), 'view' => $view];
+            return [
+                'case' => $this->caseResult($case),
+                'safeSummary' => null,
+                'evidenceStatus' => 'available',
+                'allowedDecisions' => [self::MATCHED, self::MISMATCH_REPORTED, self::INSUFFICIENT_EVIDENCE],
+                'view' => $view,
+            ];
         } catch (Throwable $exception) {
             throw new OperatorException('identity_view_unavailable', 'The identity verification view is unavailable.', $exception);
         }
@@ -241,13 +267,17 @@ final readonly class OperatorIdentityVerificationService
         $site = $this->authorization->portalSite($identity);
         $case = $this->openCase($identity, $site->getKey(), $caseId);
         try {
-            $view = $this->memberIdentity->currentView(
+            $memberView = $this->memberIdentity->currentView(
                 $this->context($identity['context'], 'operator.identity.view', (string) $case->id),
                 $site->operator_site_id,
                 (string) $case->member_schedule_id,
                 (string) $case->booking_id,
                 (string) $case->id,
             );
+            $view = $memberView['view'];
+            if (! is_array($view)) {
+                throw new OperatorException('identity_asset_unavailable', 'The requested verification asset is unavailable.');
+            }
             $allowed = array_filter([
                 data_get($view, 'identity_document.asset_id'),
                 data_get($view, 'latest_profile_photo.asset_id'),
@@ -303,13 +333,16 @@ final readonly class OperatorIdentityVerificationService
             }
             if ($state === self::MATCHED) {
                 try {
-                    $this->memberIdentity->currentView(
+                    $memberView = $this->memberIdentity->currentView(
                         $this->context($identity['context'], 'operator.identity.view', (string) $case->id),
                         $site->operator_site_id,
                         (string) $case->member_schedule_id,
                         (string) $case->booking_id,
                         (string) $case->id,
                     );
+                    if ($memberView['evidence_status'] !== 'available' || ! is_array($memberView['view'])) {
+                        throw new OperatorException('identity_evidence_unavailable', 'Current approved identity evidence is unavailable.');
+                    }
                 } catch (Throwable $exception) {
                     throw new OperatorException('identity_evidence_unavailable', 'Current approved identity evidence is unavailable.', $exception);
                 }

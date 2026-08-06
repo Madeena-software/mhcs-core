@@ -159,3 +159,16 @@ Deliver cross-MVP regression verification, operational runbook, beta monitoring,
 No roadmap task creates a generic cross-module database editor. Shared
 administrator navigation is presentation; module-owned resources and business
 rules remain behind their approved application boundaries.
+
+## MVP-04B final boundary closure addendum — 2026-08-06
+
+The final boundary task keeps MVP-04B bounded while closing the remaining
+evidence-unavailable and protected-grant gaps. Missing current evidence now
+renders only a safe arrival summary with failure/cancel actions; matched and
+protected asset retrieval remain fail-closed. The shared grant and trusted
+case resolver revalidate the authenticatable account, portal/identity
+permissions, exact case/booking Member, and allowed asset slot. Evidence:
+`docs/mvp/evidence/mvp-04b-front-desk-identity-verification.md`.
+
+MVP-04, consent, check-in, ticketing, queues, clinical behavior, deployment,
+and production readiness remain open or partial.

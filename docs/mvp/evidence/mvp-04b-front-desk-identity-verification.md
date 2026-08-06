@@ -198,3 +198,104 @@ through the SQLite RefreshDatabase path, route/method inspection, targeted
 raw-NIK/private-object leakage searches, and `git diff --check` passed.
 Browser, full-suite, Docker/MySQL, CI, Composer audit, deployment, production,
 and external-system checks were not run under the task contract.
+
+## Final boundary closure addendum — 2026-08-06
+
+Task: `.agents/tasks/mhcs-core-mvp-04b-final-boundary-closure-v1.md`, version 1,
+executed with `TARGET="."`. The required baseline and execution HEAD were both
+`7074f2eea5e8c7368418dac966f111c4d96ddedd` on `main` in the canonical
+`/var/www/mhcs-core` checkout for `git@github.com:Madeena-software/mhcs-core.git`.
+The task file was preserved as the only pre-existing untracked input; no reset,
+clean, stash, stage, commit, push, deployment, production access, dependency,
+or external-system action occurred. No subagents were used.
+
+The initial Codebase Memory artifact was current to `fa23f977...`, not the
+execution HEAD: project `mhcs-core`, 4,347 nodes, and 10,493 edges. Direct MCP
+architecture/search checks succeeded. The least-expensive valid stale refresh
+was `index_repository(mode="fast", persistence=true)`, producing 4,377 nodes
+and 10,522 edges. After implementation, the same fast refresh produced 4,382
+nodes and 10,591 edges. Final MCP searches found the changed contract,
+resolver, Operator service, Member service, and Blade path; inbound traces
+confirmed `currentView` callers (`view`, asset retrieval, and matched decision)
+and `grantForOperator` callers (the Member retrieval path, controller, and
+direct regression test).
+
+The closure changes are deliberately narrow:
+
+- Member `currentView` now returns explicit `available`/`unavailable` evidence
+  state. Operator renders unavailable evidence through the existing bounded
+  arrival summary, with no protected comparison data, and exposes only
+  `mismatch_reported`, `insufficient_evidence`, and cancel while the case is
+  open. `matched` and protected asset retrieval require an available view.
+- The shared Operator grant boundary independently rechecks the persisted
+  authenticatable User, exact open case and booking Member, active portal and
+  identity permissions, approved status, current profile or age-appropriate
+  KTP/KIA slot, or an explicitly revealed historical profile photo.
+- The trusted case resolver now requires both context permissions plus active
+  role/profile/site/assignment/arrival/booking state and persisted account
+  eligibility (`active`, login enabled, and no mandatory password change).
+- Focused regressions cover missing document/profile evidence, safe-page action
+  gating, safe decision/site release, direct grant denial for forbidden slots,
+  and persisted portal/account revocation. No migration was added or changed.
+
+Ponytail remained active at `full`: existing bounded summaries, contracts,
+authorization paths, and storage boundaries were reused; no dependency or new
+abstraction was introduced. The implementation and regression test are the
+following seven files; the four files named by the task are the only documents
+updated:
+
+```text
+app/Modules/Member/Application/Contracts/OperatorIdentityVerificationContract.php
+app/Modules/Member/Application/Services/MemberVerificationAssetService.php
+app/Modules/Member/Application/Services/Mvp04OperatorIdentityVerificationService.php
+app/Modules/Operator/Application/Services/OperatorIdentityVerificationService.php
+app/Modules/Operator/Infrastructure/TrustedOperatorIdentityVerificationContextResolver.php
+resources/views/operator/identity-verification.blade.php
+tests/Feature/Operator/Mvp04bIdentityVerificationTest.php
+docs/mvp/evidence/mvp-04b-front-desk-identity-verification.md
+docs/mvp/roadmap.md
+docs/mvp/beta-gap-register.md
+docs/mvp/work-package-status.md
+```
+
+### Final verification
+
+The task validator passed with:
+
+```text
+python3 .agents/skills/agent-task/scripts/validate_task.py .agents/tasks/mhcs-core-mvp-04b-final-boundary-closure-v1.md
+Task contract is valid
+```
+
+The environment has no `python` executable, so the equivalent required
+validator invocation used `python3`. These declared suites passed separately:
+
+```text
+vendor/bin/phpunit tests/Feature/Operator/Mvp04bIdentityVerificationTest.php                         16 tests, 84 assertions
+vendor/bin/phpunit tests/Feature/Operator/Mvp04OperatorPortalTest.php                                  8 tests, 63 assertions
+vendor/bin/phpunit tests/Operator/Mvp04OperatorFoundationTest.php                                     15 tests, 56 assertions
+vendor/bin/phpunit tests/Feature/Admin/Mvp04OperatorAdministrationTest.php                              2 tests, 22 assertions
+vendor/bin/phpunit tests/Member/Wp04IdentityTest.php --filter 'asset|identifier|verification|grant'    7 tests, 27 assertions
+vendor/bin/phpunit tests/Security/Wp02SecurityTest.php                                                 23 tests, 94 assertions
+vendor/bin/phpunit tests/Architecture/FoundationArchitectureTest.php                                   6 tests, 1,539 assertions
+```
+
+`php -l` passed for every changed PHP file. Pint passed after formatting. The
+forward migration check passed with
+`DB_CONNECTION=sqlite DB_DATABASE=:memory: php artisan migrate:fresh --database=sqlite --no-interaction`,
+including both existing MVP-04B migrations. Route inspection showed seven
+identity-verification routes. Container inspection resolved the Member
+identity contract, trusted resolver contract, and attendance contract to their
+intended implementations. Targeted searches found no raw NIK literal,
+private-object key, permanent URL, download action, or unbounded reason in the
+Operator identity service/view/controller paths. `git diff --check` passed.
+
+Not run by contract: browser/Playwright/Pest, full PHPUnit, complete Work
+Package suites, MySQL/Docker conformance, npm or dependency installation,
+Composer audit, CI, deployment, production checks, or external integrations.
+MVP-04, WP-11, WP-12, WP-17, and the bounded WP-07 status remain partial or
+not-started as previously recorded. Production migration approval,
+object-storage policy, privacy/retention approval, browser verification, and
+broader Operator/clinical/consent/check-in/ticket/queue behavior remain open.
+The working tree is ready for owner-controlled review and commit; this task did
+not create one.

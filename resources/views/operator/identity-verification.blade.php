@@ -68,15 +68,30 @@
             @endif
         </section>
 
+    @elseif ($evidenceStatus === 'unavailable')
+        <section class="card">
+            <h2>Member summary</h2>
+            <p><strong>Name:</strong> {{ $safeSummary['member_name'] }}</p>
+            <p><strong>Medical record:</strong> {{ $safeSummary['medical_record_number'] }}</p>
+            <p><strong>Service:</strong> {{ $safeSummary['service_name'] }}</p>
+            <p class="muted">Current identity evidence is unavailable. Protected comparison remains closed.</p>
+        </section>
+    @else
+        <section class="card"><p class="muted">This case is closed. Protected identity assets are no longer available.</p></section>
+    @endif
+
+    @if ($case['state'] === 'open')
         <section class="card">
             <h2>Record decision</h2>
             <div class="actions">
-                <form method="POST" action="{{ route('operator.identity-verification.decision', $case['case_id']) }}">
-                    @csrf
-                    <input type="hidden" name="state" value="matched">
-                    <input type="hidden" name="operation_id" value="{{ Illuminate\Support\Str::uuid() }}">
-                    <button type="submit">Matched</button>
-                </form>
+                @if (in_array('matched', $allowedDecisions, true))
+                    <form method="POST" action="{{ route('operator.identity-verification.decision', $case['case_id']) }}">
+                        @csrf
+                        <input type="hidden" name="state" value="matched">
+                        <input type="hidden" name="operation_id" value="{{ Illuminate\Support\Str::uuid() }}">
+                        <button type="submit">Matched</button>
+                    </form>
+                @endif
                 <form method="POST" action="{{ route('operator.identity-verification.decision', $case['case_id']) }}">
                     @csrf
                     <input type="hidden" name="state" value="mismatch_reported">
@@ -95,11 +110,6 @@
                 </form>
             </div>
         </section>
-    @else
-        <section class="card"><p class="muted">This case is closed. Protected identity assets are no longer available.</p></section>
-    @endif
-
-    @if ($case['state'] === 'open')
         <section class="card">
             <h2>Cancel case</h2>
             <form method="POST" action="{{ route('operator.identity-verification.cancel', $case['case_id']) }}">

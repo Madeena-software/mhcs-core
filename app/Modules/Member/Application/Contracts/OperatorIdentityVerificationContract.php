@@ -19,7 +19,7 @@ interface OperatorIdentityVerificationContract
         string $at,
     ): array;
 
-    /** @return array<string, mixed> */
+    /** @return array{evidence_status: 'available'|'unavailable', view: array<string, mixed>|null} */
     public function currentView(
         AuthenticatedContext $context,
         string $operatorSiteId,

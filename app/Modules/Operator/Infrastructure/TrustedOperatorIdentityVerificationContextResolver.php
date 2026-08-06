@@ -26,6 +26,7 @@ final class TrustedOperatorIdentityVerificationContextResolver implements Contra
             || (string) $context->caseId !== trim($caseId)
             || ! Str::isUuid(trim($caseId))
             || ! in_array('operator', $context->roles, true)
+            || ! in_array('operator.portal.access', $context->permissions, true)
             || ! in_array('operator.identity.verify', $context->permissions, true)
             || ! in_array($context->purpose, [
                 'operator.identity.lookup',
@@ -39,6 +40,15 @@ final class TrustedOperatorIdentityVerificationContextResolver implements Contra
 
         $actorId = (string) $context->actorId;
         $stableSiteId = trim($operatorSiteId);
+        if (! DB::table('users')
+            ->where('id', $actorId)
+            ->where('account_status', 'active')
+            ->where('login_enabled', true)
+            ->where('must_change_password', false)
+            ->exists()) {
+            return null;
+        }
+
         $profileId = DB::table('operator_profiles')
             ->where('user_id', $actorId)
             ->where('active', true)
@@ -56,6 +66,11 @@ final class TrustedOperatorIdentityVerificationContextResolver implements Contra
             || ! DB::table('authorization_permission_assignments')
                 ->where('user_id', $actorId)
                 ->where('permission', 'operator.identity.verify')
+                ->where('active', true)
+                ->exists()
+            || ! DB::table('authorization_permission_assignments')
+                ->where('user_id', $actorId)
+                ->where('permission', 'operator.portal.access')
                 ->where('active', true)
                 ->exists()
         ) {

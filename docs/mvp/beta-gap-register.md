@@ -64,3 +64,11 @@ MVP-GAP-024 open.
 The complete Operator Portal, Member/public identity journey, consent,
 check-in, ticketing, queues, clinical behavior, privacy/retention policy,
 production storage policy, deployment, and production readiness remain open.
+
+## MVP-04B final boundary closure addendum — 2026-08-06
+
+The final boundary closure adds explicit unavailable-evidence handling,
+persisted account and portal revalidation, and shared-boundary asset-slot
+enforcement. MVP-GAP-006, MVP-GAP-009, MVP-GAP-012, and MVP-GAP-024 remain open;
+the broader Operator portal, consent, check-in, ticketing, queues, privacy,
+deployment, and production gaps are not closed.
