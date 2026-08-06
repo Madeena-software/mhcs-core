@@ -47,6 +47,13 @@ Route::middleware(['auth', EnsureOperatorPortalAccess::class])->group(function (
     Route::post('/operator/arrivals', [OperatorPortalController::class, 'recordArrival'])->name('operator.arrivals.store');
     Route::post('/operator/arrivals/cancel', [OperatorPortalController::class, 'cancelArrival'])->name('operator.arrivals.cancel');
     Route::get('/operator/verification-worklist', [OperatorPortalController::class, 'worklist'])->name('operator.verification-worklist');
+    Route::post('/operator/identity-verification/start', [OperatorPortalController::class, 'startIdentityVerification'])->name('operator.identity-verification.start');
+    Route::get('/operator/identity-verification/{case}', [OperatorPortalController::class, 'identityVerification'])->name('operator.identity-verification.show');
+    Route::post('/operator/identity-verification/{case}/lookup', [OperatorPortalController::class, 'lookupIdentity'])->name('operator.identity-verification.lookup');
+    Route::post('/operator/identity-verification/{case}/previous-photos', [OperatorPortalController::class, 'revealPreviousPhotos'])->name('operator.identity-verification.previous-photos');
+    Route::get('/operator/identity-verification/{case}/asset/{asset}', [OperatorPortalController::class, 'retrieveIdentityAsset'])->name('operator.identity-verification.asset');
+    Route::post('/operator/identity-verification/{case}/decision', [OperatorPortalController::class, 'decideIdentity'])->name('operator.identity-verification.decision');
+    Route::post('/operator/identity-verification/{case}/cancel', [OperatorPortalController::class, 'cancelIdentity'])->name('operator.identity-verification.cancel');
 });
 
 Route::post('/logout', [AuthenticationController::class, 'logout'])

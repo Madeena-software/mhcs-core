@@ -75,7 +75,7 @@ return [
             'max_ttl_seconds' => env('MHCS_ASSET_GRANT_MAX_TTL_SECONDS', $localLoginDefaults ? 300 : null),
             'audiences' => array_values(array_filter(array_map(
                 'trim',
-                explode(',', (string) env('MHCS_ASSET_GRANT_AUDIENCES', $localLoginDefaults ? 'member-view' : '')),
+                explode(',', (string) env('MHCS_ASSET_GRANT_AUDIENCES', $localLoginDefaults ? 'member-view,operator-identity' : '')),
             ), static fn (string $audience): bool => $audience !== '')),
         ],
         'login' => [

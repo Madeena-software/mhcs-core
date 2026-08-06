@@ -39,6 +39,8 @@ final readonly class OperatorAuthorization
 
     public const ARRIVAL_RECORD = 'operator.arrival.record';
 
+    public const IDENTITY_VERIFY = 'operator.identity.verify';
+
     public const AUDIT_READ = 'operator.audit.read';
 
     public function __construct(private AuthenticatedContextProvider $context) {}
@@ -134,6 +136,20 @@ final readonly class OperatorAuthorization
         }
 
         return $site;
+    }
+
+    /** @return array{context: AuthenticatedContext, user: User, profile: OperatorProfile} */
+    public function identity(): array
+    {
+        $portal = $this->portal();
+        if (! $this->has($portal['context'], self::IDENTITY_VERIFY)) {
+            throw new OperatorException('operator_identity_denied', 'Identity verification authorization is unavailable.');
+        }
+
+        return [
+            ...$portal,
+            'context' => $portal['context']->forPurpose('operator.identity'),
+        ];
     }
 
     public function current(string $purpose): AuthenticatedContext

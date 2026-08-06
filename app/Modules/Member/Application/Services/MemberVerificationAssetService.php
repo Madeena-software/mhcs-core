@@ -135,6 +135,41 @@ final readonly class MemberVerificationAssetService
         return $this->objects->get($grant, $this->authorization->context($purpose), $audience, $purpose);
     }
 
+    public function grantForOperator(
+        string $assetId,
+        AuthenticatedContext $caller,
+        string $audience,
+        DateTimeImmutable $expiresAt,
+        bool $allowPrevious = false,
+    ): AccessGrant {
+        $asset = DB::table('member_verification_assets')->where('id', $assetId)->first();
+
+        if (
+            $asset === null
+            || $asset->review_status !== VerificationReviewStatus::Approved->value
+            || (! (bool) $asset->is_current && ! $allowPrevious)
+        ) {
+            throw new MemberIdentityException('The requested verification asset is unavailable.');
+        }
+
+        $context = $this->authorization->operatorIdentityAsset($caller);
+        $this->assertGrantBounds($audience, $expiresAt);
+
+        return $this->objects->grant(
+            new PrivateObject(
+                key: OpaqueObjectKey::fromString($asset->private_object_key),
+                checksum: $asset->checksum,
+                bytes: (int) $asset->bytes,
+                encryption: 'AES-256-GCM',
+                createdAt: new DateTimeImmutable((string) $asset->created_at),
+            ),
+            $context,
+            $audience,
+            'operator.identity.asset',
+            $expiresAt,
+        );
+    }
+
     private function record(
         Member $member,
         VerificationAssetInput $input,

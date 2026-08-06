@@ -200,6 +200,26 @@ final readonly class MemberAuthorization
         return $context;
     }
 
+    public function operatorIdentityAsset(AuthenticatedContext $caller): AuthenticatedContext
+    {
+        if ($caller->purpose !== 'operator.identity.asset') {
+            throw new MemberIdentityException('The verification asset purpose is not supported.');
+        }
+
+        $context = $this->context('operator.identity.asset');
+        if (
+            ! in_array('operator', $context->roles, true)
+            || ! $this->hasPermission($context, 'operator.identity.verify')
+            || $caller->actorId?->value !== $context->actorId?->value
+            || $caller->operationId?->value !== $context->operationId?->value
+            || $caller->siteId?->value !== $context->siteId?->value
+        ) {
+            throw new MemberIdentityException('Verification asset authorization is required.');
+        }
+
+        return $context;
+    }
+
     private function requireAdministrator(string $purpose, string $permission): AuthenticatedContext
     {
         $context = $this->context($purpose);

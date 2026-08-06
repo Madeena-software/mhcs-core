@@ -86,5 +86,12 @@ final readonly class OperatorActiveSiteService
         if ($this->confirmations->inspect($profileId, $currentSiteId)['status'] === 'active') {
             throw new OperatorException('active_site_blocked', 'Site switching is blocked while arrival work is unresolved.');
         }
+        if (DB::table('operator_identity_verifications')
+            ->where('operator_profile_id', $profileId)
+            ->where('operator_site_id', $currentSiteId)
+            ->where('state', OperatorIdentityVerificationService::OPEN)
+            ->exists()) {
+            throw new OperatorException('active_site_blocked', 'Site switching is blocked while identity verification is unresolved.');
+        }
     }
 }

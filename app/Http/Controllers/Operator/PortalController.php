@@ -9,11 +9,13 @@ use App\Modules\Operator\Application\Services\OperatorActiveSiteService;
 use App\Modules\Operator\Application\Services\OperatorArrivalService;
 use App\Modules\Operator\Application\Services\OperatorAttendanceService;
 use App\Modules\Operator\Application\Services\OperatorAuthorization;
+use App\Modules\Operator\Application\Services\OperatorIdentityVerificationService;
 use App\Modules\Operator\Application\Services\OperatorShiftAssignmentService;
 use App\Modules\Operator\Application\Services\OperatorWorklistService;
 use App\Modules\Operator\Domain\OperatorException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\View\View;
 use Throwable;
@@ -152,8 +154,146 @@ final class PortalController extends Controller
         }
     }
 
-    public function worklist(OperatorWorklistService $worklist): View
+    public function worklist(OperatorWorklistService $worklist, OperatorAuthorization $authorization): View
     {
-        return view('operator.verification-worklist', ['arrivals' => $worklist->current()]);
+        $portal = $authorization->portal();
+
+        return view('operator.verification-worklist', [
+            'arrivals' => $worklist->current(),
+            'canVerify' => $authorization->has($portal['context'], OperatorAuthorization::IDENTITY_VERIFY),
+        ]);
+    }
+
+    public function startIdentityVerification(Request $request, OperatorIdentityVerificationService $identity): RedirectResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'arrival_id' => ['required', 'uuid'],
+            'operation_id' => ['required', 'uuid'],
+            'reclaim' => ['sometimes', 'boolean'],
+        ]);
+        if ($validator->fails()) {
+            return back()->withErrors($validator);
+        }
+
+        try {
+            $case = $identity->start(
+                (string) $validator->validated()['arrival_id'],
+                (string) $validator->validated()['operation_id'],
+                (bool) ($validator->validated()['reclaim'] ?? false),
+            );
+
+            return redirect()->route('operator.identity-verification.show', $case['case_id']);
+        } catch (Throwable $exception) {
+            return back()->withErrors(['identity' => $exception instanceof OperatorException ? $exception->getMessage() : 'The verification case could not be started.']);
+        }
+    }
+
+    public function identityVerification(string $case, OperatorIdentityVerificationService $identity): View|RedirectResponse
+    {
+        try {
+            return view('operator.identity-verification', $identity->view($case));
+        } catch (Throwable $exception) {
+            return redirect()->route('operator.verification-worklist')->withErrors(['identity' => $exception instanceof OperatorException ? $exception->getMessage() : 'The verification case is unavailable.']);
+        }
+    }
+
+    public function lookupIdentity(Request $request, string $case, OperatorIdentityVerificationService $identity): View|RedirectResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'nik' => ['required', 'string', 'max:20'],
+            'at' => ['required', 'string', 'max:64'],
+        ]);
+        if ($validator->fails()) {
+            return back()->withErrors($validator);
+        }
+
+        try {
+            return view('operator.identity-verification', $identity->lookupByNik(
+                $case,
+                (string) $validator->validated()['nik'],
+                (string) $validator->validated()['at'],
+            ));
+        } catch (Throwable $exception) {
+            return back()->withErrors(['identity' => $exception instanceof OperatorException ? $exception->getMessage() : 'The identity lookup is unavailable.']);
+        }
+    }
+
+    public function revealPreviousPhotos(Request $request, string $case, OperatorIdentityVerificationService $identity): RedirectResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'reason' => ['required', 'string', 'max:500'],
+            'operation_id' => ['required', 'uuid'],
+        ]);
+        if ($validator->fails()) {
+            return back()->withErrors($validator);
+        }
+
+        try {
+            $identity->revealPreviousPhotos($case, (string) $validator->validated()['reason'], (string) $validator->validated()['operation_id']);
+
+            return redirect()->route('operator.identity-verification.show', $case);
+        } catch (Throwable $exception) {
+            return back()->withErrors(['identity' => $exception instanceof OperatorException ? $exception->getMessage() : 'Previous profile photos are unavailable.']);
+        }
+    }
+
+    public function retrieveIdentityAsset(string $case, string $asset, OperatorIdentityVerificationService $identity): Response|RedirectResponse
+    {
+        try {
+            $result = $identity->retrieveAsset($case, $asset);
+
+            return response($result['contents'], 200, [
+                'Content-Type' => $result['format'],
+                'Content-Disposition' => 'inline',
+                'Cache-Control' => 'no-store, private',
+                'Pragma' => 'no-cache',
+            ]);
+        } catch (Throwable $exception) {
+            return redirect()->route('operator.identity-verification.show', $case)->withErrors(['identity' => $exception instanceof OperatorException ? $exception->getMessage() : 'The verification asset is unavailable.']);
+        }
+    }
+
+    public function decideIdentity(Request $request, string $case, OperatorIdentityVerificationService $identity): RedirectResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'state' => ['required', 'in:matched,mismatch_reported,insufficient_evidence'],
+            'reason' => ['nullable', 'string', 'max:500'],
+            'operation_id' => ['required', 'uuid'],
+        ]);
+        if ($validator->fails()) {
+            return back()->withErrors($validator);
+        }
+
+        try {
+            $identity->decide(
+                $case,
+                (string) $validator->validated()['state'],
+                isset($validator->validated()['reason']) ? (string) $validator->validated()['reason'] : null,
+                (string) $validator->validated()['operation_id'],
+            );
+
+            return redirect()->route('operator.identity-verification.show', $case)->with('status', 'Verification decision recorded.');
+        } catch (Throwable $exception) {
+            return back()->withErrors(['identity' => $exception instanceof OperatorException ? $exception->getMessage() : 'The verification decision could not be recorded.']);
+        }
+    }
+
+    public function cancelIdentity(Request $request, string $case, OperatorIdentityVerificationService $identity): RedirectResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'reason' => ['required', 'string', 'max:500'],
+            'operation_id' => ['required', 'uuid'],
+        ]);
+        if ($validator->fails()) {
+            return back()->withErrors($validator);
+        }
+
+        try {
+            $identity->cancel($case, (string) $validator->validated()['reason'], (string) $validator->validated()['operation_id']);
+
+            return redirect()->route('operator.verification-worklist')->with('status', 'Verification case cancelled.');
+        } catch (Throwable $exception) {
+            return back()->withErrors(['identity' => $exception instanceof OperatorException ? $exception->getMessage() : 'The verification case could not be cancelled.']);
+        }
     }
 }

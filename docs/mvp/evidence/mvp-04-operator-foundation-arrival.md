@@ -39,8 +39,10 @@ The closure policy is deliberately narrow:
 - `OperatorArrivalService` exposes `confirm`, `recordConfirmed`, and
   `cancelConfirmation`; the low-level unconfirmed mutation is private.
 
-No identity verification, consent, check-in, ticketing, queue claim, clinical
-workflow, walk-in, cash, FHIR, Image Gateway, or later MVP behavior is claimed.
+The preceding MVP-04A evidence did not claim identity verification, consent,
+check-in, ticketing, queue claim, clinical workflow, walk-in, cash, FHIR, Image
+Gateway, or later MVP behavior. The bounded identity-verification addition is
+recorded in `mvp-04b-front-desk-identity-verification.md`.
 
 ## Baseline, candidate, and execution state
 

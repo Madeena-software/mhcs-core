@@ -88,9 +88,10 @@ slice implements shared Operator access, Operator-owned sites and profiles,
 site assignments and active-site context, eligible-shift intake, manual shift
 assignment, site-scoped attendance, physical arrival recording, the Member
 `confirmed` to `arrived` transition, a verification worklist, bounded portal
-routes, and Operator-owned administration. MVP-04 remains incomplete:
-check-in, ticketing, queue stages, consent, identity decisions, clinical
-workflow, and remaining queue/attendance behavior are deferred.
+routes, bounded front-desk identity verification, and Operator-owned
+administration. MVP-04 remains incomplete: check-in, ticketing, queue stages,
+consent, clinical workflow, and remaining queue/attendance behavior are
+deferred.
 
 Pest/Playwright browser-platform work is deferred to post-MVP hardening.
 
@@ -108,7 +109,20 @@ local/stable Operator site correspondence through an Operator-owned resolver,
 and removes the public unconfirmed arrival mutation. Evidence:
 `docs/mvp/evidence/mvp-04-operator-foundation-arrival.md`.
 MVP-04 remains incomplete and its queue, check-in, ticketing, consent,
-identity-decision, clinical, and broader attendance work remains deferred.
+clinical, and broader attendance work remains deferred. The bounded MVP-04B
+front-desk identity-verification slice is recorded below.
+
+### MVP-04B front-desk identity verification — 2026-08-06
+
+From baseline `cecbf8e5e6d944cf58a7b73c2db14177f1748b5f`, the bounded
+front-desk flow supports an assigned Operator claiming an arrived worklist
+entry, exact protected NIK lookup, current KTP/KIA and latest approved photo
+views, explicit prior-photo fallback, terminal human decisions, protected
+inline asset retrieval, and an open-case site-switch blocker. Member retains
+NIK and asset ownership; Operator retains case and decision ownership. Consent,
+check-in, tickets, queues, clinical behavior, and production readiness remain
+deferred. Evidence:
+`docs/mvp/evidence/mvp-04b-front-desk-identity-verification.md`.
 
 ## MVP-05 — Image Gateway Study Intake and Correlation
 

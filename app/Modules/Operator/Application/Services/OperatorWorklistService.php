@@ -21,9 +21,11 @@ final readonly class OperatorWorklistService
         $site = $this->authorization->portalSite($portal);
         $rows = DB::table('operator_arrivals')
             ->join('operator_profiles', 'operator_profiles.id', '=', 'operator_arrivals.operator_profile_id')
+            ->leftJoin('operator_identity_verifications', 'operator_identity_verifications.arrival_id', '=', 'operator_arrivals.id')
             ->where('operator_arrivals.operator_site_id', $site->getKey())
             ->where('operator_arrivals.status', 'recorded')
             ->select(['operator_arrivals.*', 'operator_profiles.display_name as operator_name'])
+            ->addSelect(['operator_identity_verifications.id as verification_case_id', 'operator_identity_verifications.state as verification_state', 'operator_identity_verifications.operator_profile_id as verification_operator_profile_id'])
             ->orderByDesc('operator_arrivals.occurrence_at')
             ->get();
 
@@ -39,6 +41,9 @@ final readonly class OperatorWorklistService
                 'occurrence_at' => (string) $row->occurrence_at,
                 'recorded_at' => (string) $row->recorded_at,
                 'status' => 'pending_verification',
+                'verification_case_id' => $row->verification_case_id === null ? null : (string) $row->verification_case_id,
+                'verification_state' => $row->verification_state === null ? 'unclaimed' : (string) $row->verification_state,
+                'verification_operator_profile_id' => $row->verification_operator_profile_id === null ? null : (string) $row->verification_operator_profile_id,
             ];
         })->all();
     }
