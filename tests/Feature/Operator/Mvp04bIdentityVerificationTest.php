@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Operator;
 
+use App\Models\User;
+use App\Modules\Member\Application\Contracts\OperatorIdentityVerificationContract;
+use App\Modules\Member\Domain\MemberIdentityException;
 use App\Modules\Operator\Application\Services\OperatorActiveSiteService;
 use App\Modules\Operator\Application\Services\OperatorArrivalService;
 use App\Modules\Operator\Application\Services\OperatorIdentityVerificationService;
@@ -12,6 +15,7 @@ use App\Shared\Context\AuthenticatedContext;
 use App\Shared\Context\CorrelationId;
 use App\Shared\Identity\LocalId;
 use App\Shared\Storage\PrivateObjectStore;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -70,7 +74,7 @@ final class Mvp04bIdentityVerificationTest extends TestCase
             'state' => 'matched',
             'operation_id' => (string) Str::uuid(),
         ])->assertRedirect(route('operator.identity-verification.show', $case['case_id']));
-        $this->assertDatabaseHas('operator_identity_verifications', ['id' => $case['case_id'], 'state' => 'matched']);
+        $this->assertDatabaseHas('operator_identity_verifications', ['id' => $case['case_id'], 'state' => 'matched', 'active_claim_operator_profile_id' => null]);
         $this->assertDatabaseHas('bookings', ['id' => $fixture['bookingId'], 'status' => 'arrived']);
         $this->assertDatabaseMissing('bookings', ['id' => $fixture['bookingId'], 'status' => 'checked_in']);
         $this->get(route('operator.identity-verification.asset', [$case['case_id'], $asset->id]))->assertRedirect();
@@ -149,6 +153,246 @@ final class Mvp04bIdentityVerificationTest extends TestCase
         $this->assertSame(1, DB::table('operator_identity_verification_events')->where('verification_id', $case['case_id'])->where('event_type', 'decision')->count());
     }
 
+    public function test_matched_revalidates_current_evidence_before_mutation(): void
+    {
+        $fixture = $this->identityFixture();
+        $this->startSession();
+        $this->actingAs($fixture['operator']);
+        $this->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
+        $case = $this->arriveAndStart($fixture);
+        $events = DB::table('operator_identity_verification_events')->where('verification_id', $case['case_id'])->count();
+        $audit = DB::table('audit_events')->count();
+        DB::table('member_verification_assets')
+            ->where('member_id', $fixture['memberId'])
+            ->where('type', 'profile_photo')
+            ->where('is_current', true)
+            ->update(['review_status' => 'rejected', 'is_current' => false]);
+
+        try {
+            app(OperatorIdentityVerificationService::class)->decide($case['case_id'], OperatorIdentityVerificationService::MATCHED, null, (string) Str::uuid());
+            $this->fail('A matched decision was accepted without current approved evidence.');
+        } catch (OperatorException $exception) {
+            $this->assertSame('identity_evidence_unavailable', $exception->category);
+        }
+
+        $this->assertDatabaseHas('operator_identity_verifications', [
+            'id' => $case['case_id'],
+            'state' => OperatorIdentityVerificationService::OPEN,
+            'active_claim_operator_profile_id' => $fixture['profileId'],
+        ]);
+        $this->assertSame($events, DB::table('operator_identity_verification_events')->where('verification_id', $case['case_id'])->count());
+        $this->assertSame($audit, DB::table('audit_events')->count());
+    }
+
+    public function test_asset_retrieval_rejects_historical_identity_documents_and_other_members(): void
+    {
+        $fixture = $this->identityFixture();
+        $this->startSession();
+        $this->actingAs($fixture['operator']);
+        $this->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
+        $case = $this->arriveAndStart($fixture);
+        $oldKtp = $this->insertAsset($fixture, 'ktp', 'synthetic-old-identity-document', false);
+        $otherMemberId = $this->insertOtherMember($fixture);
+        $otherAsset = $this->insertAsset($fixture, 'ktp', 'synthetic-other-member-document', true, $otherMemberId);
+
+        $this->post(route('operator.identity-verification.previous-photos', $case['case_id']), [
+            'reason' => 'Latest photo is insufficient for a human comparison.',
+            'operation_id' => (string) Str::uuid(),
+        ])->assertRedirect();
+
+        $this->get(route('operator.identity-verification.asset', [$case['case_id'], $oldKtp]))->assertRedirect();
+        $this->get(route('operator.identity-verification.asset', [$case['case_id'], $otherAsset]))->assertRedirect();
+    }
+
+    public function test_member_contract_rechecks_case_binding_after_permission_revocation(): void
+    {
+        $fixture = $this->identityFixture();
+        $this->startSession();
+        $this->actingAs($fixture['operator']);
+        $this->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
+        $case = $this->arriveAndStart($fixture);
+        $context = $this->identityContext($fixture, $case['case_id'], 'operator.identity.view');
+        $contract = app(OperatorIdentityVerificationContract::class);
+        $contract->currentView($context, $fixture['siteStableId'], $fixture['scheduleId'], $fixture['bookingId'], $case['case_id']);
+
+        DB::table('authorization_permission_assignments')
+            ->where('user_id', $fixture['operator']->id)
+            ->where('permission', 'operator.identity.verify')
+            ->update(['active' => false]);
+
+        try {
+            $contract->currentView($context, $fixture['siteStableId'], $fixture['scheduleId'], $fixture['bookingId'], $case['case_id']);
+            $this->fail('A revoked identity permission retained access to the case.');
+        } catch (MemberIdentityException $exception) {
+            $this->assertStringContainsString('trusted verification case', $exception->getMessage());
+        }
+    }
+
+    public function test_member_contract_rejects_forged_case_and_unrevealed_previous_photo(): void
+    {
+        $fixture = $this->identityFixture();
+        $this->startSession();
+        $this->actingAs($fixture['operator']);
+        $this->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
+        $case = $this->arriveAndStart($fixture);
+        $contract = app(OperatorIdentityVerificationContract::class);
+
+        try {
+            $contract->currentView(
+                $this->identityContext($fixture, (string) Str::uuid(), 'operator.identity.view'),
+                $fixture['siteStableId'],
+                $fixture['scheduleId'],
+                $fixture['bookingId'],
+                (string) Str::uuid(),
+            );
+            $this->fail('A forged identity case was accepted.');
+        } catch (MemberIdentityException $exception) {
+            $this->assertStringContainsString('trusted verification case', $exception->getMessage());
+        }
+
+        $previous = DB::table('member_verification_assets')
+            ->where('member_id', $fixture['memberId'])
+            ->where('type', 'profile_photo')
+            ->where('is_current', false)
+            ->first();
+        try {
+            $contract->retrieveAsset(
+                $this->identityContext($fixture, $case['case_id'], 'operator.identity.asset'),
+                $fixture['siteStableId'],
+                $fixture['scheduleId'],
+                $fixture['bookingId'],
+                $case['case_id'],
+                (string) $previous->id,
+            );
+            $this->fail('An unrevealed previous profile photo was retrieved.');
+        } catch (MemberIdentityException $exception) {
+            $this->assertStringContainsString('requested verification asset', $exception->getMessage());
+        }
+    }
+
+    public function test_member_contract_rechecks_site_assignment_after_case_start(): void
+    {
+        $fixture = $this->identityFixture();
+        $this->startSession();
+        $this->actingAs($fixture['operator']);
+        $this->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
+        $case = $this->arriveAndStart($fixture);
+        DB::table('operator_site_assignments')
+            ->where('operator_profile_id', $fixture['profileId'])
+            ->where('operator_site_id', $fixture['siteLocalId'])
+            ->update(['active' => false]);
+
+        try {
+            app(OperatorIdentityVerificationContract::class)->currentView(
+                $this->identityContext($fixture, $case['case_id'], 'operator.identity.view'),
+                $fixture['siteStableId'],
+                $fixture['scheduleId'],
+                $fixture['bookingId'],
+                $case['case_id'],
+            );
+            $this->fail('A revoked site assignment retained identity access.');
+        } catch (MemberIdentityException $exception) {
+            $this->assertStringContainsString('trusted verification case', $exception->getMessage());
+        }
+    }
+
+    public function test_matched_denies_pending_current_identity_document(): void
+    {
+        $fixture = $this->identityFixture();
+        $this->startSession();
+        $this->actingAs($fixture['operator']);
+        $this->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
+        $case = $this->arriveAndStart($fixture);
+        DB::table('member_verification_assets')
+            ->where('member_id', $fixture['memberId'])
+            ->where('type', 'ktp')
+            ->update(['review_status' => 'pending', 'is_current' => false]);
+
+        try {
+            app(OperatorIdentityVerificationService::class)->decide($case['case_id'], OperatorIdentityVerificationService::MATCHED, null, (string) Str::uuid());
+            $this->fail('A matched decision was accepted with a pending identity document.');
+        } catch (OperatorException $exception) {
+            $this->assertSame('identity_evidence_unavailable', $exception->category);
+        }
+
+        $this->assertDatabaseHas('operator_identity_verifications', ['id' => $case['case_id'], 'state' => OperatorIdentityVerificationService::OPEN]);
+        $this->assertDatabaseCount('operator_identity_verification_events', 1);
+    }
+
+    public function test_identity_free_text_is_local_and_shared_audit_reason_is_controlled(): void
+    {
+        $fixture = $this->identityFixture();
+        $this->startSession();
+        $this->actingAs($fixture['operator']);
+        $this->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
+        $case = $this->arriveAndStart($fixture);
+        $privateReason = '900000000001 private-object-key-should-not-enter-audit';
+        app(OperatorIdentityVerificationService::class)->decide($case['case_id'], OperatorIdentityVerificationService::MISMATCH_REPORTED, $privateReason, (string) Str::uuid());
+
+        $audit = json_encode(DB::table('audit_events')->get(), JSON_THROW_ON_ERROR);
+        $this->assertStringNotContainsString($privateReason, $audit);
+        $this->assertDatabaseHas('operator_identity_verifications', ['id' => $case['case_id'], 'reason' => $privateReason]);
+        $this->assertDatabaseHas('operator_identity_verification_events', ['verification_id' => $case['case_id'], 'reason' => $privateReason]);
+        $this->assertStringContainsString('identity_mismatch_reported', $audit);
+    }
+
+    public function test_one_operator_cannot_start_a_second_open_case_until_the_first_is_terminal(): void
+    {
+        $fixture = $this->identityFixture();
+        $this->startSession();
+        $this->actingAs($fixture['operator']);
+        $this->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
+        $case = $this->arriveAndStart($fixture);
+        $secondBookingId = (string) Str::uuid();
+        $booking = (array) DB::table('bookings')->where('id', $fixture['bookingId'])->first();
+        $booking['id'] = $secondBookingId;
+        $booking['status'] = 'arrived';
+        DB::table('bookings')->insert($booking);
+        $secondArrivalId = (string) Str::uuid();
+        DB::table('operator_arrivals')->insert([
+            'id' => $secondArrivalId,
+            'booking_id' => $secondBookingId,
+            'member_schedule_id' => $fixture['scheduleId'],
+            'operator_site_id' => $fixture['siteLocalId'],
+            'operator_profile_id' => $fixture['profileId'],
+            'occurrence_at' => now(),
+            'recorded_at' => now(),
+            'operation_id' => (string) Str::uuid(),
+            'source' => 'test',
+            'status' => 'recorded',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        try {
+            app(OperatorIdentityVerificationService::class)->start($secondArrivalId, (string) Str::uuid());
+            $this->fail('The Operator started two open identity cases.');
+        } catch (OperatorException $exception) {
+            $this->assertSame('identity_operator_claimed', $exception->category);
+        }
+
+        $this->assertDatabaseHas('operator_identity_verifications', [
+            'id' => $case['case_id'],
+            'active_claim_operator_profile_id' => $fixture['profileId'],
+            'state' => OperatorIdentityVerificationService::OPEN,
+        ]);
+
+        app(OperatorIdentityVerificationService::class)->cancel($case['case_id'], 'Release the first claim for the next arrival.', (string) Str::uuid());
+        $this->assertDatabaseHas('operator_identity_verifications', ['id' => $case['case_id'], 'active_claim_operator_profile_id' => null]);
+        $secondCase = app(OperatorIdentityVerificationService::class)->start($secondArrivalId, (string) Str::uuid());
+        $this->assertSame($fixture['profileId'], $secondCase['operator_profile_id']);
+
+        try {
+            DB::table('operator_identity_verifications')->where('id', $case['case_id'])->update([
+                'active_claim_operator_profile_id' => $fixture['profileId'],
+            ]);
+            $this->fail('The database accepted two active claim keys for one Operator.');
+        } catch (QueryException $exception) {
+            $this->assertSame('23000', $exception->errorInfo[0] ?? null);
+        }
+        app(OperatorIdentityVerificationService::class)->cancel($secondCase['case_id'], 'Second claim constraint test complete.', (string) Str::uuid());
+    }
+
     /** @return array<string, mixed> */
     private function identityFixture(): array
     {
@@ -180,7 +424,7 @@ final class Mvp04bIdentityVerificationTest extends TestCase
     }
 
     /** @param array<string, mixed> $fixture */
-    private function insertAsset(array $fixture, string $type, string $contents, bool $current): void
+    private function insertAsset(array $fixture, string $type, string $contents, bool $current, ?string $memberId = null): string
     {
         $context = new AuthenticatedContext(
             actorId: LocalId::fromString((string) $fixture['operator']->id),
@@ -192,9 +436,10 @@ final class Mvp04bIdentityVerificationTest extends TestCase
         );
         $object = app(PrivateObjectStore::class)->put($contents, $context, 'operator.identity.asset');
         $now = now();
+        $assetId = (string) Str::uuid();
         DB::table('member_verification_assets')->insert([
-            'id' => (string) Str::uuid(),
-            'member_id' => $fixture['memberId'],
+            'id' => $assetId,
+            'member_id' => $memberId ?? $fixture['memberId'],
             'type' => $type,
             'private_object_key' => (string) $object->key,
             'checksum' => $object->checksum,
@@ -209,6 +454,39 @@ final class Mvp04bIdentityVerificationTest extends TestCase
             'created_at' => $now,
             'updated_at' => $now,
         ]);
+
+        return $assetId;
+    }
+
+    /** @param array<string, mixed> $fixture */
+    private function insertOtherMember(array $fixture): string
+    {
+        $user = User::factory()->create(['email' => 'other-member-'.Str::lower(Str::random(8)).'@example.test']);
+        $member = (array) DB::table('members')->where('id', $fixture['memberId'])->first();
+        $memberId = (string) Str::uuid();
+        $member['id'] = $memberId;
+        $member['user_id'] = (string) $user->id;
+        $member['medical_record_number'] = 'MRN-'.substr($memberId, 0, 8);
+        $member['nik_lookup_digest'] = hash('sha256', $memberId);
+        $member['encrypted_nik'] = 'other-member-nik';
+        $member['name'] = 'Other Synthetic Member';
+        DB::table('members')->insert($member);
+
+        return $memberId;
+    }
+
+    /** @param array<string, mixed> $fixture */
+    private function identityContext(array $fixture, string $caseId, string $purpose): AuthenticatedContext
+    {
+        return new AuthenticatedContext(
+            actorId: LocalId::fromString((string) $fixture['operator']->id),
+            operationId: CorrelationId::random(),
+            roles: ['operator'],
+            permissions: ['operator.identity.verify'],
+            siteId: LocalId::fromString($fixture['siteLocalId']),
+            caseId: LocalId::fromString($caseId),
+            purpose: $purpose,
+        );
     }
 
     /** @param array<string, mixed> $fixture */

@@ -67,7 +67,10 @@ Operator-administration requirements.
 
 The bounded MVP-04B slice adds a Member-owned protected identity lookup/view
 contract and an Operator-owned verification case with append-only transitions.
-WP-11, WP-12, and WP-17 remain `partially-implemented`; WP-07 remains
+The remediation adds a trusted case resolver on every Member-side operation,
+case-bound asset grants, fail-closed current evidence, matched-decision
+revalidation, a database-backed one-open-case claim, and controlled shared
+audit reasons. WP-11, WP-12, and WP-17 remain `partially-implemented`; WP-07 remains
 `not-started` except for the bounded contracts consumed by MVP-04. No consent,
 check-in, ticket, queue, clinical, FHIR, imaging, deployment, or production
 behavior is included.

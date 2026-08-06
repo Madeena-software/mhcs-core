@@ -11,6 +11,7 @@ use App\Shared\Audit\AuditStore;
 use App\Shared\Context\AuthenticatedContext;
 use App\Shared\Identity\LocalId;
 use App\Shared\Time\Clock;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Throwable;
@@ -42,89 +43,106 @@ final readonly class OperatorIdentityVerificationService
         $site = $this->authorization->portalSite($identity);
         $operationId = $this->operation($operationId);
 
-        return DB::transaction(function () use ($identity, $site, $arrivalId, $operationId, $reclaim): array {
-            $profileId = (string) $identity['profile']->getKey();
-            $arrival = DB::table('operator_arrivals')
-                ->where('id', trim($arrivalId))
-                ->where('operator_site_id', $site->getKey())
-                ->where('status', 'recorded')
-                ->lockForUpdate()
-                ->first();
-            if ($arrival === null || ! $this->arrivedBooking((string) $arrival->booking_id, (string) $arrival->member_schedule_id)) {
-                throw new OperatorException('identity_arrival_unavailable', 'The arrived Member is unavailable for verification.');
-            }
-            if (! $this->assignments->isAssigned($profileId, (string) $arrival->member_schedule_id, $site->operator_site_id)) {
-                throw new OperatorException('identity_assignment_denied', 'The Operator is not assigned to this schedule.');
-            }
-
-            $existingOperation = DB::table('operator_identity_verifications')->where('operation_id', $operationId)->lockForUpdate()->first();
-            if ($existingOperation !== null) {
-                if ((string) $existingOperation->arrival_id !== (string) $arrival->id || (string) $existingOperation->operator_profile_id !== $profileId) {
-                    throw new OperatorException('identity_operation_conflict', 'The verification operation conflicts with existing work.');
+        try {
+            return DB::transaction(function () use ($identity, $site, $arrivalId, $operationId, $reclaim): array {
+                $profileId = (string) $identity['profile']->getKey();
+                if (DB::table('operator_profiles')->where('id', $profileId)->where('active', true)->lockForUpdate()->first() === null) {
+                    throw new OperatorException('identity_operator_unavailable', 'The Operator profile is unavailable.');
+                }
+                $arrival = DB::table('operator_arrivals')
+                    ->where('id', trim($arrivalId))
+                    ->where('operator_site_id', $site->getKey())
+                    ->where('status', 'recorded')
+                    ->lockForUpdate()
+                    ->first();
+                if ($arrival === null || ! $this->arrivedBooking((string) $arrival->booking_id, (string) $arrival->member_schedule_id)) {
+                    throw new OperatorException('identity_arrival_unavailable', 'The arrived Member is unavailable for verification.');
+                }
+                if (! $this->assignments->isAssigned($profileId, (string) $arrival->member_schedule_id, $site->operator_site_id)) {
+                    throw new OperatorException('identity_assignment_denied', 'The Operator is not assigned to this schedule.');
                 }
 
-                return $this->caseResult($existingOperation);
+                $existingOperation = DB::table('operator_identity_verifications')->where('operation_id', $operationId)->lockForUpdate()->first();
+                if ($existingOperation !== null) {
+                    if ((string) $existingOperation->arrival_id !== (string) $arrival->id || (string) $existingOperation->operator_profile_id !== $profileId) {
+                        throw new OperatorException('identity_operation_conflict', 'The verification operation conflicts with existing work.');
+                    }
+
+                    return $this->caseResult($existingOperation);
+                }
+
+                $case = DB::table('operator_identity_verifications')
+                    ->where('arrival_id', $arrival->id)
+                    ->lockForUpdate()
+                    ->first();
+                if ($case !== null && $case->state === self::OPEN) {
+                    throw new OperatorException('identity_claim_unavailable', 'This arrived Member is already claimed for verification.');
+                }
+                if ($case !== null && $case->state !== self::CANCELLED) {
+                    throw new OperatorException('identity_terminal', 'This verification case is terminal and cannot be reopened.');
+                }
+                if ($case !== null && ! $reclaim) {
+                    throw new OperatorException('identity_reclaim_required', 'Reclaiming a cancelled verification case requires explicit confirmation.');
+                }
+                if (DB::table('operator_identity_verifications')
+                    ->where('active_claim_operator_profile_id', $profileId)
+                    ->where('state', self::OPEN)
+                    ->where('arrival_id', '!=', (string) $arrival->id)
+                    ->exists()) {
+                    throw new OperatorException('identity_operator_claimed', 'This Operator already has an open verification case.');
+                }
+
+                $now = $this->clock->now();
+                if ($case === null) {
+                    $caseId = (string) Str::uuid();
+                    DB::table('operator_identity_verifications')->insert([
+                        'id' => $caseId,
+                        'arrival_id' => (string) $arrival->id,
+                        'booking_id' => (string) $arrival->booking_id,
+                        'member_schedule_id' => (string) $arrival->member_schedule_id,
+                        'operator_site_id' => (string) $site->getKey(),
+                        'operator_profile_id' => $profileId,
+                        'active_claim_operator_profile_id' => $profileId,
+                        'state' => self::OPEN,
+                        'started_at' => $now,
+                        'decided_at' => null,
+                        'reason_category' => null,
+                        'reason' => null,
+                        'operation_id' => $operationId,
+                        'created_at' => $now,
+                        'updated_at' => $now,
+                    ]);
+                    $case = DB::table('operator_identity_verifications')->where('id', $caseId)->first();
+                    $fromState = null;
+                } else {
+                    $fromState = (string) $case->state;
+                    DB::table('operator_identity_verifications')->where('id', $case->id)->update([
+                        'operator_site_id' => (string) $site->getKey(),
+                        'operator_profile_id' => $profileId,
+                        'active_claim_operator_profile_id' => $profileId,
+                        'state' => self::OPEN,
+                        'started_at' => $now,
+                        'decided_at' => null,
+                        'reason_category' => null,
+                        'reason' => null,
+                        'operation_id' => $operationId,
+                        'updated_at' => $now,
+                    ]);
+                    $case = DB::table('operator_identity_verifications')->where('id', $case->id)->first();
+                }
+
+                $this->event($case, 'started', $fromState, self::OPEN, null, $operationId, $now);
+                $this->audit($identity['context'], 'operator.identity-verification.started', $case, $now, 'identity_case_started', ['reclaimed' => $fromState === self::CANCELLED]);
+
+                return $this->caseResult($case);
+            });
+        } catch (QueryException $exception) {
+            if (in_array($exception->errorInfo[0] ?? null, ['23000', '23505'], true)) {
+                throw new OperatorException('identity_operator_claimed', 'This Operator already has an open verification case.', $exception);
             }
 
-            $case = DB::table('operator_identity_verifications')
-                ->where('arrival_id', $arrival->id)
-                ->lockForUpdate()
-                ->first();
-            if ($case !== null && $case->state === self::OPEN) {
-                throw new OperatorException('identity_claim_unavailable', 'This arrived Member is already claimed for verification.');
-            }
-            if ($case !== null && $case->state !== self::CANCELLED) {
-                throw new OperatorException('identity_terminal', 'This verification case is terminal and cannot be reopened.');
-            }
-            if ($case !== null && ! $reclaim) {
-                throw new OperatorException('identity_reclaim_required', 'Reclaiming a cancelled verification case requires explicit confirmation.');
-            }
-            if (DB::table('operator_identity_verifications')->where('operator_profile_id', $profileId)->where('state', self::OPEN)->exists()) {
-                throw new OperatorException('identity_operator_claimed', 'This Operator already has an open verification case.');
-            }
-
-            $now = $this->clock->now();
-            if ($case === null) {
-                $caseId = (string) Str::uuid();
-                DB::table('operator_identity_verifications')->insert([
-                    'id' => $caseId,
-                    'arrival_id' => (string) $arrival->id,
-                    'booking_id' => (string) $arrival->booking_id,
-                    'member_schedule_id' => (string) $arrival->member_schedule_id,
-                    'operator_site_id' => (string) $site->getKey(),
-                    'operator_profile_id' => $profileId,
-                    'state' => self::OPEN,
-                    'started_at' => $now,
-                    'decided_at' => null,
-                    'reason_category' => null,
-                    'reason' => null,
-                    'operation_id' => $operationId,
-                    'created_at' => $now,
-                    'updated_at' => $now,
-                ]);
-                $case = DB::table('operator_identity_verifications')->where('id', $caseId)->first();
-                $fromState = null;
-            } else {
-                $fromState = (string) $case->state;
-                DB::table('operator_identity_verifications')->where('id', $case->id)->update([
-                    'operator_site_id' => (string) $site->getKey(),
-                    'operator_profile_id' => $profileId,
-                    'state' => self::OPEN,
-                    'started_at' => $now,
-                    'decided_at' => null,
-                    'reason_category' => null,
-                    'reason' => null,
-                    'operation_id' => $operationId,
-                    'updated_at' => $now,
-                ]);
-                $case = DB::table('operator_identity_verifications')->where('id', $case->id)->first();
-            }
-
-            $this->event($case, 'started', $fromState, self::OPEN, null, $operationId, $now);
-            $this->audit($identity['context'], 'operator.identity-verification.started', $case, $now, metadata: ['reclaimed' => $fromState === self::CANCELLED]);
-
-            return $this->caseResult($case);
-        });
+            throw $exception;
+        }
     }
 
     /** @return array<string, mixed> */
@@ -138,18 +156,20 @@ final readonly class OperatorIdentityVerificationService
         }
 
         try {
-            $includePrevious = DB::table('operator_identity_verification_events')
-                ->where('verification_id', $case->id)
-                ->where('event_type', 'previous_photos_revealed')
-                ->exists();
             $view = $this->memberIdentity->currentView(
                 $this->context($identity['context'], 'operator.identity.view', (string) $case->id),
                 $site->operator_site_id,
                 (string) $case->member_schedule_id,
                 (string) $case->booking_id,
                 (string) $case->id,
-                $includePrevious,
             );
+            if (DB::table('operator_identity_verification_events')
+                ->where('verification_id', $case->id)
+                ->where('event_type', 'previous_photos_revealed')
+                ->exists()) {
+                $view['previous_photos_revealed'] = true;
+                $view['previous_profile_photos'] = $this->previousPhotos($identity, $site, $case);
+            }
 
             return ['case' => $this->caseResult($case), 'view' => $view];
         } catch (Throwable $exception) {
@@ -170,6 +190,7 @@ final readonly class OperatorIdentityVerificationService
                 $site->operator_site_id,
                 (string) $case->member_schedule_id,
                 (string) $case->booking_id,
+                (string) $case->id,
                 $nik,
                 $at,
             );
@@ -207,7 +228,7 @@ final readonly class OperatorIdentityVerificationService
                 throw new OperatorException('identity_previous_unavailable', 'Previous profile photos are unavailable.', $exception);
             }
             $this->event($case, 'previous_photos_revealed', self::OPEN, self::OPEN, $reason, $operationId, $this->clock->now());
-            $this->audit($identity['context'], 'operator.identity-verification.previous-photos.revealed', $case, $this->clock->now(), $reason);
+            $this->audit($identity['context'], 'operator.identity-verification.previous-photos.revealed', $case, $this->clock->now(), 'latest_photo_insufficient');
 
             return $photos;
         });
@@ -236,15 +257,7 @@ final readonly class OperatorIdentityVerificationService
                 ->where('event_type', 'previous_photos_revealed')
                 ->exists();
             if ($revealed) {
-                $previous = $this->memberIdentity->currentView(
-                    $this->context($identity['context'], 'operator.identity.view', (string) $case->id),
-                    $site->operator_site_id,
-                    (string) $case->member_schedule_id,
-                    (string) $case->booking_id,
-                    (string) $case->id,
-                    true,
-                );
-                $allowed = [...$allowed, ...array_filter(array_column($previous['previous_profile_photos'] ?? [], 'asset_id'))];
+                $allowed = [...$allowed, ...array_filter(array_column($this->previousPhotos($identity, $site, $case), 'asset_id'))];
             }
             if (! in_array($assetId, $allowed, true)) {
                 throw new OperatorException('identity_asset_unavailable', 'The requested verification asset is unavailable.');
@@ -256,7 +269,6 @@ final readonly class OperatorIdentityVerificationService
                 (string) $case->member_schedule_id,
                 (string) $case->booking_id,
                 (string) $case->id,
-                (string) $view['member_id'],
                 $assetId,
             );
         } catch (OperatorException $exception) {
@@ -289,9 +301,23 @@ final readonly class OperatorIdentityVerificationService
             if ($case->state !== self::OPEN) {
                 throw new OperatorException('identity_terminal', 'A terminal verification decision cannot be changed.');
             }
+            if ($state === self::MATCHED) {
+                try {
+                    $this->memberIdentity->currentView(
+                        $this->context($identity['context'], 'operator.identity.view', (string) $case->id),
+                        $site->operator_site_id,
+                        (string) $case->member_schedule_id,
+                        (string) $case->booking_id,
+                        (string) $case->id,
+                    );
+                } catch (Throwable $exception) {
+                    throw new OperatorException('identity_evidence_unavailable', 'Current approved identity evidence is unavailable.', $exception);
+                }
+            }
             $now = $this->clock->now();
             DB::table('operator_identity_verifications')->where('id', $case->id)->update([
                 'state' => $state,
+                'active_claim_operator_profile_id' => null,
                 'decided_at' => $now,
                 'reason_category' => $state,
                 'reason' => $reason,
@@ -299,7 +325,7 @@ final readonly class OperatorIdentityVerificationService
             ]);
             $this->event($case, 'decision', self::OPEN, $state, $reason, $operationId, $now);
             $case = DB::table('operator_identity_verifications')->where('id', $case->id)->first();
-            $this->audit($identity['context'], 'operator.identity-verification.'.$state, $case, $now, $reason);
+            $this->audit($identity['context'], 'operator.identity-verification.'.$state, $case, $now, $this->auditReasonForDecision($state));
 
             return $this->caseResult($case);
         });
@@ -325,6 +351,7 @@ final readonly class OperatorIdentityVerificationService
             $now = $this->clock->now();
             DB::table('operator_identity_verifications')->where('id', $case->id)->update([
                 'state' => self::CANCELLED,
+                'active_claim_operator_profile_id' => null,
                 'decided_at' => $now,
                 'reason_category' => self::CANCELLED,
                 'reason' => $reason,
@@ -332,7 +359,7 @@ final readonly class OperatorIdentityVerificationService
             ]);
             $this->event($case, 'cancelled', self::OPEN, self::CANCELLED, $reason, $operationId, $now);
             $case = DB::table('operator_identity_verifications')->where('id', $case->id)->first();
-            $this->audit($identity['context'], 'operator.identity-verification.cancelled', $case, $now, $reason);
+            $this->audit($identity['context'], 'operator.identity-verification.cancelled', $case, $now, 'identity_case_cancelled');
 
             return $this->caseResult($case);
         });
@@ -341,8 +368,7 @@ final readonly class OperatorIdentityVerificationService
     public function hasOpenCase(string $profileId, string $siteId): bool
     {
         return DB::table('operator_identity_verifications')
-            ->where('operator_profile_id', $profileId)
-            ->where('operator_site_id', $siteId)
+            ->where('active_claim_operator_profile_id', $profileId)
             ->where('state', self::OPEN)
             ->exists();
     }
@@ -351,16 +377,14 @@ final readonly class OperatorIdentityVerificationService
     private function previousPhotos(array $identity, object $site, object $case): array
     {
         try {
-            $view = $this->memberIdentity->currentView(
-                $this->context($identity['context'], 'operator.identity.view', (string) $case->id),
+            return $this->memberIdentity->revealPreviousPhotos(
+                $this->context($identity['context'], 'operator.identity.previous', (string) $case->id),
                 $site->operator_site_id,
                 (string) $case->member_schedule_id,
                 (string) $case->booking_id,
                 (string) $case->id,
-                true,
+                'prior_photo_reveal_replay',
             );
-
-            return $view['previous_profile_photos'] ?? [];
         } catch (Throwable $exception) {
             throw new OperatorException('identity_previous_unavailable', 'Previous profile photos are unavailable.', $exception);
         }
@@ -431,7 +455,7 @@ final readonly class OperatorIdentityVerificationService
     private function reason(string $reason): string
     {
         $reason = trim($reason);
-        if ($reason === '' || strlen($reason) > 500) {
+        if ($reason === '' || strlen($reason) > 500 || preg_match('/[\x00-\x08\x0B\x0C\x0E-\x1F]/', $reason) === 1) {
             throw new OperatorException('identity_reason_required', 'A bounded reason is required.');
         }
 
@@ -503,6 +527,15 @@ final readonly class OperatorIdentityVerificationService
             reason: $reason,
             metadata: ['arrival_id' => (string) $case->arrival_id, 'booking_id' => (string) $case->booking_id, 'schedule_id' => (string) $case->member_schedule_id, 'operator_site_id' => (string) $case->operator_site_id, ...$metadata],
         ));
+    }
+
+    private function auditReasonForDecision(string $state): string
+    {
+        return match ($state) {
+            self::MATCHED => 'identity_matched',
+            self::MISMATCH_REPORTED => 'identity_mismatch_reported',
+            self::INSUFFICIENT_EVIDENCE => 'identity_evidence_insufficient',
+        };
     }
 
     private function context(AuthenticatedContext $base, string $purpose, string $caseId): AuthenticatedContext

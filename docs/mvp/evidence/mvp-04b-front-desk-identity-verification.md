@@ -3,7 +3,7 @@
 Date: 2026-08-06
 
 This is bounded evidence for the published task
-`.agents/tasks/mhcs-core-mvp-04b-front-desk-identity-verification-v1.md`,
+`.agents/tasks/mhcs-core-mvp-04b-identity-verification-remediation-v1.md`,
 executed with `TARGET="."`. It is not evidence of complete MVP-04, production
 readiness, or approval of privacy/retention policy.
 
@@ -13,9 +13,11 @@ readiness, or approval of privacy/retention policy.
 - Expected remote: `git@github.com:Madeena-software/mhcs-core.git`.
 - Branch: `main`.
 - Accepted task baseline: `cecbf8e5e6d944cf58a7b73c2db14177f1748b5f`.
-- Execution HEAD: `cecbf8e5e6d944cf58a7b73c2db14177f1748b5f`.
-- Baseline ancestry and clean preflight passed. The published task file was
-  pre-existing user work and remains unmodified and untracked.
+- Candidate under remediation: `463387f7eba1eb0420a931256da8db8e4adfdedf`.
+- Execution HEAD: `fa23f977b6971456ef04721735a191cd0e1e2553` (published task
+  commit); implementation changes remain uncommitted in the working tree.
+- Baseline ancestry and clean preflight passed. The published remediation task
+  is tracked, unmodified, and remains the execution contract.
 - No stage, commit, push, reset, clean, stash, deployment, production access,
   dependency change, or external-system write occurred.
 - Required capabilities were available: repository read/write, shell,
@@ -31,18 +33,20 @@ expensive valid action was a fast refresh:
 
 ```text
 index_repository(repo_path="/var/www/mhcs-core", mode="fast", name="mhcs-core", persistence=false)
-  -> indexed 4,294 nodes and 10,319 edges
+  -> indexed 4,347 nodes and 10,493 edges
 ```
 
-The final artifact reports the current execution commit, root, and the same
-4,294-node/10,319-edge index. Final structural searches found the new Member
-contract, Member implementation, Operator service, portal methods, and focused
-test. Final traces covered case start, exact lookup to the Member contract,
-inline retrieval through the private object boundary, and active-site switching
-through the unresolved-case blocker. The graph provider's Branch node still
-reports the older `2e08eae...` base/head while Git reports the accepted task
-HEAD; its canonical root is correct and the artifact/source graph is current.
-This Branch metadata discrepancy remains a tooling follow-up, not an
+The refresh artifact contains 4,347 nodes and 10,493 edges. Final structural
+searches found the trusted case resolver, new Member contract methods, Member
+implementation, Operator service, portal methods, and focused test. The
+forward migration was verified separately because the graph excludes
+`database/migrations`. Final traces covered case start, exact lookup to the Member
+contract, inline retrieval through the private object boundary, matched
+revalidation, and active-site switching through the unresolved-case blocker.
+The graph provider's Branch node still reports the older `2e08eae...` base/head
+and does not expose the current canonical worktree in the final query, while
+Git reports the accepted task HEAD. The artifact/source graph is current; this
+Branch metadata discrepancy remains a tooling follow-up, not an
 implementation claim.
 
 Ponytail remained active at full level. Existing protected identifier, audit,
@@ -67,24 +71,39 @@ Added behavior:
   projection with a masked identifier. Unknown, cross-site, wrong-schedule,
   not-arrived, and unauthorized cases use the same controlled unavailable
   failure.
+- A trusted Member-owned case resolver revalidates actor role and permission,
+  active profile, local/stable site correspondence, site and schedule
+  assignment, exact open case ownership, booking/arrival correspondence, and
+  arrived state on every lookup/view/reveal/retrieval path. It returns only
+  opaque case/booking/member references and the audited prior-photo flag.
 - Current age-appropriate KTP/KIA and latest approved current profile photo
-  are shown first. Previous approved photos require the same open case, an
-  explicit bounded reason, an append-only reveal event, and a fresh inline
-  short-lived purpose-bound grant. Grants, raw object keys, bytes, and
-  permanent storage URLs are not persisted or returned.
+  are shown first; current view fails closed if either approved current asset
+  is missing. Previous approved photos require the same open case, an explicit
+  bounded reason, an append-only reveal event, and a fresh inline short-lived
+  purpose-bound grant. Historical KTP/KIA and unrelated-member assets are
+  denied. Grants, raw object keys, bytes, and permanent storage URLs are not
+  persisted or returned.
 - `operator_identity_verifications` stores UUID references to the arrival,
   booking, schedule, local site, and Operator profile, state, timestamps,
   bounded reason/category, and start operation identity. Its unique arrival
   and operation identities support one case per arrival and idempotent start.
 - `operator_identity_verification_events` stores immutable start, prior-photo
   reveal, cancellation, and terminal-decision transitions without NIK or
-  asset payloads. Open claims are transactionally locked; one open case per
-  Operator and one active claimant per arrival are enforced by the service.
+  asset payloads. Open claims lock the stable Operator profile row; a nullable
+  unique `active_claim_operator_profile_id` column is set only while open,
+  cleared on cancellation and terminal decision, backfilled for existing open
+  rows by one forward migration, and provides the database rejection boundary
+  for a second active claim. One active claimant per arrival remains enforced.
   Cancelled cases can be reclaimed only with the explicit reclaim input.
 - Terminal decisions are exactly `matched`, `mismatch_reported`, and
   `insufficient_evidence`; the latter two require bounded reasons, and
-  terminal cases cannot be reopened by an Operator. A matched decision does
-  not mutate consent, check-in, ticket, queue, clinical, or Encounter state.
+  terminal cases cannot be reopened by an Operator. `matched` revalidates
+  current evidence before any case/event/audit mutation and does not mutate
+  consent, check-in, ticket, queue, clinical, or Encounter state.
+- Free-text reasons remain bounded in local case/event records only. Shared
+  audit events use controlled categories such as
+  `identity_mismatch_reported`, `identity_evidence_insufficient`, and
+  `latest_photo_insufficient`; control characters are rejected.
 - An open verification case blocks switching away from its site. Cancellation
   or terminal decision releases the block. Site-switch audit metadata contains
   only bounded operational references and no NIK, asset key, bytes, or grant.
@@ -95,31 +114,25 @@ Added behavior:
 ## Changed files
 
 - `app/Modules/Member/Application/Contracts/OperatorIdentityVerificationContract.php`
-- `app/Modules/Member/Application/Services/Mvp04OperatorIdentityVerificationService.php`
-- `app/Modules/Member/Application/Services/MemberAuthorization.php`
+- `app/Modules/Member/Application/Contracts/TrustedOperatorIdentityVerificationContextResolver.php`
 - `app/Modules/Member/Application/Services/MemberVerificationAssetService.php`
-- `app/Modules/Member/MemberServiceProvider.php`
+- `app/Modules/Member/Application/Services/Mvp04OperatorIdentityVerificationService.php`
 - `app/Modules/Operator/Application/Services/OperatorIdentityVerificationService.php`
-- `app/Modules/Operator/Application/Services/OperatorAuthorization.php`
-- `app/Modules/Operator/Application/Services/OperatorActiveSiteService.php`
-- `app/Modules/Operator/Application/Services/OperatorWorklistService.php`
-- `app/Http/Controllers/Operator/PortalController.php`
-- `routes/web.php`
-- `config/mhcs.php`
-- `database/migrations/2026_08_06_000001_create_mvp04b_identity_verification_tables.php`
+- `app/Modules/Operator/Infrastructure/TrustedOperatorIdentityVerificationContextResolver.php`
+- `app/Modules/Operator/OperatorServiceProvider.php`
+- `database/migrations/2026_08_06_000002_add_mvp04b_identity_active_claim.php`
 - `resources/views/operator/identity-verification.blade.php`
-- `resources/views/operator/verification-worklist.blade.php`
-- `tests/Feature/Operator/Mvp04bIdentityVerificationTest.php`
 - `tests/Architecture/FoundationArchitectureTest.php`
-- The task-permitted roadmap, gap register, work-package status, and MVP-04
-  evidence documents.
+- `tests/Feature/Operator/Mvp04bIdentityVerificationTest.php`
+- The task-permitted roadmap, gap register, work-package status, and MVP-04B
+  evidence document.
 
 ## Verification evidence
 
 The task validator passed:
 
 ```text
-python3 .agents/skills/agent-task/scripts/validate_task.py .agents/tasks/mhcs-core-mvp-04b-front-desk-identity-verification-v1.md
+python3 .agents/skills/agent-task/scripts/validate_task.py .agents/tasks/mhcs-core-mvp-04b-identity-verification-remediation-v1.md
 Task contract is valid
 ```
 
@@ -132,16 +145,15 @@ Each required PHPUnit command was run separately:
 | `vendor/bin/phpunit tests/Feature/Admin/Mvp04OperatorAdministrationTest.php` | 2 tests, 22 assertions passed |
 | `vendor/bin/phpunit tests/Member/Wp04IdentityTest.php --filter 'asset\|identifier\|verification\|grant'` | 7 tests, 27 assertions passed |
 | `vendor/bin/phpunit tests/Security/Wp02SecurityTest.php` | 23 tests, 94 assertions passed |
-| `vendor/bin/phpunit tests/Architecture/FoundationArchitectureTest.php` | 6 tests, 1,522 assertions passed |
-| `vendor/bin/phpunit tests/Feature/Operator/Mvp04bIdentityVerificationTest.php` | 3 tests, 34 assertions passed |
+| `vendor/bin/phpunit tests/Architecture/FoundationArchitectureTest.php` | 6 tests, 1,539 assertions passed |
+| `vendor/bin/phpunit tests/Feature/Operator/Mvp04bIdentityVerificationTest.php` | 11 tests, 57 assertions passed |
 
 Additional checks passed:
 
 - PHP syntax checks passed for every changed PHP file.
 - Pint passed on every changed PHP file.
-- `php artisan migrate --database=sqlite --force` applied the full migration
-  chain, including the single MVP-04B forward migration. Its temporary local
-  SQLite artifact was removed afterward.
+- Required RefreshDatabase execution applied the full SQLite migration chain,
+  including the single MVP-04B forward migration, for every focused suite.
 - `php artisan route:list --path=operator` showed the bounded identity routes
   and no unconfirmed arrival route.
 - Container inspection resolved the Member contract to
@@ -170,3 +182,19 @@ The remaining graph Branch metadata discrepancy and production migration,
 object-storage, privacy, and retention approvals are residual risks. The
 working tree is ready for owner-controlled review and commit; this execution
 did not create or predict a commit.
+
+## Remediation verification addendum
+
+The remediation implementation is limited to the trusted case resolver and
+binding, Member retrieval/current-view contracts, Operator case claim and
+decision lifecycle, one forward migration, the Operator view, and focused
+regression coverage. The final working-tree diff contains no changes to
+manifests, locks, `.agents/context/**`, the predecessor task, or unrelated
+modules.
+
+The exact task validator was run with `python3` because `python` is not
+installed in the execution environment. PHP syntax, Pint, migration execution
+through the SQLite RefreshDatabase path, route/method inspection, targeted
+raw-NIK/private-object leakage searches, and `git diff --check` passed.
+Browser, full-suite, Docker/MySQL, CI, Composer audit, deployment, production,
+and external-system checks were not run under the task contract.

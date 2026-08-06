@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Modules\Member\Application\Services;
 
 use App\Modules\Member\Application\Contracts\OperatorIdentityVerificationContract;
-use App\Modules\Member\Application\Contracts\TrustedOperatorSiteContextResolver;
+use App\Modules\Member\Application\Contracts\TrustedOperatorIdentityVerificationContextResolver;
 use App\Modules\Member\Domain\Enums\VerificationAssetType;
 use App\Modules\Member\Domain\Enums\VerificationReviewStatus;
 use App\Modules\Member\Domain\MemberIdentityException;
@@ -22,8 +22,6 @@ use Throwable;
 
 final readonly class Mvp04OperatorIdentityVerificationService implements OperatorIdentityVerificationContract
 {
-    private const PERMISSION = 'operator.identity.verify';
-
     private const LOOKUP_PURPOSE = 'operator.identity.lookup';
 
     private const VIEW_PURPOSE = 'operator.identity.view';
@@ -37,7 +35,7 @@ final readonly class Mvp04OperatorIdentityVerificationService implements Operato
     public function __construct(
         private ProtectedIdentifierService $identifiers,
         private MemberVerificationAssetService $assets,
-        private TrustedOperatorSiteContextResolver $trustedSite,
+        private TrustedOperatorIdentityVerificationContextResolver $trustedCase,
         private AuditStore $audit,
         private Clock $clock,
     ) {}
@@ -47,10 +45,11 @@ final readonly class Mvp04OperatorIdentityVerificationService implements Operato
         string $operatorSiteId,
         string $scheduleId,
         string $bookingId,
+        string $caseId,
         string $nik,
         string $at,
     ): array {
-        $this->assertContext($context, $operatorSiteId, self::LOOKUP_PURPOSE);
+        $this->assertCase($context, $operatorSiteId, $scheduleId, $bookingId, $caseId, self::LOOKUP_PURPOSE);
         $occurrence = $this->instant($at);
         $result = 'unavailable';
 
@@ -120,11 +119,10 @@ final readonly class Mvp04OperatorIdentityVerificationService implements Operato
         string $scheduleId,
         string $bookingId,
         string $caseId,
-        bool $includePrevious = false,
     ): array {
-        $this->assertContext($context, $operatorSiteId, self::VIEW_PURPOSE);
+        $assertion = $this->assertCase($context, $operatorSiteId, $scheduleId, $bookingId, $caseId, self::VIEW_PURPOSE);
         $booking = $this->booking($operatorSiteId, $scheduleId, $bookingId);
-        $member = DB::table('members')->where('id', $booking->member_id)->first();
+        $member = DB::table('members')->where('id', $assertion['member_id'])->first();
         if ($member === null) {
             throw new MemberIdentityException('Identity verification view is unavailable.');
         }
@@ -151,8 +149,10 @@ final readonly class Mvp04OperatorIdentityVerificationService implements Operato
             'service_name' => (string) $booking->service_name,
             'identity_document' => $this->assetMetadata($assets->get($expected->value)),
             'latest_profile_photo' => $this->assetMetadata($assets->get(VerificationAssetType::ProfilePhoto->value)),
-            'previous_profile_photos' => $includePrevious ? $this->previousPhotoMetadata((string) $member->id) : [],
         ];
+        if ($result['identity_document'] === null || $result['latest_profile_photo'] === null) {
+            throw new MemberIdentityException('Current approved identity evidence is unavailable.');
+        }
 
         $this->audit->append(AuditEvent::fromContext(
             $context,
@@ -181,10 +181,17 @@ final readonly class Mvp04OperatorIdentityVerificationService implements Operato
         string $caseId,
         string $reason,
     ): array {
-        $this->assertContext($context, $operatorSiteId, self::PREVIOUS_PURPOSE);
+        $assertion = $this->assertCase($context, $operatorSiteId, $scheduleId, $bookingId, $caseId, self::PREVIOUS_PURPOSE);
         $reason = trim($reason);
-        if ($reason === '' || strlen($reason) > 500) {
+        if ($reason === '' || strlen($reason) > 500 || preg_match('/[\x00-\x08\x0B\x0C\x0E-\x1F]/', $reason) === 1) {
             throw new MemberIdentityException('A bounded reason is required to reveal previous photos.');
+        }
+        $replay = $assertion['prior_photos_revealed'];
+        if ($replay && $reason !== 'prior_photo_reveal_replay') {
+            throw new MemberIdentityException('Previous profile photos require the existing audited reveal.');
+        }
+        if (! $replay && $reason === 'prior_photo_reveal_replay') {
+            throw new MemberIdentityException('Previous profile photos require an explicit reveal command.');
         }
         $booking = $this->booking($operatorSiteId, $scheduleId, $bookingId);
         $member = DB::table('members')->where('id', $booking->member_id)->first();
@@ -204,6 +211,10 @@ final readonly class Mvp04OperatorIdentityVerificationService implements Operato
             $photos[] = $this->assetMetadata($asset);
         }
 
+        if ($replay) {
+            return $photos;
+        }
+
         $this->audit->append(AuditEvent::fromContext(
             $context,
             'member.operator-identity.previous-photos.revealed',
@@ -212,7 +223,7 @@ final readonly class Mvp04OperatorIdentityVerificationService implements Operato
             $this->clock->now(),
             'booking',
             $booking->booking_id,
-            reason: $reason,
+            reason: 'latest_photo_insufficient',
             metadata: [
                 'operator_site_id' => $operatorSiteId,
                 'schedule_id' => $scheduleId,
@@ -231,26 +242,42 @@ final readonly class Mvp04OperatorIdentityVerificationService implements Operato
         string $scheduleId,
         string $bookingId,
         string $caseId,
-        string $memberId,
         string $assetId,
     ): array {
-        $this->assertContext($context, $operatorSiteId, self::ASSET_PURPOSE);
+        $assertion = $this->assertCase($context, $operatorSiteId, $scheduleId, $bookingId, $caseId, self::ASSET_PURPOSE);
         $booking = $this->booking($operatorSiteId, $scheduleId, $bookingId);
         $asset = DB::table('member_verification_assets')
             ->where('id', $assetId)
-            ->where('member_id', $memberId)
+            ->where('member_id', $assertion['member_id'])
             ->where('review_status', VerificationReviewStatus::Approved->value)
             ->first();
         if ($asset === null) {
             throw new MemberIdentityException('The requested verification asset is unavailable.');
         }
 
+        $member = DB::table('members')->where('id', $assertion['member_id'])->first();
+        if ($member === null) {
+            throw new MemberIdentityException('The requested verification asset is unavailable.');
+        }
+        $expected = $this->expectedDocument((string) $member->birth_date);
+        $isCurrentAllowed = (bool) $asset->is_current
+            && in_array((string) $asset->type, [$expected->value, VerificationAssetType::ProfilePhoto->value], true);
+        $isPreviousAllowed = ! (bool) $asset->is_current
+            && (string) $asset->type === VerificationAssetType::ProfilePhoto->value
+            && $assertion['prior_photos_revealed'];
+        if (! $isCurrentAllowed && ! $isPreviousAllowed) {
+            throw new MemberIdentityException('The requested verification asset is unavailable.');
+        }
+
         $grant = $this->assets->grantForOperator(
             (string) $asset->id,
             $context,
+            $operatorSiteId,
+            $scheduleId,
+            $bookingId,
+            $caseId,
             self::AUDIENCE,
             $this->clock->now()->modify('+'.(int) config('mhcs.security.asset_grants.max_ttl_seconds', 300).' seconds'),
-            ! (bool) $asset->is_current,
         );
         $contents = $this->assets->retrieve($grant, self::AUDIENCE, self::ASSET_PURPOSE);
         $format = is_string($asset->format) && preg_match('/\A[a-z0-9.+-]+\/[a-z0-9.+-]+\z/i', $asset->format) === 1
@@ -277,18 +304,24 @@ final readonly class Mvp04OperatorIdentityVerificationService implements Operato
         return ['contents' => $contents, 'format' => $format];
     }
 
-    private function assertContext(AuthenticatedContext $context, string $operatorSiteId, string $purpose): void
-    {
-        if (
-            $context->actorId === null
-            || $context->operationId === null
-            || $context->purpose !== $purpose
-            || ! in_array('operator', $context->roles, true)
-            || ! in_array(self::PERMISSION, $context->permissions, true)
-            || ! $this->trustedSite->matches($context, $operatorSiteId, self::PERMISSION)
-        ) {
+    /** @return array<string, string|bool> */
+    private function assertCase(
+        AuthenticatedContext $context,
+        string $operatorSiteId,
+        string $scheduleId,
+        string $bookingId,
+        string $caseId,
+        string $purpose,
+    ): array {
+        if ($context->purpose !== $purpose) {
             throw new MemberIdentityException('A trusted Operator identity context is required.');
         }
+        $assertion = $this->trustedCase->resolve($context, $operatorSiteId, $scheduleId, $bookingId, $caseId);
+        if ($assertion === null) {
+            throw new MemberIdentityException('The trusted verification case is unavailable.');
+        }
+
+        return $assertion;
     }
 
     private function booking(string $operatorSiteId, string $scheduleId, string $bookingId): object
@@ -356,24 +389,6 @@ final readonly class Mvp04OperatorIdentityVerificationService implements Operato
             'bytes' => (int) $asset->bytes,
             'current' => (bool) $asset->is_current,
         ];
-    }
-
-    /** @return list<array<string, mixed>> */
-    private function previousPhotoMetadata(string $memberId): array
-    {
-        $photoRows = DB::table('member_verification_assets')
-            ->where('member_id', $memberId)
-            ->where('type', VerificationAssetType::ProfilePhoto->value)
-            ->where('review_status', VerificationReviewStatus::Approved->value)
-            ->where('is_current', false)
-            ->orderByDesc('created_at')
-            ->get();
-        $photos = [];
-        foreach ($photoRows as $asset) {
-            $photos[] = $this->assetMetadata($asset);
-        }
-
-        return $photos;
     }
 
     private function maskedIdentifier(?string $encrypted): ?string

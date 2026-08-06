@@ -56,7 +56,11 @@ complete Operator administration remain out of scope.
 ## MVP-04B front-desk identity verification addendum — 2026-08-06
 
 The bounded MVP-04B task adds the authenticated Operator identity-verification
-slice while keeping MVP-GAP-006, MVP-GAP-009, MVP-GAP-012, and MVP-GAP-024 open.
+slice. Its remediation binds Member-side reads and asset grants to a fresh
+trusted open case, fails closed on missing current evidence, enforces one
+database-backed open claim per Operator, and keeps free-text reasons out of
+shared audit while keeping MVP-GAP-006, MVP-GAP-009, MVP-GAP-012, and
+MVP-GAP-024 open.
 The complete Operator Portal, Member/public identity journey, consent,
 check-in, ticketing, queues, clinical behavior, privacy/retention policy,
 production storage policy, deployment, and production readiness remain open.

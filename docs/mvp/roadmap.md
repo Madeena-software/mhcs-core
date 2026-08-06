@@ -121,7 +121,11 @@ views, explicit prior-photo fallback, terminal human decisions, protected
 inline asset retrieval, and an open-case site-switch blocker. Member retains
 NIK and asset ownership; Operator retains case and decision ownership. Consent,
 check-in, tickets, queues, clinical behavior, and production readiness remain
-deferred. Evidence:
+deferred. The remediation additionally binds every Member-side operation to a
+fresh trusted open case, fails closed on missing current evidence, denies
+historical identity documents and unrelated-member assets, revalidates evidence
+before `matched`, uses a database-backed one-open-case claim, and keeps
+free-text reasons out of shared audit. Evidence:
 `docs/mvp/evidence/mvp-04b-front-desk-identity-verification.md`.
 
 ## MVP-05 — Image Gateway Study Intake and Correlation

@@ -14,6 +14,7 @@ interface OperatorIdentityVerificationContract
         string $operatorSiteId,
         string $scheduleId,
         string $bookingId,
+        string $caseId,
         string $nik,
         string $at,
     ): array;
@@ -25,7 +26,6 @@ interface OperatorIdentityVerificationContract
         string $scheduleId,
         string $bookingId,
         string $caseId,
-        bool $includePrevious = false,
     ): array;
 
     /** @return list<array<string, mixed>> */
@@ -45,7 +45,6 @@ interface OperatorIdentityVerificationContract
         string $scheduleId,
         string $bookingId,
         string $caseId,
-        string $memberId,
         string $assetId,
     ): array;
 }

@@ -51,9 +51,9 @@
         <section class="card">
             <h2>Previous profile photographs</h2>
             <p class="muted">Previous photographs remain hidden unless the latest photograph is explicitly insufficient.</p>
-            @if ($view['previous_profile_photos'])
+            @if ($view['previous_photos_revealed'] ?? false)
                 <div class="grid">
-                    @foreach ($view['previous_profile_photos'] as $photo)
+                    @foreach (($view['previous_profile_photos'] ?? []) as $photo)
                         <img src="{{ route('operator.identity-verification.asset', [$case['case_id'], $photo['asset_id']]) }}" alt="Previous approved profile photograph" style="max-width:100%;height:auto;">
                     @endforeach
                 </div>

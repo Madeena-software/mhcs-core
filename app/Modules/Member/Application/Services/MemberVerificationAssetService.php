@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Modules\Member\Application\Services;
 
+use App\Modules\Member\Application\Contracts\TrustedOperatorIdentityVerificationContextResolver;
 use App\Modules\Member\Application\Data\VerificationAssetInput;
 use App\Modules\Member\Domain\Enums\IdentityStatus;
 use App\Modules\Member\Domain\Enums\RegistrationSource;
@@ -27,6 +28,7 @@ final readonly class MemberVerificationAssetService
 {
     public function __construct(
         private MemberAuthorization $authorization,
+        private TrustedOperatorIdentityVerificationContextResolver $trustedCase,
         private PrivateObjectStore $objects,
         private AuditStore $audit,
         private Clock $clock,
@@ -138,16 +140,23 @@ final readonly class MemberVerificationAssetService
     public function grantForOperator(
         string $assetId,
         AuthenticatedContext $caller,
+        string $operatorSiteId,
+        string $scheduleId,
+        string $bookingId,
+        string $caseId,
         string $audience,
         DateTimeImmutable $expiresAt,
-        bool $allowPrevious = false,
     ): AccessGrant {
+        $assertion = $this->trustedCase->resolve($caller, $operatorSiteId, $scheduleId, $bookingId, $caseId);
         $asset = DB::table('member_verification_assets')->where('id', $assetId)->first();
 
         if (
-            $asset === null
+            $assertion === null
+            || $asset === null
+            || (string) $asset->member_id !== $assertion['member_id']
             || $asset->review_status !== VerificationReviewStatus::Approved->value
-            || (! (bool) $asset->is_current && ! $allowPrevious)
+            || (! (bool) $asset->is_current
+                && ((string) $asset->type !== VerificationAssetType::ProfilePhoto->value || ! $assertion['prior_photos_revealed']))
         ) {
             throw new MemberIdentityException('The requested verification asset is unavailable.');
         }
