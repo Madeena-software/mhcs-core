@@ -89,9 +89,10 @@ site assignments and active-site context, eligible-shift intake, manual shift
 assignment, site-scoped attendance, physical arrival recording, the Member
 `confirmed` to `arrived` transition, a verification worklist, bounded portal
 routes, bounded front-desk identity verification, and Operator-owned
-administration. MVP-04 remains incomplete: check-in, ticketing, queue stages,
-consent, clinical workflow, and remaining queue/attendance behavior are
-deferred.
+administration, Member-owned `arrived` to `checked_in` transition after
+confirmed consent, and one private Operator paper-ticket issue/reprint slice.
+MVP-04 remains incomplete: queue stages, clinical workflow, and remaining
+queue/attendance behavior are deferred.
 
 Pest/Playwright browser-platform work is deferred to post-MVP hardening.
 
@@ -189,6 +190,21 @@ representative or guardian consent, correction, retrieval, retention or
 deletion, check-in, ticketing, queues, examination, clinical behavior, or
 Member-visible consent. MVP-04 and the broader consent/clinical/queue gaps
 remain open or partial.
+
+### MVP-04D verified check-in and paper ticket issue — 2026-08-07
+
+From accepted baseline `8a5c764f8bec97d6ca897bfcf079dc6bde225053`, the bounded
+MVP-04D slice lets the currently assigned Operator enter the existing on-site
+paper number and atomically consume a terminal matched identity case plus
+Member-owned `Informed Consent` / `V1`. Member owns the `arrived` to
+`checked_in` transition and status history; Operator owns one site-and-shift
+ticket, idempotent issue, authenticated print, and auditable manual reprint
+request. The print surface contains only site, shift/date/time, and ticket
+number. Evidence: `docs/mvp/evidence/mvp-04d-verified-check-in-ticket-issue.md`.
+
+Ticket generation, queue stages, claims, calls, LCD/public exposure, clinical
+workflow, Member ticket visibility, consent-scan access, printer integration,
+production deployment, and privacy/retention approval remain out of scope.
 
 ### MVP-04B audit identifier sanitizer remediation addendum — 2026-08-07
 

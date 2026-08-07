@@ -26,4 +26,15 @@ interface OperatorAttendanceContract
         string $recordedAt,
         string $operationId,
     ): array;
+
+    /** @return array{booking_id: string, schedule_id: string, status: string} */
+    public function transitionArrivedToCheckedIn(
+        AuthenticatedContext $context,
+        string $operatorSiteId,
+        string $scheduleId,
+        string $bookingId,
+        string $caseId,
+        string $recordedAt,
+        string $operationId,
+    ): array;
 }

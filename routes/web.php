@@ -56,6 +56,11 @@ Route::middleware(['auth', EnsureOperatorPortalAccess::class])->group(function (
     Route::post('/operator/identity-verification/{case}/cancel', [OperatorPortalController::class, 'cancelIdentity'])->name('operator.identity-verification.cancel');
     Route::get('/operator/paper-consent/{case}', [OperatorPortalController::class, 'paperConsent'])->name('operator.paper-consent.show');
     Route::post('/operator/paper-consent/{case}', [OperatorPortalController::class, 'recordPaperConsent'])->name('operator.paper-consent.store');
+    Route::get('/operator/check-in/{case}', [OperatorPortalController::class, 'checkInTicket'])->name('operator.check-in.show');
+    Route::post('/operator/check-in/{case}', [OperatorPortalController::class, 'issueTicket'])->name('operator.check-in.store');
+    Route::get('/operator/paper-tickets/{ticket}', [OperatorPortalController::class, 'ticketResult'])->name('operator.paper-ticket.show');
+    Route::get('/operator/paper-tickets/{ticket}/print', [OperatorPortalController::class, 'printTicket'])->name('operator.paper-ticket.print');
+    Route::post('/operator/paper-tickets/{ticket}/reprint', [OperatorPortalController::class, 'reprintTicket'])->name('operator.paper-ticket.reprint');
 });
 
 Route::post('/logout', [AuthenticationController::class, 'logout'])

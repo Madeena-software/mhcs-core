@@ -9,6 +9,7 @@ use App\Modules\Operator\Application\Services\OperatorActiveSiteService;
 use App\Modules\Operator\Application\Services\OperatorArrivalService;
 use App\Modules\Operator\Application\Services\OperatorAttendanceService;
 use App\Modules\Operator\Application\Services\OperatorAuthorization;
+use App\Modules\Operator\Application\Services\OperatorCheckInTicketService;
 use App\Modules\Operator\Application\Services\OperatorIdentityVerificationService;
 use App\Modules\Operator\Application\Services\OperatorPaperConsentConfirmationService;
 use App\Modules\Operator\Application\Services\OperatorShiftAssignmentService;
@@ -338,6 +339,69 @@ final class PortalController extends Controller
             return redirect()->route('operator.paper-consent.show', $case)->with('status', 'Paper consent confirmed.');
         } catch (Throwable $exception) {
             return back()->withErrors(['consent' => $exception instanceof OperatorException ? $exception->getMessage() : 'The paper consent could not be confirmed.'])->withInput();
+        }
+    }
+
+    public function checkInTicket(string $case, OperatorCheckInTicketService $tickets): View|RedirectResponse
+    {
+        try {
+            return view('operator.check-in-ticket', $tickets->view($case));
+        } catch (Throwable $exception) {
+            return redirect()->route('operator.verification-worklist')->withErrors(['ticket' => $exception instanceof OperatorException ? $exception->getMessage() : 'The paper ticket case is unavailable.']);
+        }
+    }
+
+    public function issueTicket(Request $request, string $case, OperatorCheckInTicketService $tickets): RedirectResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'ticket_number' => ['required', 'string', 'max:64'],
+            'operation_id' => ['required', 'uuid'],
+        ]);
+        if ($validator->fails()) {
+            return back()->withErrors($validator)->withInput();
+        }
+
+        $input = $validator->validated();
+        try {
+            $result = $tickets->issue($case, (string) $input['ticket_number'], (string) $input['operation_id']);
+
+            return redirect()->route('operator.paper-ticket.show', $result['ticket_id']);
+        } catch (Throwable $exception) {
+            return back()->withErrors(['ticket' => $exception instanceof OperatorException ? $exception->getMessage() : 'The paper ticket could not be issued.'])->withInput();
+        }
+    }
+
+    public function ticketResult(string $ticket, OperatorCheckInTicketService $tickets): View|RedirectResponse
+    {
+        try {
+            return view('operator.paper-ticket-result', ['ticket' => $tickets->show($ticket)]);
+        } catch (Throwable $exception) {
+            return redirect()->route('operator.dashboard')->withErrors(['ticket' => $exception instanceof OperatorException ? $exception->getMessage() : 'The paper ticket is unavailable.']);
+        }
+    }
+
+    public function printTicket(string $ticket, OperatorCheckInTicketService $tickets): View|RedirectResponse
+    {
+        try {
+            return view('operator.paper-ticket-print', ['ticket' => $tickets->show($ticket)]);
+        } catch (Throwable $exception) {
+            return redirect()->route('operator.dashboard')->withErrors(['ticket' => $exception instanceof OperatorException ? $exception->getMessage() : 'The paper ticket is unavailable.']);
+        }
+    }
+
+    public function reprintTicket(Request $request, string $ticket, OperatorCheckInTicketService $tickets): RedirectResponse
+    {
+        $validator = Validator::make($request->all(), ['operation_id' => ['required', 'uuid']]);
+        if ($validator->fails()) {
+            return back()->withErrors($validator);
+        }
+
+        try {
+            $tickets->reprint($ticket, (string) $validator->validated()['operation_id']);
+
+            return redirect()->route('operator.paper-ticket.print', $ticket);
+        } catch (Throwable $exception) {
+            return back()->withErrors(['ticket' => $exception instanceof OperatorException ? $exception->getMessage() : 'The paper ticket reprint could not be requested.']);
         }
     }
 }

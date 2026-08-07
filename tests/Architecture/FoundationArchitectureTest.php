@@ -123,6 +123,7 @@ final class FoundationArchitectureTest extends TestCase
             '2026_08_06_000001_create_mvp04b_identity_verification_tables.php',
             '2026_08_06_000002_add_mvp04b_identity_active_claim.php',
             '2026_08_07_000001_create_examination_consents_table.php',
+            '2026_08_07_000002_create_operator_paper_tickets_table.php',
         ];
 
         $this->assertSame([], array_values(array_diff($migrations, $allowed)));

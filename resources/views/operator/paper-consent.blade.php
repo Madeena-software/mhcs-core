@@ -23,6 +23,7 @@
             <p><strong>Signer:</strong> Member</p>
             <p><strong>Signed at:</strong> {{ $consent['signed_at'] }}</p>
             <p><strong>Private scan:</strong> {{ $consent['has_private_scan'] ? 'Stored privately' : 'Not supplied' }}</p>
+            <p><a href="{{ route('operator.check-in.show', $case['case_id']) }}">Proceed to verified check-in and paper ticket issue</a></p>
         </section>
     @else
         <section class="card">

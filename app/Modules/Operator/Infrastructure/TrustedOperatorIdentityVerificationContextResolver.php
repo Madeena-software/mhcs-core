@@ -166,7 +166,7 @@ final class TrustedOperatorIdentityVerificationContextResolver implements Contra
             || $context->caseId === null
             || (string) $context->caseId !== trim($caseId)
             || ! Str::isUuid(trim($caseId))
-            || $context->purpose !== 'operator.paper-consent.confirm'
+            || ! in_array($context->purpose, ['operator.paper-consent.confirm', 'operator.check-in.issue'], true)
             || ! in_array('operator', $context->roles, true)
             || ! in_array('operator.portal.access', $context->permissions, true)
             || ! in_array('operator.identity.verify', $context->permissions, true)
@@ -269,5 +269,15 @@ final class TrustedOperatorIdentityVerificationContextResolver implements Contra
             'operator_site_local_id' => (string) $site->id,
             'operator_profile_id' => (string) $profileId,
         ];
+    }
+
+    public function resolveForCheckIn(
+        AuthenticatedContext $context,
+        string $operatorSiteId,
+        string $scheduleId,
+        string $bookingId,
+        string $caseId,
+    ): ?array {
+        return $this->resolveForConsent($context, $operatorSiteId, $scheduleId, $bookingId, $caseId);
     }
 }

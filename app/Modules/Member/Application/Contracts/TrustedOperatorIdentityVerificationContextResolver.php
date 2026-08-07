@@ -36,4 +36,12 @@ interface TrustedOperatorIdentityVerificationContextResolver
         string $bookingId,
         string $caseId,
     ): ?array;
+
+    public function resolveForCheckIn(
+        AuthenticatedContext $context,
+        string $operatorSiteId,
+        string $scheduleId,
+        string $bookingId,
+        string $caseId,
+    ): ?array;
 }

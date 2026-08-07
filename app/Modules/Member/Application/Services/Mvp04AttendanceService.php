@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Modules\Member\Application\Services;
 
 use App\Modules\Member\Application\Contracts\OperatorAttendanceContract;
+use App\Modules\Member\Application\Contracts\TrustedOperatorIdentityVerificationContextResolver;
 use App\Modules\Member\Application\Contracts\TrustedOperatorSiteContextResolver;
 use App\Modules\Member\Domain\Enums\BookingStatus;
 use App\Modules\Member\Domain\Models\Booking;
@@ -31,6 +32,7 @@ final readonly class Mvp04AttendanceService implements OperatorAttendanceContrac
         private OutboxStore $outbox,
         private ProtectedIdentifierService $identifiers,
         private TrustedOperatorSiteContextResolver $trustedSite,
+        private TrustedOperatorIdentityVerificationContextResolver $trustedCase,
         private Clock $clock,
     ) {}
 
@@ -209,6 +211,127 @@ final readonly class Mvp04AttendanceService implements OperatorAttendanceContrac
         ));
 
         return ['booking_id' => $bookingId, 'schedule_id' => $target['schedule_id'], 'status' => BookingStatus::Arrived->value];
+    }
+
+    /** @return array{booking_id: string, schedule_id: string, status: string} */
+    public function transitionArrivedToCheckedIn(
+        AuthenticatedContext $context,
+        string $operatorSiteId,
+        string $scheduleId,
+        string $bookingId,
+        string $caseId,
+        string $recordedAt,
+        string $operationId,
+    ): array {
+        if ($context->purpose !== 'operator.check-in.issue' || $context->actorId === null || $context->operationId === null) {
+            throw new Mvp03Exception('A trusted Operator check-in context is required.');
+        }
+        $recorded = $this->instant($recordedAt, allowMissingOffset: true);
+        $assertion = $this->trustedCase->resolveForCheckIn($context, $operatorSiteId, $scheduleId, $bookingId, $caseId);
+        if ($assertion === null) {
+            throw new Mvp03Exception('The trusted check-in context is unavailable.');
+        }
+
+        $case = DB::table('operator_identity_verifications')
+            ->where('id', $caseId)
+            ->lockForUpdate()
+            ->first();
+        $booking = DB::table('bookings')
+            ->where('id', $bookingId)
+            ->where('shift_schedule_id', $scheduleId)
+            ->where('status', BookingStatus::Arrived->value)
+            ->lockForUpdate()
+            ->first();
+        $schedule = $booking === null ? null : DB::table('shift_schedules')->where('id', $scheduleId)->lockForUpdate()->first();
+        $site = $booking === null ? null : DB::table('examination_site_refs')
+            ->where('id', $booking->examination_site_id_snapshot)
+            ->where('operator_site_id', $operatorSiteId)
+            ->where('active', true)
+            ->lockForUpdate()
+            ->first();
+        $member = $booking === null ? null : DB::table('members')->where('id', $booking->member_id)->lockForUpdate()->first();
+        $consent = $booking === null ? null : DB::table('examination_consents')
+            ->where('booking_id', $bookingId)
+            ->where('member_id', $booking->member_id)
+            ->where('examination_site_id', $booking->examination_site_id_snapshot)
+            ->where('operator_site_id', $operatorSiteId)
+            ->where('form_name', 'Informed Consent')
+            ->where('form_version', 'V1')
+            ->where('signer_type', 'member')
+            ->where('signature_confirmed', true)
+            ->where('status', 'confirmed')
+            ->lockForUpdate()
+            ->first();
+
+        if (
+            $case === null
+            || $case->state !== 'matched'
+            || (string) $case->member_schedule_id !== $scheduleId
+            || (string) $case->booking_id !== $bookingId
+            || (string) $case->operator_profile_id !== $assertion['operator_profile_id']
+            || $booking === null
+            || (string) $booking->member_id !== $assertion['member_id']
+            || $schedule === null
+            || (string) $schedule->examination_site_id !== (string) $booking->examination_site_id_snapshot
+            || $site === null
+            || $member === null
+            || $consent === null
+        ) {
+            throw new Mvp03Exception('The verified, consent-confirmed booking is unavailable.');
+        }
+
+        DB::table('bookings')->where('id', $bookingId)->update([
+            'status' => BookingStatus::CheckedIn->value,
+            'updated_at' => $recorded,
+        ]);
+        DB::table('booking_status_events')->insert([
+            'id' => (string) Str::uuid(),
+            'booking_id' => $bookingId,
+            'source_service' => 'member',
+            'source_operator_id' => (string) $context->actorId,
+            'event_type' => BookingStatus::CheckedIn->value,
+            'occurred_at' => $recorded,
+            'received_at' => $recorded,
+            'idempotency_key' => 'operator-check-in:'.$operationId,
+            'created_at' => $recorded,
+            'updated_at' => $recorded,
+        ]);
+        $this->audit->append(AuditEvent::fromContext(
+            $context,
+            'member.booking.checked-in',
+            'member',
+            'success',
+            $recorded,
+            Booking::class,
+            $bookingId,
+            metadata: [
+                'case_id' => $caseId,
+                'schedule_id' => $scheduleId,
+                'examination_site_id' => (string) $site->id,
+                'operator_site_id' => $operatorSiteId,
+                'operator_id' => $assertion['operator_profile_id'],
+                'recorded_at_utc' => $recorded->format(DATE_ATOM),
+            ],
+        ));
+        $this->outbox->record(new VersionedDomainEvent(
+            LocalId::fromString((string) Str::uuid()),
+            'member.booking-checked-in',
+            1,
+            $recorded,
+            [
+                'booking_id' => $bookingId,
+                'schedule_id' => $scheduleId,
+                'examination_site_id' => (string) $site->id,
+                'operator_site_id' => $operatorSiteId,
+                'operator_id' => $assertion['operator_profile_id'],
+                'case_id' => $caseId,
+                'checked_in_at' => $recorded->format(DATE_ATOM),
+            ],
+            LocalId::fromString($bookingId),
+            $context->operationId,
+        ));
+
+        return ['booking_id' => $bookingId, 'schedule_id' => $scheduleId, 'status' => BookingStatus::CheckedIn->value];
     }
 
     private function site(string $operatorSiteId): object
