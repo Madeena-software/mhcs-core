@@ -112,3 +112,20 @@ contracts, and WP-11, WP-12, and WP-17 remain `partially-implemented`. Queue,
 clinical, ticket-generation policy, Member/public ticket visibility,
 consent-scan access, privacy/retention, deployment, and production requirements
 remain open.
+
+## MVP-04E advance queue admission addendum — 2026-08-07
+
+The bounded MVP-04E implementation adds an Operator-owned advance queue
+admission and append-only initial history to the existing atomic MVP-04D
+check-in/ticket transaction. It also adds a private assigned-shift
+basic-examination waiting worklist with deterministic FIFO ordering and only
+the approved ticket, site, shift-time, stage, state, and ready-time fields.
+The task's explicit approval gate, validator, PHP syntax checks, Composer
+metadata validation, diff checks, and Codebase Memory refresh passed. Runtime
+closure is blocked because the repository has no `vendor/autoload.php`, so the
+focused Laravel suites, Pint, migration, and route-list checks could not run;
+no dependency installation was performed. WP-07 remains `not-started` except
+for its bounded consumed contracts, and WP-11, WP-12, and WP-17 remain
+`partially-implemented`. Queue claims/calls/skips, clinical examination,
+walk-ins, public/LCD behavior, Member visibility, privacy/retention policy,
+deployment, and production readiness remain open.

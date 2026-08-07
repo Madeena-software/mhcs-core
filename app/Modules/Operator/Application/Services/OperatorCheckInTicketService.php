@@ -119,6 +119,31 @@ final readonly class OperatorCheckInTicketService
                         'created_at' => $now,
                         'updated_at' => $now,
                     ]);
+                    $queueAdmissionId = (string) Str::uuid();
+                    DB::table('operator_queue_admissions')->insert([
+                        'id' => $queueAdmissionId,
+                        'operator_paper_ticket_id' => $ticketId,
+                        'operator_site_id' => (string) $site->getKey(),
+                        'member_schedule_id' => $memberResult['schedule_id'],
+                        'queue_class' => 'advance',
+                        'stage' => 'basic_examination',
+                        'state' => 'waiting',
+                        'ready_at' => $now,
+                        'created_at' => $now,
+                        'updated_at' => $now,
+                    ]);
+                    DB::table('operator_queue_admission_history')->insert([
+                        'id' => (string) Str::uuid(),
+                        'operator_queue_admission_id' => $queueAdmissionId,
+                        'operator_profile_id' => $profileId,
+                        'event_type' => 'admitted',
+                        'from_state' => null,
+                        'to_state' => 'waiting',
+                        'operation_id' => $operationId,
+                        'occurred_at' => $now,
+                        'created_at' => $now,
+                        'updated_at' => $now,
+                    ]);
                     $this->audit->append(AuditEvent::fromContext(
                         $context,
                         'operator.paper-ticket.issued',
@@ -136,6 +161,25 @@ final readonly class OperatorCheckInTicketService
                             'issued_at_utc' => $now->format(DATE_ATOM),
                         ],
                     ));
+                    $this->audit->append(AuditEvent::fromContext(
+                        $context,
+                        'operator.queue-admission.created',
+                        'operator',
+                        'success',
+                        $now,
+                        'queue-admission',
+                        $queueAdmissionId,
+                        metadata: [
+                            'ticket_id' => $ticketId,
+                            'ticket_number' => $number,
+                            'schedule_id' => $scheduleId,
+                            'operator_site_id' => $site->operator_site_id,
+                            'queue_class' => 'advance',
+                            'stage' => 'basic_examination',
+                            'state' => 'waiting',
+                            'ready_at_utc' => $now->format(DATE_ATOM),
+                        ],
+                    ));
                     $this->outbox->record(new VersionedDomainEvent(
                         LocalId::fromString((string) Str::uuid()),
                         'operator.paper-ticket-issued',
@@ -150,6 +194,25 @@ final readonly class OperatorCheckInTicketService
                             'issued_at' => $now->format(DATE_ATOM),
                         ],
                         LocalId::fromString($ticketId),
+                        $context->operationId,
+                    ));
+                    $this->outbox->record(new VersionedDomainEvent(
+                        LocalId::fromString($queueAdmissionId),
+                        'operator.queue-admission-created',
+                        1,
+                        $now,
+                        [
+                            'queue_admission_id' => $queueAdmissionId,
+                            'ticket_id' => $ticketId,
+                            'ticket_number' => $number,
+                            'schedule_id' => $scheduleId,
+                            'operator_site_id' => $site->operator_site_id,
+                            'queue_class' => 'advance',
+                            'stage' => 'basic_examination',
+                            'state' => 'waiting',
+                            'ready_at' => $now->format(DATE_ATOM),
+                        ],
+                        LocalId::fromString($queueAdmissionId),
                         $context->operationId,
                     ));
 

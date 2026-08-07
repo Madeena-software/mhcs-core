@@ -206,6 +206,20 @@ Ticket generation, queue stages, claims, calls, LCD/public exposure, clinical
 workflow, Member ticket visibility, consent-scan access, printer integration,
 production deployment, and privacy/retention approval remain out of scope.
 
+### MVP-04E advance queue admission — 2026-08-07
+
+The bounded MVP-04E implementation extends the accepted MVP-04D transaction so
+one successfully issued advance-booking paper ticket creates one private
+Operator queue admission, one initial history record, and matching audit/
+outbox evidence for the `basic_examination` / `waiting` stage. An authenticated
+assigned Operator can read the active site's private FIFO worklist using only
+ticket number, site, shift time, stage, state, and ready time. No queue action,
+clinical value, walk-in rule, public display, or Member-visible queue was
+added. Source-level checks and Codebase Memory verification passed, but runtime
+verification is blocked by the missing Composer vendor tree; MVP-04E is not
+claimed closed until the focused suites, Pint, migration, and route checks run
+in an owner-controlled dependency-complete environment.
+
 ### MVP-04B audit identifier sanitizer remediation addendum — 2026-08-07
 
 The shared audit boundary now distinguishes complete canonical UUIDs from

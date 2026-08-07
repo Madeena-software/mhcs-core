@@ -166,6 +166,17 @@ final class PortalController extends Controller
         ]);
     }
 
+    public function basicExaminationWorklist(OperatorWorklistService $worklist): View|RedirectResponse
+    {
+        try {
+            return view('operator.basic-examination-worklist', [
+                'entries' => $worklist->basicExamination(),
+            ]);
+        } catch (Throwable $exception) {
+            return redirect()->route('operator.dashboard')->withErrors(['queue' => $exception instanceof OperatorException ? $exception->getMessage() : 'The basic-examination worklist is unavailable.']);
+        }
+    }
+
     public function startIdentityVerification(Request $request, OperatorIdentityVerificationService $identity): RedirectResponse
     {
         $validator = Validator::make($request->all(), [

@@ -42,6 +42,7 @@
             <a href="{{ route('operator.site') }}">Active site</a>
             <a href="{{ route('operator.eligible-shifts') }}">Assigned shifts</a>
             <a href="{{ route('operator.verification-worklist') }}">Verification worklist</a>
+            <a href="{{ route('operator.basic-examination-worklist') }}">Basic-examination worklist</a>
             <form method="POST" action="{{ route('logout') }}">
                 @csrf
                 <button type="submit" class="secondary">Sign out</button>

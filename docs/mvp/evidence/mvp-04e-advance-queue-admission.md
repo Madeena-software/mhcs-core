@@ -1,0 +1,73 @@
+# MVP-04E Advance Queue Admission Evidence
+
+## Execution boundary
+
+The published task `mhcs-core-mvp-04e-advance-queue-admission-v1` was executed
+with `TARGET="."` from `/var/www/mhcs-core` on branch `main` at execution
+HEAD `8ba97255bc1961945d9802a37d504442e3e1cf55`. The accepted baseline is the
+same commit and is an ancestor of the execution HEAD. The task contract
+validated successfully. Its SHA-256 remained
+`d1c2662c27999ce818b29e288889937b08a0c05c3c958871b515ed709bd6ff4a`.
+
+The required approval gate was satisfied by the explicit user decision
+`approve` after presenting the narrow transaction, ownership, privacy, and
+FIFO plan. The implementation remains limited to advance-booking admission;
+it adds no clinical data, walk-in rule, claim/call/skip action, public display,
+Member-visible queue, new permission, dependency, commit, or push.
+
+## Implemented scope
+
+- Added `operator_queue_admissions` and
+  `operator_queue_admission_history` with foreign keys, one-ticket uniqueness,
+  one initial admission-history event, append-only application usage, and FIFO
+  indexes.
+- Extended the existing `OperatorCheckInTicketService` idempotency transaction
+  so Member check-in, paper ticket, queue admission, initial history, audit,
+  outbox, and handled idempotency state commit or roll back together.
+- Added the authenticated private
+  `operator.basic-examination-worklist` route and view. It rechecks portal,
+  account, role, permission, active site, site assignment, and assigned-shift
+  scope, then returns only ticket number, site, shift times, stage, state, and
+  ready time ordered by `ready_at` and immutable admission ID.
+- Added focused regression coverage for admission, replay/competition, FIFO
+  ties, audit/outbox rollback, authorization/scope revocation, and payload
+  privacy.
+
+## Verification evidence
+
+Passed:
+
+- `python3 .agents/skills/agent-task/scripts/validate_task.py ...`;
+- PHP syntax checks for every changed PHP file;
+- `composer validate --no-check-publish --no-interaction`;
+- `git diff --check`, including the final evidence update;
+- task immutability/hash check; and
+- Codebase Memory MCP initial discovery and final fast refresh.
+
+Initial graph discovery reported 4,025 nodes and 10,492 edges with the
+required MVP-04D symbols present. The final fast refresh reported 4,043 nodes
+and 10,604 edges. The final trace for
+`OperatorCheckInTicketService::issue` includes the Member check-in contract,
+`DatabaseIdempotencyStore::run`, assignment validation, audit, outbox, and
+portal authorization paths. The final graph indexes and traces include
+`OperatorWorklistService::basicExamination` and its portal controller caller.
+
+The new worklist projection and template were also inspected for sensitive
+fields; no Member, booking, consent, identity, clinical, or queue-position
+value is selected or rendered. The existing Operator worklist remains
+unchanged.
+
+## Blocked verification
+
+The focused MVP-04E, MVP-04D, MVP-04C, MVP-04B, Operator portal, Operator
+foundation, architecture, and WP-02 security suites were each attempted with
+`php artisan test`. Every command stopped before Laravel boot because
+`/var/www/mhcs-core/vendor/autoload.php` is missing. `vendor/bin/pint` is also
+unavailable, so Pint, fresh SQLite migration, and route-list checks could not
+run. Dependency installation is excluded by the task and was not performed.
+
+Therefore this execution outcome is `blocked`, not a runtime-verified success.
+The implementation requires an owner-controlled environment with the declared
+Composer dependencies installed before acceptance can be claimed. MVP-04E's
+broader WP-12 queue/examination gaps and the task-listed later workflows remain
+open.
