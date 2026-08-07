@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Shared\Security;
 
+use Illuminate\Support\Str;
 use JsonSerializable;
 
 final class SensitiveDataSanitizer
@@ -122,6 +123,10 @@ final class SensitiveDataSanitizer
         $value = trim($value);
 
         if ($value === '') {
+            return false;
+        }
+
+        if (Str::isUuid($value)) {
             return false;
         }
 

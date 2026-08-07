@@ -299,3 +299,30 @@ object-storage policy, privacy/retention approval, browser verification, and
 broader Operator/clinical/consent/check-in/ticket/queue behavior remain open.
 The working tree is ready for owner-controlled review and commit; this task did
 not create one.
+
+## Audit identifier sanitizer remediation addendum — 2026-08-07
+
+The published task `mhcs-core-mvp-04b-audit-identifier-sanitizer-remediation-v1.md`
+ran with `TARGET="."` against canonical target `/var/www/mhcs-core`. The
+reviewed candidate `96f59e9efcf15adf497aaa44e57a8a8f64a071a2` is an ancestor of
+execution HEAD `3ca3698ac447dc28afec3b307f8ef54cab30b9fc`; the worktree kept the
+published task untracked and unchanged. No commit or push occurred.
+
+The shared sanitizer now accepts a complete canonical UUID as an opaque audit
+identifier by using the existing `Illuminate\\Support\\Str::isUuid` validator
+before the raw 10–20 digit scalar check. Standalone numeric identifiers still
+fail closed. `AuditEvent` target/metadata validation, append-only storage,
+identity audit callers, and transaction placement were not otherwise changed.
+
+The deterministic regression and final focused suites passed: WP-02 `24/103`,
+MVP-04B identity `16/84`, Operator portal `8/63`, and architecture `6/1,539`
+(tests/assertions), all separately with exit status 0. PHP syntax, Pint, and
+`git diff --check` passed. The graph was refreshed after the source edit; final
+MCP traces verified the sanitizer, `AuditEvent`, Member identity audit paths,
+and Operator identity audit helper. The MCP Branch metadata still reports an
+older indexed SHA and is retained as a tooling residual.
+
+No later MVP, consent, check-in, ticket, queue, clinical, financial, imaging,
+FHIR, deployment, production, dependency, migration, context/specification,
+or existing-task work was performed. Browser/full-suite/MySQL/Docker/CI and
+production checks remain unrun.

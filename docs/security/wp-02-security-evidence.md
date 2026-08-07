@@ -118,3 +118,79 @@ no deployment, production, staging, SSH, or secret-writing step.
   not proof of cloud bucket policy or key rotation.
 - The separate MPIPS service, its repository, and real container sandbox were
   not executed or inspected.
+
+## MVP-04B audit identifier sanitizer remediation addendum — 2026-08-07
+
+This bounded remediation ran from `7074f2eea5e8c7368418dac966f111c4d96ddedd`
+with reviewed candidate `96f59e9efcf15adf497aaa44e57a8a8f64a071a2` as an
+ancestor and execution HEAD `3ca3698ac447dc28afec3b307f8ef54cab30b9fc` on
+`main`. The canonical target was `/var/www/mhcs-core`, whose remote is
+`git@github.com:Madeena-software/mhcs-core.git`. The only pre-existing
+untracked path was the published task file; no stage, commit, push, reset,
+clean, stash, dependency, migration, external-system, or production action
+occurred.
+
+The task validator passed with exit status 0:
+
+```text
+python3 .agents/skills/agent-task/scripts/validate_task.py .agents/tasks/mhcs-core-mvp-04b-audit-identifier-sanitizer-remediation-v1.md
+Task contract is valid
+```
+
+`python` is not installed; `python3` was the available equivalent. Repository
+read/write, shell, Codebase Memory MCP, and ponytail capabilities were
+available. Ponytail remained active at full level and no subagents were used.
+
+Initial Codebase Memory status was project `mhcs-core` at the canonical root,
+with 4,401 nodes and 10,608 edges; its Branch node reported the older
+`2e08eae...` SHA instead of the Git HEAD. The least-cost fast refresh completed
+but did not repair that Branch metadata, so the permitted full recovery rebuilt
+the graph to 4,427 nodes and 10,896 edges. After the sanitizer/test edit, the
+required source-change refresh was fast mode and completed at 4,428 nodes and
+10,851 edges. Final architecture/search/trace checks succeeded. The provider's
+Branch node still reports the older SHA; this is a tooling metadata residual,
+not a source-graph or Git identity claim.
+
+Before the fix, these deterministic checks reproduced the defect:
+
+```text
+php artisan tinker --execute="App\\Shared\\Security\\SensitiveDataSanitizer::assertSafe(['case_id' => '00000000-0000-4000-8000-123456789012']);"
+-> SensitivePayloadException: Sensitive scalar values are not allowed in audit metadata.
+php artisan tinker --execute="App\\Shared\\Security\\SensitiveDataSanitizer::assertSafeString('<standalone 12-digit value>');"
+-> SensitivePayloadException: Sensitive data is not allowed in a security record.
+```
+
+The fix is one shared predicate distinction: `Illuminate\\Support\\Str::isUuid`
+recognizes a complete UUID before the raw `10..20` digit check. The existing
+secret, sensitive-key, clinical-text, binary/data-URL, object/resource, and
+control-character checks remain unchanged. No audit field, append path, or
+transaction boundary changed.
+
+The deterministic regression passed with exit status 0: `1` test and `9`
+assertions. It appended a canonical UUID as both audit target and allowed
+operational metadata, then verified standalone 10-, 12-, and 20-digit values
+remain rejected by both `assertSafeString()` and `assertSafe()`.
+
+Final focused verification, each run separately with exit status 0 and no
+warnings, skips, or failures reported:
+
+| Command | Result |
+|---|---:|
+| `vendor/bin/phpunit tests/Security/Wp02SecurityTest.php` | 24 tests, 103 assertions |
+| `vendor/bin/phpunit tests/Feature/Operator/Mvp04bIdentityVerificationTest.php` | 16 tests, 84 assertions |
+| `vendor/bin/phpunit tests/Feature/Operator/Mvp04OperatorPortalTest.php` | 8 tests, 63 assertions |
+| `vendor/bin/phpunit tests/Architecture/FoundationArchitectureTest.php` | 6 tests, 1,539 assertions |
+| `php -l app/Shared/Security/SensitiveDataSanitizer.php && php -l tests/Security/Wp02SecurityTest.php` | passed |
+| `vendor/bin/pint --test app/Shared/Security/SensitiveDataSanitizer.php tests/Security/Wp02SecurityTest.php` | passed after Pint formatting |
+| `git diff --check` | passed |
+
+Pint's first check exited 1 only because it reported three formatting fixers;
+`vendor/bin/pint app/Shared/Security/SensitiveDataSanitizer.php tests/Security/Wp02SecurityTest.php`
+then exited 0 and the repeated Pint check exited 0. No test warnings, skips,
+or failures remained.
+
+MVP-04B audit construction remains mandatory and append-only. The remaining
+unrun checks are browser/Playwright/Pest, full PHPUnit, complete Work Package
+suites, MySQL/Docker conformance, npm/dependency installation, Composer audit,
+CI, deployment, production, and external integrations. MVP-04 and the related
+MVP gaps/Work Packages remain partial or open as recorded elsewhere.

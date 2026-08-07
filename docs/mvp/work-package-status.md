@@ -83,3 +83,12 @@ asset-grant slot enforcement, and persisted authentication/portal checks. WP-11,
 WP-12, and WP-17 remain `partially-implemented`; WP-07 remains `not-started`
 except for the bounded contracts consumed by MVP-04. No later MVP, clinical,
 deployment, or production behavior is claimed.
+
+## MVP-04B audit identifier sanitizer remediation addendum — 2026-08-07
+
+WP-02 remains `accepted-foundation`; the shared audit sanitizer correction is
+verified by the deterministic UUID/raw-scalar regression and the separate
+WP-02, MVP-04B, Operator portal, and architecture suites. WP-07 remains
+`not-started` except for its bounded consumed contracts, and WP-11, WP-12, and
+WP-17 remain `partially-implemented`. No later MVP or production status is
+advanced.

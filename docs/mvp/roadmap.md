@@ -172,3 +172,14 @@ permissions, exact case/booking Member, and allowed asset slot. Evidence:
 
 MVP-04, consent, check-in, ticketing, queues, clinical behavior, deployment,
 and production readiness remain open or partial.
+
+### MVP-04B audit identifier sanitizer remediation addendum — 2026-08-07
+
+The shared audit boundary now distinguishes complete canonical UUIDs from
+standalone raw numeric identifiers using the existing UUID validator. The
+deterministic WP-02 regression and the bounded MVP-04B, Operator portal, and
+architecture suites passed separately; audit append-only behavior and all
+MVP-04B audit callers remain unchanged. MVP-04B remains a bounded partial
+slice. Validation, static checks, focused test counts, graph refresh evidence,
+unrun checks, and residual risks are recorded in the WP-02 and MVP-04B evidence
+addenda for this date.

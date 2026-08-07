@@ -354,6 +354,47 @@ final class Wp02SecurityTest extends TestCase
         }
     }
 
+    public function test_canonical_uuid_audit_identifiers_are_opaque_but_raw_numeric_scalars_remain_rejected(): void
+    {
+        $uuid = '00000000-0000-4000-8000-123456789012';
+        $event = AuditEvent::fromContext(
+            context: $this->context('audit'),
+            action: 'security.uuid',
+            source: 'test',
+            outcome: 'observed',
+            occurredAt: new DateTimeImmutable('2026-08-07T00:00:00+00:00'),
+            targetType: 'operator_identity_verification',
+            targetId: $uuid,
+            metadata: [
+                'operator_site_id' => $uuid,
+                'purpose' => 'identity.view',
+            ],
+        );
+
+        app(AuditStore::class)->append($event);
+        $stored = DB::table('audit_events')->where('event_id', $event->eventId)->first();
+
+        $this->assertNotNull($stored);
+        $this->assertSame($uuid, $stored->target_id);
+        $this->assertSame($uuid, json_decode($stored->metadata, true, flags: JSON_THROW_ON_ERROR)['operator_site_id']);
+
+        foreach (['1234567890', '123456789012', '12345678901234567890'] as $value) {
+            try {
+                SensitiveDataSanitizer::assertSafeString($value);
+                $this->fail('A standalone numeric identifier was accepted as a string.');
+            } catch (SensitivePayloadException) {
+                $this->addToAssertionCount(1);
+            }
+
+            try {
+                SensitiveDataSanitizer::assertSafe(['neutral_value' => $value]);
+                $this->fail('A standalone numeric identifier was accepted in metadata.');
+            } catch (SensitivePayloadException) {
+                $this->addToAssertionCount(1);
+            }
+        }
+    }
+
     public function test_audit_and_outbox_follow_local_transaction_rollback(): void
     {
         try {

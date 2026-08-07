@@ -72,3 +72,13 @@ persisted account and portal revalidation, and shared-boundary asset-slot
 enforcement. MVP-GAP-006, MVP-GAP-009, MVP-GAP-012, and MVP-GAP-024 remain open;
 the broader Operator portal, consent, check-in, ticketing, queues, privacy,
 deployment, and production gaps are not closed.
+
+## MVP-04B audit identifier sanitizer remediation addendum — 2026-08-07
+
+The shared audit sanitizer no longer rejects valid canonical UUID target or
+allowed operational metadata values because one UUID segment is numeric.
+Standalone raw numeric identifiers and the existing sensitive-data denials
+remain fail-closed. `MVP-GAP-006`, `MVP-GAP-009`, `MVP-GAP-012`, and
+`MVP-GAP-024` remain open; this remediation does not close the broader
+Operator/Member identity, consent, check-in, queue, privacy, deployment, or
+production gaps.
