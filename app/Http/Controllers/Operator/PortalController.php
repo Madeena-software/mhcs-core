@@ -10,6 +10,7 @@ use App\Modules\Operator\Application\Services\OperatorArrivalService;
 use App\Modules\Operator\Application\Services\OperatorAttendanceService;
 use App\Modules\Operator\Application\Services\OperatorAuthorization;
 use App\Modules\Operator\Application\Services\OperatorIdentityVerificationService;
+use App\Modules\Operator\Application\Services\OperatorPaperConsentConfirmationService;
 use App\Modules\Operator\Application\Services\OperatorShiftAssignmentService;
 use App\Modules\Operator\Application\Services\OperatorWorklistService;
 use App\Modules\Operator\Domain\OperatorException;
@@ -294,6 +295,49 @@ final class PortalController extends Controller
             return redirect()->route('operator.verification-worklist')->with('status', 'Verification case cancelled.');
         } catch (Throwable $exception) {
             return back()->withErrors(['identity' => $exception instanceof OperatorException ? $exception->getMessage() : 'The verification case could not be cancelled.']);
+        }
+    }
+
+    public function paperConsent(string $case, OperatorPaperConsentConfirmationService $consent): View|RedirectResponse
+    {
+        try {
+            return view('operator.paper-consent', $consent->view($case));
+        } catch (Throwable $exception) {
+            return redirect()->route('operator.verification-worklist')->withErrors(['consent' => $exception instanceof OperatorException ? $exception->getMessage() : 'The paper-consent case is unavailable.']);
+        }
+    }
+
+    public function recordPaperConsent(Request $request, string $case, OperatorPaperConsentConfirmationService $consent): RedirectResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'form_name' => ['required', 'string', 'max:64'],
+            'form_version' => ['required', 'string', 'max:32'],
+            'signer_type' => ['required', 'string', 'max:32'],
+            'signature_confirmed' => ['accepted'],
+            'signed_at' => ['required', 'string', 'max:64'],
+            'operation_id' => ['required', 'uuid'],
+            'scan' => ['nullable', 'file', 'max:10240'],
+        ]);
+        if ($validator->fails()) {
+            return back()->withErrors($validator)->withInput();
+        }
+
+        $input = $validator->validated();
+        try {
+            $consent->confirm(
+                $case,
+                (string) $input['form_name'],
+                (string) $input['form_version'],
+                (string) $input['signer_type'],
+                true,
+                (string) $input['signed_at'],
+                (string) $input['operation_id'],
+                $input['scan'] ?? null,
+            );
+
+            return redirect()->route('operator.paper-consent.show', $case)->with('status', 'Paper consent confirmed.');
+        } catch (Throwable $exception) {
+            return back()->withErrors(['consent' => $exception instanceof OperatorException ? $exception->getMessage() : 'The paper consent could not be confirmed.'])->withInput();
         }
     }
 }

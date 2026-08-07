@@ -173,6 +173,23 @@ permissions, exact case/booking Member, and allowed asset slot. Evidence:
 MVP-04, consent, check-in, ticketing, queues, clinical behavior, deployment,
 and production readiness remain open or partial.
 
+## MVP-04C paper consent confirmation — 2026-08-07
+
+The bounded MVP-04C slice adds one Member-owned `Informed Consent` / `V1`
+confirmation for an arrived booking after a terminal matched identity case.
+Only the currently assigned Operator at the trusted active site may invoke the
+flow. The existing idempotency, audit, outbox, transaction, and encrypted
+private-object boundaries are reused; an optional validated JPEG, PNG, or PDF
+scan is stored privately and is not retrievable by this slice. The booking
+remains `arrived`. Evidence:
+`docs/mvp/evidence/mvp-04c-paper-consent-confirmation.md`.
+
+This does not implement general consent administration, electronic signatures,
+representative or guardian consent, correction, retrieval, retention or
+deletion, check-in, ticketing, queues, examination, clinical behavior, or
+Member-visible consent. MVP-04 and the broader consent/clinical/queue gaps
+remain open or partial.
+
 ### MVP-04B audit identifier sanitizer remediation addendum — 2026-08-07
 
 The shared audit boundary now distinguishes complete canonical UUIDs from

@@ -80,6 +80,14 @@
         <section class="card"><p class="muted">This case is closed. Protected identity assets are no longer available.</p></section>
     @endif
 
+    @if ($case['state'] === 'matched')
+        <section class="card">
+            <h2>Paper consent</h2>
+            <p class="muted">Identity is matched. Confirm the Member's signed paper consent before a later check-in step.</p>
+            <a href="{{ route('operator.paper-consent.show', $case['case_id']) }}">Confirm paper consent</a>
+        </section>
+    @endif
+
     @if ($case['state'] === 'open')
         <section class="card">
             <h2>Record decision</h2>

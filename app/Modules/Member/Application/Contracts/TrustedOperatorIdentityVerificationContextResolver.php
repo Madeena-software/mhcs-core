@@ -28,4 +28,12 @@ interface TrustedOperatorIdentityVerificationContextResolver
         string $bookingId,
         string $caseId,
     ): ?array;
+
+    public function resolveForConsent(
+        AuthenticatedContext $context,
+        string $operatorSiteId,
+        string $scheduleId,
+        string $bookingId,
+        string $caseId,
+    ): ?array;
 }

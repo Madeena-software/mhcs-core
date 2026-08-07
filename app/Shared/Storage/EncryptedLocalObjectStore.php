@@ -53,6 +53,13 @@ final readonly class EncryptedLocalObjectStore implements PrivateObjectStore
         );
     }
 
+    public function delete(PrivateObject $object): void
+    {
+        $disk = Storage::disk('local');
+        $disk->delete((string) $object->key);
+        $disk->delete((string) $object->key.'.meta.json');
+    }
+
     public function grant(
         PrivateObject $object,
         AuthenticatedContext $context,

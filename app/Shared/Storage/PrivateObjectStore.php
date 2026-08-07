@@ -11,6 +11,8 @@ interface PrivateObjectStore
 {
     public function put(string $contents, AuthenticatedContext $context, string $purpose): PrivateObject;
 
+    public function delete(PrivateObject $object): void;
+
     public function grant(
         PrivateObject $object,
         AuthenticatedContext $context,

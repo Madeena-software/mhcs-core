@@ -54,6 +54,8 @@ Route::middleware(['auth', EnsureOperatorPortalAccess::class])->group(function (
     Route::get('/operator/identity-verification/{case}/asset/{asset}', [OperatorPortalController::class, 'retrieveIdentityAsset'])->name('operator.identity-verification.asset');
     Route::post('/operator/identity-verification/{case}/decision', [OperatorPortalController::class, 'decideIdentity'])->name('operator.identity-verification.decision');
     Route::post('/operator/identity-verification/{case}/cancel', [OperatorPortalController::class, 'cancelIdentity'])->name('operator.identity-verification.cancel');
+    Route::get('/operator/paper-consent/{case}', [OperatorPortalController::class, 'paperConsent'])->name('operator.paper-consent.show');
+    Route::post('/operator/paper-consent/{case}', [OperatorPortalController::class, 'recordPaperConsent'])->name('operator.paper-consent.store');
 });
 
 Route::post('/logout', [AuthenticationController::class, 'logout'])
