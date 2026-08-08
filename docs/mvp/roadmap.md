@@ -244,15 +244,16 @@ checks remain unrun.
 
 ### MVP-04E denial-matrix remediation — 2026-08-08
 
-The denial-matrix remediation is runtime-verified at
-`6e91fe07feb010f92ae2719d55b67ea670ebbb98`. The default isolated harness now
-uses deterministic test-only MHCS key fallbacks when values are absent, and the
-approved narrow middleware boundary lets the existing Operator authorization
-path return 403 for suspended access to the private worklist. MVP-04E and all
-required MVP-04D, MVP-04C, MVP-04B, Operator, WP-02, and architecture suites
-passed separately without process-injected MHCS keys. Revoked shift remains an
-empty 200 worklist; revoked site, permission, forged active-site session, and
-suspended account return 403 without sensitive or internal detail. The bounded
-MVP-04E slice is verified but not expanded: queue actions, clinical examination,
-walk-ins, public/LCD behavior, Member visibility, privacy/retention policy,
-deployment, and production readiness remain open.
+The denial-matrix remediation was runtime-verified before commit at
+pre-commit HEAD `6e91fe07feb010f92ae2719d55b67ea670ebbb98` and then committed
+as candidate `2545c6a56ccb186f35bbdbe76f3598e9c3d5dcc3`. The committed
+candidate contains the deterministic test-only MHCS key fallbacks and approved
+narrow middleware boundary; the pre-commit SHA is only the verification
+context. MVP-04E and all required MVP-04D, MVP-04C, MVP-04B, Operator, WP-02,
+and architecture suites passed separately without process-injected MHCS keys.
+Revoked shift remains an empty 200 worklist; revoked site, permission, forged
+active-site session, and suspended account return 403 without sensitive or
+internal detail. The bounded MVP-04E slice is verified but not expanded: queue
+actions, clinical examination, walk-ins, public/LCD behavior, Member
+visibility, privacy/retention policy, deployment, and production readiness
+remain open.

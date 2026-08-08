@@ -12,6 +12,7 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Throwable;
 use UnitEnum;
@@ -19,9 +20,13 @@ use UnitEnum;
 final class BookingResource extends Resource
 {
     protected static ?string $model = Booking::class;
+
     protected static string|UnitEnum|null $navigationGroup = 'Member';
+
     protected static ?string $navigationLabel = 'Booking Member';
+
     protected static ?string $modelLabel = 'Booking';
+
     protected static ?string $pluralModelLabel = 'Booking Member';
 
     public static function infolist(Schema $schema): Schema
@@ -61,7 +66,7 @@ final class BookingResource extends Resource
         ])->actions([])->headerActions([])->toolbarActions([])->defaultSort('confirmed_at', 'desc')->emptyStateHeading('Belum ada booking');
     }
 
-    public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
+    public static function getEloquentQuery(): Builder
     {
         return parent::getEloquentQuery()->with(['member', 'imagingOrder']);
     }
@@ -74,12 +79,35 @@ final class BookingResource extends Resource
         ];
     }
 
-    public static function canViewAny(): bool { return self::authorized('bookingRead'); }
-    public static function canView(Model $record): bool { return self::canViewAny(); }
-    public static function canCreate(): bool { return false; }
-    public static function canEdit(Model $record): bool { return false; }
-    public static function canDelete(Model $record): bool { return false; }
-    public static function canDeleteAny(): bool { return false; }
+    public static function canViewAny(): bool
+    {
+        return self::authorized('bookingRead');
+    }
+
+    public static function canView(Model $record): bool
+    {
+        return self::canViewAny();
+    }
+
+    public static function canCreate(): bool
+    {
+        return false;
+    }
+
+    public static function canEdit(Model $record): bool
+    {
+        return false;
+    }
+
+    public static function canDelete(Model $record): bool
+    {
+        return false;
+    }
+
+    public static function canDeleteAny(): bool
+    {
+        return false;
+    }
 
     public static function canReadAudit(): bool
     {
@@ -90,6 +118,7 @@ final class BookingResource extends Resource
     {
         try {
             app(MemberAuthorization::class)->{$method}();
+
             return true;
         } catch (Throwable) {
             return false;

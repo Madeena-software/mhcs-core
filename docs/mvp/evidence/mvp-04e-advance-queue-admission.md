@@ -104,8 +104,13 @@ task; no product change is indicated.
 
 ## MVP-04E denial-matrix remediation — 2026-08-08
 
-The published denial-matrix remediation task was executed with `TARGET="."` at
-HEAD `6e91fe07feb010f92ae2719d55b67ea670ebbb98`. The task SHA-256 remained
+The published denial-matrix remediation was runtime-verified with `TARGET="."`
+before commit at pre-commit HEAD `6e91fe07feb010f92ae2719d55b67ea670ebbb98`.
+The verified changes were then committed as candidate
+`2545c6a56ccb186f35bbdbe76f3598e9c3d5dcc3`, whose parent is that pre-commit
+HEAD. The candidate contains the test-only fallback and middleware correction;
+the pre-commit SHA is retained only as the execution context. The task
+SHA-256 remained
 `7678324acd7d3fca117feb74516b01ea2681aa4b502d572224ace3897f493cf4`, and the
 three published MVP-04E task contracts validated successfully. The required
 approval gate was satisfied by the explicit approvals `approve denial-matrix

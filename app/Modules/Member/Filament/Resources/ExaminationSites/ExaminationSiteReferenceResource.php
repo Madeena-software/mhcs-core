@@ -19,9 +19,13 @@ use UnitEnum;
 final class ExaminationSiteReferenceResource extends Resource
 {
     protected static ?string $model = ExaminationSiteReference::class;
+
     protected static string|UnitEnum|null $navigationGroup = 'Member';
+
     protected static ?string $navigationLabel = 'Referensi Lokasi';
+
     protected static ?string $modelLabel = 'Referensi lokasi';
+
     protected static ?string $pluralModelLabel = 'Referensi lokasi';
 
     public static function infolist(Schema $schema): Schema
@@ -55,17 +59,41 @@ final class ExaminationSiteReferenceResource extends Resource
         ];
     }
 
-    public static function canViewAny(): bool { return self::authorized(); }
-    public static function canView(Model $record): bool { return self::canViewAny(); }
-    public static function canCreate(): bool { return false; }
-    public static function canEdit(Model $record): bool { return false; }
-    public static function canDelete(Model $record): bool { return false; }
-    public static function canDeleteAny(): bool { return false; }
+    public static function canViewAny(): bool
+    {
+        return self::authorized();
+    }
+
+    public static function canView(Model $record): bool
+    {
+        return self::canViewAny();
+    }
+
+    public static function canCreate(): bool
+    {
+        return false;
+    }
+
+    public static function canEdit(Model $record): bool
+    {
+        return false;
+    }
+
+    public static function canDelete(Model $record): bool
+    {
+        return false;
+    }
+
+    public static function canDeleteAny(): bool
+    {
+        return false;
+    }
 
     private static function authorized(): bool
     {
         try {
             app(MemberAuthorization::class)->scheduleRead();
+
             return true;
         } catch (Throwable) {
             return false;
