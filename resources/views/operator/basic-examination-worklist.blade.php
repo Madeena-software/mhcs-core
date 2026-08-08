@@ -23,7 +23,7 @@
                 <tbody>
                 @forelse ($entries as $entry)
                     <tr>
-                        <td>{{ $entry['ticket_number'] }}</td>
+                        <td>{{ $entry['state'] === 'called' ? 'Current claimed admission' : $entry['ticket_number'] }}</td>
                         <td>{{ $entry['site_name'] }}</td>
                         <td>
                             <time datetime="{{ $entry['schedule_starts_at'] }}">{{ $entry['schedule_starts_at'] }}</time>
@@ -36,11 +36,19 @@
                         <td>
                             @if ($entry['claimed_by_current_operator'])
                                 <span class="status">Claimed by you</span>
-                                <form method="POST" action="{{ route('operator.basic-examination-worklist.call', $entry['admission_id']) }}">
-                                    @csrf
-                                    <input type="hidden" name="operation_id" value="{{ (string) \Illuminate\Support\Str::uuid() }}">
-                                    <button type="submit">Call</button>
-                                </form>
+                                @if ($entry['state'] === 'called')
+                                    <form method="POST" action="{{ route('operator.basic-examination-worklist.start', $entry['admission_id']) }}">
+                                        @csrf
+                                        <input type="hidden" name="operation_id" value="{{ (string) \Illuminate\Support\Str::uuid() }}">
+                                        <button type="submit">Start</button>
+                                    </form>
+                                @else
+                                    <form method="POST" action="{{ route('operator.basic-examination-worklist.call', $entry['admission_id']) }}">
+                                        @csrf
+                                        <input type="hidden" name="operation_id" value="{{ (string) \Illuminate\Support\Str::uuid() }}">
+                                        <button type="submit">Call</button>
+                                    </form>
+                                @endif
                             @else
                                 <form method="POST" action="{{ route('operator.basic-examination-worklist.claim', $entry['admission_id']) }}">
                                     @csrf

@@ -204,3 +204,26 @@ This bounded slice does not close WP-11, WP-12, or WP-17. Clinical examination,
 later queue states/actions, walk-ins, public/LCD/audio behavior, Member
 visibility, privacy/retention, deployment, production readiness, and the four
 listed MVP-04 gaps remain open. No commit or push was made.
+
+## MVP-04H private basic-examination start — 2026-08-08
+
+MVP-04H is verified as a bounded private claimant-only `called` to
+`in_service` transition for an eligible advance basic-examination admission.
+It preserves claim ownership, claim time, ticket, stage, ready time, and FIFO
+fields; revalidates account, permission, site, shift, scope, claimant, and
+state; and atomically records history, audit, outbox, and idempotency evidence.
+The private worklist adds only the claimant's opaque Start action and no
+clinical, Encounter, Member, booking, consent, identity, public, LCD, or audio
+data.
+
+The focused suite passed 6 tests/73 assertions. MVP-04G, MVP-04F, MVP-04E,
+MVP-04D, MVP-04C, MVP-04B, Operator, WP-02, and architecture suites plus
+schema, syntax, Pint, Composer, route, privacy, graph/source, validator, and
+diff checks passed separately. Evidence:
+`docs/mvp/evidence/mvp-04h-private-basic-examination-start.md`.
+
+This bounded slice does not close WP-11, WP-12, or WP-17. Clinical
+assessment/Encounter/FHIR behavior, later queue states/actions, X-ray,
+walk-ins, public/LCD/audio behavior, Member visibility, privacy/retention,
+deployment, production readiness, and the four listed MVP-04 gaps remain open.
+No commit or push was made.

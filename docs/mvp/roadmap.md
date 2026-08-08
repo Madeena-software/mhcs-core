@@ -293,3 +293,20 @@ MVP-04G does not close WP-11, WP-12, or WP-17. Clinical examination and later
 queue actions/states, walk-ins, public/LCD behavior, Member visibility,
 privacy/retention approval, deployment, production readiness, and
 `MVP-GAP-009`, `MVP-GAP-012`, `MVP-GAP-021`, and `MVP-GAP-024` remain open.
+
+### MVP-04H private basic-examination start — 2026-08-08
+
+The bounded MVP-04H slice adds one private, authenticated Operator Start action
+for the active claimant's eligible advance `basic_examination` / `called`
+admission. The transition is atomic and idempotent, revalidates authorization
+and scope, preserves claim and FIFO fields, appends one `started` history event,
+and writes matching local audit/outbox evidence. The private worklist adds only
+the claimant's opaque Start form; no clinical, Encounter, Member, booking,
+consent, identity, public, LCD, or audio behavior was added. Evidence:
+`docs/mvp/evidence/mvp-04h-private-basic-examination-start.md`.
+
+MVP-04H does not close WP-11, WP-12, or WP-17. Clinical assessment and
+Encounter/FHIR creation, later queue actions/states, X-ray workflow, walk-ins,
+public/LCD/audio behavior, Member visibility, privacy/retention approval,
+deployment, production readiness, and `MVP-GAP-009`, `MVP-GAP-012`,
+`MVP-GAP-021`, and `MVP-GAP-024` remain open.
