@@ -20,7 +20,7 @@ Statuses are evidence-based and describe the current foundation, not complete lo
 | WP-09 | Doctor repeat entitlement lifecycle | MEM-065..MEM-067 | No repeat entitlement or replacement ServiceRequest workflow is present | Post-MVP clinical scope | deferred-until-post-mvp | Entire package and Doctor Portal boundary | Doctor is external/excluded from initial beta. |
 | WP-10 | Member administration, B2B import readiness, and acceptance harness | MEM-010..MEM-013, MEM-147..MEM-209, MEM-214, MEM-228 | Shared Filament admin shell, persistent Member claims, bounded Member list/detail/account-state/audit surface, and MVP-03 Member-owned offering/schedule management plus read-only site and booking visibility, all behind exact claims, execution-time reauthorization, and focused tests; no import contract or broad acceptance harness | MVP-02 and MVP-03 for bounded Member administration; MVP-08 for import | partially-implemented | B2B format, agreement data, bulk import, credential handoff, booking mutations, and broad Member administration UI | MVP-02 remediation evidence remains valid. MVP-03 adds only Member-owned catalogue/schedule mutations and read-only site/booking resources; Operator administration remains separate. |
 | WP-11 | Operator authorization, sites, shifts, and staffing | OPR-001..OPR-014, OPR-100..OPR-107, OPR-117..OPR-124, OPR-129 | Shared Operator claims, profiles, physical sites, site assignments, active-site context, eligible-shift intake, and manual shift assignment are implemented with focused evidence | MVP-04 for Operator-owned site, assignment, and staffing administration | partially-implemented | Remaining staffing, protocol, and broader Operator requirements | The bounded MVP-04 slice does not close WP-11. |
-| WP-12 | Operator attendance, basic examination, and queues | OPR-015..OPR-030, OPR-130..OPR-131 | Site-scoped attendance query, physical arrival, bounded Member transitions through `checked_in`, verification worklist, identity-verification case/decision flow, paper-consent confirmation, and private paper-ticket issue/reprint are implemented; no examination or queue workflow is present | MVP-04 | partially-implemented | Remaining attendance, basic examination, and queue requirements | MVP-04D does not close WP-12; it adds no queue stage and does not enter examination. |
+| WP-12 | Operator attendance, basic examination, and queues | OPR-015..OPR-030, OPR-130..OPR-131 | Site-scoped attendance query, physical arrival, bounded Member transitions through `checked_in`, verification worklist, identity-verification case/decision flow, paper-consent confirmation, private paper-ticket issue/reprint, advance admission, and one private atomic basic-examination claim are implemented; no clinical examination or later queue workflow is present | MVP-04 | partially-implemented | Remaining attendance, basic examination, and queue requirements | MVP-04F adds only a reservation; it does not close WP-12 or enter examination. |
 | WP-14 | Operator protocol, NPZ drafts, and complete capture submission | OPR-031..OPR-046, OPR-132, OPR-137 | No Operator capture workflow; only generic Image Gateway input policy exists | MVP-05 | partially-implemented | Device schema, drafts, capture submission, and business contract | Security policy is not capture implementation. |
 | WP-15 | Operator AI status, corrections, repeats, and read-only images | OPR-047..OPR-060 | No Operator status monitor, viewer, correction, or repeat handoff is present | MVP-05/MVP-06 | not-started | Entire package | |
 | WP-16 | Operator earnings, payouts, and cash reconciliation | OPR-061..OPR-073, OPR-133, OPR-135 | No Operator financial workflow or payout adapter is present | Post-MVP | deferred-until-post-mvp | Entire package | No financial behavior is in the initial beta. |
@@ -129,6 +129,28 @@ for its bounded consumed contracts, and WP-11, WP-12, and WP-17 remain
 `partially-implemented`. Queue claims/calls/skips, clinical examination,
 walk-ins, public/LCD behavior, Member visibility, privacy/retention policy,
 deployment, and production readiness remain open.
+
+## MVP-04F atomic basic-examination claim — 2026-08-08
+
+The bounded MVP-04F task was runtime-verified at working-tree HEAD
+`428783e336bc48dba6df55df1715ec896d3b1e98`, descended from accepted baseline
+`882a438947fc40fc43ba2e4e8864ce5ad18b2569`. It adds a nullable claiming
+Operator/occurrence pair with a database uniqueness guarantee, a private
+idempotent claim route, claimant-only worklist visibility, one waiting-to-
+waiting history event, and matching audit/outbox evidence. The existing
+suspended-account boundary was extended only to the new private claim route;
+no generic authorization redesign was made.
+
+MVP-04F passed 7 tests/58 assertions. MVP-04E, MVP-04D, MVP-04C, MVP-04B,
+Operator portal, Operator foundation, WP-02 security, and architecture suites
+also passed separately. Fresh in-memory SQLite migration, schema inspection,
+PHP syntax, Pint, Composer validation, private route listing, privacy search,
+Graphify refresh/query, Codebase Memory refresh/source review, task validation,
+and `git diff --check` passed. WP-11, WP-12, and WP-17 remain
+`partially-implemented`; queue release/call/skip, clinical examination, later
+queue states, walk-ins, public/LCD behavior, Member visibility,
+privacy/retention, deployment, production readiness, and the four listed
+MVP-04 gaps remain open. No commit or push was made.
 
 ## MVP-04E runtime verification closure attempt — 2026-08-07
 

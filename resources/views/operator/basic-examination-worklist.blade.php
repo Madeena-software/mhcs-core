@@ -17,6 +17,7 @@
                     <th>Stage</th>
                     <th>State</th>
                     <th>Ready time</th>
+                    <th>Action</th>
                 </tr>
                 </thead>
                 <tbody>
@@ -32,9 +33,20 @@
                         <td>{{ $entry['stage'] }}</td>
                         <td class="status">{{ $entry['state'] }}</td>
                         <td><time datetime="{{ $entry['ready_at'] }}">{{ $entry['ready_at'] }}</time></td>
+                        <td>
+                            @if ($entry['claimed_by_current_operator'])
+                                <span class="status">Claimed by you</span>
+                            @else
+                                <form method="POST" action="{{ route('operator.basic-examination-worklist.claim', $entry['admission_id']) }}">
+                                    @csrf
+                                    <input type="hidden" name="operation_id" value="{{ (string) \Illuminate\Support\Str::uuid() }}">
+                                    <button type="submit">Claim</button>
+                                </form>
+                            @endif
+                        </td>
                     </tr>
                 @empty
-                    <tr><td colspan="6" class="muted">No advance-booking tickets are waiting for basic examination.</td></tr>
+                    <tr><td colspan="7" class="muted">No advance-booking tickets are waiting for basic examination.</td></tr>
                 @endforelse
                 </tbody>
             </table>

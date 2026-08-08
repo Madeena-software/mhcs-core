@@ -257,3 +257,23 @@ internal detail. The bounded MVP-04E slice is verified but not expanded: queue
 actions, clinical examination, walk-ins, public/LCD behavior, Member
 visibility, privacy/retention policy, deployment, and production readiness
 remain open.
+
+### MVP-04F atomic basic-examination claim — 2026-08-08
+
+The bounded MVP-04F slice adds one private, authenticated Operator claim
+action for an eligible advance `basic_examination` / `waiting` admission. The
+claim is atomic and idempotent, records the claiming Operator and occurrence
+time, appends one `claimed` history event with `waiting` retained, and writes
+matching local audit/outbox evidence in the same database boundary. A nullable
+unique Operator-profile index prevents a second active claim; competing or
+unauthorized requests fail closed, and another Operator cannot see the claimed
+row. The private worklist remains FIFO and contains no Member, booking,
+consent, identity, clinical, public, or claimant-identity data. No queue stage
+or state transition was introduced. Evidence:
+`docs/mvp/evidence/mvp-04f-atomic-basic-examination-claim.md`.
+
+MVP-04F does not close WP-11, WP-12, or WP-17. Queue release/call/skip,
+clinical examination, later queue states, walk-ins, public/LCD behavior,
+Member visibility, privacy/retention approval, deployment, production
+readiness, and `MVP-GAP-009`, `MVP-GAP-012`, `MVP-GAP-021`, and `MVP-GAP-024`
+remain open.
