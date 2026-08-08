@@ -196,13 +196,22 @@ After review, task creation, and validation, report only:
 - Ponytail status.
 - Confirmation that repository authority was checked directly for material claims derived from Graphify or Codebase Memory MCP.
 - Confirmation that no product implementation, commit, or push occurred.
-- A ready-to-copy Luna execution launcher in exactly this format:
+- A ready-to-copy Luna execution launcher as the final item in the response.
 
+The Luna launcher must be emitted as one fenced `text` code block so it can be copied directly without reformatting.
+
+Do not add bullets, commentary, explanation, labels, or additional Markdown inside or immediately after the launcher block.
+
+Use exactly this launcher format, replacing `<generated-task-filename>` with the actual generated task filename:
+
+```text
 Execute the published repository task:
 
 .agents/tasks/<generated-task-filename>.md
+
 exactly as written with:
 
 TARGET="."
+```
 
-Stop after creating and validating exactly one task.
+After emitting the launcher block, output nothing else.
