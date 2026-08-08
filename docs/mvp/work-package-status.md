@@ -143,3 +143,19 @@ final documentation-only worktree passed `git diff --check`. WP-07
 remains `not-started` except for bounded consumed contracts, and WP-11, WP-12,
 and WP-17 remain `partially-implemented`; all listed queue, clinical, public,
 privacy/retention, deployment, and production gaps remain open.
+
+## MVP-04E denial-matrix remediation addendum — 2026-08-08
+
+The denial-matrix remediation is verified at
+`6e91fe07feb010f92ae2719d55b67ea670ebbb98`. The isolated test bootstrap adds
+only absent-value, deterministic non-production MHCS key fallbacks. The narrow
+approved exception in the existing mandatory-password middleware allows the
+private basic-examination worklist to reach its established Operator
+authorization boundary for suspended users, producing the required 403 while
+preserving fail-closed behavior elsewhere. MVP-04E's no-key suite and all
+required regression, security, architecture, syntax, Pint, Composer, route,
+privacy, graph/source, task-validation, and diff checks passed. WP-07 remains
+`not-started` except for bounded consumed contracts, and WP-11, WP-12, and
+WP-17 remain `partially-implemented`; queue actions, clinical examination,
+walk-ins, public/LCD behavior, Member visibility, privacy/retention,
+deployment, and production readiness remain open.

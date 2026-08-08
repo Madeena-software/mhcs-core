@@ -101,3 +101,48 @@ syntax, Pint, and privacy searches remain unrun under this closure task. The
 candidate and final documentation-only worktree both passed `git diff --check`.
 The owner must provide the existing dependency tree and rerun this closure
 task; no product change is indicated.
+
+## MVP-04E denial-matrix remediation — 2026-08-08
+
+The published denial-matrix remediation task was executed with `TARGET="."` at
+HEAD `6e91fe07feb010f92ae2719d55b67ea670ebbb98`. The task SHA-256 remained
+`7678324acd7d3fca117feb74516b01ea2681aa4b502d572224ace3897f493cf4`, and the
+three published MVP-04E task contracts validated successfully. The required
+approval gate was satisfied by the explicit approvals `approve denial-matrix
+patch` and `approve shared middleware correction`.
+
+The default isolated test bootstrap now supplies fixed non-production MHCS
+identifier, object-encryption, and access-grant values only when the
+corresponding config values are absent; it does not write environment files or
+override supplied values. The exact remaining 302 was isolated to the shared
+`EnforceMandatoryPasswordChange` middleware: a suspended account was redirected
+to login before the existing Operator 403 boundary ran. The approved minimal
+correction allows only the named private basic-examination worklist route to
+reach that existing boundary for suspended users; all other fail-closed
+behavior remains unchanged.
+
+With `APP_KEY`, `MHCS_IDENTIFIER_KEY`, `MHCS_OBJECT_ENCRYPTION_KEY`,
+`MHCS_ACCESS_GRANT_KEY`, `MHCS_MANIFEST_KEY`, and `MHCS_MANIFEST_KEY_ID` absent,
+MVP-04E passed 6 tests and 61 assertions. The independently observed denial
+matrix was revoked shift `200` with an empty worklist, revoked site `403`,
+revoked portal permission `403`, forged active-site session `403`, and
+suspended account `403`; the focused assertions verified no worklist or
+internal detail leakage.
+
+Required verification passed separately: MVP-04E (6 tests/61 assertions),
+MVP-04D (9/83), MVP-04C (6/64), MVP-04B (16/84), Operator portal (8/63),
+Operator foundation (15/56), WP-02 security (24/103), and architecture
+(6/1,573). PHP syntax, Pint test mode, Composer validation, operator route
+listing, targeted worklist privacy search, Codebase Memory discovery/source
+review, task validation, and `git diff --check` also passed. The worklist
+projection remains limited to ticket, site, shift times, stage, state, and
+ready time. No production configuration, dependency manifest, commit, or push
+was changed.
+
+The relevant Codebase Memory project is `var-www-mhcs-core`; searches found
+`basicExaminationWorklist`, `basicExamination`, `portalSite`, and
+`OperatorAuthorization`. The approved test-only bootstrap correction and
+route-boundary middleware correction are the only implementation changes in
+this remediation. MVP-04E remains bounded: queue claims/calls/skips, clinical
+examination, walk-ins, public/LCD behavior, Member visibility,
+privacy/retention policy, deployment, and production readiness remain open.

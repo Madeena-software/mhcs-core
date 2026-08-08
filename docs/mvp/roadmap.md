@@ -241,3 +241,18 @@ Composer vendor tree is absent: `vendor/autoload.php`, `vendor/bin/pint`, and
 Laravel boot are unavailable. No dependency installation, product change,
 commit, or push was performed; the required framework suites and other closure
 checks remain unrun.
+
+### MVP-04E denial-matrix remediation — 2026-08-08
+
+The denial-matrix remediation is runtime-verified at
+`6e91fe07feb010f92ae2719d55b67ea670ebbb98`. The default isolated harness now
+uses deterministic test-only MHCS key fallbacks when values are absent, and the
+approved narrow middleware boundary lets the existing Operator authorization
+path return 403 for suspended access to the private worklist. MVP-04E and all
+required MVP-04D, MVP-04C, MVP-04B, Operator, WP-02, and architecture suites
+passed separately without process-injected MHCS keys. Revoked shift remains an
+empty 200 worklist; revoked site, permission, forged active-site session, and
+suspended account return 403 without sensitive or internal detail. The bounded
+MVP-04E slice is verified but not expanded: queue actions, clinical examination,
+walk-ins, public/LCD behavior, Member visibility, privacy/retention policy,
+deployment, and production readiness remain open.

@@ -22,6 +22,10 @@ final class EnforceMandatoryPasswordChange
         }
 
         if ($user->account_status !== 'active' || ! ($user->login_enabled ?? false)) {
+            if ($user->isSuspended() && $request->routeIs('operator.basic-examination-worklist')) {
+                return $next($request);
+            }
+
             return $this->failClosed($request);
         }
 
