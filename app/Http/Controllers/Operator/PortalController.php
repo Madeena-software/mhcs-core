@@ -288,6 +288,12 @@ final class PortalController extends Controller
                 if ($hasValue === $hasReason) {
                     $validator->errors()->add($field.'_value', 'Provide a value or a missing reason.');
                 }
+                if (in_array($field, ['height', 'weight'], true) && $hasValue) {
+                    $value = $request->input($field.'_value');
+                    if (! is_numeric($value) || ! is_finite((float) $value) || (float) $value <= 0) {
+                        $validator->errors()->add($field.'_value', 'Provide a finite positive measurement.');
+                    }
+                }
             }
 
             $hasHeight = $this->hasInput($request->input('height_value'));

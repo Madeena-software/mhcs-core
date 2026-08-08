@@ -5,10 +5,15 @@ declare(strict_types=1);
 namespace Tests\Feature\Operator;
 
 use App\Models\User;
+use App\Modules\Member\Application\Contracts\OperatorVitalSignsContract;
+use App\Modules\Member\Domain\Mvp03Exception;
 use App\Shared\Audit\AuditEvent;
 use App\Shared\Audit\AuditStore;
 use App\Shared\Audit\DatabaseAuditStore;
+use App\Shared\Context\AuthenticatedContext;
+use App\Shared\Context\CorrelationId;
 use App\Shared\Events\DomainEvent;
+use App\Shared\Identity\LocalId;
 use App\Shared\Infrastructure\Outbox\OutboxStore;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -118,6 +123,87 @@ final class Mvp04jPrivateVitalSignsCaptureTest extends TestCase
         $this->assertDatabaseHas('operator_queue_admissions', ['id' => $admission->id, 'state' => 'in_service']);
         $this->assertDatabaseMissing('audit_events', ['action' => 'operator.basic-examination.vital-signs-recorded']);
         $this->assertNotNull($fixture['memberId']);
+    }
+
+    public function test_zero_negative_and_non_finite_height_or_weight_are_rejected_before_persistence(): void
+    {
+        [$fixture, $admission] = $this->inServiceFixture('VITAL-POSITIVE');
+        $auditCount = DB::table('audit_events')->count();
+        $outboxCount = DB::table('outbox_messages')->count();
+        $invalid = [
+            ['height_value' => '0', 'weight_value' => '75'],
+            ['height_value' => '-180', 'weight_value' => '75'],
+            ['height_value' => '1e309', 'weight_value' => '75'],
+            ['height_value' => '180', 'weight_value' => '0'],
+            ['height_value' => '180', 'weight_value' => '-75'],
+            ['height_value' => '180', 'weight_value' => '1e309'],
+        ];
+
+        foreach ($invalid as $index => $values) {
+            $operationId = (string) Str::uuid();
+            $payload = $this->valuePayload($operationId);
+            $payload['height_value'] = $values['height_value'];
+            $payload['weight_value'] = $values['weight_value'];
+
+            $this->post(route('operator.basic-examination-worklist.vital-signs.store', $admission->id), $payload)
+                ->assertRedirect()
+                ->assertSessionHasErrors($index < 3 ? 'height_value' : 'weight_value')
+                ->assertDontSee('Vital signs recorded.');
+
+            $this->assertDatabaseMissing('idempotent_consumptions', ['message_id' => $operationId, 'status' => 'handled']);
+        }
+
+        $this->assertDatabaseCount('member_vital_signs_assessments', 0);
+        $this->assertDatabaseCount('operator_vital_signs_executions', 0);
+        $this->assertSame($auditCount, DB::table('audit_events')->count());
+        $this->assertSame($outboxCount, DB::table('outbox_messages')->count());
+        $this->assertNotNull($fixture['memberId']);
+    }
+
+    public function test_member_contract_rejects_zero_negative_and_non_finite_height_or_weight(): void
+    {
+        [$fixture, $admission] = $this->inServiceFixture('VITAL-CONTRACT-POSITIVE');
+        $context = new AuthenticatedContext(
+            actorId: LocalId::fromString((string) $fixture['operator']->id),
+            operationId: CorrelationId::random(),
+            roles: ['operator'],
+            permissions: ['operator.portal.access'],
+            siteId: LocalId::fromString($fixture['siteLocalId']),
+            purpose: 'operator.basic-examination.vital-signs',
+        );
+        $contract = app(OperatorVitalSignsContract::class);
+
+        foreach ([
+            ['height_value' => '0', 'weight_value' => '75'],
+            ['height_value' => '-180', 'weight_value' => '75'],
+            ['height_value' => '1e309', 'weight_value' => '75'],
+            ['height_value' => '180', 'weight_value' => '0'],
+            ['height_value' => '180', 'weight_value' => '-75'],
+            ['height_value' => '180', 'weight_value' => '1e309'],
+        ] as $values) {
+            $payload = $this->valuePayload((string) Str::uuid());
+            $payload['height_value'] = $values['height_value'];
+            $payload['weight_value'] = $values['weight_value'];
+
+            try {
+                $contract->record(
+                    $context,
+                    $fixture['siteStableId'],
+                    $fixture['memberId'],
+                    $fixture['bookingId'],
+                    $fixture['scheduleId'],
+                    $payload,
+                    '2040-01-10T03:20:00+00:00',
+                );
+                $this->fail('Invalid positive-input BMI data must be rejected by the Member contract.');
+            } catch (Mvp03Exception) {
+                $this->addToAssertionCount(1);
+            }
+        }
+
+        $this->assertDatabaseCount('member_vital_signs_assessments', 0);
+        $this->assertDatabaseCount('operator_vital_signs_executions', 0);
+        $this->assertNotNull($admission);
     }
 
     public function test_exact_replay_is_idempotent_and_changed_payload_conflicts(): void

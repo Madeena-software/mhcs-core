@@ -128,7 +128,15 @@ final readonly class Mvp04VitalSignsService implements OperatorVitalSignsContrac
             $reason = $this->nullableString($data[$field.'_missing_reason'] ?? null);
             $hasValue = $value !== null;
             $hasReason = $reason !== null;
-            if ($hasValue === $hasReason || ($hasValue && ! is_numeric($value))) {
+            if (
+                $hasValue === $hasReason
+                || ($hasValue && ! is_numeric($value))
+                || (
+                    $hasValue
+                    && in_array($field, ['height', 'weight'], true)
+                    && (! is_finite((float) $value) || (float) $value <= 0)
+                )
+            ) {
                 throw new Mvp03Exception('The vital-signs record is invalid.');
             }
             if ($hasReason && ! in_array($reason, self::MISSING_REASONS, true)) {
