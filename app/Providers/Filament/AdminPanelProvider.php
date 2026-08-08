@@ -16,6 +16,7 @@ use App\Modules\Operator\Filament\Resources\OperatorProfiles\OperatorProfileReso
 use App\Modules\Operator\Filament\Resources\OperatorShiftAssignments\OperatorShiftAssignmentResource;
 use App\Modules\Operator\Filament\Resources\OperatorSiteAssignments\OperatorSiteAssignmentResource;
 use App\Modules\Operator\Filament\Resources\OperatorSites\OperatorSiteResource;
+use App\Modules\Operator\Filament\Resources\OperatorXrayProtocolMappings\OperatorXrayProtocolMappingResource;
 use App\Providers\Filament\Pages\AdminLogin;
 use Filament\Http\Middleware\Authenticate as FilamentAuthenticate;
 use Filament\Http\Middleware\AuthenticateSession;
@@ -51,6 +52,7 @@ final class AdminPanelProvider extends PanelProvider
                 OperatorEligibleShiftResource::class,
                 OperatorShiftAssignmentResource::class,
                 OperatorArrivalResource::class,
+                OperatorXrayProtocolMappingResource::class,
             ])
             ->navigationGroups([
                 'Member',

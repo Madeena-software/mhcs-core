@@ -144,6 +144,8 @@ final class MvpOperatorSeeder extends Seeder
             OperatorAuthorization::ATTENDANCE_READ,
             OperatorAuthorization::ARRIVAL_RECORD,
             OperatorAuthorization::AUDIT_READ,
+            OperatorAuthorization::PROTOCOL_READ,
+            OperatorAuthorization::PROTOCOL_MANAGE,
         ] as $permission) {
             $assignment = DB::table('authorization_permission_assignments')->where('user_id', $user->getKey())->where('permission', $permission)->first();
             if ($assignment !== null && ! $assignment->active) {

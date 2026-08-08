@@ -128,11 +128,20 @@ final class FoundationArchitectureTest extends TestCase
             '2026_08_08_000001_add_atomic_claim_to_operator_queue_admissions_table.php',
             '2026_08_08_000002_create_mvp04j_vital_signs_tables.php',
             '2026_08_08_000003_allow_one_queue_admission_per_ticket_stage.php',
+            '2026_08_08_000004_create_operator_xray_protocol_mappings.php',
         ];
 
         $this->assertSame([], array_values(array_diff($migrations, $allowed)));
 
         $this->assertDirectoryDoesNotExist(app_path('Filament'));
+    }
+
+    public function test_operator_protocol_configuration_uses_only_the_member_scalar_query_contract(): void
+    {
+        $source = File::get(app_path('Modules/Operator/Application/Services/OperatorXrayProtocolConfigurationService.php'));
+
+        $this->assertStringContainsString('App\\Modules\\Member\\Application\\Contracts\\OperatorServiceOfferingQuery', $source);
+        $this->assertStringNotContainsString('App\\Modules\\Member\\Domain\\Models\\ServiceOffering', $source);
     }
 
     public function test_member_boundary_contains_only_opaque_reference_contracts(): void

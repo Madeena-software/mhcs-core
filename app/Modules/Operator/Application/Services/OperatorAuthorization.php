@@ -43,6 +43,10 @@ final readonly class OperatorAuthorization
 
     public const AUDIT_READ = 'operator.audit.read';
 
+    public const PROTOCOL_READ = 'operator.protocol.read';
+
+    public const PROTOCOL_MANAGE = 'operator.protocol.manage';
+
     public function __construct(private AuthenticatedContextProvider $context) {}
 
     /** @return array{context: AuthenticatedContext, user: User, profile: OperatorProfile} */
@@ -110,6 +114,16 @@ final readonly class OperatorAuthorization
         return $this->admin(self::AUDIT_READ, 'operator.audit.read');
     }
 
+    public function protocolRead(): AuthenticatedContext
+    {
+        return $this->admin(self::PROTOCOL_READ, 'operator.protocol.read');
+    }
+
+    public function protocolManage(): AuthenticatedContext
+    {
+        return $this->admin(self::PROTOCOL_MANAGE, 'operator.protocol.manage');
+    }
+
     public function shiftManage(): AuthenticatedContext
     {
         return $this->admin(self::SHIFT_MANAGE, 'operator.shift.manage');
@@ -175,7 +189,8 @@ final readonly class OperatorAuthorization
         }
 
         $user = Auth::user();
-        if (! $user instanceof User || ! $user->canAuthenticate()) {
+        $authenticatedUser = $user instanceof User ? User::query()->find($user->getAuthIdentifier()) : null;
+        if ($authenticatedUser === null || ! $authenticatedUser->canAuthenticate()) {
             throw new OperatorException('operator_admin_denied', 'Operator administration authorization is unavailable.');
         }
 
