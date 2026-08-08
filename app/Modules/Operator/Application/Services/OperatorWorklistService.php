@@ -24,6 +24,8 @@ final readonly class OperatorWorklistService
 {
     public const CLAIM_PURPOSE = 'operator.basic-examination.claim';
 
+    public const XRAY_CLAIM_PURPOSE = 'operator.xray.claim';
+
     public const CALL_PURPOSE = 'operator.basic-examination.call';
 
     public const START_PURPOSE = 'operator.basic-examination.start';
@@ -139,7 +141,7 @@ final readonly class OperatorWorklistService
             ])->all();
     }
 
-    /** @return list<array<string, string>> */
+    /** @return list<array<string, mixed>> */
     public function xrayReadiness(): array
     {
         $portal = $this->authorization->portal();
@@ -156,7 +158,10 @@ final readonly class OperatorWorklistService
             ->where('admissions.queue_class', 'advance')
             ->where('admissions.stage', 'xray')
             ->where('admissions.state', 'waiting')
-            ->whereNull('admissions.operator_profile_id')
+            ->where(function ($query) use ($profileId): void {
+                $query->whereNull('admissions.operator_profile_id')
+                    ->orWhere('admissions.operator_profile_id', $profileId);
+            })
             ->whereExists(function ($query) use ($profileId): void {
                 $query->selectRaw('1')
                     ->from('operator_shift_assignments as assignments')
@@ -168,6 +173,8 @@ final readonly class OperatorWorklistService
                     ->where('eligible.sync_status', 'eligible');
             })
             ->select([
+                'admissions.id as admission_id',
+                'admissions.operator_profile_id as claim_operator_profile_id',
                 'tickets.ticket_number',
                 'sites.display_name as site_name',
                 'schedules.starts_at as schedule_starts_at',
@@ -180,6 +187,7 @@ final readonly class OperatorWorklistService
             ->orderBy('admissions.id')
             ->get()
             ->map(static fn (object $row): array => [
+                'admission_id' => (string) $row->admission_id,
                 'ticket_number' => (string) $row->ticket_number,
                 'site_name' => (string) $row->site_name,
                 'schedule_starts_at' => (string) $row->schedule_starts_at,
@@ -187,6 +195,7 @@ final readonly class OperatorWorklistService
                 'stage' => (string) $row->stage,
                 'state' => (string) $row->state,
                 'ready_at' => (string) $row->ready_at,
+                'claimed_by_current_operator' => $row->claim_operator_profile_id !== null,
             ])->all();
     }
 
@@ -616,6 +625,132 @@ final readonly class OperatorWorklistService
             throw new OperatorException('queue_claim_conflict', 'The queue admission could not be claimed.', $exception);
         } catch (Throwable $exception) {
             throw new OperatorException('queue_claim_failure', 'The queue admission could not be claimed.', $exception);
+        }
+    }
+
+    /** @return array{admission_id: string, stage: string, state: string, claimed_at: string} */
+    public function claimXray(string $admissionId, string $operationId): array
+    {
+        $admissionId = trim($admissionId);
+        $operationId = trim($operationId);
+        if (! Str::isUuid($admissionId) || ! Str::isUuid($operationId)) {
+            throw new OperatorException('xray_claim_forbidden', 'The X-ray admission is unavailable.');
+        }
+
+        $portal = $this->authorization->portal();
+        $site = $this->authorization->portalSite($portal);
+        $profileId = (string) $portal['profile']->getKey();
+        $payload = [
+            'admission_id' => $admissionId,
+            'operator_profile_id' => $profileId,
+            'operator_site_id' => (string) $site->operator_site_id,
+        ];
+        $context = $this->authorization->current(self::XRAY_CLAIM_PURPOSE);
+
+        try {
+            return $this->idempotency->run(
+                $operationId,
+                self::XRAY_CLAIM_PURPOSE,
+                $payload,
+                function () use ($admissionId, $profileId, $site, $context, $operationId): array {
+                    $transactionPortal = $this->authorization->portal();
+                    $transactionSite = $this->authorization->portalSite($transactionPortal);
+                    if ((string) $transactionPortal['profile']->getKey() !== $profileId || (string) $transactionSite->getKey() !== (string) $site->getKey()) {
+                        throw new OperatorException('xray_claim_forbidden', 'The X-ray admission is unavailable.');
+                    }
+
+                    $admission = DB::table('operator_queue_admissions as admissions')
+                        ->join('shift_schedules as schedules', 'schedules.id', '=', 'admissions.member_schedule_id')
+                        ->join('examination_site_refs as member_sites', 'member_sites.id', '=', 'schedules.examination_site_id')
+                        ->where('admissions.id', $admissionId)
+                        ->where('admissions.operator_site_id', $site->getKey())
+                        ->where('member_sites.operator_site_id', $site->operator_site_id)
+                        ->select('admissions.*')
+                        ->lockForUpdate()
+                        ->first();
+                    if ($admission === null) {
+                        throw new OperatorException('xray_claim_forbidden', 'The X-ray admission is unavailable.');
+                    }
+                    if ($admission->operator_profile_id !== null) {
+                        if ((string) $admission->operator_profile_id === $profileId) {
+                            throw new OperatorException('xray_claim_conflict', 'The X-ray admission could not be claimed.');
+                        }
+
+                        throw new OperatorException('xray_claim_forbidden', 'The X-ray admission is unavailable.');
+                    }
+                    if ($admission->queue_class !== 'advance' || $admission->stage !== 'xray' || $admission->state !== 'waiting') {
+                        throw new OperatorException('xray_claim_conflict', 'The X-ray admission could not be claimed.');
+                    }
+                    if (! $this->assignments->isAssigned($profileId, (string) $admission->member_schedule_id, $site->operator_site_id)) {
+                        throw new OperatorException('xray_claim_forbidden', 'The X-ray admission is unavailable.');
+                    }
+                    if (DB::table('operator_queue_admissions')->where('operator_profile_id', $profileId)->exists()) {
+                        throw new OperatorException('xray_claim_conflict', 'The X-ray admission could not be claimed.');
+                    }
+
+                    $now = $this->clock->now();
+                    DB::table('operator_queue_admissions')
+                        ->where('id', $admissionId)
+                        ->update([
+                            'operator_profile_id' => $profileId,
+                            'claimed_at' => $now,
+                            'updated_at' => $now,
+                        ]);
+                    DB::table('operator_queue_admission_history')->insert([
+                        'id' => (string) Str::uuid(),
+                        'operator_queue_admission_id' => $admissionId,
+                        'operator_profile_id' => $profileId,
+                        'event_type' => 'claimed',
+                        'from_state' => 'waiting',
+                        'to_state' => 'waiting',
+                        'operation_id' => $operationId,
+                        'occurred_at' => $now,
+                        'created_at' => $now,
+                        'updated_at' => $now,
+                    ]);
+                    $metadata = [
+                        'admission_id' => $admissionId,
+                        'operator_profile_id' => $profileId,
+                        'queue_class' => 'advance',
+                        'state' => 'waiting',
+                        'claimed_at_utc' => $now->format(DATE_ATOM),
+                    ];
+                    $this->audit->append(AuditEvent::fromContext(
+                        $context,
+                        'operator.xray.claimed',
+                        'operator',
+                        'success',
+                        $now,
+                        'queue-admission',
+                        $admissionId,
+                        metadata: $metadata,
+                    ));
+                    $this->outbox->record(new VersionedDomainEvent(
+                        LocalId::fromString((string) Str::uuid()),
+                        'operator.xray-claimed',
+                        1,
+                        $now,
+                        $metadata,
+                        LocalId::fromString($admissionId),
+                        $context->operationId,
+                    ));
+
+                    return [
+                        'admission_id' => $admissionId,
+                        'stage' => 'xray',
+                        'state' => 'waiting',
+                        'claimed_at' => $now->format(DATE_ATOM),
+                    ];
+                },
+            )->result;
+        } catch (IdempotencyConflict $exception) {
+            throw new OperatorException('xray_claim_conflict', 'The X-ray admission could not be claimed.', $exception);
+        } catch (OperatorException $exception) {
+            throw $exception;
+        } catch (QueryException $exception) {
+            throw new OperatorException('xray_claim_conflict', 'The X-ray admission could not be claimed.', $exception);
+        } catch (Throwable $exception) {
+            throw new OperatorException('xray_claim_failure', 'The X-ray admission could not be claimed.', $exception);
         }
     }
 
