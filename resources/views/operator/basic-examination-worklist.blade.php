@@ -23,7 +23,7 @@
                 <tbody>
                 @forelse ($entries as $entry)
                     <tr>
-                        <td>{{ $entry['state'] === 'called' ? 'Current claimed admission' : $entry['ticket_number'] }}</td>
+                        <td>{{ in_array($entry['state'], ['called', 'in_service'], true) ? 'Current claimed admission' : $entry['ticket_number'] }}</td>
                         <td>{{ $entry['site_name'] }}</td>
                         <td>
                             <time datetime="{{ $entry['schedule_starts_at'] }}">{{ $entry['schedule_starts_at'] }}</time>
@@ -36,7 +36,9 @@
                         <td>
                             @if ($entry['claimed_by_current_operator'])
                                 <span class="status">Claimed by you</span>
-                                @if ($entry['state'] === 'called')
+                                @if ($entry['state'] === 'in_service')
+                                    <a href="{{ route('operator.basic-examination-worklist.vital-signs', $entry['admission_id']) }}">Record vital signs</a>
+                                @elseif ($entry['state'] === 'called')
                                     <form method="POST" action="{{ route('operator.basic-examination-worklist.start', $entry['admission_id']) }}">
                                         @csrf
                                         <input type="hidden" name="operation_id" value="{{ (string) \Illuminate\Support\Str::uuid() }}">

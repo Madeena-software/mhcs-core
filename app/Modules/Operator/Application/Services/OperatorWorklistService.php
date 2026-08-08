@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Modules\Operator\Application\Services;
 
 use App\Modules\Member\Application\Contracts\OperatorAttendanceContract;
+use App\Modules\Member\Application\Contracts\OperatorVitalSignsContract;
 use App\Modules\Operator\Domain\OperatorException;
 use App\Shared\Audit\AuditEvent;
 use App\Shared\Audit\AuditStore;
@@ -27,10 +28,13 @@ final readonly class OperatorWorklistService
 
     public const START_PURPOSE = 'operator.basic-examination.start';
 
+    public const VITAL_SIGNS_PURPOSE = 'operator.basic-examination.vital-signs';
+
     public function __construct(
         private OperatorAuthorization $authorization,
         private OperatorShiftAssignmentService $assignments,
         private OperatorAttendanceContract $memberAttendance,
+        private OperatorVitalSignsContract $memberVitalSigns,
         private IdempotencyStore $idempotency,
         private AuditStore $audit,
         private OutboxStore $outbox,
@@ -87,7 +91,7 @@ final readonly class OperatorWorklistService
             ->where('member_sites.operator_site_id', $site->operator_site_id)
             ->where('admissions.queue_class', 'advance')
             ->where('admissions.stage', 'basic_examination')
-            ->whereIn('admissions.state', ['waiting', 'called'])
+            ->whereIn('admissions.state', ['waiting', 'called', 'in_service'])
             ->where(function ($query) use ($profileId): void {
                 $query->whereNull('admissions.operator_profile_id')
                     ->orWhere('admissions.operator_profile_id', $profileId);
@@ -127,6 +131,149 @@ final readonly class OperatorWorklistService
                 'ready_at' => (string) $row->ready_at,
                 'claimed_by_current_operator' => $row->claim_operator_profile_id !== null,
             ])->all();
+    }
+
+    /** @return array{admission_id: string, units: array<string, string>} */
+    public function vitalSignsForm(string $admissionId): array
+    {
+        $admissionId = trim($admissionId);
+        if (! Str::isUuid($admissionId)) {
+            throw new OperatorException('vital_signs_forbidden', 'The vital-signs record is unavailable.');
+        }
+
+        $portal = $this->authorization->portal();
+        $site = $this->authorization->portalSite($portal);
+        $admission = $this->captureAdmission($admissionId, (string) $portal['profile']->getKey(), $site);
+        $this->assertCaptureAdmission($admission, (string) $portal['profile']->getKey(), $site);
+
+        return [
+            'admission_id' => $admissionId,
+            'units' => [
+                'blood_pressure' => 'mmHg',
+                'temperature' => '°C',
+                'height' => 'cm',
+                'weight' => 'kg',
+                'bmi' => 'kg/m²',
+            ],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array{admission_id: string, execution_id: string, state: string, recorded_at: string}
+     */
+    public function recordBasicExaminationVitalSigns(string $admissionId, string $operationId, array $data): array
+    {
+        $admissionId = trim($admissionId);
+        $operationId = trim($operationId);
+        if (! Str::isUuid($admissionId) || ! Str::isUuid($operationId)) {
+            throw new OperatorException('vital_signs_forbidden', 'The vital-signs record is unavailable.');
+        }
+
+        $portal = $this->authorization->portal();
+        $site = $this->authorization->portalSite($portal);
+        $profileId = (string) $portal['profile']->getKey();
+        $payload = [
+            'admission_id' => $admissionId,
+            'operator_profile_id' => $profileId,
+            'operator_site_id' => (string) $site->operator_site_id,
+            'data' => $data,
+        ];
+        $context = $this->authorization->current(self::VITAL_SIGNS_PURPOSE);
+
+        try {
+            return $this->idempotency->run(
+                $operationId,
+                self::VITAL_SIGNS_PURPOSE,
+                $payload,
+                function () use ($admissionId, $operationId, $profileId, $site, $context, $data): array {
+                    $transactionPortal = $this->authorization->portal();
+                    $transactionSite = $this->authorization->portalSite($transactionPortal);
+                    if ((string) $transactionPortal['profile']->getKey() !== $profileId || (string) $transactionSite->getKey() !== (string) $site->getKey()) {
+                        throw new OperatorException('vital_signs_forbidden', 'The vital-signs record is unavailable.');
+                    }
+
+                    $admission = $this->captureAdmission($admissionId, $profileId, $site, lock: true);
+                    $this->assertCaptureAdmission($admission, $profileId, $site);
+                    if (DB::table('operator_vital_signs_executions')->where('operator_queue_admission_id', $admissionId)->exists()) {
+                        throw new OperatorException('vital_signs_conflict', 'The vital-signs record could not be recorded.');
+                    }
+
+                    $occurredAt = $this->clock->now();
+                    try {
+                        $assessment = $this->memberVitalSigns->record(
+                            $context,
+                            (string) $site->operator_site_id,
+                            (string) $admission->member_id,
+                            (string) $admission->booking_id,
+                            (string) $admission->member_schedule_id,
+                            $data,
+                            $occurredAt->format(DATE_ATOM),
+                        );
+                    } catch (QueryException $exception) {
+                        throw new OperatorException('vital_signs_conflict', 'The vital-signs record could not be recorded.', $exception);
+                    } catch (Throwable $exception) {
+                        throw new OperatorException('vital_signs_forbidden', 'The vital-signs record is unavailable.', $exception);
+                    }
+                    $executionId = (string) Str::uuid();
+                    DB::table('operator_vital_signs_executions')->insert([
+                        'id' => $executionId,
+                        'member_vital_signs_assessment_id' => $assessment['assessment_id'],
+                        'operator_queue_admission_id' => $admissionId,
+                        'operator_profile_id' => $profileId,
+                        'operator_site_id' => (string) $site->getKey(),
+                        'occurred_at' => $occurredAt,
+                        'operation_id' => $operationId,
+                        'created_at' => $occurredAt,
+                        'updated_at' => $occurredAt,
+                    ]);
+                    $metadata = [
+                        'admission_id' => $admissionId,
+                        'assessment_id' => $assessment['assessment_id'],
+                        'execution_id' => $executionId,
+                        'operator_profile_id' => $profileId,
+                        'operator_site_id' => (string) $site->getKey(),
+                        'stage' => 'basic_examination',
+                        'state' => 'in_service',
+                        'recorded_at_utc' => $occurredAt->format(DATE_ATOM),
+                    ];
+                    $this->audit->append(AuditEvent::fromContext(
+                        $context,
+                        'operator.basic-examination.vital-signs-recorded',
+                        'operator',
+                        'success',
+                        $occurredAt,
+                        'operator-vital-signs-execution',
+                        $executionId,
+                        metadata: $metadata,
+                    ));
+                    $this->outbox->record(new VersionedDomainEvent(
+                        LocalId::fromString((string) Str::uuid()),
+                        'operator.basic-examination-vital-signs-recorded',
+                        1,
+                        $occurredAt,
+                        $metadata,
+                        LocalId::fromString($executionId),
+                        $context->operationId,
+                    ));
+
+                    return [
+                        'admission_id' => $admissionId,
+                        'execution_id' => $executionId,
+                        'state' => 'in_service',
+                        'recorded_at' => $occurredAt->format(DATE_ATOM),
+                    ];
+                },
+            )->result;
+        } catch (IdempotencyConflict $exception) {
+            throw new OperatorException('vital_signs_conflict', 'The vital-signs record could not be recorded.', $exception);
+        } catch (OperatorException $exception) {
+            throw $exception;
+        } catch (QueryException $exception) {
+            throw new OperatorException('vital_signs_conflict', 'The vital-signs record could not be recorded.', $exception);
+        } catch (Throwable $exception) {
+            throw new OperatorException('vital_signs_failure', 'The vital-signs record could not be recorded.', $exception);
+        }
     }
 
     /** @return array{admission_id: string, stage: string, state: string, claimed_at: string} */
@@ -492,6 +639,39 @@ final readonly class OperatorWorklistService
             throw new OperatorException('queue_start_conflict', 'The queue admission could not be started.', $exception);
         } catch (Throwable $exception) {
             throw new OperatorException('queue_start_failure', 'The queue admission could not be started.', $exception);
+        }
+    }
+
+    private function captureAdmission(string $admissionId, string $profileId, object $site, bool $lock = false): ?object
+    {
+        $query = DB::table('operator_queue_admissions as admissions')
+            ->join('operator_paper_tickets as tickets', 'tickets.id', '=', 'admissions.operator_paper_ticket_id')
+            ->join('bookings', 'bookings.id', '=', 'tickets.booking_id')
+            ->join('shift_schedules as schedules', 'schedules.id', '=', 'admissions.member_schedule_id')
+            ->join('examination_site_refs as member_sites', 'member_sites.id', '=', 'schedules.examination_site_id')
+            ->where('admissions.id', $admissionId)
+            ->where('admissions.operator_site_id', $site->getKey())
+            ->where('member_sites.operator_site_id', $site->operator_site_id)
+            ->select([
+                'admissions.*',
+                'tickets.booking_id',
+                'bookings.member_id',
+                'bookings.status as booking_status',
+            ]);
+
+        return ($lock ? $query->lockForUpdate() : $query)->first();
+    }
+
+    private function assertCaptureAdmission(?object $admission, string $profileId, object $site): void
+    {
+        if ($admission === null || (string) $admission->operator_profile_id !== $profileId) {
+            throw new OperatorException('vital_signs_forbidden', 'The vital-signs record is unavailable.');
+        }
+        if ($admission->queue_class !== 'advance' || $admission->stage !== 'basic_examination' || $admission->state !== 'in_service') {
+            throw new OperatorException('vital_signs_conflict', 'The vital-signs record could not be recorded.');
+        }
+        if ($admission->booking_status !== 'checked_in' || ! $this->assignments->isAssigned($profileId, (string) $admission->member_schedule_id, $site->operator_site_id)) {
+            throw new OperatorException('vital_signs_forbidden', 'The vital-signs record is unavailable.');
         }
     }
 }

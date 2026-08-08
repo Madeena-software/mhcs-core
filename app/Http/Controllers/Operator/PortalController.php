@@ -254,6 +254,78 @@ final class PortalController extends Controller
         }
     }
 
+    public function basicExaminationVitalSigns(string $admission, OperatorWorklistService $worklist): View|RedirectResponse
+    {
+        try {
+            return view('operator.basic-examination-vital-signs', $worklist->vitalSignsForm($admission));
+        } catch (OperatorException) {
+            abort(403);
+        } catch (Throwable) {
+            return redirect()->route('operator.dashboard')->withErrors(['vital_signs' => 'The vital-signs form is unavailable.']);
+        }
+    }
+
+    public function recordBasicExaminationVitalSigns(Request $request, string $admission, OperatorWorklistService $worklist): RedirectResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'operation_id' => ['required', 'uuid'],
+            'systolic_bp_value' => ['nullable', 'numeric'],
+            'systolic_bp_missing_reason' => ['nullable', 'in:unavailable,refused,not_applicable'],
+            'diastolic_bp_value' => ['nullable', 'numeric'],
+            'diastolic_bp_missing_reason' => ['nullable', 'in:unavailable,refused,not_applicable'],
+            'temperature_value' => ['nullable', 'numeric'],
+            'temperature_missing_reason' => ['nullable', 'in:unavailable,refused,not_applicable'],
+            'height_value' => ['nullable', 'numeric'],
+            'height_missing_reason' => ['nullable', 'in:unavailable,refused,not_applicable'],
+            'weight_value' => ['nullable', 'numeric'],
+            'weight_missing_reason' => ['nullable', 'in:unavailable,refused,not_applicable'],
+            'bmi_missing_reason' => ['nullable', 'in:unavailable,refused,not_applicable'],
+        ]);
+        $validator->after(function ($validator) use ($request): void {
+            foreach (['systolic_bp', 'diastolic_bp', 'temperature', 'height', 'weight'] as $field) {
+                $hasValue = $this->hasInput($request->input($field.'_value'));
+                $hasReason = $this->hasInput($request->input($field.'_missing_reason'));
+                if ($hasValue === $hasReason) {
+                    $validator->errors()->add($field.'_value', 'Provide a value or a missing reason.');
+                }
+            }
+
+            $hasHeight = $this->hasInput($request->input('height_value'));
+            $hasWeight = $this->hasInput($request->input('weight_value'));
+            $hasBmiReason = $this->hasInput($request->input('bmi_missing_reason'));
+            if ($hasHeight && $hasWeight && $hasBmiReason) {
+                $validator->errors()->add('bmi_missing_reason', 'BMI is calculated from height and weight.');
+            }
+            if ((! $hasHeight || ! $hasWeight) && ! $hasBmiReason) {
+                $validator->errors()->add('bmi_missing_reason', 'Provide a missing reason when BMI cannot be calculated.');
+            }
+        });
+        if ($validator->fails()) {
+            return back()->withErrors($validator);
+        }
+
+        try {
+            $worklist->recordBasicExaminationVitalSigns(
+                $admission,
+                (string) $validator->validated()['operation_id'],
+                $validator->validated(),
+            );
+
+            return redirect()->route('operator.basic-examination-worklist')->with('status', 'Vital signs recorded.');
+        } catch (OperatorException $exception) {
+            if ($exception->category === 'vital_signs_conflict') {
+                abort(409);
+            }
+            if ($exception->category === 'vital_signs_failure') {
+                return back()->withErrors(['vital_signs' => 'The vital-signs record could not be saved.']);
+            }
+
+            abort(403);
+        } catch (Throwable) {
+            return back()->withErrors(['vital_signs' => 'The vital-signs record could not be saved.']);
+        }
+    }
+
     public function startIdentityVerification(Request $request, OperatorIdentityVerificationService $identity): RedirectResponse
     {
         $validator = Validator::make($request->all(), [
@@ -491,5 +563,10 @@ final class PortalController extends Controller
         } catch (Throwable $exception) {
             return back()->withErrors(['ticket' => $exception instanceof OperatorException ? $exception->getMessage() : 'The paper ticket reprint could not be requested.']);
         }
+    }
+
+    private function hasInput(mixed $value): bool
+    {
+        return $value !== null && trim((string) $value) !== '';
     }
 }
