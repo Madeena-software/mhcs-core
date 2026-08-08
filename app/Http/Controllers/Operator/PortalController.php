@@ -204,6 +204,31 @@ final class PortalController extends Controller
         }
     }
 
+    public function callBasicExamination(Request $request, string $admission, OperatorWorklistService $worklist): RedirectResponse
+    {
+        $validator = Validator::make($request->all(), ['operation_id' => ['required', 'uuid']]);
+        if ($validator->fails()) {
+            return back()->withErrors($validator);
+        }
+
+        try {
+            $worklist->callBasicExamination($admission, (string) $validator->validated()['operation_id']);
+
+            return redirect()->route('operator.basic-examination-worklist')->with('status', 'Queue admission called.');
+        } catch (OperatorException $exception) {
+            if ($exception->category === 'queue_call_conflict') {
+                abort(409);
+            }
+            if ($exception->category === 'queue_call_failure') {
+                return back()->withErrors(['queue' => 'The queue admission could not be called.']);
+            }
+
+            abort(403);
+        } catch (Throwable) {
+            return back()->withErrors(['queue' => 'The queue admission could not be called.']);
+        }
+    }
+
     public function startIdentityVerification(Request $request, OperatorIdentityVerificationService $identity): RedirectResponse
     {
         $validator = Validator::make($request->all(), [

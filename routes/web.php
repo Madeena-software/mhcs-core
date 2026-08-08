@@ -49,6 +49,7 @@ Route::middleware(['auth', EnsureOperatorPortalAccess::class])->group(function (
     Route::get('/operator/verification-worklist', [OperatorPortalController::class, 'worklist'])->name('operator.verification-worklist');
     Route::get('/operator/basic-examination-worklist', [OperatorPortalController::class, 'basicExaminationWorklist'])->name('operator.basic-examination-worklist');
     Route::post('/operator/basic-examination-worklist/{admission}/claim', [OperatorPortalController::class, 'claimBasicExamination'])->name('operator.basic-examination-worklist.claim');
+    Route::post('/operator/basic-examination-worklist/{admission}/call', [OperatorPortalController::class, 'callBasicExamination'])->name('operator.basic-examination-worklist.call');
     Route::post('/operator/identity-verification/start', [OperatorPortalController::class, 'startIdentityVerification'])->name('operator.identity-verification.start');
     Route::get('/operator/identity-verification/{case}', [OperatorPortalController::class, 'identityVerification'])->name('operator.identity-verification.show');
     Route::post('/operator/identity-verification/{case}/lookup', [OperatorPortalController::class, 'lookupIdentity'])->name('operator.identity-verification.lookup');

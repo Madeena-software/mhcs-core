@@ -184,3 +184,23 @@ graph/source, task-validation, and diff checks passed. WP-07 remains
 WP-17 remain `partially-implemented`; queue actions, clinical examination,
 walk-ins, public/LCD behavior, Member visibility, privacy/retention,
 deployment, and production readiness remain open.
+
+## MVP-04G private basic-examination call — 2026-08-08
+
+MVP-04G is verified as a bounded private claimant-only `waiting` to `called`
+transition for an eligible advance basic-examination admission. It preserves
+claim ownership, occurrence and FIFO fields; revalidates account, permission,
+site, shift, scope, and state; and atomically records history, audit, outbox,
+and idempotency evidence. The private route and smallest Call form expose no
+clinical, Member, booking, consent, identity, public, LCD, or audio data.
+
+The focused suite passed 6 tests/66 assertions, and the required MVP-04F,
+MVP-04E, MVP-04D, MVP-04C, MVP-04B, Operator, WP-02, and architecture suites
+plus syntax, Pint, Composer, route, schema, privacy, graph/source, validator,
+and diff checks passed. Evidence:
+`docs/mvp/evidence/mvp-04g-private-basic-examination-call.md`.
+
+This bounded slice does not close WP-11, WP-12, or WP-17. Clinical examination,
+later queue states/actions, walk-ins, public/LCD/audio behavior, Member
+visibility, privacy/retention, deployment, production readiness, and the four
+listed MVP-04 gaps remain open. No commit or push was made.

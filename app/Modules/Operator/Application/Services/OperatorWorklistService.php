@@ -23,6 +23,8 @@ final readonly class OperatorWorklistService
 {
     public const CLAIM_PURPOSE = 'operator.basic-examination.claim';
 
+    public const CALL_PURPOSE = 'operator.basic-examination.call';
+
     public function __construct(
         private OperatorAuthorization $authorization,
         private OperatorShiftAssignmentService $assignments,
@@ -248,6 +250,126 @@ final readonly class OperatorWorklistService
             throw new OperatorException('queue_claim_conflict', 'The queue admission could not be claimed.', $exception);
         } catch (Throwable $exception) {
             throw new OperatorException('queue_claim_failure', 'The queue admission could not be claimed.', $exception);
+        }
+    }
+
+    /** @return array{admission_id: string, stage: string, state: string, called_at: string} */
+    public function callBasicExamination(string $admissionId, string $operationId): array
+    {
+        $admissionId = trim($admissionId);
+        $operationId = trim($operationId);
+        if (! Str::isUuid($admissionId) || ! Str::isUuid($operationId)) {
+            throw new OperatorException('queue_call_forbidden', 'The queue admission is unavailable.');
+        }
+
+        $portal = $this->authorization->portal();
+        $site = $this->authorization->portalSite($portal);
+        $profileId = (string) $portal['profile']->getKey();
+        $payload = [
+            'admission_id' => $admissionId,
+            'operator_profile_id' => $profileId,
+            'operator_site_id' => (string) $site->operator_site_id,
+        ];
+        $context = $this->authorization->current(self::CALL_PURPOSE);
+
+        try {
+            return $this->idempotency->run(
+                $operationId,
+                self::CALL_PURPOSE,
+                $payload,
+                function () use ($admissionId, $profileId, $site, $context, $operationId): array {
+                    $transactionPortal = $this->authorization->portal();
+                    $transactionSite = $this->authorization->portalSite($transactionPortal);
+                    if ((string) $transactionPortal['profile']->getKey() !== $profileId || (string) $transactionSite->getKey() !== (string) $site->getKey()) {
+                        throw new OperatorException('queue_call_forbidden', 'The queue admission is unavailable.');
+                    }
+
+                    $admission = DB::table('operator_queue_admissions as admissions')
+                        ->join('shift_schedules as schedules', 'schedules.id', '=', 'admissions.member_schedule_id')
+                        ->join('examination_site_refs as member_sites', 'member_sites.id', '=', 'schedules.examination_site_id')
+                        ->where('admissions.id', $admissionId)
+                        ->where('admissions.operator_site_id', $site->getKey())
+                        ->where('member_sites.operator_site_id', $site->operator_site_id)
+                        ->select('admissions.*')
+                        ->lockForUpdate()
+                        ->first();
+                    if ($admission === null || (string) $admission->operator_profile_id !== $profileId) {
+                        throw new OperatorException('queue_call_forbidden', 'The queue admission is unavailable.');
+                    }
+                    if ($admission->queue_class !== 'advance' || $admission->stage !== 'basic_examination') {
+                        throw new OperatorException('queue_call_conflict', 'The queue admission could not be called.');
+                    }
+                    if (! $this->assignments->isAssigned($profileId, (string) $admission->member_schedule_id, $site->operator_site_id)) {
+                        throw new OperatorException('queue_call_forbidden', 'The queue admission is unavailable.');
+                    }
+                    if ($admission->state !== 'waiting') {
+                        throw new OperatorException('queue_call_conflict', 'The queue admission could not be called.');
+                    }
+
+                    $now = $this->clock->now();
+                    DB::table('operator_queue_admissions')
+                        ->where('id', $admissionId)
+                        ->update([
+                            'state' => 'called',
+                            'updated_at' => $now,
+                        ]);
+                    DB::table('operator_queue_admission_history')->insert([
+                        'id' => (string) Str::uuid(),
+                        'operator_queue_admission_id' => $admissionId,
+                        'operator_profile_id' => $profileId,
+                        'event_type' => 'called',
+                        'from_state' => 'waiting',
+                        'to_state' => 'called',
+                        'operation_id' => $operationId,
+                        'occurred_at' => $now,
+                        'created_at' => $now,
+                        'updated_at' => $now,
+                    ]);
+                    $metadata = [
+                        'admission_id' => $admissionId,
+                        'operator_profile_id' => $profileId,
+                        'queue_class' => 'advance',
+                        'stage' => 'basic_examination',
+                        'previous_state' => 'waiting',
+                        'state' => 'called',
+                        'called_at_utc' => $now->format(DATE_ATOM),
+                    ];
+                    $this->audit->append(AuditEvent::fromContext(
+                        $context,
+                        'operator.queue-admission.called',
+                        'operator',
+                        'success',
+                        $now,
+                        'queue-admission',
+                        $admissionId,
+                        metadata: $metadata,
+                    ));
+                    $this->outbox->record(new VersionedDomainEvent(
+                        LocalId::fromString((string) Str::uuid()),
+                        'operator.queue-admission-called',
+                        1,
+                        $now,
+                        $metadata,
+                        LocalId::fromString($admissionId),
+                        $context->operationId,
+                    ));
+
+                    return [
+                        'admission_id' => $admissionId,
+                        'stage' => 'basic_examination',
+                        'state' => 'called',
+                        'called_at' => $now->format(DATE_ATOM),
+                    ];
+                },
+            )->result;
+        } catch (IdempotencyConflict $exception) {
+            throw new OperatorException('queue_call_conflict', 'The queue admission could not be called.', $exception);
+        } catch (OperatorException $exception) {
+            throw $exception;
+        } catch (QueryException $exception) {
+            throw new OperatorException('queue_call_conflict', 'The queue admission could not be called.', $exception);
+        } catch (Throwable $exception) {
+            throw new OperatorException('queue_call_failure', 'The queue admission could not be called.', $exception);
         }
     }
 }

@@ -277,3 +277,19 @@ clinical examination, later queue states, walk-ins, public/LCD behavior,
 Member visibility, privacy/retention approval, deployment, production
 readiness, and `MVP-GAP-009`, `MVP-GAP-012`, `MVP-GAP-021`, and `MVP-GAP-024`
 remain open.
+
+### MVP-04G private basic-examination call — 2026-08-08
+
+The bounded MVP-04G slice adds one private, authenticated Operator Call action
+for the active claimant's eligible advance `basic_examination` / `waiting`
+admission. The transition is atomic and idempotent, revalidates authorization
+and scope, preserves claim and FIFO fields, appends one `called` history event,
+and writes matching local audit/outbox evidence. The private worklist contains
+only the existing claimant indicator and the smallest Call form; no clinical,
+Member, booking, consent, identity, public, LCD, or audio behavior was added.
+Evidence: `docs/mvp/evidence/mvp-04g-private-basic-examination-call.md`.
+
+MVP-04G does not close WP-11, WP-12, or WP-17. Clinical examination and later
+queue actions/states, walk-ins, public/LCD behavior, Member visibility,
+privacy/retention approval, deployment, production readiness, and
+`MVP-GAP-009`, `MVP-GAP-012`, `MVP-GAP-021`, and `MVP-GAP-024` remain open.

@@ -36,6 +36,11 @@
                         <td>
                             @if ($entry['claimed_by_current_operator'])
                                 <span class="status">Claimed by you</span>
+                                <form method="POST" action="{{ route('operator.basic-examination-worklist.call', $entry['admission_id']) }}">
+                                    @csrf
+                                    <input type="hidden" name="operation_id" value="{{ (string) \Illuminate\Support\Str::uuid() }}">
+                                    <button type="submit">Call</button>
+                                </form>
                             @else
                                 <form method="POST" action="{{ route('operator.basic-examination-worklist.claim', $entry['admission_id']) }}">
                                     @csrf
