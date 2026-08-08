@@ -26,6 +26,8 @@ final readonly class OperatorWorklistService
 
     public const XRAY_CLAIM_PURPOSE = 'operator.xray.claim';
 
+    public const XRAY_CALL_PURPOSE = 'operator.xray.call';
+
     public const CALL_PURPOSE = 'operator.basic-examination.call';
 
     public const START_PURPOSE = 'operator.basic-examination.start';
@@ -157,10 +159,14 @@ final readonly class OperatorWorklistService
             ->where('member_sites.operator_site_id', $site->operator_site_id)
             ->where('admissions.queue_class', 'advance')
             ->where('admissions.stage', 'xray')
-            ->where('admissions.state', 'waiting')
             ->where(function ($query) use ($profileId): void {
-                $query->whereNull('admissions.operator_profile_id')
-                    ->orWhere('admissions.operator_profile_id', $profileId);
+                $query->where(function ($query): void {
+                    $query->whereNull('admissions.operator_profile_id')
+                        ->where('admissions.state', 'waiting');
+                })->orWhere(function ($query) use ($profileId): void {
+                    $query->where('admissions.operator_profile_id', $profileId)
+                        ->whereIn('admissions.state', ['waiting', 'called']);
+                });
             })
             ->whereExists(function ($query) use ($profileId): void {
                 $query->selectRaw('1')
@@ -751,6 +757,125 @@ final readonly class OperatorWorklistService
             throw new OperatorException('xray_claim_conflict', 'The X-ray admission could not be claimed.', $exception);
         } catch (Throwable $exception) {
             throw new OperatorException('xray_claim_failure', 'The X-ray admission could not be claimed.', $exception);
+        }
+    }
+
+    /** @return array{admission_id: string, stage: string, state: string, called_at: string} */
+    public function callXray(string $admissionId, string $operationId): array
+    {
+        $admissionId = trim($admissionId);
+        $operationId = trim($operationId);
+        if (! Str::isUuid($admissionId) || ! Str::isUuid($operationId)) {
+            throw new OperatorException('xray_call_forbidden', 'The X-ray admission is unavailable.');
+        }
+
+        $portal = $this->authorization->portal();
+        $site = $this->authorization->portalSite($portal);
+        $profileId = (string) $portal['profile']->getKey();
+        $payload = [
+            'admission_id' => $admissionId,
+            'operator_profile_id' => $profileId,
+            'operator_site_id' => (string) $site->operator_site_id,
+        ];
+        $context = $this->authorization->current(self::XRAY_CALL_PURPOSE);
+
+        try {
+            return $this->idempotency->run(
+                $operationId,
+                self::XRAY_CALL_PURPOSE,
+                $payload,
+                function () use ($admissionId, $profileId, $site, $context, $operationId): array {
+                    $transactionPortal = $this->authorization->portal();
+                    $transactionSite = $this->authorization->portalSite($transactionPortal);
+                    if ((string) $transactionPortal['profile']->getKey() !== $profileId || (string) $transactionSite->getKey() !== (string) $site->getKey()) {
+                        throw new OperatorException('xray_call_forbidden', 'The X-ray admission is unavailable.');
+                    }
+
+                    $admission = DB::table('operator_queue_admissions as admissions')
+                        ->join('shift_schedules as schedules', 'schedules.id', '=', 'admissions.member_schedule_id')
+                        ->join('examination_site_refs as member_sites', 'member_sites.id', '=', 'schedules.examination_site_id')
+                        ->where('admissions.id', $admissionId)
+                        ->where('admissions.operator_site_id', $site->getKey())
+                        ->where('member_sites.operator_site_id', $site->operator_site_id)
+                        ->select('admissions.*')
+                        ->lockForUpdate()
+                        ->first();
+                    if ($admission === null || (string) $admission->operator_profile_id !== $profileId) {
+                        throw new OperatorException('xray_call_forbidden', 'The X-ray admission is unavailable.');
+                    }
+                    if ($admission->queue_class !== 'advance' || $admission->stage !== 'xray') {
+                        throw new OperatorException('xray_call_conflict', 'The X-ray admission could not be called.');
+                    }
+                    if (! $this->assignments->isAssigned($profileId, (string) $admission->member_schedule_id, $site->operator_site_id)) {
+                        throw new OperatorException('xray_call_forbidden', 'The X-ray admission is unavailable.');
+                    }
+                    if ($admission->state !== 'waiting') {
+                        throw new OperatorException('xray_call_conflict', 'The X-ray admission could not be called.');
+                    }
+
+                    $now = $this->clock->now();
+                    DB::table('operator_queue_admissions')
+                        ->where('id', $admissionId)
+                        ->update([
+                            'state' => 'called',
+                            'updated_at' => $now,
+                        ]);
+                    DB::table('operator_queue_admission_history')->insert([
+                        'id' => (string) Str::uuid(),
+                        'operator_queue_admission_id' => $admissionId,
+                        'operator_profile_id' => $profileId,
+                        'event_type' => 'called',
+                        'from_state' => 'waiting',
+                        'to_state' => 'called',
+                        'operation_id' => $operationId,
+                        'occurred_at' => $now,
+                        'created_at' => $now,
+                        'updated_at' => $now,
+                    ]);
+                    $metadata = [
+                        'admission_id' => $admissionId,
+                        'operator_profile_id' => $profileId,
+                        'queue_class' => 'advance',
+                        'previous_state' => 'waiting',
+                        'state' => 'called',
+                        'called_at_utc' => $now->format(DATE_ATOM),
+                    ];
+                    $this->audit->append(AuditEvent::fromContext(
+                        $context,
+                        'operator.xray.called',
+                        'operator',
+                        'success',
+                        $now,
+                        'queue-admission',
+                        $admissionId,
+                        metadata: $metadata,
+                    ));
+                    $this->outbox->record(new VersionedDomainEvent(
+                        LocalId::fromString((string) Str::uuid()),
+                        'operator.xray-called',
+                        1,
+                        $now,
+                        $metadata,
+                        LocalId::fromString($admissionId),
+                        $context->operationId,
+                    ));
+
+                    return [
+                        'admission_id' => $admissionId,
+                        'stage' => 'xray',
+                        'state' => 'called',
+                        'called_at' => $now->format(DATE_ATOM),
+                    ];
+                },
+            )->result;
+        } catch (IdempotencyConflict $exception) {
+            throw new OperatorException('xray_call_conflict', 'The X-ray admission could not be called.', $exception);
+        } catch (OperatorException $exception) {
+            throw $exception;
+        } catch (QueryException $exception) {
+            throw new OperatorException('xray_call_conflict', 'The X-ray admission could not be called.', $exception);
+        } catch (Throwable $exception) {
+            throw new OperatorException('xray_call_failure', 'The X-ray admission could not be called.', $exception);
         }
     }
 

@@ -36,7 +36,16 @@
                         <td><time datetime="{{ $entry['ready_at'] }}">{{ $entry['ready_at'] }}</time></td>
                         <td>
                             @if ($entry['claimed_by_current_operator'])
-                                <span class="status">Claimed by you</span>
+                                @if ($entry['state'] === 'waiting')
+                                    <form method="POST" action="{{ route('operator.xray-readiness-worklist.call', $entry['admission_id']) }}">
+                                        @csrf
+                                        <input type="hidden" name="operation_id" value="{{ (string) \Illuminate\Support\Str::uuid() }}">
+                                        <button type="submit">Call</button>
+                                    </form>
+                                    <span class="status">Claimed by you</span>
+                                @else
+                                    <span class="status">Called</span>
+                                @endif
                             @else
                                 <form method="POST" action="{{ route('operator.xray-readiness-worklist.claim', $entry['admission_id']) }}">
                                     @csrf

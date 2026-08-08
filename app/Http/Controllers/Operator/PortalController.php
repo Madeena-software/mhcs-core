@@ -242,6 +242,31 @@ final class PortalController extends Controller
         }
     }
 
+    public function callXray(Request $request, string $admission, OperatorWorklistService $worklist): RedirectResponse
+    {
+        $validator = Validator::make($request->all(), ['operation_id' => ['required', 'uuid']]);
+        if ($validator->fails()) {
+            return back()->withErrors($validator);
+        }
+
+        try {
+            $worklist->callXray($admission, (string) $validator->validated()['operation_id']);
+
+            return redirect()->route('operator.xray-readiness-worklist')->with('status', 'X-ray admission called.');
+        } catch (OperatorException $exception) {
+            if ($exception->category === 'xray_call_conflict') {
+                abort(409);
+            }
+            if ($exception->category === 'xray_call_failure') {
+                return back()->withErrors(['queue' => 'The X-ray admission could not be called.']);
+            }
+
+            abort(403);
+        } catch (Throwable) {
+            return back()->withErrors(['queue' => 'The X-ray admission could not be called.']);
+        }
+    }
+
     public function callBasicExamination(Request $request, string $admission, OperatorWorklistService $worklist): RedirectResponse
     {
         $validator = Validator::make($request->all(), ['operation_id' => ['required', 'uuid']]);

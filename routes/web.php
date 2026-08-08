@@ -50,6 +50,7 @@ Route::middleware(['auth', EnsureOperatorPortalAccess::class])->group(function (
     Route::get('/operator/basic-examination-worklist', [OperatorPortalController::class, 'basicExaminationWorklist'])->name('operator.basic-examination-worklist');
     Route::get('/operator/xray-readiness-worklist', [OperatorPortalController::class, 'xrayReadinessWorklist'])->name('operator.xray-readiness-worklist');
     Route::post('/operator/xray-readiness-worklist/{admission}/claim', [OperatorPortalController::class, 'claimXray'])->name('operator.xray-readiness-worklist.claim');
+    Route::post('/operator/xray-readiness-worklist/{admission}/call', [OperatorPortalController::class, 'callXray'])->name('operator.xray-readiness-worklist.call');
     Route::post('/operator/basic-examination-worklist/{admission}/claim', [OperatorPortalController::class, 'claimBasicExamination'])->name('operator.basic-examination-worklist.claim');
     Route::post('/operator/basic-examination-worklist/{admission}/call', [OperatorPortalController::class, 'callBasicExamination'])->name('operator.basic-examination-worklist.call');
     Route::post('/operator/basic-examination-worklist/{admission}/start', [OperatorPortalController::class, 'startBasicExamination'])->name('operator.basic-examination-worklist.start');
