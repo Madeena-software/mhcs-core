@@ -4,16 +4,23 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Operator;
 
+use App\Modules\Operator\Application\Services\OperatorArrivalService;
+use App\Modules\Operator\Application\Services\OperatorIdentityVerificationService;
 use App\Modules\Operator\Application\Services\OperatorWorklistService;
 use App\Shared\Audit\AuditEvent;
 use App\Shared\Audit\AuditStore;
+use App\Shared\Context\AuthenticatedContext;
+use App\Shared\Context\CorrelationId;
 use App\Shared\Events\DomainEvent;
+use App\Shared\Identity\LocalId;
 use App\Shared\Infrastructure\Outbox\OutboxStore;
+use App\Shared\Storage\PrivateObjectStore;
 use App\Shared\Time\Clock;
 use App\Shared\Time\FrozenClock;
 use DateTimeImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use RuntimeException;
 use Tests\Operator\Mvp04Fixtures;
@@ -23,6 +30,12 @@ final class Mvp04eAdvanceQueueAdmissionTest extends TestCase
 {
     use Mvp04Fixtures;
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        Storage::fake('local');
+    }
 
     public function test_successful_ticket_issue_creates_one_private_advance_waiting_admission_and_history(): void
     {
@@ -255,7 +268,94 @@ final class Mvp04eAdvanceQueueAdmissionTest extends TestCase
 
         $this->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
         DB::table('users')->where('id', $fixture['operator']->id)->update(['account_status' => 'suspended']);
+        $fixture['operator']->forceFill(['account_status' => 'suspended']);
         $this->get(route('operator.basic-examination-worklist'))->assertForbidden();
+    }
+
+    /** @return array<string, mixed> */
+    private function readyFixture(): array
+    {
+        return $this->matchedFixture(true);
+    }
+
+    /** @return array<string, mixed> */
+    private function matchedFixture(bool $consent, bool $matched = true): array
+    {
+        $fixture = $this->operatorFixture(false);
+        DB::table('members')->where('id', $fixture['memberId'])->update([
+            'nik_lookup_digest' => hash('sha256', 'check-in-'.$fixture['memberId']),
+        ]);
+        DB::table('authorization_permission_assignments')->insert([
+            'id' => (string) Str::uuid(),
+            'user_id' => $fixture['operator']->id,
+            'permission' => 'operator.identity.verify',
+            'assigned_by_user_id' => null,
+            'active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $this->insertIdentityAssets($fixture);
+        $this->startOperatorSession($fixture);
+        $arrival = app(OperatorArrivalService::class)->confirm($fixture['bookingId'], '2040-01-10T10:15:00+07:00');
+        app(OperatorArrivalService::class)->recordConfirmed($arrival['confirmation_token']);
+        $arrivalId = (string) DB::table('operator_arrivals')->where('booking_id', $fixture['bookingId'])->value('id');
+        $case = app(OperatorIdentityVerificationService::class)->start($arrivalId, (string) Str::uuid());
+        if ($matched) {
+            app(OperatorIdentityVerificationService::class)->decide($case['case_id'], 'matched', null, (string) Str::uuid());
+        }
+        if ($consent && $matched) {
+            $this->post(route('operator.paper-consent.store', $case['case_id']), [
+                'form_name' => 'Informed Consent',
+                'form_version' => 'V1',
+                'signer_type' => 'member',
+                'signature_confirmed' => '1',
+                'signed_at' => '2040-01-10T10:20:00+07:00',
+                'operation_id' => (string) Str::uuid(),
+            ])->assertRedirect();
+        }
+
+        return [...$fixture, 'caseId' => $case['case_id']];
+    }
+
+    /** @param array<string, mixed> $fixture */
+    private function insertIdentityAssets(array $fixture): void
+    {
+        $context = new AuthenticatedContext(
+            actorId: LocalId::fromString((string) $fixture['operator']->id),
+            operationId: CorrelationId::random(),
+            roles: ['operator'],
+            permissions: ['operator.portal.access', 'operator.identity.verify'],
+            siteId: LocalId::fromString($fixture['siteLocalId']),
+            purpose: 'operator.identity.asset',
+        );
+        foreach ([['ktp', 'synthetic-identity-document'], ['profile_photo', 'synthetic-latest-profile']] as [$type, $contents]) {
+            $object = app(PrivateObjectStore::class)->put($contents, $context, 'operator.identity.asset');
+            DB::table('member_verification_assets')->insert([
+                'id' => (string) Str::uuid(),
+                'member_id' => $fixture['memberId'],
+                'type' => $type,
+                'private_object_key' => (string) $object->key,
+                'checksum' => $object->checksum,
+                'bytes' => $object->bytes,
+                'format' => 'image/jpeg',
+                'review_status' => 'approved',
+                'is_current' => true,
+                'uploaded_by_user_id' => $fixture['operator']->id,
+                'reviewed_by_user_id' => $fixture['operator']->id,
+                'reviewed_at' => now(),
+                'replaces_id' => null,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
+    }
+
+    /** @param array<string, mixed> $fixture */
+    private function startOperatorSession(array $fixture): void
+    {
+        $this->startSession();
+        $this->actingAs($fixture['operator']);
+        $this->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
     }
 
     private function freezeIssueTime(): void

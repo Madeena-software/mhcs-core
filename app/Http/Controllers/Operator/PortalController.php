@@ -172,6 +172,8 @@ final class PortalController extends Controller
             return view('operator.basic-examination-worklist', [
                 'entries' => $worklist->basicExamination(),
             ]);
+        } catch (OperatorException) {
+            abort(403);
         } catch (Throwable $exception) {
             return redirect()->route('operator.dashboard')->withErrors(['queue' => $exception instanceof OperatorException ? $exception->getMessage() : 'The basic-examination worklist is unavailable.']);
         }
