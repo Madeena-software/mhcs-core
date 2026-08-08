@@ -30,7 +30,7 @@ return new class extends Migration
 
         Schema::create('operator_queue_admission_history', function (Blueprint $table): void {
             $table->string('id', 36)->primary();
-            $table->string('operator_queue_admission_id', 36)->index();
+            $table->string('operator_queue_admission_id', 36)->index('operator_queue_history_admission_index');
             $table->string('operator_profile_id', 36)->index();
             $table->string('event_type', 64);
             $table->string('from_state', 32)->nullable();
@@ -39,7 +39,7 @@ return new class extends Migration
             $table->timestamp('occurred_at');
             $table->timestamps();
 
-            $table->foreign('operator_queue_admission_id')->references('id')->on('operator_queue_admissions')->restrictOnDelete();
+            $table->foreign('operator_queue_admission_id', 'operator_queue_history_admission_fk')->references('id')->on('operator_queue_admissions')->restrictOnDelete();
             $table->foreign('operator_profile_id')->references('id')->on('operator_profiles')->restrictOnDelete();
             $table->unique(['operator_queue_admission_id', 'event_type'], 'operator_queue_history_admission_event_unique');
             $table->index(['operator_queue_admission_id', 'occurred_at'], 'operator_queue_history_lookup_index');

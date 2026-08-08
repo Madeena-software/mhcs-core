@@ -34,9 +34,9 @@ return new class extends Migration
             $table->timestamp('published_at');
             $table->timestamps();
 
-            $table->foreign('operator_xray_protocol_mapping_id')->references('id')->on('operator_xray_protocol_mappings')->restrictOnDelete();
+            $table->foreign('operator_xray_protocol_mapping_id', 'operator_xray_protocol_version_mapping_fk')->references('id')->on('operator_xray_protocol_mappings')->restrictOnDelete();
             $table->foreign('published_by_user_id')->references('id')->on('users')->restrictOnDelete();
-            $table->unique(['operator_xray_protocol_mapping_id', 'version']);
+            $table->unique(['operator_xray_protocol_mapping_id', 'version'], 'operator_xray_protocol_version_unique');
         });
     }
 

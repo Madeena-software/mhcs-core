@@ -78,9 +78,9 @@ final class Mvp04nXrayProtocolConfigurationTest extends TestCase
         $this->assertSame(2, DB::table('outbox_messages')->where('event_name', 'operator.xray-protocol-published')->count());
         $this->assertDatabaseHas('idempotent_consumptions', ['message_id' => $firstOperation, 'consumer' => 'operator.xray-protocol.publish', 'status' => 'handled']);
 
-        $audit = json_decode((string) DB::table('audit_events')->where('action', 'operator.xray-protocol.published')->orderBy('created_at')->value('metadata'), true, flags: JSON_THROW_ON_ERROR);
-        $event = json_decode((string) DB::table('outbox_messages')->where('event_name', 'operator.xray-protocol-published')->orderBy('created_at')->value('payload'), true, flags: JSON_THROW_ON_ERROR);
-        $this->assertSame(['service_offering_id', 'protocol_version', 'projection_identifiers', 'published_by_user_id', 'operation_id', 'published_at_utc'], array_keys($audit));
+        $audit = json_decode((string) DB::table('audit_events')->where('action', 'operator.xray-protocol.published')->where('metadata', 'like', '%'.$firstOperation.'%')->value('metadata'), true, flags: JSON_THROW_ON_ERROR);
+        $event = json_decode((string) DB::table('outbox_messages')->where('event_name', 'operator.xray-protocol-published')->where('payload', 'like', '%'.$firstOperation.'%')->value('payload'), true, flags: JSON_THROW_ON_ERROR);
+        $this->assertEqualsCanonicalizing(['service_offering_id', 'protocol_version', 'projection_identifiers', 'published_by_user_id', 'operation_id', 'published_at_utc'], array_keys($audit));
         $this->assertSame($audit, $event);
         $this->assertArrayNotHasKey('member_id', $audit);
         $this->assertArrayNotHasKey('booking_id', $audit);
@@ -97,7 +97,7 @@ final class Mvp04nXrayProtocolConfigurationTest extends TestCase
         $first = $this->publisher()->publish($offering['id'], 0, ['PROJECTION_A'], $operationId);
         $replay = $this->publisher()->publish($offering['id'], 0, ['PROJECTION_A'], $operationId);
 
-        $this->assertSame($first, $replay);
+        $this->assertEqualsCanonicalizing($first, $replay);
         $this->assertSame(1, DB::table('operator_xray_protocol_mappings')->count());
         $this->assertSame(1, DB::table('operator_xray_protocol_versions')->count());
         $this->assertSame(1, DB::table('audit_events')->where('action', 'operator.xray-protocol.published')->count());

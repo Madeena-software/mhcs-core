@@ -43,16 +43,16 @@ return new class extends Migration
 
         Schema::create('operator_vital_signs_executions', function (Blueprint $table): void {
             $table->string('id', 36)->primary();
-            $table->string('member_vital_signs_assessment_id', 36)->unique();
-            $table->string('operator_queue_admission_id', 36)->unique();
+            $table->string('member_vital_signs_assessment_id', 36)->unique('operator_vital_execution_assessment_unique');
+            $table->string('operator_queue_admission_id', 36)->unique('operator_vital_execution_queue_unique');
             $table->string('operator_profile_id', 36)->index();
             $table->string('operator_site_id', 36)->index();
             $table->timestamp('occurred_at');
             $table->string('operation_id', 191)->unique();
             $table->timestamps();
 
-            $table->foreign('member_vital_signs_assessment_id')->references('id')->on('member_vital_signs_assessments')->restrictOnDelete();
-            $table->foreign('operator_queue_admission_id')->references('id')->on('operator_queue_admissions')->restrictOnDelete();
+            $table->foreign('member_vital_signs_assessment_id', 'operator_vital_execution_assessment_fk')->references('id')->on('member_vital_signs_assessments')->restrictOnDelete();
+            $table->foreign('operator_queue_admission_id', 'operator_vital_execution_queue_fk')->references('id')->on('operator_queue_admissions')->restrictOnDelete();
             $table->foreign('operator_profile_id')->references('id')->on('operator_profiles')->restrictOnDelete();
             $table->foreign('operator_site_id')->references('id')->on('operator_sites')->restrictOnDelete();
         });

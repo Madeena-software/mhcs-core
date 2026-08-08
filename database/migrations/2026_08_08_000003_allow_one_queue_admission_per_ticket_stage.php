@@ -11,6 +11,10 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('operator_queue_admissions', function (Blueprint $table): void {
+            $table->index('operator_paper_ticket_id', 'operator_queue_admission_ticket_index');
+        });
+
+        Schema::table('operator_queue_admissions', function (Blueprint $table): void {
             $table->dropUnique('operator_queue_admissions_operator_paper_ticket_id_unique');
             $table->unique(
                 ['operator_paper_ticket_id', 'stage'],
@@ -24,6 +28,10 @@ return new class extends Migration
         Schema::table('operator_queue_admissions', function (Blueprint $table): void {
             $table->dropUnique('operator_queue_admission_ticket_stage_unique');
             $table->unique('operator_paper_ticket_id');
+        });
+
+        Schema::table('operator_queue_admissions', function (Blueprint $table): void {
+            $table->dropIndex('operator_queue_admission_ticket_index');
         });
     }
 };
