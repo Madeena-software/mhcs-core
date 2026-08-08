@@ -30,6 +30,8 @@ final readonly class OperatorWorklistService
 
     public const VITAL_SIGNS_PURPOSE = 'operator.basic-examination.vital-signs';
 
+    public const COMPLETE_PURPOSE = 'operator.basic-examination.complete';
+
     public function __construct(
         private OperatorAuthorization $authorization,
         private OperatorShiftAssignmentService $assignments,
@@ -117,6 +119,7 @@ final readonly class OperatorWorklistService
                 'admissions.state',
                 'admissions.ready_at',
             ])
+            ->selectRaw('exists (select 1 from operator_vital_signs_executions as executions where executions.operator_queue_admission_id = admissions.id) as has_vital_signs_execution')
             ->orderBy('admissions.ready_at')
             ->orderBy('admissions.id')
             ->get()
@@ -130,6 +133,60 @@ final readonly class OperatorWorklistService
                 'state' => (string) $row->state,
                 'ready_at' => (string) $row->ready_at,
                 'claimed_by_current_operator' => $row->claim_operator_profile_id !== null,
+                'can_complete' => $row->claim_operator_profile_id !== null
+                    && $row->state === 'in_service'
+                    && (bool) $row->has_vital_signs_execution,
+            ])->all();
+    }
+
+    /** @return list<array<string, string>> */
+    public function xrayReadiness(): array
+    {
+        $portal = $this->authorization->portal();
+        $site = $this->authorization->portalSite($portal);
+        $profileId = (string) $portal['profile']->getKey();
+
+        return DB::table('operator_queue_admissions as admissions')
+            ->join('operator_paper_tickets as tickets', 'tickets.id', '=', 'admissions.operator_paper_ticket_id')
+            ->join('operator_sites as sites', 'sites.id', '=', 'admissions.operator_site_id')
+            ->join('shift_schedules as schedules', 'schedules.id', '=', 'admissions.member_schedule_id')
+            ->join('examination_site_refs as member_sites', 'member_sites.id', '=', 'schedules.examination_site_id')
+            ->where('admissions.operator_site_id', $site->getKey())
+            ->where('member_sites.operator_site_id', $site->operator_site_id)
+            ->where('admissions.queue_class', 'advance')
+            ->where('admissions.stage', 'xray')
+            ->where('admissions.state', 'waiting')
+            ->whereNull('admissions.operator_profile_id')
+            ->whereExists(function ($query) use ($profileId): void {
+                $query->selectRaw('1')
+                    ->from('operator_shift_assignments as assignments')
+                    ->join('operator_eligible_shifts as eligible', 'eligible.id', '=', 'assignments.operator_eligible_shift_id')
+                    ->whereColumn('eligible.member_schedule_id', 'admissions.member_schedule_id')
+                    ->whereColumn('eligible.operator_site_id', 'sites.operator_site_id')
+                    ->where('assignments.operator_profile_id', $profileId)
+                    ->where('assignments.status', 'active')
+                    ->where('eligible.sync_status', 'eligible');
+            })
+            ->select([
+                'tickets.ticket_number',
+                'sites.display_name as site_name',
+                'schedules.starts_at as schedule_starts_at',
+                'schedules.ends_at as schedule_ends_at',
+                'admissions.stage',
+                'admissions.state',
+                'admissions.ready_at',
+            ])
+            ->orderBy('admissions.ready_at')
+            ->orderBy('admissions.id')
+            ->get()
+            ->map(static fn (object $row): array => [
+                'ticket_number' => (string) $row->ticket_number,
+                'site_name' => (string) $row->site_name,
+                'schedule_starts_at' => (string) $row->schedule_starts_at,
+                'schedule_ends_at' => (string) $row->schedule_ends_at,
+                'stage' => (string) $row->stage,
+                'state' => (string) $row->state,
+                'ready_at' => (string) $row->ready_at,
             ])->all();
     }
 
@@ -273,6 +330,166 @@ final readonly class OperatorWorklistService
             throw new OperatorException('vital_signs_conflict', 'The vital-signs record could not be recorded.', $exception);
         } catch (Throwable $exception) {
             throw new OperatorException('vital_signs_failure', 'The vital-signs record could not be recorded.', $exception);
+        }
+    }
+
+    /** @return array{admission_id: string, state: string, xray_admission_id: string, xray_state: string, completed_at: string} */
+    public function completeBasicExamination(string $admissionId, string $operationId): array
+    {
+        $admissionId = trim($admissionId);
+        $operationId = trim($operationId);
+        if (! Str::isUuid($admissionId) || ! Str::isUuid($operationId)) {
+            throw new OperatorException('queue_completion_forbidden', 'The queue admission is unavailable.');
+        }
+
+        $portal = $this->authorization->portal();
+        $site = $this->authorization->portalSite($portal);
+        $profileId = (string) $portal['profile']->getKey();
+        $payload = [
+            'admission_id' => $admissionId,
+            'operator_profile_id' => $profileId,
+            'operator_site_id' => (string) $site->operator_site_id,
+        ];
+        $context = $this->authorization->current(self::COMPLETE_PURPOSE);
+
+        try {
+            return $this->idempotency->run(
+                $operationId,
+                self::COMPLETE_PURPOSE,
+                $payload,
+                function () use ($admissionId, $operationId, $profileId, $site, $context): array {
+                    $transactionPortal = $this->authorization->portal();
+                    $transactionSite = $this->authorization->portalSite($transactionPortal);
+                    if ((string) $transactionPortal['profile']->getKey() !== $profileId || (string) $transactionSite->getKey() !== (string) $site->getKey()) {
+                        throw new OperatorException('queue_completion_forbidden', 'The queue admission is unavailable.');
+                    }
+
+                    $admission = $this->captureAdmission($admissionId, $profileId, $site, lock: true);
+                    if ($admission === null) {
+                        throw new OperatorException('queue_completion_forbidden', 'The queue admission is unavailable.');
+                    }
+                    if ($admission->queue_class !== 'advance' || $admission->stage !== 'basic_examination' || $admission->state !== 'in_service') {
+                        throw new OperatorException('queue_completion_conflict', 'The queue admission could not be completed.');
+                    }
+                    if ((string) $admission->operator_profile_id !== $profileId) {
+                        throw new OperatorException('queue_completion_forbidden', 'The queue admission is unavailable.');
+                    }
+                    if ($admission->booking_status !== 'checked_in' || ! $this->assignments->isAssigned($profileId, (string) $admission->member_schedule_id, $site->operator_site_id)) {
+                        throw new OperatorException('queue_completion_forbidden', 'The queue admission is unavailable.');
+                    }
+
+                    $executionCount = DB::table('operator_vital_signs_executions as executions')
+                        ->join('member_vital_signs_assessments as assessments', 'assessments.id', '=', 'executions.member_vital_signs_assessment_id')
+                        ->where('executions.operator_queue_admission_id', $admissionId)
+                        ->where('executions.operator_profile_id', $profileId)
+                        ->where('executions.operator_site_id', $site->getKey())
+                        ->where('assessments.member_id', $admission->member_id)
+                        ->where('assessments.booking_id', $admission->booking_id)
+                        ->where('assessments.member_schedule_id', $admission->member_schedule_id)
+                        ->select('executions.id')
+                        ->lockForUpdate()
+                        ->get()
+                        ->count();
+                    if ($executionCount !== 1) {
+                        throw new OperatorException('queue_completion_conflict', 'The queue admission could not be completed.');
+                    }
+
+                    $now = $this->clock->now();
+                    $xrayAdmissionId = (string) Str::uuid();
+                    DB::table('operator_queue_admissions')
+                        ->where('id', $admissionId)
+                        ->update([
+                            'state' => 'completed',
+                            'operator_profile_id' => null,
+                            'claimed_at' => null,
+                            'updated_at' => $now,
+                        ]);
+                    DB::table('operator_queue_admission_history')->insert([
+                        'id' => (string) Str::uuid(),
+                        'operator_queue_admission_id' => $admissionId,
+                        'operator_profile_id' => $profileId,
+                        'event_type' => 'completed',
+                        'from_state' => 'in_service',
+                        'to_state' => 'completed',
+                        'operation_id' => $operationId,
+                        'occurred_at' => $now,
+                        'created_at' => $now,
+                        'updated_at' => $now,
+                    ]);
+                    DB::table('operator_queue_admissions')->insert([
+                        'id' => $xrayAdmissionId,
+                        'operator_paper_ticket_id' => (string) $admission->operator_paper_ticket_id,
+                        'operator_site_id' => (string) $admission->operator_site_id,
+                        'member_schedule_id' => (string) $admission->member_schedule_id,
+                        'queue_class' => 'advance',
+                        'stage' => 'xray',
+                        'state' => 'waiting',
+                        'ready_at' => $now,
+                        'operator_profile_id' => null,
+                        'claimed_at' => null,
+                        'created_at' => $now,
+                        'updated_at' => $now,
+                    ]);
+                    DB::table('operator_queue_admission_history')->insert([
+                        'id' => (string) Str::uuid(),
+                        'operator_queue_admission_id' => $xrayAdmissionId,
+                        'operator_profile_id' => $profileId,
+                        'event_type' => 'admitted',
+                        'from_state' => null,
+                        'to_state' => 'waiting',
+                        'operation_id' => (string) Str::uuid(),
+                        'occurred_at' => $now,
+                        'created_at' => $now,
+                        'updated_at' => $now,
+                    ]);
+                    $metadata = [
+                        'admission_id' => $admissionId,
+                        'xray_admission_id' => $xrayAdmissionId,
+                        'operator_profile_id' => $profileId,
+                        'operator_site_id' => (string) $site->getKey(),
+                        'queue_class' => 'advance',
+                        'stage' => 'basic_examination',
+                        'previous_state' => 'in_service',
+                        'state' => 'completed',
+                        'completed_at_utc' => $now->format(DATE_ATOM),
+                    ];
+                    $this->audit->append(AuditEvent::fromContext(
+                        $context,
+                        'operator.basic-examination.completed',
+                        'operator',
+                        'success',
+                        $now,
+                        'queue-admission',
+                        $admissionId,
+                        metadata: $metadata,
+                    ));
+                    $this->outbox->record(new VersionedDomainEvent(
+                        LocalId::fromString((string) Str::uuid()),
+                        'operator.basic-examination-completed',
+                        1,
+                        $now,
+                        $metadata,
+                        LocalId::fromString($admissionId),
+                        $context->operationId,
+                    ));
+
+                    return [
+                        'admission_id' => $admissionId,
+                        'state' => 'completed',
+                        'xray_admission_id' => $xrayAdmissionId,
+                        'xray_state' => 'waiting',
+                        'completed_at' => $now->format(DATE_ATOM),
+                    ];
+                },
+            )->result;
+        } catch (IdempotencyConflict $exception) {
+            throw new OperatorException('queue_completion_conflict', 'The queue admission could not be completed.', $exception);
+        } catch (OperatorException $exception) {
+            throw $exception;
+        } catch (QueryException $exception) {
+            throw new OperatorException('queue_completion_conflict', 'The queue admission could not be completed.', $exception);
+        } catch (Throwable $exception) {
+            throw new OperatorException('queue_completion_failure', 'The queue admission could not be completed.', $exception);
         }
     }
 

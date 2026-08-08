@@ -179,6 +179,19 @@ final class PortalController extends Controller
         }
     }
 
+    public function xrayReadinessWorklist(OperatorWorklistService $worklist): View|RedirectResponse
+    {
+        try {
+            return view('operator.xray-readiness-worklist', [
+                'entries' => $worklist->xrayReadiness(),
+            ]);
+        } catch (OperatorException) {
+            abort(403);
+        } catch (Throwable) {
+            return redirect()->route('operator.dashboard')->withErrors(['queue' => 'The X-ray readiness worklist is unavailable.']);
+        }
+    }
+
     public function claimBasicExamination(Request $request, string $admission, OperatorWorklistService $worklist): RedirectResponse
     {
         $validator = Validator::make($request->all(), ['operation_id' => ['required', 'uuid']]);
@@ -329,6 +342,31 @@ final class PortalController extends Controller
             abort(403);
         } catch (Throwable) {
             return back()->withErrors(['vital_signs' => 'The vital-signs record could not be saved.']);
+        }
+    }
+
+    public function completeBasicExamination(Request $request, string $admission, OperatorWorklistService $worklist): RedirectResponse
+    {
+        $validator = Validator::make($request->all(), ['operation_id' => ['required', 'uuid']]);
+        if ($validator->fails()) {
+            return back()->withErrors($validator);
+        }
+
+        try {
+            $worklist->completeBasicExamination($admission, (string) $validator->validated()['operation_id']);
+
+            return redirect()->route('operator.basic-examination-worklist')->with('status', 'Basic examination completed. X-ray is ready.');
+        } catch (OperatorException $exception) {
+            if ($exception->category === 'queue_completion_conflict') {
+                abort(409);
+            }
+            if ($exception->category === 'queue_completion_failure') {
+                return back()->withErrors(['queue' => 'The basic examination could not be completed.']);
+            }
+
+            abort(403);
+        } catch (Throwable) {
+            return back()->withErrors(['queue' => 'The basic examination could not be completed.']);
         }
     }
 
