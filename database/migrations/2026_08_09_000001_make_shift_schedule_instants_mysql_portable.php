@@ -29,7 +29,7 @@ return new class extends Migration
                 ->orWhere('ends_at', '<', '1970-01-01 00:00:01')
                 ->orWhere('eligible_at', '<', '1970-01-01 00:00:01');
         })->exists()) {
-            throw new \RuntimeException('Cannot roll back shift schedule instants while values exceed the MySQL TIMESTAMP range.');
+            throw new RuntimeException('Cannot roll back shift schedule instants while values exceed the MySQL TIMESTAMP range.');
         }
 
         Schema::table('shift_schedules', function (Blueprint $table): void {
