@@ -56,9 +56,9 @@ final class Mvp04jPrivateVitalSignsCaptureTest extends TestCase
         $this->assertNotNull($execution);
         $this->assertSame($fixture['memberId'], $assessment->member_id);
         $this->assertSame($fixture['bookingId'], $assessment->booking_id);
-        $this->assertSame('120', (string) $assessment->systolic_bp_value);
-        $this->assertSame('80', (string) $assessment->diastolic_bp_value);
-        $this->assertSame('23.15', (string) $assessment->bmi_value);
+        $this->assertSame('120', $this->canonicalDecimal($assessment->systolic_bp_value));
+        $this->assertSame('80', $this->canonicalDecimal($assessment->diastolic_bp_value));
+        $this->assertSame('23.15', $this->canonicalDecimal($assessment->bmi_value));
         $this->assertSame('mmHg', $assessment->systolic_bp_unit);
         $this->assertSame('°C', $assessment->temperature_unit);
         $this->assertSame('cm', $assessment->height_unit);
@@ -376,6 +376,13 @@ final class Mvp04jPrivateVitalSignsCaptureTest extends TestCase
         ]);
 
         return DB::table('operator_queue_admissions')->where('id', $admissionId)->first();
+    }
+
+    private function canonicalDecimal(mixed $value): string
+    {
+        $value = (string) $value;
+
+        return str_contains($value, '.') ? rtrim(rtrim($value, '0'), '.') : $value;
     }
 
     /** @return array{operator: User, profileId: string} */

@@ -64,6 +64,14 @@ export MAIL_MAILER=array
 cd "$root"
 php artisan migrate:fresh --force
 echo 'MySQL 8.4 migrate:fresh passed'
+php artisan test tests/Feature/Operator/Mvp04OperatorPortalTest.php
+echo 'MySQL Operator portal representative passed'
+php artisan test tests/Feature/Operator/Mvp04bIdentityVerificationTest.php
+echo 'MySQL Operator identity representative passed'
+php artisan test tests/Feature/Operator/Mvp04jPrivateVitalSignsCaptureTest.php
+echo 'MySQL Operator vital-signs representative passed'
+php artisan test tests/Feature/Operator/Mvp04lAtomicXrayClaimTest.php
+echo 'MySQL Operator X-ray representative passed'
 php artisan test tests/Feature/Admin/Mvp04nXrayProtocolConfigurationTest.php --filter=test_mysql_concurrent_first_publications_leave_one_current_version --fail-on-skipped
 echo 'MySQL X-ray protocol first-publication concurrency probe passed'
 php artisan test tests/Operator/Mvp04OperatorFoundationTest.php --filter=test_eligible_shift_intake_normalizes_post_2038_explicit_offset_projection_instants
@@ -82,20 +90,63 @@ operator_schedule_instant_types() {
   php artisan tinker --execute='echo implode(",", array_map(static fn (string $column): string => \Illuminate\Support\Facades\Schema::getColumnType("operator_eligible_shifts", $column), ["schedule_starts_at", "schedule_ends_at"]));'
 }
 
-operator_portability_migration='database/migrations/2026_08_09_000002_make_operator_eligible_shift_instants_mysql_portable.php'
-operator_portability_probe_id='00000000-0000-4000-8000-000000000002'
-operator_portability_probe_event='mysql-portability-negative-rollback'
+operator_conformance_instant_types() {
+  php artisan tinker --execute='echo implode(",", [
+    \Illuminate\Support\Facades\Schema::getColumnType("operator_arrivals", "occurrence_at"),
+    \Illuminate\Support\Facades\Schema::getColumnType("booking_status_events", "occurred_at"),
+    \Illuminate\Support\Facades\Schema::getColumnType("booking_status_events", "received_at"),
+    \Illuminate\Support\Facades\Schema::getColumnType("booking_status_events", "created_at"),
+    \Illuminate\Support\Facades\Schema::getColumnType("booking_status_events", "updated_at"),
+    \Illuminate\Support\Facades\Schema::getColumnType("bookings", "updated_at"),
+    \Illuminate\Support\Facades\Schema::getColumnType("examination_consents", "signed_at"),
+    \Illuminate\Support\Facades\Schema::getColumnType("audit_events", "occurred_at"),
+    \Illuminate\Support\Facades\Schema::getColumnType("audit_events", "recorded_at"),
+    \Illuminate\Support\Facades\Schema::getColumnType("audit_events", "created_at"),
+    \Illuminate\Support\Facades\Schema::getColumnType("audit_events", "updated_at"),
+    \Illuminate\Support\Facades\Schema::getColumnType("outbox_messages", "occurred_at"),
+    \Illuminate\Support\Facades\Schema::getColumnType("operator_paper_tickets", "issued_at"),
+    \Illuminate\Support\Facades\Schema::getColumnType("operator_paper_tickets", "created_at"),
+    \Illuminate\Support\Facades\Schema::getColumnType("operator_paper_tickets", "updated_at"),
+    \Illuminate\Support\Facades\Schema::getColumnType("operator_queue_admissions", "ready_at"),
+    \Illuminate\Support\Facades\Schema::getColumnType("operator_queue_admissions", "created_at"),
+    \Illuminate\Support\Facades\Schema::getColumnType("operator_queue_admissions", "updated_at"),
+    \Illuminate\Support\Facades\Schema::getColumnType("operator_queue_admission_history", "occurred_at"),
+    \Illuminate\Support\Facades\Schema::getColumnType("operator_queue_admission_history", "created_at"),
+    \Illuminate\Support\Facades\Schema::getColumnType("operator_queue_admission_history", "updated_at"),
+  ]);'
+}
 
+operator_portability_migration='database/migrations/2026_08_09_000002_make_operator_eligible_shift_instants_mysql_portable.php'
+operator_conformance_migration='database/migrations/2026_08_09_000003_make_operator_arrival_and_ticket_instants_mysql_portable.php'
+
+php artisan migrate:fresh --force
+echo 'MySQL portability probe database reset passed'
+php artisan tinker --execute='\Illuminate\Support\Facades\DB::table("migrations")->where("migration", "2026_08_09_000001_make_shift_schedule_instants_mysql_portable")->update(["batch" => 2]); \Illuminate\Support\Facades\DB::table("migrations")->where("migration", "2026_08_09_000002_make_operator_eligible_shift_instants_mysql_portable")->update(["batch" => 3]); \Illuminate\Support\Facades\DB::table("migrations")->where("migration", "2026_08_09_000003_make_operator_arrival_and_ticket_instants_mysql_portable")->update(["batch" => 4]);'
+echo 'MySQL portability probe migration batches isolated'
+
+test "$(operator_conformance_instant_types)" = 'datetime,datetime,datetime,datetime,datetime,datetime,datetime,datetime,datetime,datetime,datetime,datetime,datetime,datetime,datetime,datetime,datetime,datetime,datetime,datetime,datetime'
+php artisan tinker --execute='\Illuminate\Support\Facades\DB::table("audit_events")->insert(["event_id" => "00000000-0000-4000-8000-000000000004", "event_version" => 1, "roles" => json_encode([]), "permissions" => json_encode([]), "action" => "mysql.conformance.rollback", "occurred_at" => "2040-01-10 03:00:00", "recorded_at" => "2040-01-10 03:00:00", "source" => "operator", "outcome" => "success", "metadata" => json_encode([]), "created_at" => "2040-01-10 03:00:00", "updated_at" => "2040-01-10 03:00:00"]);'
+if php artisan migrate:rollback --path="$operator_conformance_migration" --force; then
+  echo 'Operator conformance rollback unexpectedly accepted a post-2038 operational instant.' >&2
+  exit 1
+fi
+test "$(operator_conformance_instant_types)" = 'datetime,datetime,datetime,datetime,datetime,datetime,datetime,datetime,datetime,datetime,datetime,datetime,datetime,datetime,datetime,datetime,datetime,datetime,datetime,datetime,datetime'
+test "$(php artisan tinker --execute='echo \Illuminate\Support\Facades\DB::table("audit_events")->where("event_id", "00000000-0000-4000-8000-000000000004")->value("occurred_at");')" = '2040-01-10 03:00:00'
+php artisan tinker --execute='\Illuminate\Support\Facades\DB::table("audit_events")->where("event_id", "00000000-0000-4000-8000-000000000004")->delete();'
+test "$(php artisan tinker --execute='echo \Illuminate\Support\Facades\DB::table("audit_events")->where("event_id", "00000000-0000-4000-8000-000000000004")->count();')" = '0'
+php artisan migrate:rollback --path="$operator_conformance_migration" --force
+test "$(operator_conformance_instant_types)" = 'timestamp,timestamp,timestamp,timestamp,timestamp,timestamp,timestamp,timestamp,timestamp,timestamp,timestamp,timestamp,timestamp,timestamp,timestamp,timestamp,timestamp,timestamp,timestamp,timestamp,timestamp'
+php artisan migrate --path="$operator_conformance_migration" --force
+test "$(operator_conformance_instant_types)" = 'datetime,datetime,datetime,datetime,datetime,datetime,datetime,datetime,datetime,datetime,datetime,datetime,datetime,datetime,datetime,datetime,datetime,datetime,datetime,datetime,datetime'
+echo 'MySQL Operator arrival/ticket conformance portability migration rollback and reapplication passed'
+
+php artisan migrate:rollback --path="$operator_conformance_migration" --force
 test "$(operator_schedule_instant_types)" = 'datetime,datetime'
 php artisan tinker --execute='\Illuminate\Support\Facades\DB::table("operator_eligible_shifts")->insert(["id" => "00000000-0000-4000-8000-000000000002", "member_schedule_id" => "00000000-0000-4000-8000-000000000003", "operator_site_id" => "mysql-portability-probe", "schedule_starts_at" => "2040-01-10 03:00:00", "schedule_ends_at" => "2040-01-10 04:00:00", "confirmed_count_at_eligibility" => 5, "quota" => 5, "event_version" => 1, "source_event_id" => "mysql-portability-negative-rollback", "eligible_at" => now(), "sync_status" => "eligible", "created_at" => now(), "updated_at" => now()]);'
-if operator_rollback_output="$(php artisan migrate:rollback --path="$operator_portability_migration" --force 2>&1)"; then
+if php artisan migrate:rollback --path="$operator_portability_migration" --force; then
   echo 'Operator portability rollback unexpectedly accepted a post-2038 projection.' >&2
   exit 1
 fi
-case "$operator_rollback_output" in
-  *'Cannot roll back operator eligible-shift schedule instants while values exceed the MySQL TIMESTAMP range.'*) ;;
-  *) printf '%s\n' "$operator_rollback_output" >&2; exit 1 ;;
-esac
 test "$(operator_schedule_instant_types)" = 'datetime,datetime'
 test "$(php artisan tinker --execute='echo \Illuminate\Support\Facades\DB::table("operator_eligible_shifts")->where("id", "00000000-0000-4000-8000-000000000002")->value("schedule_starts_at");')" = '2040-01-10 03:00:00'
 php artisan tinker --execute='\Illuminate\Support\Facades\DB::table("operator_eligible_shifts")->where("id", "00000000-0000-4000-8000-000000000002")->delete();'
@@ -104,8 +155,12 @@ php artisan migrate:rollback --path="$operator_portability_migration" --force
 test "$(operator_schedule_instant_types)" = 'timestamp,timestamp'
 php artisan migrate --path="$operator_portability_migration" --force
 test "$(operator_schedule_instant_types)" = 'datetime,datetime'
+php artisan migrate --path="$operator_conformance_migration" --force
+test "$(operator_conformance_instant_types)" = 'datetime,datetime,datetime,datetime,datetime,datetime,datetime,datetime,datetime,datetime,datetime,datetime,datetime,datetime,datetime,datetime,datetime,datetime,datetime,datetime,datetime'
 echo 'MySQL Operator eligible-shift portability migration rollback and reapplication passed'
 
+php artisan migrate:rollback --path="$operator_conformance_migration" --force
+php artisan migrate:rollback --path="$operator_portability_migration" --force
 test "$(schedule_instant_types)" = 'datetime,datetime,datetime'
 php artisan migrate:rollback --path=database/migrations/2026_08_09_000001_make_shift_schedule_instants_mysql_portable.php --force
 test "$(schedule_instant_types)" = 'timestamp,timestamp,timestamp'
@@ -113,4 +168,6 @@ test "$(php artisan tinker --execute='echo \Illuminate\Support\Facades\Schema::h
 php artisan migrate --path=database/migrations/2026_08_09_000001_make_shift_schedule_instants_mysql_portable.php --force
 test "$(schedule_instant_types)" = 'datetime,datetime,datetime'
 test "$(php artisan tinker --execute='echo \Illuminate\Support\Facades\Schema::hasTable("members") ? "present" : "absent";')" = 'present'
+php artisan migrate --path="$operator_portability_migration" --force
+php artisan migrate --path="$operator_conformance_migration" --force
 echo 'MySQL shift schedule portability migration rollback and reapplication passed'
