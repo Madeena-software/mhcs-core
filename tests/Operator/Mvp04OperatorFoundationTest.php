@@ -14,6 +14,7 @@ use App\Modules\Operator\Application\Services\OperatorArrivalService;
 use App\Modules\Operator\Application\Services\OperatorShiftAssignmentService;
 use App\Modules\Operator\Application\Services\OperatorSiteAssignmentService;
 use App\Modules\Operator\Application\Services\OperatorSiteService;
+use App\Modules\Operator\Domain\Models\OperatorEligibleShift;
 use App\Modules\Operator\Domain\Models\OperatorShiftAssignment;
 use App\Modules\Operator\Domain\OperatorException;
 use App\Modules\Operator\Filament\Resources\OperatorShiftAssignments\OperatorShiftAssignmentResource;
@@ -54,6 +55,29 @@ final class Mvp04OperatorFoundationTest extends TestCase
 
         $this->expectException(IdempotencyConflict::class);
         $service->consume('event-intake-1', [...$payload, 'quota' => 6]);
+    }
+
+    public function test_eligible_shift_intake_normalizes_post_2038_explicit_offset_projection_instants(): void
+    {
+        $fixture = $this->operatorFixture(false);
+        $created = app(EligibleShiftIntakeService::class)->consume('event-post-2038', [
+            'schedule_id' => (string) Str::uuid(),
+            'operator_site_id' => $fixture['siteStableId'],
+            'starts_at' => '2040-01-11T10:00:00+07:00',
+            'ends_at' => '2040-01-11T11:00:00+07:00',
+            'confirmed_count' => 5,
+            'quota' => 5,
+            'event_version' => 1,
+        ]);
+
+        $stored = OperatorEligibleShift::query()->findOrFail($created['eligible_shift_id']);
+        $this->assertSame('2040-01-11 03:00:00', $stored->schedule_starts_at->format('Y-m-d H:i:s'));
+        $this->assertSame('2040-01-11 04:00:00', $stored->schedule_ends_at->format('Y-m-d H:i:s'));
+        $this->assertDatabaseHas('operator_eligible_shifts', [
+            'id' => $created['eligible_shift_id'],
+            'schedule_starts_at' => '2040-01-11 03:00:00',
+            'schedule_ends_at' => '2040-01-11 04:00:00',
+        ]);
     }
 
     public function test_arrival_uses_trusted_site_and_operation_identity_and_moves_member_booking_once(): void
