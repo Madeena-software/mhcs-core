@@ -94,10 +94,11 @@ final class Mvp04nXrayProtocolConfigurationTest extends TestCase
         $this->actingAs($admin);
         $operationId = (string) Str::uuid();
 
-        $first = $this->publisher()->publish($offering['id'], 0, ['PROJECTION_A'], $operationId);
-        $replay = $this->publisher()->publish($offering['id'], 0, ['PROJECTION_A'], $operationId);
+        $first = $this->publisher()->publish($offering['id'], 0, ['PROJECTION_A', 'PROJECTION_B'], $operationId);
+        $replay = $this->publisher()->publish($offering['id'], 0, ['PROJECTION_A', 'PROJECTION_B'], $operationId);
 
-        $this->assertEqualsCanonicalizing($first, $replay);
+        $this->assertEquals($first, $replay);
+        $this->assertNotEquals($first, [...$replay, 'projection_identifiers' => array_reverse($replay['projection_identifiers'])]);
         $this->assertSame(1, DB::table('operator_xray_protocol_mappings')->count());
         $this->assertSame(1, DB::table('operator_xray_protocol_versions')->count());
         $this->assertSame(1, DB::table('audit_events')->where('action', 'operator.xray-protocol.published')->count());

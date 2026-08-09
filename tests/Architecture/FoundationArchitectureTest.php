@@ -129,6 +129,7 @@ final class FoundationArchitectureTest extends TestCase
             '2026_08_08_000002_create_mvp04j_vital_signs_tables.php',
             '2026_08_08_000003_allow_one_queue_admission_per_ticket_stage.php',
             '2026_08_08_000004_create_operator_xray_protocol_mappings.php',
+            '2026_08_09_000001_make_shift_schedule_instants_mysql_portable.php',
         ];
 
         $this->assertSame([], array_values(array_diff($migrations, $allowed)));

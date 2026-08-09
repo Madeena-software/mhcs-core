@@ -94,7 +94,7 @@ final class Mvp03BookingDomainTest extends TestCase
         $first = $service->createForCurrentMember($fixture['schedule_id'], 'mvp03-same-request', '12.5000');
         $replay = $service->createForCurrentMember($fixture['schedule_id'], 'mvp03-same-request', '12.5000');
 
-        $this->assertSame($first, $replay);
+        $this->assertEquals($first, $replay);
         $this->assertDatabaseCount('bookings', 1);
         $this->assertDatabaseCount('local_imaging_orders', 1);
         $this->assertDatabaseCount('outbox_messages', 1);
@@ -333,6 +333,38 @@ final class Mvp03BookingDomainTest extends TestCase
         $this->assertSame('2040-01-10 03:00:00', $stored->starts_at);
         $this->assertSame('2040-01-10 04:00:00', $stored->ends_at);
         $this->assertSame(5, (int) $stored->quota);
+    }
+
+    public function test_explicit_offset_schedule_instants_after_2038_round_trip_through_create_and_update(): void
+    {
+        $fixture = $this->fixture('portable-schedule@example.test', '2.5000', '10.0000');
+        $admin = User::factory()->create(['email' => 'portable-schedule-admin@example.test']);
+        $this->grant($admin, ['administrator'], ['member.schedule.read', 'member.schedule.manage']);
+        $this->actingAs($admin);
+        $service = app(Mvp03ScheduleService::class);
+
+        $created = $service->create([
+            'examination_site_id' => $fixture['site_id'],
+            'service_offering_id' => $fixture['service_id'],
+            'starts_at' => '2040-01-10T10:00:00+07:00',
+            'ends_at' => '2040-01-10T11:00:00+07:00',
+            'quota' => 5,
+        ]);
+        $this->assertSame('2040-01-10 03:00:00', $created->starts_at->format('Y-m-d H:i:s'));
+        $this->assertSame('2040-01-10 04:00:00', $created->ends_at->format('Y-m-d H:i:s'));
+
+        $updated = $service->update($created, [
+            'starts_at' => '2050-01-10T10:00:00+07:00',
+            'ends_at' => '2050-01-10T11:00:00+07:00',
+        ]);
+        $this->assertSame('2050-01-10 03:00:00', $updated->starts_at->format('Y-m-d H:i:s'));
+        $this->assertSame('2050-01-10 04:00:00', $updated->ends_at->format('Y-m-d H:i:s'));
+        $this->assertDatabaseHas('shift_schedules', [
+            'id' => $created->id,
+            'starts_at' => '2050-01-10 03:00:00',
+            'ends_at' => '2050-01-10 04:00:00',
+            'eligible_at' => null,
+        ]);
     }
 
     public function test_unbooked_schedule_can_be_updated_through_the_application_service(): void

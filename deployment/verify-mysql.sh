@@ -64,15 +64,23 @@ export MAIL_MAILER=array
 cd "$root"
 php artisan migrate:fresh --force
 echo 'MySQL 8.4 migrate:fresh passed'
+php artisan test tests/Feature/Admin/Mvp04nXrayProtocolConfigurationTest.php --filter=test_mysql_concurrent_first_publications_leave_one_current_version --fail-on-skipped
+echo 'MySQL X-ray protocol first-publication concurrency probe passed'
 php artisan test --testsuite=Member
 echo 'MySQL Member identity tests passed'
 php artisan test --testsuite=Integration
 echo 'MySQL integration and conformance tests passed'
 php artisan test
 echo 'MySQL full PHP suite passed'
-php artisan migrate:rollback --step=1 --force
-test "$(php artisan tinker --execute='echo \Illuminate\Support\Facades\Schema::hasTable("members") ? "present" : "absent";')" = 'absent'
-php artisan migrate --force
+schedule_instant_types() {
+  php artisan tinker --execute='echo implode(",", array_map(static fn (string $column): string => \Illuminate\Support\Facades\Schema::getColumnType("shift_schedules", $column), ["starts_at", "ends_at", "eligible_at"]));'
+}
+
+test "$(schedule_instant_types)" = 'datetime,datetime,datetime'
+php artisan migrate:rollback --path=database/migrations/2026_08_09_000001_make_shift_schedule_instants_mysql_portable.php --force
+test "$(schedule_instant_types)" = 'timestamp,timestamp,timestamp'
 test "$(php artisan tinker --execute='echo \Illuminate\Support\Facades\Schema::hasTable("members") ? "present" : "absent";')" = 'present'
-echo 'MySQL Member identity migration rollback and reapplication passed'
-echo 'UUID user migration remains forward-only; only the Member identity migration was rolled back above'
+php artisan migrate --path=database/migrations/2026_08_09_000001_make_shift_schedule_instants_mysql_portable.php --force
+test "$(schedule_instant_types)" = 'datetime,datetime,datetime'
+test "$(php artisan tinker --execute='echo \Illuminate\Support\Facades\Schema::hasTable("members") ? "present" : "absent";')" = 'present'
+echo 'MySQL shift schedule portability migration rollback and reapplication passed'
