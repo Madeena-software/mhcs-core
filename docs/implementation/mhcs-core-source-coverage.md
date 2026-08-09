@@ -2,6 +2,16 @@
 
 This index records full source audit and ID lifecycle for the local approved baseline. It does not implement features or establish full MHCS Core product conformance. Mocks, stubs, interfaces, prototypes, and planning artifacts do not satisfy production requirements.
 
+## Status authority and snapshot boundary
+
+This document is a historical conformance-analysis snapshot at commit
+`423df7b0c1b95d41a28e084ea0d8c13bff818788` dated 2026-08-04. Its source
+coverage and ID lifecycle remain planning authority. Its repository-evidence
+text is not current implementation status. Determine current status from
+repository source, tests, command output, and
+`docs/mvp/work-package-status.md`; never use this snapshot to reopen an already
+accepted slice.
+
 ## Baseline metadata
 
 | Field | Value |
@@ -9,7 +19,7 @@ This index records full source audit and ID lifecycle for the local approved bas
 | Declared source context commit | `e9f5e9f76b09f0327f50c88e926813566efd60c0` |
 | Source-commit correspondence | unverified — declared object unavailable locally; no direct comparison performed. |
 | Draft baseline commit | `8bf34637bea1420b9968bb6d995f1703770e1b51` |
-| Current target commit / branch | `423df7b0c1b95d41a28e084ea0d8c13bff818788` / main |
+| Snapshot target commit / branch | `423df7b0c1b95d41a28e084ea0d8c13bff818788` / main |
 | Analysis date | 2026-08-04 |
 | Initial working tree | Clean at task start; no staged, modified, or untracked paths. Draft outputs existed unchanged from the supplied baseline. |
 | Repository evidence | `E0: No application source, Composer/frontend manifests, configuration, migrations, routes, queues, adapters, storage, or executable tests exist in the target repository; conformance documents and approved context are not implementation evidence.` |
@@ -28,7 +38,7 @@ This index records full source audit and ID lifecycle for the local approved bas
 
 ## Repository evidence and provenance
 
-- E0: No application source, Composer/frontend manifests, configuration, migrations, routes, queues, adapters, storage, or executable tests exist in the target repository; conformance documents and approved context are not implementation evidence.
+- At the snapshot date, E0 recorded that no application source, Composer/frontend manifests, configuration, migrations, routes, queues, adapters, storage, or executable tests existed in the target repository; conformance documents and approved context were not implementation evidence.
 - Draft outputs and seven specifications compared byte-for-byte unchanged with the supplied draft baseline before remediation.
 - Source correspondence is unverified because the declared object is unavailable locally; no mismatch was silently accepted.
 

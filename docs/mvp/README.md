@@ -1,6 +1,9 @@
 # MHCS Core controlled-beta MVP
 
-This directory is the repository source of truth for the active controlled-beta delivery sequence. It records scope, decisions, gaps, roadmap order, and the evidence-based relationship between MVP tasks and the long-term Work Package roadmap.
+This directory is the repository source of truth for active controlled-beta
+delivery workstreams. It records scope, decisions, gaps, roadmap dependencies,
+and the evidence-based relationship between MVP tasks and the long-term Work
+Package roadmap.
 
 This is planning documentation. It does not prove that a feature is implemented, that a beta is deployed, or that production readiness has been approved.
 
@@ -19,6 +22,25 @@ Authority order for resolving scope and behavior is:
 5. conversation memory, which is never project authority.
 
 Repository evidence controls implementation status. A task file, route name, class, migration, placeholder, plan, or claim is not proof by itself. Conflicting or stale documentation must be reported, then corrected through the owning documentation workflow; it must not be silently overridden by an MVP task.
+
+## Delivery workstreams and integration gate
+
+Delivery proceeds through two parallel workstreams within the same modular
+`mhcs-core` application:
+
+- the main workstream delivers Member, Member-owned administration, Operator,
+  and Operator-owned administration on `main`; and
+- the Image Gateway workstream delivers Image Gateway storage and processing,
+  AI SDK integration, private MPIPS API integration, publication behavior, and
+  Image Gateway operational administration on its feature branch.
+
+This is delivery ownership, not a repository, deployment, service, trust, or
+data-ownership split. The Image Gateway branch must merge into `main` before
+final beta completion. The merged workflow must then pass focused integration
+verification for complete-capture acceptance and retries, MPIPS conversion, AI
+routing and publication, exposed Member and Operator authorization, idempotency
+and failure handling, and compatible migrations, configuration, queues, and
+focused suites.
 
 ## Active controlled-beta components
 
@@ -64,6 +86,6 @@ Gaps are maintained in \`beta-gap-register.md\`. A gap is not closed because cod
 
 ## Baseline
 
-This pivot uses planning baseline \`bc300e158a790a7311c64eb7b20e8e81d4e3ec41\`. The execution commit that published this task is \`1960585472e13e78c8136280d8a76f7a9ad76a30\` on \`main\`. The current repository evidence includes the WP-01/WP-02 foundations and the current WP-04 Member identity foundation; this documentation does not claim long-term Work Package completion.
+This pivot uses planning baseline \`bc300e158a790a7311c64eb7b20e8e81d4e3ec41\`. The execution commit that published this task is \`1960585472e13e78c8136280d8a76f7a9ad76a30\` on \`main\`. At the MVP pivot baseline, repository evidence included the WP-01/WP-02 foundations and the then-current WP-04 Member identity foundation. Current implementation status is recorded in `docs/mvp/work-package-status.md` and must be verified from repository evidence; this documentation does not claim long-term Work Package completion.
 
 The online-registration source/state path exists in the Member identity boundary but is not approved for MVP exposure. No public or online registration route may depend on it during the initial beta. It remains unwired and is tracked in the gap register.

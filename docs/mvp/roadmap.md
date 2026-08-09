@@ -1,6 +1,33 @@
 # Controlled-beta roadmap
 
-This is an implementation sequence, not a date plan. MVP-02 through MVP-09 are provisional and may be reprioritized by owner decision. Dependencies and evidence gates remain binding.
+This is a dependency-aware parallel-workstream roadmap, not a global linear
+task queue or a date plan. MVP-02 through MVP-09 are provisional and may be
+reprioritized by owner decision. Dependencies and evidence gates remain
+binding. Neither workstream advances solely by MVP number: it selects the
+smallest independently testable slice supported by its current branch evidence.
+
+## Delivery ownership
+
+| Milestone | Delivery ownership |
+|---|---|
+| MVP-04 | Main workstream |
+| MVP-05 | Image Gateway workstream |
+| MVP-06 | Shared integration: Operator behavior on `main`; Gateway routing and processing on the Image Gateway branch |
+| MVP-07 | Shared integration: Member presentation on `main`; Gateway publication boundary on the Image Gateway branch |
+| MVP-08 | Main workstream |
+| MVP-09 | Integrated verification after the Image Gateway branch merges |
+
+## Contract-first cross-workstream sequencing
+
+1. The Image Gateway workstream owns and versions each Gateway contract and
+   its shared fixtures.
+2. An approved contract-only change may merge into `main` before the complete
+   Gateway implementation; the main workstream must not consume an unmerged
+   contract or implement Gateway internals.
+3. Main-workstream consumers and Gateway-owned providers may then be developed
+   independently against the same merged contract and fixtures.
+4. Final beta completion still requires the complete Image Gateway branch to
+   merge and the integrated workflow gate to pass.
 
 ## MVP-00 — Pivot to Controlled Beta Delivery
 
@@ -137,6 +164,10 @@ Operator-owned and Image Gateway-owned operational failure visibility. Include
 the Image Gateway operational administration required for this slice: intake
 status, correlation failures, retry visibility, and terminal failures.
 
+This is Image Gateway workstream work. Main-workstream tasks may consume an
+approved Gateway contract only after it has merged into `main`; before then,
+they record the dependency as deferred rather than implement Gateway internals.
+
 ## MVP-06 — Operator Teleradiology Workflow
 
 Deliver study routing/export status, external teleradiology tracking,
@@ -145,9 +176,17 @@ automated report return only when a supported contract exists, and Operator
 review/publication controls. MVP-06 may extend Operator and Image Gateway
 administration only within their existing module ownership.
 
+Operator behavior belongs to the main workstream; Gateway routing, processing,
+AI integration, and publication behavior belong to the Image Gateway
+workstream. The two parts integrate only after the Gateway branch merges.
+
 ## MVP-07 — Member Result Visibility
 
 Deliver access to the Member's own published result, strict ownership, safe presentation, publication state, and viewing/download only through approved private-object boundaries where applicable.
+
+Member presentation belongs to the main workstream; the publication boundary
+belongs to the Image Gateway workstream. Main-workstream result work remains
+deferred until the approved Gateway publication contract is merged.
 
 ## MVP-08 — B2B Account Import
 
@@ -155,7 +194,11 @@ Deliver separately controlled Member and Operator import; validation/rejection r
 
 ## MVP-09 — Beta Hardening and Deployment Readiness
 
-Deliver cross-MVP regression verification, operational runbook, beta monitoring, backup/restore evidence, migration approval resolution, critical gap review, and the controlled beta deployment decision. MVP completion and deployment readiness do not establish production readiness.
+Deliver merged cross-MVP regression and integration verification, operational
+runbook, beta monitoring, backup/restore evidence, migration approval
+resolution, critical gap review, and the controlled beta deployment decision.
+The Image Gateway branch must merge before this milestone can complete. MVP
+completion and deployment readiness do not establish production readiness.
 
 No roadmap task creates a generic cross-module database editor. Shared
 administrator navigation is presentation; module-owned resources and business

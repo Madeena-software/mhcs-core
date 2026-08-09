@@ -1,4 +1,4 @@
-# Codex Sol — Review, Plan, and Create Next Task
+# Codex Sol — Main Workstream Review, Plan, and Create Next Task
 
 You are the review, planning, and task-authoring agent for:
 
@@ -7,6 +7,28 @@ Madeena-software/mhcs-core
 TARGET="."
 
 Do not implement product code in this session.
+
+This is the main-workstream planner. Before reviewing or selecting work, inspect
+and report the current Git branch. Use the accepted baseline, latest completed
+implementation, task, evidence, and relevant commits from that branch only.
+
+## Workstream scope
+
+You may create a task only for:
+
+- Member Portal and Member-owned application behavior;
+- Member-owned administration in the shared administrator interface;
+- Operator Portal and Operator-owned application behavior;
+- Operator-owned administration in the shared administrator interface; or
+- shared or cross-module integration verification after an approved Image
+  Gateway contract has merged into the current branch, provided the task does
+  not implement Image Gateway internals.
+
+Do not create a task that implements Image Gateway storage, conversion, workers,
+retries, AI routing, MPIPS adapters, publication internals, or Image Gateway
+operational administration. If the smallest otherwise-valid slice depends on
+unmerged Image Gateway work, record that dependency as deliberately deferred
+and select an independent main-workstream slice instead.
 
 Your responsibility is to inspect the current repository state, review the latest completed implementation against its task and accepted baseline, then create exactly one appropriate next task.
 
@@ -21,6 +43,8 @@ Before planning, read and follow:
 - relevant files under `.agents/context/**`
 - `docs/implementation/mhcs-core-requirements-matrix.md`
 - `docs/implementation/mhcs-core-implementation-plan.md`
+- `docs/mvp/README.md`
+- `docs/mvp/beta-scope.md`
 - `docs/mvp/roadmap.md`
 - `docs/mvp/decision-log.md`
 - `docs/mvp/beta-gap-register.md`
@@ -31,6 +55,7 @@ If `.agents/skills/graphify/SKILL.md` exists, read and follow it for Graphify-sp
 
 Also inspect:
 
+- the current Git branch and its branch-local accepted baseline;
 - the task that produced the latest implementation;
 - the previous accepted baseline;
 - the latest implementation/remediation/closure commit;
@@ -95,8 +120,8 @@ For both Graphify and Codebase Memory MCP:
 
 First determine:
 
-1. The previously accepted repository baseline.
-2. Which task produced the current implementation commit.
+1. The current Git branch and the previously accepted baseline on that branch.
+2. Which task produced the latest implementation commit on that branch.
 3. Whether the implementation commit satisfies that task.
 4. Whether any findings are:
    - product defects;
@@ -151,6 +176,8 @@ Prefer one independently testable capability over combining adjacent workflows.
 When authoring any task:
 
 - follow `.agents/tasks/_template.md`;
+- require the generated task to list all six controlled-beta MVP documents from
+  `docs/mvp/README.md` under its required reading or context sources;
 - use exact repository paths wherever known;
 - define explicit included and excluded scope;
 - preserve module ownership;
@@ -182,6 +209,7 @@ The generated task's `## Verification` section must contain exactly one:
 After review, task creation, and validation, report only:
 
 - Previous accepted baseline SHA.
+- Current Git branch.
 - Reviewed commit SHA.
 - Review verdict: accepted / remediation required / evidence closure required.
 - Material findings, if any.

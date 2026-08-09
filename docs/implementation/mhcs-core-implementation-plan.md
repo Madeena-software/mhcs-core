@@ -2,6 +2,16 @@
 
 This bounded future implementation plan performs no product implementation and does not establish full MHCS Core product conformance. Mocks, stubs, interfaces, prototypes, and planning artifacts do not satisfy production requirements.
 
+## Status authority and snapshot boundary
+
+The baseline metadata, reconciled inventory classifications, E0 evidence, and
+RISK-001 below record the repository state at commit
+`423df7b0c1b95d41a28e084ea0d8c13bff818788` on 2026-08-04. They are not
+current implementation status. The bounded Work Package definitions and
+registers remain maintained planning authority. Determine current status from
+repository source, tests, command output, and `docs/mvp/work-package-status.md`;
+never use this snapshot to reopen an already accepted slice.
+
 ## Baseline metadata
 
 | Field | Value |
@@ -9,7 +19,7 @@ This bounded future implementation plan performs no product implementation and d
 | Declared source context commit | `e9f5e9f76b09f0327f50c88e926813566efd60c0` |
 | Source-commit correspondence | unverified — declared object unavailable locally; no direct comparison performed. |
 | Draft baseline commit | `8bf34637bea1420b9968bb6d995f1703770e1b51` |
-| Current target commit / branch | `423df7b0c1b95d41a28e084ea0d8c13bff818788` / main |
+| Snapshot target commit / branch | `423df7b0c1b95d41a28e084ea0d8c13bff818788` / main |
 | Analysis date | 2026-08-04 |
 | Initial working tree | Clean at task start; no staged, modified, or untracked paths. Draft outputs existed unchanged from the supplied baseline. |
 | Repository evidence | `E0: No application source, Composer/frontend manifests, configuration, migrations, routes, queues, adapters, storage, or executable tests exist in the target repository; conformance documents and approved context are not implementation evidence.` |
@@ -28,12 +38,12 @@ This bounded future implementation plan performs no product implementation and d
 
 ## Reconciled inventory
 - Previous draft identifiers: 982.
-- Remediated active requirements: 594; all applicable and not-started; verified: 0.
+- Snapshot classification: 594 remediated active requirements; all applicable and not-started; verified: 0.
 - Prefix counts: {'ARCH': 41, 'DES': 22, 'DOC': 66, 'IMG': 59, 'MEM': 225, 'OPR': 134, 'UIL': 47}.
 - Source counts: {'.agents/context/project.md': 41, '.agents/context/design/mhcs-core-design.html': 22, '.agents/context/modules/doctor/project.md': 66, '.agents/context/modules/image-gateway/project.md': 59, '.agents/context/modules/member/project.md': 225, '.agents/context/modules/operator/project.md': 134, '.agents/context/ui-language.md': 47}.
 - Authority counts: {'Architecture / Shared': 41, 'Design reference': 22, 'Doctor': 66, 'Image Gateway': 59, 'Member': 225, 'Operator': 134, 'UI language': 47}.
 - Applicability: applicable 594, not-applicable 0, ambiguous 0.
-- Classification: not-started 594, all other classifications 0.
+- Snapshot classification totals: not-started 594, all other classifications 0.
 - ID lifecycle dispositions: {'rewritten': 549, 'retired-non-normative': 10, 'moved-to-register': 7, 'merged-into': 416}; work-package totals previous/remediated: 25 / 25.
 
 ## Ordered critical path
@@ -85,7 +95,7 @@ This bounded future implementation plan performs no product implementation and d
 ## Risk register
 | ID | Risk | Affected scope | Mitigation/evidence |
 |---|---|---|---|
-| RISK-001 | No product implementation evidence; all active rows are not-started. | All rows; WP-28 | Final audit fails until every applicable row is verified. |
+| RISK-001 | At the snapshot date, no product implementation evidence existed and all active rows were not-started. | All rows; WP-28 | Final audit fails until every applicable row is verified. |
 | RISK-002 | Declared source commit cannot be directly compared locally. | All source rows; WP-28 | Preserve digests/unverified status; compare later. |
 | RISK-003 | Prototype content could leak into production copy/behavior. | DES-*/UIL-*; WP-26/WP-27 | Keep samples/scripts as evidence; apply policy-driven review. |
 | RISK-004 | External contracts and material clinical/financial/privacy decisions remain open. | Register-referenced rows | Do not silently resolve; require approval and contract evidence. |
@@ -250,13 +260,13 @@ Suggested versioned task filename: `mhcs-core-wp-12-operator-attendance-examinat
 ### WP-14 — Operator protocol, NPZ drafts, and complete capture submission
 Objective / bounded scope: Implement versioned protocol, safe NPZ validation, non-persistent drafts, and Gateway submission.
 Requirement assignments: OPR-031..OPR-046, OPR-132, OPR-137
-Prerequisites: WP-02, WP-07, WP-08, WP-12; Grabber schema.
+Prerequisites: WP-02, WP-07, WP-08, WP-12; Grabber schema and an approved versioned `AcceptCompleteCaptureSet` contract.
 Excluded scope: Physical exposure/device behavior and MPIPS algorithm.
 Expected repository changes: Protocol snapshots, draft lifecycle, capture manifest, submission ID.
 Affected modules/interfaces: Operator and Image Gateway local contract.
 Risk level: Critical
 Approval needs: Clinical/device/security approval.
-External dependencies: Grabber NPZ/gain schema, Image Gateway acceptance.
+External dependencies: Grabber NPZ/gain schema. The Image Gateway workstream may publish the approved `AcceptCompleteCaptureSet` contract and fixtures before completing WP-23; WP-14 consumes that contract only after it merges into `main`.
 Verification methods: Schema/content/checksum, omission, idempotency, retry, cleanup tests.
 Completion evidence: Immutable manifest, bounded validation, and durable-acceptance evidence.
 Suggested versioned task filename: `mhcs-core-wp-14-operator-protocol-npz-capture-submission-v1.md`
@@ -264,7 +274,7 @@ Suggested versioned task filename: `mhcs-core-wp-14-operator-protocol-npz-captur
 ### WP-15 — Operator AI status, corrections, repeats, and read-only images
 Objective / bounded scope: Implement asynchronous status monitor, authorized viewer, queue corrections, and repeat handoff.
 Requirement assignments: OPR-047..OPR-060
-Prerequisites: WP-12, WP-14, WP-24.
+Prerequisites: WP-12, WP-14; approved versioned Gateway status and publication contracts.
 Excluded scope: AI execution and doctor clinical decision.
 Expected repository changes: Read-only viewer, readiness events, status/publication records.
 Affected modules/interfaces: Operator with Image Gateway/Doctor events.
@@ -376,13 +386,13 @@ Suggested versioned task filename: `mhcs-core-wp-22-doctor-contracts-r5-reports-
 ### WP-23 — Image Gateway storage, manifests, MPIPS, and processing
 Objective / bounded scope: Implement complete submission acceptance, object ownership, signed manifests, MPIPS orchestration, retries, and retention.
 Requirement assignments: ARCH-019..ARCH-027, ARCH-042, ARCH-044, IMG-001..IMG-033, IMG-047..IMG-057
-Prerequisites: WP-02, WP-07, WP-14, WP-16.
+Prerequisites: WP-02, WP-07.
 Excluded scope: MPIPS repository implementation and clinical AI behavior.
 Expected repository changes: Storage metadata, object refs, conversion jobs, retry/failure state.
 Affected modules/interfaces: Image Gateway worker.
 Risk level: Critical
 Approval needs: Security/privacy/clinical approval.
-External dependencies: MPIPS, object storage, email provider, Grabber schema.
+External dependencies: MPIPS, object storage, email provider, and Grabber schema. The Image Gateway workstream owns the versioned `AcceptCompleteCaptureSet` contract and fixtures consumed by WP-14.
 Verification methods: Checksum, idempotency, retry-three, retention, access, and failure tests.
 Completion evidence: Durable objects, immutable manifests, and final-failure audit.
 Suggested versioned task filename: `mhcs-core-wp-23-image-gateway-storage-manifests-mpips-v1.md`
@@ -390,13 +400,13 @@ Suggested versioned task filename: `mhcs-core-wp-23-image-gateway-storage-manife
 ### WP-24 — Image Gateway AI, publication, and replacement studies
 Objective / bounded scope: Implement AI selection/fallback, publication, readiness events, doctor routing, and replacement-study event.
 Requirement assignments: IMG-034..IMG-046, IMG-058..IMG-059
-Prerequisites: WP-08, WP-09, WP-15, WP-19, WP-20, WP-23.
+Prerequisites: WP-08, WP-09, WP-19, WP-20, WP-23.
 Excluded scope: AI provider model/clinical approval and Doctor decision.
 Expected repository changes: AI result state, publication, readiness/replacement events.
 Affected modules/interfaces: Image Gateway with Member/Operator/Doctor.
 Risk level: Critical
 Approval needs: Clinical/product/security approval.
-External dependencies: AI provider, notification, module events.
+External dependencies: AI provider, notification, and module events. The Image Gateway workstream owns the versioned status and publication contracts and fixtures consumed by WP-15.
 Verification methods: Fallback, idempotency, lineage, publication, and no-AI-repeat tests.
 Completion evidence: Event and publication evidence, never AI clinical approval by itself.
 Suggested versioned task filename: `mhcs-core-wp-24-image-gateway-ai-publication-replacement-v1.md`
@@ -404,7 +414,7 @@ Suggested versioned task filename: `mhcs-core-wp-24-image-gateway-ai-publication
 ### WP-26 — Member-facing language and public-copy conformance
 Objective / bounded scope: Implement approved Indonesian terminology, statuses, safety/consent, privacy-safe notifications, and copy review.
 Requirement assignments: UIL-001, UIL-013, UIL-032, UIL-041, UIL-055, UIL-068, UIL-071, UIL-074, UIL-077, UIL-112, UIL-118, UIL-133, UIL-140, UIL-151, UIL-153, UIL-158, UIL-161, UIL-165, UIL-169, UIL-175, UIL-185, UIL-197, UIL-208, UIL-227, UIL-236, UIL-242, UIL-246, UIL-250, UIL-255, UIL-262, UIL-267, UIL-275, UIL-285, UIL-293, UIL-310, UIL-326, UIL-329, UIL-339, UIL-347, UIL-352, UIL-356, UIL-373, UIL-385, UIL-392, UIL-407, UIL-422, UIL-441
-Prerequisites: WP-02, WP-07, WP-12, WP-20, WP-27.
+Prerequisites: WP-02, WP-07, WP-12, WP-20.
 Excluded scope: Professional-only/internal terms where allowed and formal text that must remain verbatim.
 Expected repository changes: Translation/copy catalog, status mapping, review checklist.
 Affected modules/interfaces: UI language / all visible surfaces.
@@ -412,7 +422,7 @@ Risk level: High
 Approval needs: Clinical/legal/product/content approval.
 External dependencies: Notification channels and approved formal consent/report text.
 Verification methods: Copy search, rendered UI, accessibility, privacy, and state accuracy review.
-Completion evidence: Approved copy review record and rendered evidence.
+Completion evidence: Approved copy review record; rendered evidence is an integration gate when a consuming UI exists.
 Suggested versioned task filename: `mhcs-core-wp-26-member-facing-language-and-public-copy-conforman-v1.md`
 
 ### WP-27 — Approved visual design implementation and visual verification

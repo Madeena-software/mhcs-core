@@ -6,6 +6,19 @@ The beta objective is to validate a controlled, auditable MHCS service journey w
 
 The initial target user is an adult Member with an existing account and linked Member record. Accounts may be created through controlled development or beta seed data. Operators and administrators are controlled internal users. Teleradiology physicians and reporting services remain external participants.
 
+## Delivery ownership and final scope
+
+The main workstream owns Member, Member-owned administration, Operator, and
+Operator-owned administration. The Image Gateway workstream owns Image Gateway
+contracts, storage, processing, MPIPS and AI integration, publication behavior,
+and Image Gateway operational administration. This delivery split does not
+remove Image Gateway from the final MVP or change module ownership.
+
+The final beta is the integrated product scope. It requires the Image Gateway
+branch to merge into `main` and the merged workflow to pass the documented
+integration gate; a workstream-local completion claim is not final beta
+completion.
+
 ## Components
 
 ### Member Portal
@@ -77,7 +90,12 @@ mutate Member bookings or Operator queue ownership.
 
 The teleradiology physician is external to MHCS. The MVP includes no Doctor Portal, doctor dashboard, internal doctor assignment, internal doctor queue, internal doctor report authoring, doctor credentialing, doctor scheduling, or doctor-specific exposed workflow. Returned reports may use manual Operator upload/attachment or a later supported automated Gateway contract. Until the automated contract is approved and implemented, manual handling is only a planned beta fallback, not current functionality.
 
-## Supported and unsupported flows
+## Initial pivot exposure baseline (historical)
+
+This section records the controlled-beta starting state on 2026-08-05, not
+current implementation status. Determine current delivery status from
+repository evidence, `roadmap.md`, `work-package-status.md`, and
+`beta-gap-register.md`.
 
 Initially supported for implementation: controlled adult Member access and profile completion through MVP-01. The four components are planned for incremental delivery.
 
