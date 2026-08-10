@@ -99,3 +99,26 @@ vendor/bin/phpunit \
   was also started with the task command, but its administrator closure flow
   did not complete in this environment; no unrelated browser test was
   changed.
+
+## Review disposition — 10 August 2026
+
+The remediation implementation at
+`65a21bbcd005d81888abb1b6db8b4e939e80f97f` is accepted as the local
+clinic-core baseline for this bounded slice.
+
+- Governing task revision:
+  `.agents/tasks/mvp-core-local-dummy-clinic-flow.md @ 6274e74a82578554ad8272a8a4fce75c1ee151d4`.
+- Accepted scope: synthetic Operator arrival, verification, consent, ticket
+  print, safe LCD calls, vital signs, private paper-questionnaire capture, and
+  X-ray readiness only.
+- Observed review evidence: the 40-test / 520-assertion focused PHP suite, the
+  LCD JavaScript test, fresh migrations, remediation-range `git diff --check`,
+  and the focused Laravel Pest Browser Chrome journey (1 test, 16 assertions).
+- Accepted limitation: the separate pre-existing
+  `Mvp03AdminBookingClosureTest` browser flow did not provide a verifiable
+  completion result in this environment. The designated planning authority
+  classified it as non-blocking for this core task because it is outside the
+  accepted Operator clinic-core objective. It remains an MVP-03 evidence gap.
+
+This acceptance is not deployment, real-data, Gateway, AI, MPIPS, or release
+authorization.
