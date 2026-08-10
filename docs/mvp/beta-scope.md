@@ -153,6 +153,13 @@ BMI, and the structured health questionnaire. Glucose, total cholesterol, and
 uric acid are deferred from this release; they are not removed from the target
 clinical specification.
 
+For this clinic-day slice, the Operator completes the approved structured
+interview on its paper form, photographs it, and uploads one private JPEG or
+PNG image. The paper form remains the structured source. MHCS records only that
+the form was completed and its private image; it performs no OCR or AI
+extraction and never exposes the image through the Member Portal, public LCD,
+or queue surfaces.
+
 Real roster data and credential delivery are allowed only after the deployment
 has passed the approved release checks. The import produces unique random
 temporary passwords, stores only their hashes, and makes first-password
