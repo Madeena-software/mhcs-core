@@ -1,7 +1,7 @@
 ---
 title: Local Dummy Clinic-Core Flow
 document_id: MHCS-TASK-CORE-LOCAL-001
-version: 1.0
+version: 1.1
 status: validated-published
 language: en-US
 last_updated: 2026-08-10
@@ -23,7 +23,7 @@ authority_note: This task is executable only at its immutable publication revisi
 `.agents/tasks/mvp-core-local-dummy-clinic-flow.md`
 
 **Task contract state:**  
-`Validated/Published`
+`Validated/Published — remediation`
 
 **Delivery objective / Work Package / MVP:**  
 `17 August clinic-day MVP core local proof / MVP-04 and WP-07/WP-10/WP-11/WP-12/WP-17`
@@ -44,8 +44,11 @@ deployment. They are not part of this local proof.
 
 ## Baseline and task revision
 
-**Implementation baseline:**  
+**Original implementation baseline:**<br>
 `49a2980c0a6c147f6c0fa8f49c49b73f0b17141b`
+
+**Remediation starting revision (reviewed, not accepted):**<br>
+`b4f5f153043961b8c03de654c08cef09b3936ee0`
 
 **Task revision:**  
 `Resolved from the immutable publication commit`
@@ -134,6 +137,8 @@ X-ray-readiness core flow without implementing or simulating Gateway behavior.
   fail-closed.
 - The LCD remains public but contains only operationally safe ticket data; the
   Printer Station remains private to the operator session.
+- If LCD refresh fails, the display visibly states that its shown calls may be
+  stale or disconnected; it must not silently present cached calls as current.
 - The paper interview is the source document. Its photograph is private and is
   never exposed through Member, LCD, queue, administrator list, log, or audit
   metadata surfaces.
@@ -205,6 +210,8 @@ X-ray-readiness core flow without implementing or simulating Gateway behavior.
   Member identity or a private object reference.
 - [ ] Existing successful call actions update the LCD's safe data without a
   second queue state or manual LCD-side action.
+- [ ] A failed LCD refresh visibly reports stale or disconnected data and a
+  later successful refresh clears that state without exposing Member data.
 - [ ] The Operator cannot complete basic examination until existing vital signs
   and a completed private paper-questionnaire photo have both been recorded.
 - [ ] Invalid, missing, oversized, wrong-format, unauthorized, or replayed
@@ -254,3 +261,38 @@ dependency installation, or Image Gateway/AI/MPIPS implementation.
 
 `IMPLEMENTATION AND VERIFICATION RESULT REQUIRED` — an Executor returns the
 implemented revision and observed local synthetic evidence for review.
+
+## Remediation
+
+**Review basis:**
+
+- Governing task revision:
+  `.agents/tasks/mvp-core-local-dummy-clinic-flow.md @ b99464d571a336817827ee1082e6510a542529c8`.
+- Reviewed implementation revision:
+  `b4f5f153043961b8c03de654c08cef09b3936ee0`.
+- Reviewer evidence: the task's focused PHPUnit command passed with 36 tests
+  and 481 assertions; implementation-only `git diff --check` passed. The
+  required fresh-database browser walkthrough was not observed or recorded.
+
+### Required corrections
+
+- Make a failed LCD queue refresh visibly report a stale or disconnected state.
+  Clear that state only after a successful safe queue response. Preserve the
+  existing ticket-only public projection and automatic refresh.
+- Add focused synthetic coverage for the stale/disconnected LCD state and the
+  questionnaire rejection and cleanup boundaries: missing completion/photo,
+  oversize or unsupported image, unauthorized/replayed input, and a failure
+  after private-object storage that leaves neither a questionnaire record nor
+  an orphaned private object.
+- Run and report the fresh-database synthetic browser walkthrough in
+  `docs/mvp/local-core-walkthrough.md`, including the visible LCD failure and
+  recovery behavior. Do not use real data or cross the X-ray-readiness
+  boundary.
+
+### Additional verification
+
+- Re-run the focused suite listed in `docs/mvp/local-core-walkthrough.md` and
+  the added remediation tests.
+- Run `git diff --check` on the remediation implementation diff.
+- Record the exact implementation revision, commands, synthetic-only results,
+  and manual browser observations for Reviewer evaluation.
