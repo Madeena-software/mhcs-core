@@ -1,7 +1,7 @@
 ---
 title: Local Dummy Clinic-Core Flow
 document_id: MHCS-TASK-CORE-LOCAL-001
-version: 1.3
+version: 1.4
 status: validated-published
 language: en-US
 last_updated: 2026-08-10
@@ -156,8 +156,8 @@ X-ray-readiness core flow without implementing or simulating Gateway behavior.
 - A browser on the printer laptop and a separate TV/browser can open their
   respective URLs during later rehearsal; that physical pairing remains a
   release check, not this local core proof.
-- The existing lockfile-resolved `playwright` package, Pest Browser plugin, and
-  a compatible cached Chromium binary are available locally. If they cannot be
+- Laravel Pest Browser and its existing lockfile-resolved browser runtime can
+  use a compatible cached Chromium binary locally. If they cannot be
   materialized without a network download, stop and report the missing cache.
 
 ### Approved assumptions
@@ -182,7 +182,7 @@ X-ray-readiness core flow without implementing or simulating Gateway behavior.
 
 - Repository read and write.
 - Local PHP/Laravel/Pest execution with synthetic database data.
-- Local Pest Browser/Playwright execution with its Chrome target and synthetic
+- Local Laravel Pest Browser execution with its Chrome target and synthetic
   database data.
 
 ## Execution constraints
@@ -233,7 +233,7 @@ X-ray-readiness core flow without implementing or simulating Gateway behavior.
 - Run focused tests for LCD visibility/privacy, questionnaire upload and
   cleanup, completion gating, and the existing ticket/vital/X-ray regressions.
 - Run the Member and Operator focused suites touched by the implementation.
-- Run a fresh synthetic Pest Browser/Playwright Chrome journey that verifies
+- Run a fresh synthetic Laravel Pest Browser Chrome journey that verifies
   the safe Printer Station page and LCD call, failure, stale-state, and
   recovery behavior. This local automated proof does not replace the separate
   physical Printer/LCD pairing and staff rehearsal required for release.
@@ -260,8 +260,8 @@ was used.
 
 - Repository changes and local synthetic test data required for this task.
 - Local private-object test artifacts that are removed by the test lifecycle.
-- Offline-only materialization of the existing lockfile-resolved JavaScript
-  dependencies needed for Pest Browser/Playwright, with browser download
+- Offline-only materialization of the existing lockfile-resolved browser
+  runtime needed by Laravel Pest Browser, with browser download
   disabled. No package manifest or lockfile change is authorized.
 
 Not authorized: real data, server account batching, deployment, commit, push,
@@ -298,7 +298,7 @@ implemented revision and observed local synthetic evidence for review.
   after private-object storage that leaves neither a questionnaire record nor
   an orphaned private object.
 - Run and report the fresh-database synthetic browser walkthrough in
-  `docs/mvp/local-core-walkthrough.md` using Pest Browser/Playwright Chrome,
+  `docs/mvp/local-core-walkthrough.md` using Laravel Pest Browser Chrome,
   including the visible LCD failure and recovery behavior. Do not use real data
   or cross the X-ray-readiness boundary.
 
@@ -306,9 +306,10 @@ implemented revision and observed local synthetic evidence for review.
 
 - Re-run the focused suite listed in `docs/mvp/local-core-walkthrough.md` and
   the added remediation tests.
-- Materialize only the existing JavaScript lockfile offline with browser
-  download disabled, then run the Pest Browser Chrome suite. Stop rather than
-  using the network or changing a dependency if the cache is unavailable.
+- Materialize only the existing browser runtime lockfile offline with browser
+  download disabled, then run `vendor/bin/pest tests/Browser --browser chrome`.
+  Stop rather than using the network or changing a dependency if the cache is
+  unavailable.
 - Run `git diff --check` on the remediation implementation diff.
 - Record the exact implementation revision, commands, synthetic-only results,
   and Chrome browser observations for Reviewer evaluation.
