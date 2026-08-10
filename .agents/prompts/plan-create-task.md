@@ -1,7 +1,7 @@
 ---
 title: Plan, Review, and Create Validated Task
 document_id: AGENT-PROMPT-PLAN-001
-version: 2.2
+version: 2.3
 status: approved-template
 language: en-US
 last_updated: 2026-08-10
@@ -18,6 +18,7 @@ scope:
   - requirement and architecture readiness
   - delivery-objective selection
   - validated task creation
+  - execution-ready Executor Launcher output
 authority_note: This prompt is a reusable Planner/Reviewer delivery-orchestration procedure. It is not repository authority and MUST NOT override .agents/AGENTS.md, .agents/software-workflow.md, approved repository authority, the governing task revision, or observed repository evidence.
 ---
 
@@ -38,7 +39,8 @@ The purpose of this procedure is to:
 7. repair only the authority, context, requirement, architecture, or planning artifacts actually needed;
 8. select the next coherent delivery objective when implementation work is justified;
 9. publish a validated executable task only when Task Readiness is satisfied;
-10. stop at real approval, authority, dependency, side-effect, or safety boundaries rather than inventing decisions.
+10. emit a ready-to-copy Executor Launcher when the final outcome leaves a published task ready for execution; and
+11. stop at real approval, authority, dependency, side-effect, or safety boundaries rather than inventing decisions.
 
 This procedure is intended to be invoked repeatedly throughout delivery.
 
@@ -47,6 +49,7 @@ Typical loop:
 ```text
 plan-create-task.md
 → validated task
+→ Executor Launcher
 → Executor
 → implementation + evidence
 → plan-create-task.md
@@ -915,6 +918,58 @@ The procedure SHOULD conclude with one of the following outcomes.
 
 If a previously validated task is already waiting for execution, prefer **EXECUTION REQUIRED** rather than publishing dependent successor work.
 
+## Executor Launcher output contract
+
+An **Executor Launcher** is a runtime handoff convenience for a task that is already legitimately published and ready for execution.
+
+It does not create task authority, replace the exact immutable governing task revision, replace the implementation baseline, or weaken any approval, side-effect, capability, or stop-condition boundary.
+
+Emit an Executor Launcher only when the final outcome leaves a published task ready for Executor work.
+
+Execution-ready outcomes are:
+
+- **VALIDATED TASK PUBLISHED**;
+- **EXECUTION REQUIRED**;
+- **REMEDIATION TASK PUBLISHED**; and
+- **IMPLEMENTATION ACCEPTED + NEXT TASK PUBLISHED**, when the successor task is the task ready for execution.
+
+Do not emit an Executor Launcher for:
+
+- **IMPLEMENTATION ACCEPTED** without a successor task;
+- **AUTHORITY UPDATE REQUIRED**;
+- **APPROVAL REQUIRED**;
+- **PLANNING BLOCKED**;
+- **SIDE-EFFECT AUTHORIZATION REQUIRED**; or
+- **NO DELIVERY ACTION REQUIRED**.
+
+When an Executor Launcher is required:
+
+1. complete all normal outcome reporting first;
+2. resolve the actual published task path that is ready for execution;
+3. use the filename stem of that task under `.agents/tasks/`;
+4. emit the launcher as the final item in the response;
+5. emit exactly one fenced `text` code block using the format below;
+6. do not place a heading, bullet, label, explanation, or other Markdown immediately before the launcher if it would become part of the launcher itself;
+7. do not emit any commentary, explanation, label, Markdown, or other output after the launcher block.
+
+Use exactly this launcher format, replacing `<generated-task-filename>` with the actual published task filename stem without the `.md` extension:
+
+````text
+```text
+Execute the published repository task:
+
+.agents/tasks/<generated-task-filename>.md
+
+exactly as written with:
+
+TARGET="."
+```
+````
+
+After emitting the launcher block, output nothing else.
+
+The launcher is a convenience pointer only. Before execution begins, the Executor/runtime MUST still resolve and use the exact immutable governing task revision and implementation baseline required by the canonical contract and published task.
+
 ## 1. VALIDATED TASK PUBLISHED
 
 Use when T5 is satisfied for a new coherent objective.
@@ -932,6 +987,8 @@ Report:
 
 The task MAY proceed to Executor automatically unless repository-specific policy requires another approval gate.
 
+When execution is legitimate after this outcome, conclude with the required Executor Launcher for the published task.
+
 ## 2. EXECUTION REQUIRED
 
 Use when a valid published task already exists and is awaiting execution or renewed execution.
@@ -947,6 +1004,8 @@ Report:
 
 Do not create dependent successor implementation work merely because the Planner procedure was invoked again.
 
+Conclude with the required Executor Launcher for the existing published task.
+
 ## 3. REMEDIATION TASK PUBLISHED
 
 Use when pending implementation failed review in a bounded way and the same delivery objective remains valid.
@@ -961,6 +1020,8 @@ Report:
 - unchanged or explicitly updated implementation baseline rules.
 
 Hand back to Executor.
+
+Conclude with the required Executor Launcher for the republished remediation task.
 
 ## 4. IMPLEMENTATION ACCEPTED
 
@@ -991,6 +1052,8 @@ Use when:
 Report both acceptance evidence and successor-task identity clearly.
 
 The successor task MUST use the new accepted baseline or another explicitly justified immutable baseline.
+
+Conclude with the required Executor Launcher for the published successor task.
 
 ## 6. AUTHORITY UPDATE REQUIRED
 
@@ -1186,6 +1249,10 @@ Before concluding an invocation, confirm:
 - [ ] Stop conditions prevent silent scope expansion.
 - [ ] Side-effect authorization is explicit.
 - [ ] Any published task has an exact immutable task revision before Executor handoff.
+- [ ] If the final outcome leaves a published task ready for execution, I emitted exactly one Executor Launcher as the final response item.
+- [ ] The Executor Launcher points to the actual published task path and does not substitute for exact task-revision or baseline resolution.
+- [ ] If the final outcome is not execution-ready, I did not emit an Executor Launcher.
+- [ ] I did not emit anything after an Executor Launcher.
 - [ ] I did not establish A9 from a mutable working-tree state.
 - [ ] I published a validated task only when T5 is actually satisfied.
 - [ ] I concluded with the next legitimate delivery action rather than forcing task creation.
