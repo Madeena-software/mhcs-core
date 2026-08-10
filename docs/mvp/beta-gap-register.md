@@ -116,7 +116,7 @@ until their task evidence and release verification exist.
 
 | Existing gap | Friday treatment | Required temporary control and closure evidence |
 |---|---|---|
-| MVP-GAP-003 — B2B bulk import | Reprioritized from deferred MVP-08 work to Friday scope | Exact import contract, unique temporary-password handoff to one B2B contact, duplicate/invalid-row handling, and focused verification must pass before real import. |
+| MVP-GAP-003 — B2B bulk import | Reprioritized from deferred MVP-08 work to Friday scope | The approved local CSV contract is documented at `docs/mvp/import-data/README.md`; unique temporary-password handoff to one B2B contact, duplicate/invalid-row handling, and focused verification must still pass before real import. |
 | MVP-GAP-009 and MVP-GAP-012 — Operator and queue flow | Reprioritized to include station-scoped calling, paired Printer Station, paired LCD Station, the approved assessment, and X-ray handoff | Preserve site/shift authorization, private ticket data, atomic claims, audit, offline Printer/LCD behavior, and focused flow evidence. |
 | MVP-GAP-013 — Image Gateway intake | Reprioritized to complete-capture acceptance for this slice | Prove MinIO durable acceptance, matching NPZ/gain validation, idempotency, safe retry, and background MPIPS conversion with administrator-visible terminal failure. |
 | MVP-GAP-019 — object-storage policy | Remains open | Use the provided MinIO environment only after approved configuration and release verification; do not claim retention, encryption, or storage-policy closure without evidence. |

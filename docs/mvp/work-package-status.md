@@ -55,6 +55,25 @@ deployment, and production requirements are not closed.
 
 Numbering gaps such as WP-03, WP-13, and WP-25 are preserved because they are absent from the current 25-package implementation plan; no new Work Package is invented here.
 
+## Friday preflight review — 2026-08-10
+
+The current committed revision
+`8ffd6f7e427dea3610582245ece926ea84cc2314` was reviewed as the planning
+baseline for the Friday core workstream. Current focused Operator/X-ray/
+architecture verification passed (63 tests, 2,266 assertions; one MySQL-only
+test skipped outside MySQL), and the owner-authorized isolated MySQL verifier
+passed fresh migration, representative suites, concurrency, full PHP suite
+(248 tests, 3,839 assertions), and guarded rollback/reapplication probes.
+The temporary MySQL container was removed after verification.
+
+The historical MVP-04K through MVP-04N task content was later archived, so its
+pre-execution immutable-publication history cannot be reconstructed under the
+current task contract. This is a documented process limitation, not a claim
+that the current functional evidence is absent. The review establishes the
+listed committed revision as the planning baseline; it does not close any Work
+Package, MVP gap, privacy/deployment approval, or release gate. Evidence:
+`docs/mvp/evidence/mvp-04k-through-n-mysql-review.md`.
+
 ## MVP-04A remediation addendum — 2026-08-05
 
 The prior remediation is committed at

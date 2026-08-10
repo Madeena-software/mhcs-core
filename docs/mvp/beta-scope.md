@@ -159,6 +159,12 @@ replacement mandatory. A one-time credential spreadsheet may be handed to one
 designated B2B contact outside the application; it must not be committed,
 logged, retained by MHCS, or distributed to all members as a shared document.
 
+The B2B partner supplies the roster as a local PDF under
+`docs/mvp/import-data/`. For the Friday-only import, a Member Administrator
+manually transcribes it into the ignored CSV input defined by
+`docs/mvp/import-data/README.md`. MHCS does not parse the PDF or accept the
+roster as a browser upload.
+
 The provided Docker server, HTTPS endpoint, and MinIO service are dependencies.
 MHCS and MPIPS remain separate containers joined only through their external
 private Docker network; MPIPS is not publicly exposed. The existing mandatory
@@ -171,8 +177,8 @@ conversion. The real Printer Station and LCD Station must be paired and tested,
 and staff must complete a dry rehearsal. Failed upload remains an X-ray-stage
 exception; permanent conversion failure must be visible to an administrator.
 
-Member, Operator, Member administration, and Operator administration are
-implemented on `main`. Image Gateway and its AI/MPIPS integration are owned by
-a separate branch. The branch must merge and pass the integrated release gate
-before the 14 August controlled deployment; separation is a delivery boundary,
-not an exclusion.
+Member, Operator, Member administration, and Operator administration are owned
+and delivered on `main`. Image Gateway and its AI/MPIPS integration are owned
+by a separate branch. The branch must merge and pass the integrated release
+gate before the 14 August controlled deployment; separation is a delivery
+boundary, not an exclusion.
