@@ -55,11 +55,11 @@ deployment, and production requirements are not closed.
 
 Numbering gaps such as WP-03, WP-13, and WP-25 are preserved because they are absent from the current 25-package implementation plan; no new Work Package is invented here.
 
-## Friday preflight review — 2026-08-10
+## Clinic-day preflight review — 2026-08-10
 
 The current committed revision
 `8ffd6f7e427dea3610582245ece926ea84cc2314` was reviewed as the planning
-baseline for the Friday core workstream. Current focused Operator/X-ray/
+baseline for the clinic-day core workstream. Current focused Operator/X-ray/
 architecture verification passed (63 tests, 2,266 assertions; one MySQL-only
 test skipped outside MySQL), and the owner-authorized isolated MySQL verifier
 passed fresh migration, representative suites, concurrency, full PHP suite

@@ -354,12 +354,18 @@ public/LCD/audio behavior, Member visibility, privacy/retention approval,
 deployment, production readiness, and `MVP-GAP-009`, `MVP-GAP-012`,
 `MVP-GAP-021`, and `MVP-GAP-024` remain open.
 
-## Friday clinic-day MVP — approved scope, not yet executed
+## 17 August clinic-day MVP — approved scope, not yet executed
 
 The next coherent delivery objective is the bounded 37-member B2B clinic-day
-flow approved by MVP-DEC-021 through MVP-DEC-025 for 14 August 2026. It spans
-Member, Operator, and Image Gateway because a usable visit cannot stop at a
-layer boundary.
+flow approved by MVP-DEC-021 through MVP-DEC-028 for use on 17 August 2026.
+Deployment is targeted for 12 August. It spans Member, Operator, and Image
+Gateway because a usable visit cannot stop at a layer boundary.
+
+The core clinic-day MVP has a hard local-working deadline of Tuesday,
+11 August 2026 at 12:00 Asia/Bangkok (MVP-DEC-029). It covers Member, Operator,
+Member administration, and Operator administration on `main`; Image Gateway,
+AI, and MPIPS remain separately owned and do not block this core-local deadline.
+The deadline is not deployment, real-data import, or release approval.
 
 Delivery must be sequenced as follows:
 
@@ -396,7 +402,7 @@ Read and follow `.agents/prompts/plan-create-task.md`.
 
 Assess the current repository delivery state, resolve any pending execution,
 review, remediation, approval, or baseline state first, and then perform the
-next legitimate Planner/Reviewer action for the Friday clinic-day MVP core:
+next legitimate Planner/Reviewer action for the 17 August clinic-day MVP core:
 Member, Operator, Member administration, and Operator administration.
 
 Image Gateway, AI, and MPIPS implementation are owned by a separate branch.
@@ -412,7 +418,7 @@ Read and follow `.agents/prompts/plan-create-task.md`.
 
 Assess the current repository delivery state, resolve any pending execution,
 review, remediation, approval, or baseline state first, and then perform the
-next legitimate Planner/Reviewer action for the Friday clinic-day MVP Image
+next legitimate Planner/Reviewer action for the 17 August clinic-day MVP Image
 Gateway: X-ray capture intake, MinIO storage, NPZ/gain validation, MPIPS/AI
 integration, retry handling, and administrator-visible terminal failures.
 

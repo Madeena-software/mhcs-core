@@ -118,13 +118,14 @@ Every exposed beta flow must retain server-derived actor, role, site, case, purp
 
 Expand the beta only after the relevant MVP task has focused tests and evidence, the gap register is updated, ownership and authorization are verified, unresolved approval boundaries are identified, and the owner approves the next scope. Before controlled beta deployment, run the required integration/release verification, resolve critical gaps, approve migration/deployment/privacy/retention decisions, and record the deployment decision. Passing MVP tasks alone is never a production-readiness claim.
 
-## Friday clinic-day MVP addendum — approved 2026-08-10
+## 17 August clinic-day MVP addendum — approved 2026-08-10
 
-Faliq Adlan, CTO, approved a bounded controlled deployment candidate for Friday,
-14 August 2026. This addendum supersedes the historical synthetic-data-only
-control only for the defined 37-member B2B clinic-day flow. It does not alter
-the long-term Work Package requirements or turn the controlled release into a
-general production-readiness claim.
+Faliq Adlan, CTO, approved a bounded controlled deployment candidate for use on
+Monday, 17 August 2026, with deployment targeted for Wednesday, 12 August. This
+addendum supersedes the historical synthetic-data-only control only for the
+defined 37-member B2B clinic-day flow. It does not alter the long-term Work
+Package requirements or turn the controlled release into a general
+production-readiness claim.
 
 The approved flow is:
 
@@ -160,10 +161,18 @@ designated B2B contact outside the application; it must not be committed,
 logged, retained by MHCS, or distributed to all members as a shared document.
 
 The B2B partner supplies the roster as a local PDF under
-`docs/mvp/import-data/`. For the Friday-only import, a Member Administrator
+`docs/mvp/import-data/`. For the 17 August import, a Member Administrator
 manually transcribes it into the ignored CSV input defined by
 `docs/mvp/import-data/README.md`. MHCS does not parse the PDF or accept the
 roster as a browser upload.
+
+The 17 August CSV maps its omitted administrative gender to the existing
+`unspecified` Member value, maps `ktp_address` to the initial current address,
+and does not persist birthplace. This avoids a schema change while retaining
+the raw PDF as the local source for birthplace.
+
+Members complete their profile, KTP, and photograph at the clinic on 17 August
+before ticket issue. Pre-provisioning an account does not waive that gate.
 
 The provided Docker server, HTTPS endpoint, and MinIO service are dependencies.
 MHCS and MPIPS remain separate containers joined only through their external
@@ -180,5 +189,5 @@ exception; permanent conversion failure must be visible to an administrator.
 Member, Operator, Member administration, and Operator administration are owned
 and delivered on `main`. Image Gateway and its AI/MPIPS integration are owned
 by a separate branch. The branch must merge and pass the integrated release
-gate before the 14 August controlled deployment; separation is a delivery
+gate before the 17 August clinic-day use; separation is a delivery
 boundary, not an exclusion.

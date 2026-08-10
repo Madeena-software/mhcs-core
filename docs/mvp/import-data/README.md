@@ -1,13 +1,13 @@
-# Friday B2B roster import input
+# 17 August B2B roster import input
 
-**Status:** Approved Friday-only input handling
+**Status:** Approved 17 August-only input handling
 
 The B2B partner supplies the raw roster as a PDF in this directory. The PDF
 and every roster or credential data file remain ignored by Git and must never
 be committed, copied into planning documents, test fixtures, logs, or command
 output.
 
-For the 37-member Friday import, a Member Administrator manually transcribes
+For the 37-member 17 August import, a Member Administrator manually transcribes
 the supplied PDF into a UTF-8 CSV file in this same directory. The importer
 accepts this exact header row:
 
@@ -18,6 +18,12 @@ name,birthplace,birth_date,ktp_address,nik
 `birth_date` uses `YYYY-MM-DD`; `nik` is treated as text so leading zeroes are
 preserved. The CSV is a local one-time import input, not an application upload
 or a Member-facing file.
+
+For this 17 August-only file, an omitted administrative gender maps to the
+existing Member value `unspecified`; `ktp_address` becomes the Member's initial
+`current_address`; and `birthplace` is not persisted in MHCS. The raw PDF
+remains the source for birthplace. This mapping is approved by MVP-DEC-027 and
+does not add a new field or data model.
 
 The import process validates the header, required cells, date format, exact
 NIK format, duplicate NIK values in the file, and duplicate protected NIKs in
