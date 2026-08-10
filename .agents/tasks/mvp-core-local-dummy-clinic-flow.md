@@ -1,7 +1,7 @@
 ---
 title: Local Dummy Clinic-Core Flow
 document_id: MHCS-TASK-CORE-LOCAL-001
-version: 1.1
+version: 1.2
 status: validated-published
 language: en-US
 last_updated: 2026-08-10
@@ -154,7 +154,11 @@ X-ray-readiness core flow without implementing or simulating Gateway behavior.
 - The existing private-object configuration is available locally for synthetic
   test uploads.
 - A browser on the printer laptop and a separate TV/browser can open their
-  respective URLs during later rehearsal.
+  respective URLs during later rehearsal; that physical pairing remains a
+  release check, not this local core proof.
+- The existing lockfile-resolved `playwright` package, Pest Browser plugin, and
+  a compatible cached Chromium binary are available locally. If they cannot be
+  materialized without a network download, stop and report the missing cache.
 
 ### Approved assumptions
 
@@ -178,7 +182,8 @@ X-ray-readiness core flow without implementing or simulating Gateway behavior.
 
 - Repository read and write.
 - Local PHP/Laravel/Pest execution with synthetic database data.
-- Local browser access for the documented manual walkthrough.
+- Local Pest Browser/Playwright execution with its Chrome target and synthetic
+  database data.
 
 ## Execution constraints
 
@@ -228,14 +233,16 @@ X-ray-readiness core flow without implementing or simulating Gateway behavior.
 - Run focused tests for LCD visibility/privacy, questionnaire upload and
   cleanup, completion gating, and the existing ticket/vital/X-ray regressions.
 - Run the Member and Operator focused suites touched by the implementation.
-- Run the synthetic setup/walkthrough from a fresh local database and inspect
-  the Printer and LCD pages manually.
+- Run a fresh synthetic Pest Browser/Playwright Chrome journey that verifies
+  the safe Printer Station page and LCD call, failure, stale-state, and
+  recovery behavior. This local automated proof does not replace the separate
+  physical Printer/LCD pairing and staff rehearsal required for release.
 - Run `git diff --check` and the relevant migration suite.
 
 ### Required evidence
 
 The Executor must report the exact implementation revision, commands actually
-run, observed synthetic-only results, manual browser walkthrough steps, and
+run, observed synthetic-only results, Chrome browser-test evidence, and
 confirmation that no real roster, credential, interview form, or clinical image
 was used.
 
@@ -253,9 +260,13 @@ was used.
 
 - Repository changes and local synthetic test data required for this task.
 - Local private-object test artifacts that are removed by the test lifecycle.
+- Offline-only materialization of the existing lockfile-resolved JavaScript
+  dependencies needed for Pest Browser/Playwright, with browser download
+  disabled. No package manifest or lockfile change is authorized.
 
 Not authorized: real data, server account batching, deployment, commit, push,
-dependency installation, or Image Gateway/AI/MPIPS implementation.
+new or upgraded dependencies, network package/browser downloads, or Image
+Gateway/AI/MPIPS implementation.
 
 ## Expected terminal outcome
 
@@ -285,14 +296,17 @@ implemented revision and observed local synthetic evidence for review.
   after private-object storage that leaves neither a questionnaire record nor
   an orphaned private object.
 - Run and report the fresh-database synthetic browser walkthrough in
-  `docs/mvp/local-core-walkthrough.md`, including the visible LCD failure and
-  recovery behavior. Do not use real data or cross the X-ray-readiness
-  boundary.
+  `docs/mvp/local-core-walkthrough.md` using Pest Browser/Playwright Chrome,
+  including the visible LCD failure and recovery behavior. Do not use real data
+  or cross the X-ray-readiness boundary.
 
 ### Additional verification
 
 - Re-run the focused suite listed in `docs/mvp/local-core-walkthrough.md` and
   the added remediation tests.
+- Materialize only the existing JavaScript lockfile offline with browser
+  download disabled, then run the Pest Browser Chrome suite. Stop rather than
+  using the network or changing a dependency if the cache is unavailable.
 - Run `git diff --check` on the remediation implementation diff.
 - Record the exact implementation revision, commands, synthetic-only results,
-  and manual browser observations for Reviewer evaluation.
+  and Chrome browser observations for Reviewer evaluation.
