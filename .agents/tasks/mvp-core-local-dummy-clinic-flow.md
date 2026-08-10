@@ -1,7 +1,7 @@
 ---
 title: Local Dummy Clinic-Core Flow
 document_id: MHCS-TASK-CORE-LOCAL-001
-version: 1.2
+version: 1.3
 status: validated-published
 language: en-US
 last_updated: 2026-08-10
@@ -48,7 +48,7 @@ deployment. They are not part of this local proof.
 `49a2980c0a6c147f6c0fa8f49c49b73f0b17141b`
 
 **Remediation starting revision (reviewed, not accepted):**<br>
-`b4f5f153043961b8c03de654c08cef09b3936ee0`
+`09487bef699e4553dc597da1e09445c9f24f4af7`
 
 **Task revision:**  
 `Resolved from the immutable publication commit`
@@ -281,6 +281,8 @@ implemented revision and observed local synthetic evidence for review.
   `.agents/tasks/mvp-core-local-dummy-clinic-flow.md @ b99464d571a336817827ee1082e6510a542529c8`.
 - Reviewed implementation revision:
   `b4f5f153043961b8c03de654c08cef09b3936ee0`.
+- Current unaccepted remediation implementation:
+  `09487bef699e4553dc597da1e09445c9f24f4af7`.
 - Reviewer evidence: the task's focused PHPUnit command passed with 36 tests
   and 481 assertions; implementation-only `git diff --check` passed. The
   required fresh-database browser walkthrough was not observed or recorded.
