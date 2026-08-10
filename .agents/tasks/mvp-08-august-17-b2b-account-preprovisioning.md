@@ -2,7 +2,7 @@
 title: 17 August B2B Account Pre-provisioning
 document_id: MHCS-TASK-MVP-08-001
 version: 0.1
-status: draft
+status: Approve
 language: en-US
 last_updated: 2026-08-10
 scope:
