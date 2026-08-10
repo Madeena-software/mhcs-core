@@ -22,6 +22,13 @@ Route::post('/login', [AuthenticationController::class, 'store'])
     ->middleware('guest')
     ->name('login.store');
 
+Route::get('/operator/login', [AuthenticationController::class, 'showOperatorLogin'])
+    ->middleware('guest')
+    ->name('operator.login');
+Route::post('/operator/login', [AuthenticationController::class, 'storeOperatorLogin'])
+    ->middleware('guest')
+    ->name('operator.login.store');
+
 Route::get('/password/change-required', [AuthenticationController::class, 'showPasswordChange'])
     ->middleware('auth')
     ->name('password.change-required');

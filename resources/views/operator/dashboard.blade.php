@@ -4,46 +4,66 @@
 
 @section('content')
 <section aria-labelledby="workstation-title">
+    <p class="eyebrow">Clinic-day operations</p>
     <h1 id="workstation-title">Operator workstation</h1>
-    <p class="muted">Welcome, {{ $operatorName }}. Select one authorized site before handling attendance.</p>
+    <p class="muted">Welcome, {{ $operatorName }}. Follow the clinic flow in order and keep each action in its assigned site context.</p>
 
-    <div class="grid">
-        <section class="card" aria-labelledby="site-title">
-            <h2 id="site-title">Active site</h2>
+    <section class="card" aria-labelledby="active-site-title">
+        <h2 id="active-site-title">Active site</h2>
+        @if ($activeSite)
+            <p><strong>{{ $activeSite->display_name }}</strong><br><span class="muted">{{ $activeSite->code }} · {{ $activeSite->timezone }}</span></p>
+            <a href="{{ route('operator.site') }}">Review or switch site</a>
+        @else
+            <p class="muted">No active site is selected. Site selection is required before attendance actions.</p>
+            <a class="primary-action" href="{{ route('operator.site') }}">Select an assigned site</a>
+        @endif
+    </section>
+
+    <ol class="workflow" aria-label="Ordered clinic workflow">
+        <li class="workflow-item {{ $activeSite ? 'primary' : '' }}">
+            <span class="step-number" aria-hidden="true">1</span>
+            <div>
+                <h2>1. Attendance</h2>
+                <p class="muted">{{ $shiftCount }} assigned shift(s) available.</p>
+            </div>
             @if ($activeSite)
-                <p><strong>{{ $activeSite->display_name }}</strong><br><span class="muted">{{ $activeSite->code }} · {{ $activeSite->timezone }}</span></p>
-                <a href="{{ route('operator.site') }}">Review or switch site</a>
+                <a class="primary-action" href="{{ route('operator.eligible-shifts') }}">Open assigned-shift attendance</a>
             @else
-                <p class="muted">No active site is selected.</p>
-                <a href="{{ route('operator.site') }}">Select an authorized site</a>
+                <span class="muted">Select a site first</span>
             @endif
-        </section>
-        <section class="card" aria-labelledby="shift-title">
-            <h2 id="shift-title">Assigned shifts</h2>
-            <p>{{ count($shifts) }} shift(s) are available in this site context.</p>
-            <a href="{{ route('operator.eligible-shifts') }}">Open assigned shifts</a>
-        </section>
-        <section class="card" aria-labelledby="verification-title">
-            <h2 id="verification-title">Verification worklist</h2>
-            <p>{{ count($arrivals) }} arrival(s) await verification.</p>
-            <a href="{{ route('operator.verification-worklist') }}">Open worklist</a>
-        </section>
-    </div>
-
-    @if ($activeSite && $sites)
-        <section class="card" aria-labelledby="quick-site-title" style="margin-top: 18px">
-            <h2 id="quick-site-title">Switch active site</h2>
-            <form method="POST" action="{{ route('operator.site.select') }}">
-                @csrf
-                <label for="site_id">Authorized site</label>
-                <select id="site_id" name="site_id" required>
-                    @foreach ($sites as $site)
-                        <option value="{{ $site->id }}" @selected($activeSite->id === $site->id)>{{ $site->display_name }} ({{ $site->code }})</option>
-                    @endforeach
-                </select>
-                <div class="actions"><button type="submit">Switch site</button></div>
-            </form>
-        </section>
-    @endif
+        </li>
+        <li class="workflow-item">
+            <span class="step-number" aria-hidden="true">2</span>
+            <div>
+                <h2>2. Arrival and verification</h2>
+                <p class="queue-count" data-testid="verification-queue-count">{{ $verificationCount }} awaiting verification</p>
+            </div>
+            <a href="{{ route('operator.verification-worklist') }}">Open verification worklist</a>
+        </li>
+        <li class="workflow-item">
+            <span class="step-number" aria-hidden="true">3</span>
+            <div>
+                <h2>3. Consent and ticket</h2>
+                <p class="muted">Confirm paper consent, then check in and print the private ticket.</p>
+            </div>
+            <a href="{{ route('operator.verification-worklist') }}">Continue from verification</a>
+        </li>
+        <li class="workflow-item">
+            <span class="step-number" aria-hidden="true">4</span>
+            <div>
+                <h2>4. Basic examination</h2>
+                <p class="queue-count" data-testid="basic-examination-queue-count">{{ $basicExaminationCount }} ready for basic examination</p>
+            </div>
+            <a href="{{ route('operator.basic-examination-worklist') }}">Open basic-examination queue</a>
+        </li>
+        <li class="workflow-item">
+            <span class="step-number" aria-hidden="true">5</span>
+            <div>
+                <h2>5. X-ray readiness</h2>
+                <p class="queue-count" data-testid="xray-queue-count">{{ $xrayReadinessCount }} ready for X-ray readiness</p>
+            </div>
+            <a href="{{ route('operator.xray-readiness-worklist') }}">Open X-ray-ready queue</a>
+        </li>
+    </ol>
 </section>
 @endsection

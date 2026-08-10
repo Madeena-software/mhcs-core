@@ -29,6 +29,104 @@ final class Mvp04OperatorPortalTest extends TestCase
         $this->assertSame(route('operator.dashboard'), $response->headers->get('Location'));
     }
 
+    public function test_operator_has_a_distinct_login_entry_and_reaches_the_workstation(): void
+    {
+        $fixture = $this->operatorFixture(false);
+
+        $this->get(route('operator.login'))
+            ->assertOk()
+            ->assertSee('Operator workstation')
+            ->assertDontSee('Masuk ke MHCS Core');
+
+        $this->post(route('operator.login.store'), [
+            'identifier' => $fixture['operator']->email,
+            'password' => 'password',
+        ])->assertRedirect(route('operator.dashboard'));
+    }
+
+    public function test_member_and_administrator_accounts_receive_the_same_generic_operator_login_failure(): void
+    {
+        $member = User::factory()->create(['email' => 'member-only@example.test']);
+        $administrator = User::factory()->create(['email' => 'administrator-only@example.test']);
+        DB::table('authorization_role_assignments')->insert([
+            'id' => (string) Str::uuid(),
+            'user_id' => $administrator->id,
+            'role' => 'administrator',
+            'assigned_by_user_id' => null,
+            'active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        foreach ([$member, $administrator] as $user) {
+            $this->post(route('operator.login.store'), [
+                'identifier' => $user->email,
+                'password' => 'password',
+            ])->assertSessionHasErrors(['identifier']);
+
+            $this->assertGuest('web');
+        }
+    }
+
+    public function test_dedicated_operator_login_rechecks_profile_role_permission_and_account_state(): void
+    {
+        $fixture = $this->operatorFixture(false);
+        $deny = function () use ($fixture): void {
+            $this->post(route('operator.login.store'), [
+                'identifier' => $fixture['operator']->email,
+                'password' => 'password',
+            ])->assertSessionHasErrors(['identifier']);
+            $this->assertGuest('web');
+        };
+
+        DB::table('operator_profiles')->where('id', $fixture['profileId'])->update(['active' => false]);
+        $deny();
+
+        DB::table('operator_profiles')->where('id', $fixture['profileId'])->update(['active' => true]);
+        DB::table('authorization_role_assignments')
+            ->where('user_id', $fixture['operator']->id)
+            ->where('role', 'operator')
+            ->update(['active' => false]);
+        $deny();
+
+        DB::table('authorization_role_assignments')
+            ->where('user_id', $fixture['operator']->id)
+            ->where('role', 'operator')
+            ->update(['active' => true]);
+        DB::table('authorization_permission_assignments')
+            ->where('user_id', $fixture['operator']->id)
+            ->where('permission', 'operator.portal.access')
+            ->update(['active' => false]);
+        $deny();
+
+        DB::table('authorization_permission_assignments')
+            ->where('user_id', $fixture['operator']->id)
+            ->where('permission', 'operator.portal.access')
+            ->update(['active' => true]);
+        DB::table('users')->where('id', $fixture['operator']->id)->update(['account_status' => 'suspended']);
+        $deny();
+    }
+
+    public function test_operator_password_replacement_keeps_the_dedicated_entry_destination(): void
+    {
+        $fixture = $this->operatorFixture(false);
+        DB::table('users')->where('id', $fixture['operator']->id)->update([
+            'password' => Hash::make('temporary-password'),
+            'must_change_password' => true,
+        ]);
+
+        $this->post(route('operator.login.store'), [
+            'identifier' => $fixture['operator']->email,
+            'password' => 'temporary-password',
+        ])->assertRedirect(route('password.change-required'));
+
+        $this->post(route('password.change-required.update'), [
+            'current_password' => 'temporary-password',
+            'password' => 'operator-password-1',
+            'password_confirmation' => 'operator-password-1',
+        ])->assertRedirect(route('operator.dashboard'));
+    }
+
     public function test_operator_only_mandatory_password_replacement_does_not_require_a_member(): void
     {
         $fixture = $this->operatorFixture(false);
@@ -122,6 +220,30 @@ final class Mvp04OperatorPortalTest extends TestCase
             ->assertDontSee('900000000001')
             ->assertDontSee('authorization_permission_assignments')
             ->assertDontSee('point balance');
+    }
+
+    public function test_workstation_shows_the_ordered_clinic_flow_and_server_derived_queue_counts(): void
+    {
+        $fixture = $this->operatorFixture(false);
+        $this->actingAs($fixture['operator']);
+
+        $this->get(route('operator.dashboard'))
+            ->assertOk()
+            ->assertSee('Select an assigned site');
+
+        $this->post(route('operator.site.select'), ['site_id' => $fixture['siteLocalId']])
+            ->assertRedirect(route('operator.dashboard'));
+
+        $this->get(route('operator.dashboard'))
+            ->assertOk()
+            ->assertSee('1. Attendance')
+            ->assertSee('2. Arrival and verification')
+            ->assertSee('3. Consent and ticket')
+            ->assertSee('4. Basic examination')
+            ->assertSee('5. X-ray readiness')
+            ->assertSee('data-testid="verification-queue-count"', false)
+            ->assertSee('data-testid="basic-examination-queue-count"', false)
+            ->assertSee('data-testid="xray-queue-count"', false);
     }
 
     public function test_arrival_requires_explicit_confirmation_and_uses_authoritative_schedule_redirect(): void

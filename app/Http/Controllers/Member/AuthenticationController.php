@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Member;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Modules\Member\Application\Contracts\InteractiveOperatorAccessResolver;
 use App\Modules\Member\Application\Data\InteractiveLoginState;
 use App\Modules\Member\Application\Services\InteractiveMemberLoginService;
 use App\Modules\Member\Application\Services\MandatoryPasswordReplacementService;
@@ -21,6 +22,11 @@ final class AuthenticationController extends Controller
     public function showLogin(): View
     {
         return view('member.auth.login');
+    }
+
+    public function showOperatorLogin(): View
+    {
+        return view('operator.auth.login');
     }
 
     public function store(Request $request, InteractiveMemberLoginService $login): RedirectResponse
@@ -55,6 +61,47 @@ final class AuthenticationController extends Controller
         $request->session()->forget('url.intended');
 
         return redirect()->to($result->destination ?? '/login');
+    }
+
+    public function storeOperatorLogin(
+        Request $request,
+        InteractiveMemberLoginService $login,
+        InteractiveOperatorAccessResolver $operators,
+    ): RedirectResponse {
+        $validator = Validator::make($request->all(), [
+            'identifier' => ['required', 'string', 'max:255'],
+            'password' => ['required', 'string'],
+        ], [
+            'identifier.required' => 'Enter your email or NIK.',
+            'password.required' => 'Enter your password.',
+        ]);
+
+        if ($validator->fails()) {
+            return back()->withErrors($validator);
+        }
+
+        $credentials = $validator->validated();
+        $result = $login->authenticate($credentials['identifier'], $credentials['password'], '/operator');
+
+        if (
+            $result->state === InteractiveLoginState::Failure
+            || $result->user === null
+            || ! $operators->canAccess($result->user)
+        ) {
+            return back()->withErrors(['identifier' => 'Email or NIK and password do not match.']);
+        }
+
+        Auth::guard('web')->login($result->user);
+        $request->session()->regenerate();
+        $request->session()->put('url.intended', route('operator.dashboard'));
+
+        if ($result->state === InteractiveLoginState::PasswordChangeRequired) {
+            return redirect()->route('password.change-required');
+        }
+
+        $request->session()->forget('url.intended');
+
+        return redirect()->route('operator.dashboard');
     }
 
     public function showPasswordChange(Request $request, InteractiveMemberLoginService $login): View|RedirectResponse

@@ -13,6 +13,17 @@
         .nav-links { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
         .card { background: #17232c; border: 1px solid #435461; border-radius: 12px; padding: 22px; box-shadow: 0 8px 24px rgba(0, 0, 0, .18); }
         .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px; }
+        .workflow { display: grid; gap: 12px; margin: 24px 0 0; padding: 0; list-style: none; }
+        .workflow-item { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 16px; padding: 16px 18px; background: #17232c; border: 1px solid #435461; border-left: 4px solid #71808b; border-radius: 10px; }
+        .workflow-item.primary { border-left-color: #1adcfd; box-shadow: 0 0 0 1px rgba(26, 220, 253, .18); }
+        .step-number { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; color: #08202b; background: #8fdfff; font-weight: 800; }
+        .workflow-item h2 { margin-bottom: 4px; font-size: 18px; }
+        .workflow-item p { margin: 0; }
+        .queue-count { color: #b8f1c8; font-weight: 700; }
+        .eyebrow { color: #1adcfd; font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+        .primary-action { display: inline-block; padding: 12px 16px; border-radius: 6px; color: #08202b; background: #8fdfff; font-weight: 800; text-decoration: none; }
+        .primary-action:focus { outline: 3px solid #1adcfd; outline-offset: 2px; }
+        @media (max-width: 700px) { .workflow-item { grid-template-columns: auto 1fr; } .workflow-item > :last-child { grid-column: 2; } }
         h1 { font-size: 32px; line-height: 1.2; margin: 0 0 10px; }
         h2 { font-size: 22px; line-height: 1.3; margin: 0 0 14px; }
         p { line-height: 1.5; }
@@ -43,6 +54,7 @@
             <a href="{{ route('operator.eligible-shifts') }}">Assigned shifts</a>
             <a href="{{ route('operator.verification-worklist') }}">Verification worklist</a>
             <a href="{{ route('operator.basic-examination-worklist') }}">Basic-examination worklist</a>
+            <a href="{{ route('operator.xray-readiness-worklist') }}">X-ray readiness</a>
             <form method="POST" action="{{ route('logout') }}">
                 @csrf
                 <button type="submit" class="secondary">Sign out</button>

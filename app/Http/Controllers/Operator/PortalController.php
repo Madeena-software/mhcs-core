@@ -26,7 +26,6 @@ final class PortalController extends Controller
 {
     public function dashboard(
         OperatorAuthorization $authorization,
-        OperatorActiveSiteService $sites,
         OperatorShiftAssignmentService $assignments,
         OperatorWorklistService $worklist,
     ): View {
@@ -37,12 +36,15 @@ final class PortalController extends Controller
         } catch (OperatorException) {
         }
 
+        $shifts = $activeSite === null ? [] : $assignments->assignedToCurrentOperator();
+
         return view('operator.dashboard', [
             'operatorName' => $portal['profile']->display_name ?: $portal['user']->getFilamentName(),
-            'sites' => $sites->assignedSites(),
             'activeSite' => $activeSite,
-            'shifts' => $activeSite === null ? [] : $assignments->assignedToCurrentOperator(),
-            'arrivals' => $activeSite === null ? [] : $worklist->current(),
+            'shiftCount' => count($shifts),
+            'verificationCount' => $activeSite === null ? 0 : count($worklist->current()),
+            'basicExaminationCount' => $activeSite === null ? 0 : count($worklist->basicExamination()),
+            'xrayReadinessCount' => $activeSite === null ? 0 : count($worklist->xrayReadiness()),
         ]);
     }
 
