@@ -173,6 +173,81 @@ final class Mvp04kBasicExaminationCompletionTest extends TestCase
         $this->assertSame(0, DB::table('outbox_messages')->where('event_name', 'member.paper-questionnaire-completed')->count());
     }
 
+    public function test_questionnaire_requires_completion_confirmation_and_photo(): void
+    {
+        [, $admission] = $this->inServiceFixture('QUESTIONNAIRE-MISSING-FIELDS');
+        $operationId = (string) Str::uuid();
+
+        $this->post(route('operator.basic-examination-worklist.questionnaire.store', $admission->id), [
+            'operation_id' => $operationId,
+        ])->assertRedirect()->assertSessionHasErrors(['questionnaire_completed', 'photo']);
+
+        $this->post(route('operator.basic-examination-worklist.questionnaire.store', $admission->id), [
+            'operation_id' => (string) Str::uuid(),
+            'questionnaire_completed' => '1',
+        ])->assertRedirect()->assertSessionHasErrors('photo');
+
+        $this->assertSame(0, DB::table('member_paper_questionnaires')->count());
+        $this->assertSame([], Storage::disk('local')->allFiles());
+    }
+
+    public function test_oversized_questionnaire_photo_leaves_no_record_or_private_object(): void
+    {
+        [, $admission] = $this->inServiceFixture('QUESTIONNAIRE-OVERSIZED');
+
+        $this->post(route('operator.basic-examination-worklist.questionnaire.store', $admission->id), [
+            'operation_id' => (string) Str::uuid(),
+            'questionnaire_completed' => '1',
+            'photo' => UploadedFile::fake()->create('questionnaire.jpg', 10241, 'image/jpeg'),
+        ])->assertRedirect()->assertSessionHasErrors('photo');
+
+        $this->assertSame(0, DB::table('member_paper_questionnaires')->count());
+        $this->assertSame([], Storage::disk('local')->allFiles());
+    }
+
+    public function test_valid_unsupported_questionnaire_image_leaves_no_record_or_private_object(): void
+    {
+        [, $admission] = $this->inServiceFixture('QUESTIONNAIRE-UNSUPPORTED');
+        $gif = base64_decode('R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==', true);
+        $this->assertIsString($gif);
+
+        $this->post(route('operator.basic-examination-worklist.questionnaire.store', $admission->id), [
+            'operation_id' => (string) Str::uuid(),
+            'questionnaire_completed' => '1',
+            'photo' => UploadedFile::fake()->createWithContent('questionnaire.gif', $gif),
+        ])->assertRedirect()->assertSessionHasErrors('questionnaire');
+
+        $this->assertSame(0, DB::table('member_paper_questionnaires')->count());
+        $this->assertSame([], Storage::disk('local')->allFiles());
+    }
+
+    public function test_failure_after_private_object_storage_cleans_up_the_object_and_record(): void
+    {
+        [$fixture, $admission] = $this->inServiceFixture('QUESTIONNAIRE-STORAGE-FAILURE');
+        $plain = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9JgN0AAAAASUVORK5CYII=', true);
+        $this->assertIsString($plain);
+        $filesBeforeFailure = Storage::disk('local')->allFiles();
+
+        app()->instance(AuditStore::class, new class implements AuditStore
+        {
+            public function append(AuditEvent $event): void
+            {
+                throw new RuntimeException('synthetic audit failure after object storage');
+            }
+        });
+        app()->forgetScopedInstances();
+
+        $this->post(route('operator.basic-examination-worklist.questionnaire.store', $admission->id), [
+            'operation_id' => (string) Str::uuid(),
+            'questionnaire_completed' => '1',
+            'photo' => UploadedFile::fake()->createWithContent('questionnaire.png', $plain),
+        ])->assertRedirect()->assertSessionHasErrors('questionnaire');
+
+        $this->assertSame(0, DB::table('member_paper_questionnaires')->where('booking_id', $fixture['bookingId'])->count());
+        $this->assertSame($filesBeforeFailure, Storage::disk('local')->allFiles());
+        $this->assertSame(0, DB::table('outbox_messages')->where('event_name', 'member.paper-questionnaire-completed')->count());
+    }
+
     public function test_questionnaire_replay_creates_one_private_record_and_object(): void
     {
         [$fixture, $admission] = $this->inServiceFixture('QUESTIONNAIRE-REPLAY');

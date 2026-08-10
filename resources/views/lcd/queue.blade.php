@@ -12,11 +12,13 @@
         ul { list-style: none; padding: 0; }
         li { display: flex; justify-content: space-between; gap: 2rem; padding: 1rem 0; border-bottom: 1px solid #334155; font-size: clamp(1.3rem, 3vw, 2.5rem); }
         .empty { color: #cbd5e1; }
+        .status { color: #fca5a5; font-size: 1.25rem; }
     </style>
 </head>
 <body>
 <main>
     <h1>Clinic queue</h1>
+    <p id="queue-status" class="status" role="status" hidden>Queue disconnected — shown calls may be stale.</p>
     <section aria-labelledby="current-calls-title">
         <h2 id="current-calls-title">Current calls</h2>
         <ul id="current-calls"><li class="empty">Waiting for the next call</li></ul>
@@ -28,6 +30,10 @@
 </main>
 <script>
     const endpoint = @json(route('lcd.queue', $siteId));
+    const status = document.getElementById('queue-status');
+    const setConnectionState = (connected) => {
+        status.hidden = connected;
+    };
     const render = (element, entries, empty) => {
         element.replaceChildren();
         if (!entries.length) {
@@ -50,11 +56,14 @@
     const refresh = async () => {
         try {
             const response = await fetch(endpoint, { cache: 'no-store' });
-            if (!response.ok) return;
+            if (!response.ok) throw new Error('queue_refresh_failed');
             const queue = await response.json();
             render(document.getElementById('current-calls'), queue.current, 'Waiting for the next call');
             render(document.getElementById('recent-calls'), queue.recent_calls, 'No calls yet');
-        } catch (_) {}
+            setConnectionState(true);
+        } catch (_) {
+            setConnectionState(false);
+        }
     };
     refresh();
     setInterval(refresh, 5000);
