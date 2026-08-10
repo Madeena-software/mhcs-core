@@ -86,9 +86,16 @@ vendor/bin/phpunit \
 
   It passed with 1 test. The fresh SQLite `migrate:fresh --force` step,
   `git diff --check`, and bounded Pint also passed.
-- The visual browser walkthrough could not be completed in this execution
-  environment: no Chromium/Firefox binary or installed `node_modules` was
-  available, and dependency installation is outside this task's authority.
-  The required next evidence is to repeat the documented walkthrough in a
-  browser-capable local environment and record the Printer Station page plus
-  the LCD failure/recovery observation; no browser success is claimed here.
+- The fresh-database Chrome journey was exercised with synthetic fixtures:
+
+  ```bash
+  TARGET="." vendor/bin/pest tests/Browser/MvpCoreLocalClinicFlowTest.php --browser chrome
+  ```
+
+  It passed with 1 test and 16 assertions. The journey verified the private
+  Printer Station ticket, absence of member identifiers, ticket-only LCD
+  calls, the visible stale warning after a failed refresh, and warning
+  clearance after refresh recovery. The broader pre-existing Browser suite
+  was also started with the task command, but its administrator closure flow
+  did not complete in this environment; no unrelated browser test was
+  changed.
