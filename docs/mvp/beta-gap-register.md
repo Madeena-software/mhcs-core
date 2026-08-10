@@ -107,3 +107,18 @@ matched identity and confirmed `Informed Consent` / `V1` checks. `MVP-GAP-006`,
 ticket generation policy, public/Member ticket exposure, clinical behavior,
 consent-scan access, privacy/retention approval, production storage,
 deployment, and production readiness remain open.
+
+## Friday clinic-day reprioritization — 2026-08-10
+
+MVP-DEC-021 through MVP-DEC-025 supersede the historical scheduling of the
+following gaps only for the approved Friday clinic-day slice. All remain open
+until their task evidence and release verification exist.
+
+| Existing gap | Friday treatment | Required temporary control and closure evidence |
+|---|---|---|
+| MVP-GAP-003 — B2B bulk import | Reprioritized from deferred MVP-08 work to Friday scope | Exact import contract, unique temporary-password handoff to one B2B contact, duplicate/invalid-row handling, and focused verification must pass before real import. |
+| MVP-GAP-009 and MVP-GAP-012 — Operator and queue flow | Reprioritized to include station-scoped calling, paired Printer Station, paired LCD Station, the approved assessment, and X-ray handoff | Preserve site/shift authorization, private ticket data, atomic claims, audit, offline Printer/LCD behavior, and focused flow evidence. |
+| MVP-GAP-013 — Image Gateway intake | Reprioritized to complete-capture acceptance for this slice | Prove MinIO durable acceptance, matching NPZ/gain validation, idempotency, safe retry, and background MPIPS conversion with administrator-visible terminal failure. |
+| MVP-GAP-019 — object-storage policy | Remains open | Use the provided MinIO environment only after approved configuration and release verification; do not claim retention, encryption, or storage-policy closure without evidence. |
+| MVP-GAP-020 — credential delivery | Bounded delivery mechanism approved; implementation gap remains open | One credential spreadsheet is delivered once to one designated B2B contact outside MHCS. No plaintext password is retained, logged, or committed. |
+| MVP-GAP-021 through MVP-GAP-023 — privacy, deployment, and release evidence | Remain open release gates | Faliq Adlan, CTO, approved the scope and conditional use of real data, but deployment may proceed only after the recorded verification, release decision, and observed evidence. |
