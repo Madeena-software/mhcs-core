@@ -1,75 +1,296 @@
-# MHCS Core — Repository Entry Point
+---
+title: Codex Runtime Adapter
+document_id: AGENT-RUNTIME-CODEX-001
+version: 1.1
+status: approved-template
+language: en-US
+last_updated: 2026-08-10
+runtime: Codex
+materialization_target: ./AGENTS.md
+scope:
+  - Codex instruction bootstrap
+  - canonical .agents routing
+  - Codex skill and plugin methodology boundary
+  - Codex delegation and permission boundary
+authority_note: This file is a runtime bootstrap and execution-methodology adapter. It is not canonical repository authority and MUST NOT redefine or weaken the repository-local delivery contract under .agents/.
+---
 
-Before planning, reviewing, modifying files, generating code, or running commands:
+# Codex Runtime Adapter
 
-1. Read `.agents/AGENTS.md` completely.
-2. Follow it as the canonical repository-wide agent contract.
-3. Inspect the current repository state before making claims about existing behavior.
-4. Load only the context, skills, roles, tasks, and evidence relevant to the current request.
-5. Stop and report the issue if a required instruction, context, skill, task, or evidence source cannot be read.
-6. Do not guess missing architecture, clinical, financial, security, authorization, or product requirements.
+This file is the root Codex instruction entrypoint for repositories using the canonical `.agents/` software-delivery framework.
 
-Explicit user instructions and higher-priority runtime instructions take precedence over repository files.
+Its purpose is to connect Codex instruction discovery to the repository-local delivery contract.
 
-## MHCS context routing
+It MUST remain thin.
 
-Read `.agents/context/project.md` for repository-wide architecture, technology choices, module boundaries, cross-module communication, security, transactions, deployment, and external integrations.
+Do not duplicate the full delivery protocol, planning procedure, task contract, or repository context here.
 
-Read only the affected module context:
+## Canonical repository contract
 
-* Member: `.agents/context/modules/member/project.md`
-* Operator: `.agents/context/modules/operator/project.md`
-* Doctor: `.agents/context/modules/doctor/project.md`
-* Image Gateway: `.agents/context/modules/image-gateway/project.md`
+Before material repository work, read and obey:
 
-For cross-module work, read the context of every affected module before changing behavior.
+```text
+.agents/AGENTS.md
+```
 
-For member-facing labels, navigation, statuses, notifications, onboarding, explanatory copy, report summaries, and user journeys, read:
+That file is the canonical repository-wide AI delivery contract.
 
-`.agents/context/ui-language.md`
+When applicable, follow its role-aware progressive-loading rules for:
 
-For UI layout, styling, and visual components, inspect the applicable approved references under:
+- Planner;
+- Executor;
+- Reviewer;
+- repository context;
+- delivery orchestration;
+- validated tasks;
+- evidence and verification;
+- side-effect boundaries;
+- runtime-neutral engineering methodology.
 
-`.agents/context/design/`
+`.agents/software-workflow.md` remains the normative software-delivery protocol.
 
-Do not invent a new visual system when an approved MHCS design reference exists.
+This root adapter MUST NOT override either canonical file.
 
-## Task routing
+## Runtime instruction layering and repository policy
 
-Files under `.agents/tasks/` are versioned execution contracts and are not executed automatically.
+Codex builds project instructions from the repository root toward the current working directory.
 
-Execute a task only when the user explicitly identifies that task or explicitly requests execution of a specific published task.
+Within a directory, `AGENTS.override.md` takes precedence over `AGENTS.md`. Instructions closer to the current working directory appear later in Codex's combined instruction chain and therefore have higher runtime precedence.
 
-Before task execution:
+Nested Codex instruction files MAY specialize local technical conventions, commands, tests, ownership rules, or implementation constraints.
 
-1. Read `.agents/skills/agent-task/SKILL.md` completely.
-2. Follow its Execute procedure.
-3. Validate the identified task using the validator required by that skill.
-4. Stop if validation fails or the required validator is unavailable.
-5. Follow the task's runtime inputs, scope, iteration limit, approval gates, acceptance criteria, verification requirements, and output contract.
-6. Do not edit a published task file to store runtime values, progress, command output, or results.
-7. Report success only when all required acceptance criteria and verification checks pass.
+Repository policy requires those narrower instructions to remain compatible with the canonical `.agents/` contract.
 
-## Framework boundary
+They MUST NOT intentionally:
 
-Do not modify files marked with:
+- redefine approved business or product intent;
+- change approved requirements;
+- weaken approved architecture or repository policy;
+- bypass a required delivery gate;
+- authorize implementation without a validated task;
+- broaden a governing task;
+- replace the exact governing task revision;
+- self-approve implementation acceptance;
+- convert acceptance into release authorization;
+- weaken security, privacy, safety, compliance, or side-effect boundaries.
 
-`<!-- antigravity-code-agent-template:managed -->`
+Because Codex gives narrower files higher runtime precedence, a materially conflicting nested instruction is an unsafe repository-configuration defect rather than a legitimate protocol override.
 
-during ordinary product implementation.
+If such a conflict is detected, stop and surface the conflicting files and affected rule instead of silently continuing.
 
-Modify managed framework files only when the user explicitly requests maintenance or customization of the Antigravity framework.
+## Role routing
 
-Project-specific context, task definitions, and other files intentionally created for MHCS may be added or revised through their applicable framework procedures.
+Use the role definitions in `.agents/AGENTS.md`.
 
-## Evidence boundary
+### Planner / Reviewer
 
-Files under `.agents/context/` describe approved requirements, constraints, and target behavior.
+When acting as Planner or Reviewer:
 
-They are not proof that the corresponding behavior is already implemented.
+1. load the canonical files required by `.agents/AGENTS.md`;
+2. use `.agents/prompts/plan-create-task.md` as the canonical delivery-orchestration procedure;
+3. resolve pending execution, review, remediation, approval, or baseline state before dependent successor planning;
+4. publish executable work only when the canonical Task Readiness gate is satisfied.
 
-Determine current behavior from repository evidence, including source code, migrations, configuration, tests, dependency manifests, command output, and version-control state.
+Do not create an implementation task merely because the user asked Codex to "continue" when the protocol requires authority repair, approval, review, remediation, or no action.
 
-Do not claim implementation or completion without relevant verification evidence.
+### Executor
 
-Do not silently resolve material conflicts between approved context and repository behavior. Report conflicts affecting architecture, security, clinical behavior, financial behavior, authorization, privacy, or data integrity.
+When acting as Executor:
+
+1. load `.agents/AGENTS.md`;
+2. load the exact governing validated task revision;
+3. load its implementation baseline and referenced authority;
+4. inspect only the implementation context materially relevant to the task;
+5. execute within the task's bounded authority;
+6. report observed verification evidence and terminal state.
+
+Do not rerun delivery planning merely to substitute your own preferred objective.
+
+If a task stop condition is reached, stop and return the issue to Planner/Reviewer orchestration.
+
+## Codex skills and plugins
+
+Codex skills, plugins, MCP servers, subagents, and other runtime-native capabilities are **engineering and analysis aids**.
+
+Use relevant installed capabilities when they materially improve the current responsibility and their use is allowed by repository policy.
+
+When a skill or plugin defines its own invocation or methodology rules, follow those rules **within** the repository delivery boundaries defined by:
+
+1. applicable human and approved repository authority;
+2. `.agents/software-workflow.md`;
+3. `.agents/AGENTS.md`;
+4. the exact governing validated task when executing;
+5. applicable approval, permission, security, privacy, and side-effect boundaries.
+
+Runtime methodology does not become repository authority.
+
+A skill or plugin MUST NOT be used to justify changing the delivery objective, requirements, architecture, acceptance criteria, or approval state without legitimate authority.
+
+## Superpowers
+
+When Superpowers is installed and applicable, use it as an engineering methodology according to its current skill-routing rules.
+
+Superpowers MAY guide technical practices such as:
+
+- design exploration;
+- implementation planning;
+- test-driven development;
+- systematic debugging;
+- worktree isolation;
+- subagent coordination;
+- technical code review;
+- verification before completion.
+
+Superpowers governs **how technical work is performed**.
+
+The canonical `.agents/` framework governs **what delivery work is legitimate, bounded, reviewable, and acceptable**.
+
+If a Superpowers workflow requests an action that conflicts with applicable user instructions, repository authority, or the governing task, treat it as a methodology conflict.
+
+Examples include requests to:
+
+- create or expand a specification beyond approved authority;
+- broaden implementation scope;
+- introduce an unapproved architectural decision;
+- commit or push without authorization;
+- create repository artifacts outside the governing delivery scope;
+- declare final acceptance;
+- perform deployment or release actions.
+
+Superpowers-generated design documents, specifications, implementation plans, or similar methodology artifacts do not automatically become repository authority.
+
+During Executor work, keep methodology planning ephemeral unless the governing task or applicable repository authority explicitly permits the artifact to be persisted. Do not commit such artifacts unless commit and artifact creation are both authorized.
+
+Adapt the methodology when its own rules allow that adaptation. If it cannot be followed without violating repository authority, task scope, or approval boundaries, stop and surface the conflict.
+
+## Other installed skills and plugins
+
+Use other installed Codex skills or plugins when their capability matches the current work.
+
+Examples MAY include:
+
+- security scanning and finding remediation;
+- repository or pull-request inspection;
+- CI debugging;
+- frontend or domain-specific implementation;
+- documentation maintenance;
+- codebase analysis;
+- external-tool integrations.
+
+Apply the same boundary:
+
+```text
+installed capability
+        ↓
+technical methodology / evidence aid
+        ↓
+canonical repository authority and task remain controlling
+```
+
+Do not invoke a tool merely because it is installed.
+
+Use it when it is relevant, permitted, and proportionate to the current delivery responsibility.
+
+## Repository-intelligence tools
+
+When Graphify, Codebase Memory MCP, or equivalent repository-intelligence capabilities are available, follow the intelligence rules in `.agents/AGENTS.md` and the active Planner/Reviewer procedure or governing task.
+
+Derived indexes, graphs, summaries, symbol maps, and retrieval results are supporting intelligence.
+
+Material conclusions MUST be verified against authoritative repository sources or current observed implementation evidence as applicable.
+
+## Subagents and delegation
+
+Codex MAY use subagents or parallel technical work when supported and appropriate.
+
+Delegation does not create new delivery authority.
+
+### Planner / Reviewer delegation
+
+Planner or Reviewer delegation MAY occur before a governing task exists.
+
+Such delegated work MUST remain bounded by:
+
+- the current verified repository state and accepted baseline when known;
+- applicable intended authority;
+- the specific planning, discovery, evidence, or review question delegated;
+- applicable approval and side-effect boundaries.
+
+A governing task revision is required only when the delegated work is reviewing, remediating, or otherwise operating on a task-governed execution attempt.
+
+Planning or review delegation MUST NOT silently become implementation mutation.
+
+### Executor delegation
+
+Executor delegation MUST remain bounded by the same:
+
+- implementation baseline;
+- exact governing task revision;
+- authority inputs;
+- in-scope and preserved behavior;
+- execution constraints;
+- stop conditions;
+- remaining approval requirements;
+- side-effect authorization.
+
+Subagent findings and summaries are supporting evidence until verified against the repository.
+
+Parallel execution MUST respect explicit task dependencies and overlapping write surfaces.
+
+Do not delegate independent implementation objectives that should instead be separate validated tasks.
+
+## Permissions, sandboxing, and approvals
+
+Codex runtime permissions, sandbox configuration, tool availability, and approval prompts determine what Codex is technically able to do.
+
+They do **not** by themselves authorize repository delivery side effects.
+
+For example, technical ability to run `git commit`, push a branch, install a dependency, mutate an external service, or deploy does not imply that the governing task authorizes that action.
+
+Apply both boundaries:
+
+```text
+runtime permission
+AND
+repository delivery authorization
+```
+
+An action requiring either boundary to be satisfied MUST NOT proceed until both are satisfied.
+
+Never weaken repository safety rules merely because the runtime can perform the action without an interactive approval prompt.
+
+## Evidence
+
+Use Codex tools to gather actual evidence where possible.
+
+Do not represent:
+
+- inferred command results;
+- unobserved tests;
+- local checks as CI;
+- subagent summaries;
+- skill output;
+- plugin output;
+- cached repository intelligence;
+
+as stronger evidence than was actually observed.
+
+Before claiming implementation completion, follow applicable runtime verification methodology and the verification requirements of the governing task.
+
+Final protocol acceptance remains a Planner/Reviewer responsibility.
+
+## Operating rule
+
+For every material repository action:
+
+```text
+Codex root AGENTS.md
+→ .agents/AGENTS.md
+→ role-specific canonical loading
+→ applicable runtime skills/plugins
+→ bounded work
+→ observed evidence
+→ canonical Planner/Reviewer loop
+```
+
+When runtime methodology and repository delivery governance differ, preserve repository authority and surface the conflict.
