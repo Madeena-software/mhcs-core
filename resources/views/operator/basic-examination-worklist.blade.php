@@ -38,14 +38,18 @@
                             @if ($entry['claimed_by_current_operator'])
                                 <span class="status">Claimed by you</span>
                                 @if ($entry['state'] === 'in_service')
+                                    @if (! $entry['has_vital_signs_execution'])
+                                        <a href="{{ route('operator.basic-examination-worklist.vital-signs', $entry['admission_id']) }}">Record vital signs</a>
+                                    @endif
+                                    @if (! $entry['has_questionnaire'])
+                                        <a href="{{ route('operator.basic-examination-worklist.questionnaire', $entry['admission_id']) }}">Upload paper questionnaire</a>
+                                    @endif
                                     @if ($entry['can_complete'])
                                         <form method="POST" action="{{ route('operator.basic-examination-worklist.complete', $entry['admission_id']) }}">
                                             @csrf
                                             <input type="hidden" name="operation_id" value="{{ (string) \Illuminate\Support\Str::uuid() }}">
                                             <button type="submit">Complete basic examination</button>
                                         </form>
-                                    @else
-                                        <a href="{{ route('operator.basic-examination-worklist.vital-signs', $entry['admission_id']) }}">Record vital signs</a>
                                     @endif
                                 @elseif ($entry['state'] === 'called')
                                     <form method="POST" action="{{ route('operator.basic-examination-worklist.start', $entry['admission_id']) }}">

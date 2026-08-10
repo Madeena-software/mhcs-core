@@ -143,6 +143,7 @@ final class MvpOperatorSeeder extends Seeder
             OperatorAuthorization::SHIFT_MANAGE,
             OperatorAuthorization::ATTENDANCE_READ,
             OperatorAuthorization::ARRIVAL_RECORD,
+            OperatorAuthorization::IDENTITY_VERIFY,
             OperatorAuthorization::AUDIT_READ,
             OperatorAuthorization::PROTOCOL_READ,
             OperatorAuthorization::PROTOCOL_MANAGE,

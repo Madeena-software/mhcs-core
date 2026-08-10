@@ -5,11 +5,15 @@ use App\Http\Controllers\Member\DashboardController;
 use App\Http\Controllers\Member\Mvp03BookingController;
 use App\Http\Controllers\Member\ProfileController;
 use App\Http\Controllers\Operator\PortalController as OperatorPortalController;
+use App\Http\Controllers\PublicQueueDisplayController;
 use App\Http\Middleware\EnsureMemberPortalAccess;
 use App\Http\Middleware\EnsureOperatorPortalAccess;
 use Illuminate\Support\Facades\Route;
 
 Route::redirect('/', '/login');
+
+Route::get('/lcd/{site}', [PublicQueueDisplayController::class, 'show'])->name('lcd.show');
+Route::get('/lcd/{site}/queue', [PublicQueueDisplayController::class, 'queue'])->name('lcd.queue');
 
 Route::get('/login', [AuthenticationController::class, 'showLogin'])
     ->middleware('guest')
@@ -56,6 +60,8 @@ Route::middleware(['auth', EnsureOperatorPortalAccess::class])->group(function (
     Route::post('/operator/basic-examination-worklist/{admission}/start', [OperatorPortalController::class, 'startBasicExamination'])->name('operator.basic-examination-worklist.start');
     Route::get('/operator/basic-examination-worklist/{admission}/vital-signs', [OperatorPortalController::class, 'basicExaminationVitalSigns'])->name('operator.basic-examination-worklist.vital-signs');
     Route::post('/operator/basic-examination-worklist/{admission}/vital-signs', [OperatorPortalController::class, 'recordBasicExaminationVitalSigns'])->name('operator.basic-examination-worklist.vital-signs.store');
+    Route::get('/operator/basic-examination-worklist/{admission}/questionnaire', [OperatorPortalController::class, 'basicExaminationQuestionnaire'])->name('operator.basic-examination-worklist.questionnaire');
+    Route::post('/operator/basic-examination-worklist/{admission}/questionnaire', [OperatorPortalController::class, 'recordBasicExaminationQuestionnaire'])->name('operator.basic-examination-worklist.questionnaire.store');
     Route::post('/operator/basic-examination-worklist/{admission}/complete', [OperatorPortalController::class, 'completeBasicExamination'])->name('operator.basic-examination-worklist.complete');
     Route::post('/operator/identity-verification/start', [OperatorPortalController::class, 'startIdentityVerification'])->name('operator.identity-verification.start');
     Route::get('/operator/identity-verification/{case}', [OperatorPortalController::class, 'identityVerification'])->name('operator.identity-verification.show');

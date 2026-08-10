@@ -12,6 +12,7 @@ use App\Shared\Events\DomainEvent;
 use App\Shared\Infrastructure\Outbox\OutboxStore;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -34,6 +35,7 @@ final class Mvp04kBasicExaminationCompletionTest extends TestCase
     {
         [$fixture, $admission] = $this->inServiceFixture('COMPLETE-1');
         $this->recordVitalSigns($admission->id);
+        $this->recordQuestionnaire($fixture);
         $operationId = (string) Str::uuid();
 
         $this->post(route('operator.basic-examination-worklist.complete', $admission->id), ['operation_id' => $operationId])
@@ -113,10 +115,125 @@ final class Mvp04kBasicExaminationCompletionTest extends TestCase
         $this->assertSame(0, DB::table('operator_queue_admissions')->where('stage', 'xray')->count());
     }
 
+    public function test_completion_requires_a_captured_paper_questionnaire_after_vital_signs(): void
+    {
+        [$fixture, $admission] = $this->inServiceFixture('MISSING-QUESTIONNAIRE');
+        $this->recordVitalSigns($admission->id);
+
+        $this->post(route('operator.basic-examination-worklist.complete', $admission->id), ['operation_id' => (string) Str::uuid()])
+            ->assertConflict();
+
+        $this->assertDatabaseHas('operator_queue_admissions', [
+            'id' => $admission->id,
+            'state' => 'in_service',
+            'operator_profile_id' => $fixture['profileId'],
+        ]);
+        $this->assertSame(0, DB::table('operator_queue_admissions')->where('stage', 'xray')->count());
+    }
+
+    public function test_claimant_captures_the_completed_paper_questionnaire_as_a_private_photo(): void
+    {
+        [$fixture, $admission] = $this->inServiceFixture('QUESTIONNAIRE-CAPTURE');
+        $plain = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9JgN0AAAAASUVORK5CYII=', true);
+        $this->assertIsString($plain);
+
+        $this->post(route('operator.basic-examination-worklist.questionnaire.store', $admission->id), [
+            'operation_id' => (string) Str::uuid(),
+            'questionnaire_completed' => '1',
+            'photo' => UploadedFile::fake()->createWithContent('questionnaire.png', $plain),
+        ])->assertRedirect(route('operator.basic-examination-worklist'));
+
+        $questionnaire = DB::table('member_paper_questionnaires')->where('booking_id', $fixture['bookingId'])->first();
+        $this->assertNotNull($questionnaire);
+        $this->assertSame($fixture['memberId'], $questionnaire->member_id);
+        $this->assertSame($fixture['scheduleId'], $questionnaire->member_schedule_id);
+        $this->assertSame($fixture['siteReferenceId'], $questionnaire->examination_site_id);
+        $this->assertSame($fixture['siteStableId'], $questionnaire->operator_site_id);
+        $this->assertSame($fixture['profileId'], $questionnaire->operator_profile_id);
+        $this->assertSame('V1', $questionnaire->form_version);
+        $this->assertSame('image/png', $questionnaire->private_photo_format);
+        $this->assertNotSame($plain, Storage::disk('local')->get($questionnaire->private_photo_object_key));
+        $this->assertStringNotContainsString((string) $questionnaire->private_photo_object_key, json_encode(DB::table('audit_events')->get(), JSON_THROW_ON_ERROR));
+        $this->assertStringNotContainsString($plain, json_encode(DB::table('outbox_messages')->get(), JSON_THROW_ON_ERROR));
+    }
+
+    public function test_invalid_questionnaire_photo_leaves_no_record_or_private_object(): void
+    {
+        [, $admission] = $this->inServiceFixture('QUESTIONNAIRE-INVALID');
+
+        $this->post(route('operator.basic-examination-worklist.questionnaire.store', $admission->id), [
+            'operation_id' => (string) Str::uuid(),
+            'questionnaire_completed' => '1',
+            'photo' => UploadedFile::fake()->createWithContent('not-a-photo.jpg', 'synthetic non-image'),
+        ])->assertRedirect()->assertSessionHasErrors('questionnaire');
+
+        $this->assertSame(0, DB::table('member_paper_questionnaires')->count());
+        $this->assertSame([], Storage::disk('local')->allFiles());
+        $this->assertSame(0, DB::table('audit_events')->where('action', 'member.paper-questionnaire.completed')->count());
+        $this->assertSame(0, DB::table('outbox_messages')->where('event_name', 'member.paper-questionnaire-completed')->count());
+    }
+
+    public function test_questionnaire_replay_creates_one_private_record_and_object(): void
+    {
+        [$fixture, $admission] = $this->inServiceFixture('QUESTIONNAIRE-REPLAY');
+        $operationId = (string) Str::uuid();
+        $plain = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9JgN0AAAAASUVORK5CYII=', true);
+        $this->assertIsString($plain);
+
+        $this->post(route('operator.basic-examination-worklist.questionnaire.store', $admission->id), [
+            'operation_id' => $operationId,
+            'questionnaire_completed' => '1',
+            'photo' => UploadedFile::fake()->createWithContent('questionnaire.png', $plain),
+        ])->assertRedirect(route('operator.basic-examination-worklist'));
+        $filesAfterFirstCapture = Storage::disk('local')->allFiles();
+
+        $this->post(route('operator.basic-examination-worklist.questionnaire.store', $admission->id), [
+            'operation_id' => $operationId,
+            'questionnaire_completed' => '1',
+            'photo' => UploadedFile::fake()->createWithContent('replayed-questionnaire.png', $plain),
+        ])->assertRedirect(route('operator.basic-examination-worklist'));
+
+        $this->assertSame(1, DB::table('member_paper_questionnaires')->where('booking_id', $fixture['bookingId'])->count());
+        $this->assertSame($filesAfterFirstCapture, Storage::disk('local')->allFiles());
+        $this->assertSame(1, DB::table('audit_events')->where('action', 'member.paper-questionnaire.completed')->count());
+        $this->assertSame(1, DB::table('outbox_messages')->where('event_name', 'member.paper-questionnaire-completed')->count());
+    }
+
+    public function test_non_claimant_cannot_capture_a_questionnaire_photo(): void
+    {
+        [$fixture, $admission] = $this->inServiceFixture('QUESTIONNAIRE-FORBIDDEN');
+        $other = $this->secondOperator($fixture);
+        $plain = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9JgN0AAAAASUVORK5CYII=', true);
+        $this->assertIsString($plain);
+
+        $this->actingAs($other['operator']);
+        $this->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
+        $this->post(route('operator.basic-examination-worklist.questionnaire.store', $admission->id), [
+            'operation_id' => (string) Str::uuid(),
+            'questionnaire_completed' => '1',
+            'photo' => UploadedFile::fake()->createWithContent('questionnaire.png', $plain),
+        ])->assertForbidden();
+
+        $this->assertSame(0, DB::table('member_paper_questionnaires')->count());
+        $this->assertSame([], Storage::disk('local')->allFiles());
+    }
+
+    public function test_in_service_worklist_offers_vital_signs_and_questionnaire_independently(): void
+    {
+        [, $admission] = $this->inServiceFixture('INDEPENDENT-CAPTURE');
+
+        $this->get(route('operator.basic-examination-worklist'))
+            ->assertOk()
+            ->assertSee('Record vital signs')
+            ->assertSee('Upload paper questionnaire')
+            ->assertDontSee('Complete basic examination');
+    }
+
     public function test_completion_replay_is_idempotent_and_changed_payload_conflicts(): void
     {
         [$fixture, $admission] = $this->inServiceFixture('REPLAY-COMPLETE');
         $this->recordVitalSigns($admission->id);
+        $this->recordQuestionnaire($fixture);
         $operationId = (string) Str::uuid();
 
         $this->post(route('operator.basic-examination-worklist.complete', $admission->id), ['operation_id' => $operationId])->assertRedirect();
@@ -133,8 +250,9 @@ final class Mvp04kBasicExaminationCompletionTest extends TestCase
 
     public function test_competing_completion_cannot_duplicate_the_xray_admission(): void
     {
-        [, $admission] = $this->inServiceFixture('COMPETING-COMPLETE');
+        [$fixture, $admission] = $this->inServiceFixture('COMPETING-COMPLETE');
         $this->recordVitalSigns($admission->id);
+        $this->recordQuestionnaire($fixture);
 
         $this->post(route('operator.basic-examination-worklist.complete', $admission->id), ['operation_id' => (string) Str::uuid()])->assertRedirect();
         $this->post(route('operator.basic-examination-worklist.complete', $admission->id), ['operation_id' => (string) Str::uuid()])->assertConflict();
@@ -173,6 +291,7 @@ final class Mvp04kBasicExaminationCompletionTest extends TestCase
     {
         [$fixture, $admission] = $this->inServiceFixture('CONSTRAINT-COMPLETE');
         $this->recordVitalSigns($admission->id);
+        $this->recordQuestionnaire($fixture);
         $this->post(route('operator.basic-examination-worklist.complete', $admission->id), ['operation_id' => (string) Str::uuid()])->assertRedirect();
         $xray = DB::table('operator_queue_admissions')->where('stage', 'xray')->first();
 
@@ -216,6 +335,7 @@ final class Mvp04kBasicExaminationCompletionTest extends TestCase
     {
         [$fixture, $admission] = $this->inServiceFixture('ROLLBACK-COMPLETE');
         $this->recordVitalSigns($admission->id);
+        $this->recordQuestionnaire($fixture);
         $operationId = (string) Str::uuid();
         app()->instance(AuditStore::class, new class implements AuditStore
         {
@@ -277,6 +397,29 @@ final class Mvp04kBasicExaminationCompletionTest extends TestCase
     {
         $this->post(route('operator.basic-examination-worklist.vital-signs.store', $admissionId), $this->valuePayload((string) Str::uuid()))
             ->assertRedirect(route('operator.basic-examination-worklist'));
+    }
+
+    private function recordQuestionnaire(array $fixture): void
+    {
+        $now = now();
+        DB::table('member_paper_questionnaires')->insert([
+            'id' => (string) Str::uuid(),
+            'member_id' => $fixture['memberId'],
+            'booking_id' => $fixture['bookingId'],
+            'member_schedule_id' => $fixture['scheduleId'],
+            'examination_site_id' => $fixture['siteReferenceId'],
+            'operator_site_id' => $fixture['siteStableId'],
+            'operator_profile_id' => $fixture['profileId'],
+            'completed_at' => $now,
+            'form_version' => 'V1',
+            'private_photo_object_key' => 'synthetic-questionnaire',
+            'private_photo_checksum' => hash('sha256', 'synthetic-questionnaire'),
+            'private_photo_bytes' => 1,
+            'private_photo_format' => 'image/jpeg',
+            'operation_id' => (string) Str::uuid(),
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
     }
 
     /** @return array<string, mixed> */

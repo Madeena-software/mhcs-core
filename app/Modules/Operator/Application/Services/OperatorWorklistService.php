@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Modules\Operator\Application\Services;
 
 use App\Modules\Member\Application\Contracts\OperatorAttendanceContract;
+use App\Modules\Member\Application\Contracts\OperatorPaperQuestionnaireContract;
 use App\Modules\Member\Application\Contracts\OperatorVitalSignsContract;
 use App\Modules\Operator\Domain\OperatorException;
 use App\Shared\Audit\AuditEvent;
@@ -16,6 +17,7 @@ use App\Shared\Infrastructure\Idempotency\IdempotencyStore;
 use App\Shared\Infrastructure\Outbox\OutboxStore;
 use App\Shared\Time\Clock;
 use Illuminate\Database\QueryException;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Throwable;
@@ -34,12 +36,15 @@ final readonly class OperatorWorklistService
 
     public const VITAL_SIGNS_PURPOSE = 'operator.basic-examination.vital-signs';
 
+    public const QUESTIONNAIRE_PURPOSE = OperatorPaperQuestionnaireContract::PURPOSE;
+
     public const COMPLETE_PURPOSE = 'operator.basic-examination.complete';
 
     public function __construct(
         private OperatorAuthorization $authorization,
         private OperatorShiftAssignmentService $assignments,
         private OperatorAttendanceContract $memberAttendance,
+        private OperatorPaperQuestionnaireContract $memberQuestionnaire,
         private OperatorVitalSignsContract $memberVitalSigns,
         private IdempotencyStore $idempotency,
         private AuditStore $audit,
@@ -124,6 +129,7 @@ final readonly class OperatorWorklistService
                 'admissions.ready_at',
             ])
             ->selectRaw('exists (select 1 from operator_vital_signs_executions as executions where executions.operator_queue_admission_id = admissions.id) as has_vital_signs_execution')
+            ->selectRaw('exists (select 1 from member_paper_questionnaires as questionnaires where questionnaires.booking_id = tickets.booking_id and questionnaires.member_schedule_id = admissions.member_schedule_id and questionnaires.operator_site_id = ?) as has_questionnaire', [$site->operator_site_id])
             ->orderBy('admissions.ready_at')
             ->orderBy('admissions.id')
             ->get()
@@ -137,9 +143,12 @@ final readonly class OperatorWorklistService
                 'state' => (string) $row->state,
                 'ready_at' => (string) $row->ready_at,
                 'claimed_by_current_operator' => $row->claim_operator_profile_id !== null,
+                'has_vital_signs_execution' => (bool) $row->has_vital_signs_execution,
+                'has_questionnaire' => (bool) $row->has_questionnaire,
                 'can_complete' => $row->claim_operator_profile_id !== null
                     && $row->state === 'in_service'
-                    && (bool) $row->has_vital_signs_execution,
+                    && (bool) $row->has_vital_signs_execution
+                    && (bool) $row->has_questionnaire,
             ])->all();
     }
 
@@ -348,6 +357,76 @@ final readonly class OperatorWorklistService
         }
     }
 
+    /** @return array{admission_id: string} */
+    public function questionnaireForm(string $admissionId): array
+    {
+        $admissionId = trim($admissionId);
+        if (! Str::isUuid($admissionId)) {
+            throw new OperatorException('questionnaire_forbidden', 'The paper questionnaire is unavailable.');
+        }
+
+        $portal = $this->authorization->portal();
+        $site = $this->authorization->portalSite($portal);
+        $this->assertCaptureAdmission($this->captureAdmission($admissionId, (string) $portal['profile']->getKey(), $site), (string) $portal['profile']->getKey(), $site);
+
+        return ['admission_id' => $admissionId];
+    }
+
+    /** @return array{questionnaire_id: string, completed_at: string} */
+    public function recordBasicExaminationQuestionnaire(string $admissionId, string $operationId, UploadedFile $photo): array
+    {
+        $admissionId = trim($admissionId);
+        $operationId = trim($operationId);
+        if (! Str::isUuid($admissionId) || ! Str::isUuid($operationId)) {
+            throw new OperatorException('questionnaire_forbidden', 'The paper questionnaire is unavailable.');
+        }
+
+        $portal = $this->authorization->portal();
+        $site = $this->authorization->portalSite($portal);
+        $profileId = (string) $portal['profile']->getKey();
+        $context = $this->authorization->current(self::QUESTIONNAIRE_PURPOSE);
+        $payload = [
+            'admission_id' => $admissionId,
+            'operator_profile_id' => $profileId,
+            'operator_site_id' => (string) $site->operator_site_id,
+        ];
+
+        try {
+            return $this->idempotency->run(
+                $operationId,
+                self::QUESTIONNAIRE_PURPOSE,
+                $payload,
+                function () use ($admissionId, $operationId, $profileId, $site, $context, $photo): array {
+                    $transactionPortal = $this->authorization->portal();
+                    $transactionSite = $this->authorization->portalSite($transactionPortal);
+                    if ((string) $transactionPortal['profile']->getKey() !== $profileId || (string) $transactionSite->getKey() !== (string) $site->getKey()) {
+                        throw new OperatorException('questionnaire_forbidden', 'The paper questionnaire is unavailable.');
+                    }
+
+                    $admission = $this->captureAdmission($admissionId, $profileId, $site, lock: true);
+                    $this->assertCaptureAdmission($admission, $profileId, $site);
+
+                    return $this->memberQuestionnaire->record(
+                        $context,
+                        (string) $site->operator_site_id,
+                        $profileId,
+                        (string) $admission->member_id,
+                        (string) $admission->booking_id,
+                        (string) $admission->member_schedule_id,
+                        $operationId,
+                        $photo,
+                    );
+                },
+            )->result;
+        } catch (IdempotencyConflict|QueryException $exception) {
+            throw new OperatorException('questionnaire_conflict', 'The paper questionnaire could not be recorded.', $exception);
+        } catch (OperatorException $exception) {
+            throw $exception;
+        } catch (Throwable $exception) {
+            throw new OperatorException('questionnaire_failure', 'The paper questionnaire could not be recorded.', $exception);
+        }
+    }
+
     /** @return array{admission_id: string, state: string, xray_admission_id: string, xray_state: string, completed_at: string} */
     public function completeBasicExamination(string $admissionId, string $operationId): array
     {
@@ -406,6 +485,17 @@ final readonly class OperatorWorklistService
                         ->get()
                         ->count();
                     if ($executionCount !== 1) {
+                        throw new OperatorException('queue_completion_conflict', 'The queue admission could not be completed.');
+                    }
+
+                    $questionnaireCount = DB::table('member_paper_questionnaires')
+                        ->where('member_id', $admission->member_id)
+                        ->where('booking_id', $admission->booking_id)
+                        ->where('member_schedule_id', $admission->member_schedule_id)
+                        ->where('operator_site_id', $site->operator_site_id)
+                        ->lockForUpdate()
+                        ->count();
+                    if ($questionnaireCount !== 1) {
                         throw new OperatorException('queue_completion_conflict', 'The queue admission could not be completed.');
                     }
 

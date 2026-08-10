@@ -395,6 +395,50 @@ final class PortalController extends Controller
         }
     }
 
+    public function basicExaminationQuestionnaire(string $admission, OperatorWorklistService $worklist): View|RedirectResponse
+    {
+        try {
+            return view('operator.basic-examination-questionnaire', $worklist->questionnaireForm($admission));
+        } catch (OperatorException) {
+            abort(403);
+        } catch (Throwable) {
+            return redirect()->route('operator.dashboard')->withErrors(['questionnaire' => 'The paper questionnaire form is unavailable.']);
+        }
+    }
+
+    public function recordBasicExaminationQuestionnaire(Request $request, string $admission, OperatorWorklistService $worklist): RedirectResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'operation_id' => ['required', 'uuid'],
+            'questionnaire_completed' => ['accepted'],
+            'photo' => ['required', 'file', 'max:10240'],
+        ]);
+        if ($validator->fails()) {
+            return back()->withErrors($validator)->withInput();
+        }
+
+        try {
+            $worklist->recordBasicExaminationQuestionnaire(
+                $admission,
+                (string) $validator->validated()['operation_id'],
+                $request->file('photo'),
+            );
+
+            return redirect()->route('operator.basic-examination-worklist')->with('status', 'Paper questionnaire recorded privately.');
+        } catch (OperatorException $exception) {
+            if ($exception->category === 'questionnaire_conflict') {
+                abort(409);
+            }
+            if ($exception->category === 'questionnaire_failure') {
+                return back()->withErrors(['questionnaire' => 'The paper questionnaire could not be saved.'])->withInput();
+            }
+
+            abort(403);
+        } catch (Throwable) {
+            return back()->withErrors(['questionnaire' => 'The paper questionnaire could not be saved.'])->withInput();
+        }
+    }
+
     public function completeBasicExamination(Request $request, string $admission, OperatorWorklistService $worklist): RedirectResponse
     {
         $validator = Validator::make($request->all(), ['operation_id' => ['required', 'uuid']]);
