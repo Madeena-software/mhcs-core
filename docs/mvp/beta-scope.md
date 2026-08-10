@@ -118,83 +118,39 @@ Every exposed beta flow must retain server-derived actor, role, site, case, purp
 
 Expand the beta only after the relevant MVP task has focused tests and evidence, the gap register is updated, ownership and authorization are verified, unresolved approval boundaries are identified, and the owner approves the next scope. Before controlled beta deployment, run the required integration/release verification, resolve critical gaps, approve migration/deployment/privacy/retention decisions, and record the deployment decision. Passing MVP tasks alone is never a production-readiness claim.
 
-## 17 August clinic-day MVP addendum — approved 2026-08-10
+## 12 August MVP delivery target — Operator priority — approved 2026-08-10
 
-Faliq Adlan, CTO, approved a bounded controlled deployment candidate for use on
-Monday, 17 August 2026, with deployment targeted for Wednesday, 12 August. This
-addendum supersedes the historical synthetic-data-only control only for the
-defined 37-member B2B clinic-day flow. It does not alter the long-term Work
-Package requirements or turn the controlled release into a general
-production-readiness claim.
+Faliq Adlan, CTO, set Wednesday, 12 August as the delivery target for all
+active MVP work. The active priority is a usable Operator site flow; this does
+not expand an individual task's scope or create a general production-readiness
+claim.
 
-The approved flow is:
+The approved Operator flow is:
 
 ```text
-B2B roster import and fixed booking
-→ NIK login and forced temporary-password replacement
-→ required profile, KTP, and photo completion
-→ site-scoped identity verification and paper-consent confirmation
+site selection
+→ site-scoped arrival and identity verification
+→ paper-consent confirmation
 → ticket issue and paired Printer Station print
-→ paired LCD queue for Vital Signs and X-ray
+→ paired LCD queue for vital signs and X-ray readiness
 → approved vital-sign assessment
-→ complete NPZ and matching-gain submission
-→ durable MinIO acceptance
-→ private background MPIPS conversion
+→ private paper-questionnaire photograph
+→ X-ray readiness
 ```
-
-The member visit is operationally complete after MinIO durably accepts the
-complete capture set. Staff do not wait for AI, doctor activity, or MPIPS
-conversion. An adult whose profile, KTP, or photograph is incomplete cannot
-receive a ticket. A minor stops the import because guardian/dependent flows
-remain excluded.
 
 The assessment records blood pressure, temperature, height, weight, calculated
 BMI, and the structured health questionnaire. Glucose, total cholesterol, and
-uric acid are deferred from this release; they are not removed from the target
-clinical specification.
+uric acid are deferred; they are not removed from the target clinical
+specification. The paper form remains the structured source. MHCS records only
+completion and one private JPEG or PNG image; it performs no OCR or AI
+extraction and never exposes the image through Member, LCD, or queue surfaces.
 
-For this clinic-day slice, the Operator completes the approved structured
-interview on its paper form, photographs it, and uploads one private JPEG or
-PNG image. The paper form remains the structured source. MHCS records only that
-the form was completed and its private image; it performs no OCR or AI
-extraction and never exposes the image through the Member Portal, public LCD,
-or queue surfaces.
-
-Real roster data and credential delivery are allowed only after the deployment
-has passed the approved release checks. The import produces unique random
-temporary passwords, stores only their hashes, and makes first-password
-replacement mandatory. A one-time credential spreadsheet may be handed to one
-designated B2B contact outside the application; it must not be committed,
-logged, retained by MHCS, or distributed to all members as a shared document.
-
-The B2B partner supplies the roster as a local PDF under
-`docs/mvp/import-data/`. For the 17 August import, a Member Administrator
-manually transcribes it into the ignored CSV input defined by
-`docs/mvp/import-data/README.md`. MHCS does not parse the PDF or accept the
-roster as a browser upload.
-
-The 17 August CSV maps its omitted administrative gender to the existing
-`unspecified` Member value, maps `ktp_address` to the initial current address,
-and does not persist birthplace. This avoids a schema change while retaining
-the raw PDF as the local source for birthplace.
-
-Members complete their profile, KTP, and photograph at the clinic on 17 August
-before ticket issue. Pre-provisioning an account does not waive that gate.
-
-The provided Docker server, HTTPS endpoint, and MinIO service are dependencies.
-MHCS and MPIPS remain separate containers joined only through their external
-private Docker network; MPIPS is not publicly exposed. The existing mandatory
-security boundaries continue to apply without exception.
-
-Before the real import, the release candidate must prove one synthetic end-to-
-end flow: member login and profile gate, check-in, ticket print, LCD call,
-vital-sign capture, NPZ/gain upload, MinIO durable acceptance, and MPIPS DICOM
-conversion. The real Printer Station and LCD Station must be paired and tested,
-and staff must complete a dry rehearsal. Failed upload remains an X-ray-stage
-exception; permanent conversion failure must be visible to an administrator.
+B2B import, real roster data, credential delivery, Member profile completion,
+NPZ/gain submission, MinIO acceptance, DICOM conversion, AI, and MPIPS are not
+part of this objective. They remain separate approved work or release
+decisions.
 
 Member, Operator, Member administration, and Operator administration are owned
 and delivered on `main`. Image Gateway and its AI/MPIPS integration are owned
-by a separate branch. The branch must merge and pass the integrated release
-gate before the 17 August clinic-day use; separation is a delivery
-boundary, not an exclusion.
+by a separate branch. That separation remains a delivery boundary, not an
+exclusion from future integrated verification.

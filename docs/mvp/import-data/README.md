@@ -1,15 +1,15 @@
-# 17 August B2B roster import input
+# Deferred B2B roster import input
 
-**Status:** Approved 17 August-only input handling
+**Status:** Deferred; not part of the 12 August Operator-priority task
 
 The B2B partner supplies the raw roster as a PDF in this directory. The PDF
 and every roster or credential data file remain ignored by Git and must never
 be committed, copied into planning documents, test fixtures, logs, or command
 output.
 
-For the 37-member 17 August import, a Member Administrator manually transcribes
-the supplied PDF into a UTF-8 CSV file in this same directory. The importer
-accepts this exact header row:
+For a later approved import, a Member Administrator may manually transcribe the
+supplied PDF into a UTF-8 CSV file in this same directory. The importer accepts
+this exact header row:
 
 ```text
 name,birthplace,birth_date,ktp_address,nik
@@ -19,8 +19,8 @@ name,birthplace,birth_date,ktp_address,nik
 preserved. The CSV is a local one-time import input, not an application upload
 or a Member-facing file.
 
-For this 17 August-only file, an omitted administrative gender maps to the
-existing Member value `unspecified`; `ktp_address` becomes the Member's initial
+For this deferred input, an omitted administrative gender maps to the existing
+Member value `unspecified`; `ktp_address` becomes the Member's initial
 `current_address`; and `birthplace` is not persisted in MHCS. The raw PDF
 remains the source for birthplace. This mapping is approved by MVP-DEC-027 and
 does not add a new field or data model.

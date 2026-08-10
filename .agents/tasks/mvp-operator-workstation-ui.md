@@ -26,14 +26,14 @@ authority_note: This task is executable only at its immutable publication revisi
 `Validated/Published`
 
 **Delivery objective / Work Package / MVP:**
-`12 August controlled deployment candidate / 17 August clinic-day MVP / MVP-04 Operator site flow`
+`12 August MVP delivery target / Operator priority / MVP-04 site flow`
 
 **Owner / designated planning authority:**
 `Faliq Adlan, CTO`
 
 ## Delivery context
 
-The accepted clinic-core behavior is reachable through a generic shared login and link-oriented Operator dashboard. That is inadequate for an Operator at an examination site. For the 12 August controlled-deployment candidate, this task gives the existing secure Operator flow a dedicated entry point and sequential workstation interface without changing domain behavior. The clinic day remains 17 August; deployment/release authorization remains separate.
+The accepted clinic-core behavior is reachable through a generic shared login and link-oriented Operator dashboard. That is inadequate for an Operator at an examination site. All active MVP delivery targets 12 August; the Operator site flow is the first priority. This task gives the existing secure Operator flow a dedicated entry point and sequential workstation interface without changing domain behavior. Deployment and release authorization remain separate.
 
 ## Baseline and task revision
 
@@ -52,7 +52,7 @@ Allow an authorized Operator to sign in through a dedicated Operator page and ru
 
 ### Governing authority
 
-- `docs/mvp/beta-scope.md` — 17 August clinic-day flow and security boundary.
+- `docs/mvp/beta-scope.md` — 12 August MVP delivery target, Operator priority, and security boundary.
 - `docs/mvp/decision-log.md` — MVP-DEC-022, MVP-DEC-023, MVP-DEC-029, and MVP-DEC-030.
 - `docs/mvp/roadmap.md` — MVP-04 ownership on the main workstream.
 - `.agents/context/project.md` — shared authentication foundation and separate Image Gateway dependency.
@@ -64,7 +64,7 @@ Allow an authorized Operator to sign in through a dedicated Operator page and ru
 - `OPR-031..OPR-046` → Operator portal, queue, ticket, and assessment flow.
 - `MVP-DEC-023` → paired Printer Station and public LCD queue.
 - `MVP-DEC-022/030` → limited basic examination and private paper questionnaire capture.
-- `MVP-DEC-028/029` → 12 August deployment target and locally runnable Member and Operator clinic-day core.
+- `MVP-DEC-028/029` → 12 August MVP delivery target, Operator priority, and locally runnable Member and Operator clinic-day core.
 
 ## Scope
 
@@ -107,7 +107,7 @@ Allow an authorized Operator to sign in through a dedicated Operator page and ru
 
 ### Remaining approval requirements
 
-- Faliq Adlan, CTO, must authorize the commit that publishes this task before implementation begins.
+- No implementation approval beyond this published task.
 - A separate release decision remains required before the 12 August deployment, real data, credentials, or device rehearsal.
 
 ## Required capabilities

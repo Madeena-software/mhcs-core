@@ -354,41 +354,32 @@ public/LCD/audio behavior, Member visibility, privacy/retention approval,
 deployment, production readiness, and `MVP-GAP-009`, `MVP-GAP-012`,
 `MVP-GAP-021`, and `MVP-GAP-024` remain open.
 
-## 17 August clinic-day MVP — approved scope, not yet executed
+## 12 August MVP delivery target — Operator priority — approved scope, not yet executed
 
-The next coherent delivery objective is the bounded 37-member B2B clinic-day
-flow approved by MVP-DEC-021 through MVP-DEC-028 for use on 17 August 2026.
-Deployment is targeted for 12 August. It spans Member, Operator, and Image
-Gateway because a usable visit cannot stop at a layer boundary.
-
-The core clinic-day MVP has a hard local-working deadline of Tuesday,
-11 August 2026 at 12:00 Asia/Bangkok (MVP-DEC-029). It covers Member, Operator,
-Member administration, and Operator administration on `main`; Image Gateway,
-AI, and MPIPS remain separately owned and do not block this core-local deadline.
-The deadline is not deployment, real-data import, or release approval.
+All active MVP work targets the 12 August controlled-deployment candidate. The
+next coherent delivery objective on this branch is the Operator site flow: it
+covers the Member and Operator core behavior on `main` through X-ray readiness.
+Image Gateway, AI, and MPIPS remain separately owned and do not block this
+objective. The target is not by itself deployment, real-data import, or release
+approval.
 
 Delivery must be sequenced as follows:
 
-1. Verify the current main baseline and Image Gateway branch/revision; do not
-   assume an unmerged Gateway provider exists on main.
-2. Implement and verify the B2B import, first-login/profile gate, fixed-booking
-   administration, and one-time credential handoff without retaining plaintext
-   passwords.
-3. Complete and verify the site-and-shift Operator flow: identity and paper
-   consent gate, ticket issue/reprint, station-scoped queue calls, Printer
-   Station, LCD Station, and the approved limited assessment.
-4. Complete and verify Image Gateway complete-capture acceptance: NPZ/gain
-   validation, MinIO storage, private MPIPS conversion, retries, and
-   administrator-visible terminal failure.
-5. Merge and integrate the required Gateway revision, then run the controlled
-   release verification and device rehearsal before importing the 37 real
-   members.
+1. Verify the current main baseline and preserve the separate Image Gateway
+   contract boundary.
+2. Complete and verify the dedicated Operator entry and workstation: site
+   selection, attendance, identity and paper-consent gate, ticket issue/print,
+   station-scoped queue calls, Printer Station, LCD Station, approved limited
+   assessment, private paper questionnaire, and X-ray readiness.
+3. Run focused synthetic verification and the bounded Browser proof, then make
+   the separate release decision before any deployment or real-data use.
 
-The release candidate excludes doctor/AI/result workflows, walk-ins, cash and
-payments, points, operator payouts, automated staffing, dynamic booking
-quotas, self-service rescheduling, repeat examinations, and glucose,
-cholesterol, and uric-acid screening. These exclusions are tracked in the gap
-register; no status is closed by this planning update.
+The Operator-priority task excludes B2B import, credential delivery, Member profile
+completion, Gateway capture intake, NPZ/gain validation, MinIO storage, DICOM
+conversion, doctor/AI/result workflows, walk-ins, cash and payments, points,
+operator payouts, automated staffing, dynamic booking quotas, self-service
+rescheduling, repeat examinations, and glucose, cholesterol, and uric-acid
+screening. These exclusions remain tracked in the gap register.
 
 ### Parallel Planner/Reviewer instructions
 
@@ -402,8 +393,9 @@ Read and follow `.agents/prompts/plan-create-task.md`.
 
 Assess the current repository delivery state, resolve any pending execution,
 review, remediation, approval, or baseline state first, and then perform the
-next legitimate Planner/Reviewer action for the 17 August clinic-day MVP core:
-Member, Operator, Member administration, and Operator administration.
+next legitimate Planner/Reviewer action for the 12 August MVP target, with
+Operator core priority:
+Member and Operator behavior required through X-ray readiness.
 
 Image Gateway, AI, and MPIPS implementation are owned by a separate branch.
 Do not implement them here. Treat their approved contract as an integration
@@ -418,8 +410,8 @@ Read and follow `.agents/prompts/plan-create-task.md`.
 
 Assess the current repository delivery state, resolve any pending execution,
 review, remediation, approval, or baseline state first, and then perform the
-next legitimate Planner/Reviewer action for the 17 August clinic-day MVP Image
-Gateway: X-ray capture intake, MinIO storage, NPZ/gain validation, MPIPS/AI
+next legitimate Planner/Reviewer action for the separate Image Gateway
+workstream: X-ray capture intake, MinIO storage, NPZ/gain validation, MPIPS/AI
 integration, retry handling, and administrator-visible terminal failures.
 
 Member, Operator, Member administration, and Operator administration are owned

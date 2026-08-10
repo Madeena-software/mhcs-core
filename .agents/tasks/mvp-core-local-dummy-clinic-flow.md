@@ -26,7 +26,7 @@ authority_note: This task is executable only at its immutable publication revisi
 `Validated/Published — remediation`
 
 **Delivery objective / Work Package / MVP:**  
-`17 August clinic-day MVP core local proof / MVP-04 and WP-07/WP-10/WP-11/WP-12/WP-17`
+`12 August MVP delivery target / Operator core priority / MVP-04 and WP-07/WP-10/WP-11/WP-12/WP-17`
 
 **Owner / designated planning authority:**  
 `Faliq Adlan, CTO`
@@ -70,7 +70,7 @@ X-ray-readiness core flow without implementing or simulating Gateway behavior.
 
 ### Governing authority
 
-- `docs/mvp/beta-scope.md` — 17 August clinic-day flow and security boundary.
+- `docs/mvp/beta-scope.md` — 12 August MVP delivery target, Operator priority, and security boundary.
 - `docs/mvp/decision-log.md` — MVP-DEC-021 through MVP-DEC-030, especially
   MVP-DEC-022, MVP-DEC-023, MVP-DEC-024, MVP-DEC-029, and MVP-DEC-030.
 - `docs/mvp/roadmap.md` — core ownership and local deadline.

@@ -108,17 +108,17 @@ ticket generation policy, public/Member ticket exposure, clinical behavior,
 consent-scan access, privacy/retention approval, production storage,
 deployment, and production readiness remain open.
 
-## 17 August clinic-day reprioritization — 2026-08-10
+## 12 August MVP delivery target — Operator priority — 2026-08-10
 
-MVP-DEC-021 through MVP-DEC-028 supersede the historical scheduling of the
-following gaps only for the approved 17 August clinic-day slice. All remain open
-until their task evidence and release verification exist.
+All active MVP work targets the 12 August controlled-deployment candidate.
+The Operator site flow is first priority; all listed gaps remain open until
+their own task evidence and separate release verification exist.
 
-| Existing gap | 17 August treatment | Required temporary control and closure evidence |
+| Existing gap | 12 August treatment | Required temporary control and closure evidence |
 |---|---|---|
-| MVP-GAP-003 — B2B bulk import | Reprioritized from deferred MVP-08 work to 17 August scope | The approved local CSV contract is documented at `docs/mvp/import-data/README.md`; unique temporary-password handoff to one B2B contact, duplicate/invalid-row handling, and focused verification must still pass before real import. |
-| MVP-GAP-009 and MVP-GAP-012 — Operator and queue flow | Reprioritized to include station-scoped calling, paired Printer Station, paired LCD Station, the approved assessment, and X-ray handoff | Preserve site/shift authorization, private ticket data, atomic claims, audit, offline Printer/LCD behavior, and focused flow evidence. |
-| MVP-GAP-013 — Image Gateway intake | Reprioritized to complete-capture acceptance for this slice | Prove MinIO durable acceptance, matching NPZ/gain validation, idempotency, safe retry, and background MPIPS conversion with administrator-visible terminal failure. |
-| MVP-GAP-019 — object-storage policy | Remains open | Use the provided MinIO environment only after approved configuration and release verification; do not claim retention, encryption, or storage-policy closure without evidence. |
-| MVP-GAP-020 — credential delivery | Bounded delivery mechanism approved; implementation gap remains open | One credential spreadsheet is delivered once to one designated B2B contact outside MHCS. No plaintext password is retained, logged, or committed. |
-| MVP-GAP-021 through MVP-GAP-023 — privacy, deployment, and release evidence | Remain open release gates | Faliq Adlan, CTO, approved the scope and conditional use of real data, but deployment may proceed only after the recorded verification, release decision, and observed evidence. |
+| MVP-GAP-003 — B2B bulk import | Deferred from the Operator-priority task | The local CSV contract remains archived for later approved import work; no real roster or credential delivery is in this objective. |
+| MVP-GAP-009 and MVP-GAP-012 — Operator and queue flow | Prioritized: site-scoped calling, Printer Station, LCD Station, approved assessment, and X-ray readiness | Preserve site/shift authorization, private ticket data, atomic claims, audit, offline Printer/LCD behavior, and focused flow evidence. |
+| MVP-GAP-013 — Image Gateway intake | Separate workstream dependency, not an Operator-priority task blocker | Do not implement MinIO, NPZ/gain validation, conversion, AI, or MPIPS on the core branch. |
+| MVP-GAP-019 — object-storage policy | Remains open | Do not claim retention, encryption, or storage-policy closure without approved configuration and release evidence. |
+| MVP-GAP-020 — credential delivery | Deferred with B2B import | No plaintext password is retained, logged, or committed. |
+| MVP-GAP-021 through MVP-GAP-023 — privacy, deployment, and release evidence | Remain open release gates | Deployment may proceed only after recorded verification, a release decision, and observed evidence. |
