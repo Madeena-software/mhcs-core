@@ -1,8 +1,8 @@
 # Local clinic-core walkthrough
 
-This is a synthetic local rehearsal for the core branch only. It stops at
-X-ray readiness. Do not use a real roster, credential, NIK, paper form, or
-clinical image.
+This is a synthetic local rehearsal for the core branch only. It continues
+through the local/testing Image Gateway capture and Operator DICOM download.
+Do not use a real roster, credential, NIK, paper form, or clinical image.
 
 ## Set up
 
@@ -44,9 +44,19 @@ spreadsheet, commit, chat, or deployment environment.
    The application records only completion and stores that image privately.
 8. Complete the basic examination. The ticket becomes X-ray ready. Claim and
    call it from the X-ray readiness worklist; confirm the LCD updates again.
+9. Open **Submit synthetic capture** for the called admission. Select exactly
+   the committed pair from the repository:
+   `resources/fixtures/image-gateway/synthetic-radiograph-01.npz` and
+   `resources/fixtures/image-gateway/synthetic-gain-01.npz`. Confirm the
+   browser warns before navigation while either file is selected, then submit
+   the complete capture set once.
+10. Confirm the accepted study opens as a vertical, read-only DICOM view with
+    automatic VOI and zoom/pan only. Click **Download DICOM** and confirm the
+    browser downloads `synthetic-study.dcm` as an attachment.
 
-Stop there. This rehearsal does not capture images, call Image Gateway, wait
-for AI, run MPIPS, or create a result.
+Stop there. This rehearsal uses only repository-owned synthetic fixtures in
+`local` or `testing`; it does not run MPIPS, convert NPZ bytes, wait for AI, or
+create a clinical result.
 
 ## Focused verification
 
@@ -57,7 +67,10 @@ vendor/bin/phpunit \
   tests/Feature/Operator/Mvp04kBasicExaminationCompletionTest.php \
   tests/Feature/Operator/Mvp04lAtomicXrayClaimTest.php \
   tests/Feature/Operator/Mvp04mPrivateXrayCallTest.php \
-  tests/Feature/Operator/Mvp04pPublicQueueDisplayTest.php
+  tests/Feature/Operator/Mvp04pPublicQueueDisplayTest.php \
+  tests/Feature/Operator/Mvp14SyntheticCaptureGatewayTest.php
+
+TARGET="." vendor/bin/pest tests/Browser/Mvp14OperatorDicomRehearsalTest.php --browser chrome
 ```
 
 ## Remediation evidence — 10 August 2026

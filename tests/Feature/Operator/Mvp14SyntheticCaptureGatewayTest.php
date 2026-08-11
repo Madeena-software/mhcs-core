@@ -6,6 +6,9 @@ namespace Tests\Feature\Operator;
 
 use App\Shared\Audit\AuditEvent;
 use App\Shared\Audit\AuditStore;
+use App\Shared\Audit\DatabaseAuditStore;
+use App\Shared\Events\DomainEvent;
+use App\Shared\Infrastructure\Outbox\OutboxStore;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
@@ -133,6 +136,120 @@ final class Mvp14SyntheticCaptureGatewayTest extends TestCase
         $this->assertCount(0, Storage::disk('local')->allFiles());
     }
 
+    public function test_altered_fixture_bytes_fail_without_database_or_private_object_residue(): void
+    {
+        $fixture = $this->readyFixture();
+        $admission = $this->insertCalledXrayAdmission($fixture, 'SYNTH-ALTERED');
+
+        $this->from(route('operator.xray-capture.show', $admission))
+            ->post(route('operator.xray-capture.store', $admission), [
+                'submission_id' => (string) Str::uuid(),
+                'radiographs' => [UploadedFile::fake()->createWithContent('synthetic-radiograph-01.npz', 'altered synthetic bytes')],
+                'gain' => $this->fixtureUpload('synthetic-gain-01.npz'),
+            ])
+            ->assertRedirect()
+            ->assertSessionHasErrors('capture');
+
+        $this->assertNoCaptureSideEffects($admission);
+    }
+
+    public function test_missing_fixture_fails_without_database_or_private_object_residue(): void
+    {
+        $fixture = $this->readyFixture();
+        $admission = $this->insertCalledXrayAdmission($fixture, 'SYNTH-MISSING');
+
+        $this->from(route('operator.xray-capture.show', $admission))
+            ->post(route('operator.xray-capture.store', $admission), [
+                'submission_id' => (string) Str::uuid(),
+                'radiographs' => [$this->fixtureUpload('synthetic-radiograph-01.npz')],
+            ])
+            ->assertRedirect()
+            ->assertSessionHasErrors('gain');
+
+        $this->assertNoCaptureSideEffects($admission);
+    }
+
+    public function test_pair_mismatch_fails_without_database_or_private_object_residue(): void
+    {
+        $fixture = $this->readyFixture();
+        $admission = $this->insertCalledXrayAdmission($fixture, 'SYNTH-MISMATCH');
+
+        $this->from(route('operator.xray-capture.show', $admission))
+            ->post(route('operator.xray-capture.store', $admission), [
+                'submission_id' => (string) Str::uuid(),
+                'radiographs' => [$this->fixtureUpload('synthetic-radiograph-01.npz')],
+                'gain' => $this->fixtureUploadAs('synthetic-radiograph-01.npz', 'synthetic-gain-01.npz'),
+            ])
+            ->assertRedirect()
+            ->assertSessionHasErrors('capture');
+
+        $this->assertNoCaptureSideEffects($admission);
+    }
+
+    public function test_replay_conflict_does_not_accept_a_second_case(): void
+    {
+        $fixture = $this->readyFixture();
+        $firstAdmission = $this->insertCalledXrayAdmission($fixture, 'SYNTH-REPLAY-1');
+        $submissionId = (string) Str::uuid();
+
+        $payload = [
+            'submission_id' => $submissionId,
+            'radiographs' => [$this->fixtureUpload('synthetic-radiograph-01.npz')],
+            'gain' => $this->fixtureUpload('synthetic-gain-01.npz'),
+        ];
+        $this->post(route('operator.xray-capture.store', $firstAdmission), $payload)->assertRedirect();
+        DB::table('operator_queue_admissions')->where('id', $firstAdmission)->update([
+            'operator_profile_id' => null,
+            'claimed_at' => null,
+        ]);
+        $secondAdmission = $this->insertCalledXrayAdmission(
+            [...$fixture, 'bookingId' => $this->copyBooking($fixture)],
+            'SYNTH-REPLAY-2',
+        );
+
+        $this->post(route('operator.xray-capture.store', $secondAdmission), [
+            ...$payload,
+            'radiographs' => [$this->fixtureUpload('synthetic-radiograph-01.npz')],
+            'gain' => $this->fixtureUpload('synthetic-gain-01.npz'),
+        ])->assertRedirect()->assertSessionHasErrors('capture');
+
+        $this->assertSame('awaiting_ai', DB::table('operator_queue_admissions')->where('id', $firstAdmission)->value('state'), 'first admission state');
+        $this->assertNoCaptureSideEffects($secondAdmission, 1);
+        $this->assertSame(1, DB::table('image_gateway_capture_sets')->count(), 'capture count');
+        $this->assertSame(1, DB::table('idempotent_consumptions')->where('message_id', $submissionId)->count(), 'idempotency count');
+    }
+
+    public function test_cross_case_site_and_shift_inputs_fail_without_side_effects(): void
+    {
+        $fixture = $this->readyFixture();
+        DB::table('members')->where('id', $fixture['memberId'])->update([
+            'nik_lookup_digest' => hash('sha256', 'mvp14-cross-boundary-'.$fixture['memberId']),
+        ]);
+        $foreignFixture = $this->operatorFixture(false);
+        $foreignAdmission = $this->insertCalledXrayAdmission($foreignFixture, 'SYNTH-CROSS-CASE');
+
+        $this->from(route('operator.xray-capture.show', $foreignAdmission))
+            ->post(route('operator.xray-capture.store', $foreignAdmission), [
+                'submission_id' => (string) Str::uuid(),
+                'radiographs' => [$this->fixtureUpload('synthetic-radiograph-01.npz')],
+                'gain' => $this->fixtureUpload('synthetic-gain-01.npz'),
+            ])
+            ->assertRedirect()
+            ->assertSessionHasErrors('capture');
+        $this->assertNoCaptureSideEffects($foreignAdmission);
+
+        $crossShiftAdmission = $this->insertCrossShiftCalledXrayAdmission($fixture);
+        $this->from(route('operator.xray-capture.show', $crossShiftAdmission))
+            ->post(route('operator.xray-capture.store', $crossShiftAdmission), [
+                'submission_id' => (string) Str::uuid(),
+                'radiographs' => [$this->fixtureUpload('synthetic-radiograph-01.npz')],
+                'gain' => $this->fixtureUpload('synthetic-gain-01.npz'),
+            ])
+            ->assertRedirect()
+            ->assertSessionHasErrors('capture');
+        $this->assertNoCaptureSideEffects($crossShiftAdmission);
+    }
+
     public function test_operator_study_uses_the_private_dicom_grant_and_standard_download(): void
     {
         $fixture = $this->readyFixture();
@@ -156,9 +273,43 @@ final class Mvp14SyntheticCaptureGatewayTest extends TestCase
             ->assertHeader('Cache-Control', 'no-store, private');
         $this->assertSame(file_get_contents(base_path('resources/fixtures/image-gateway/synthetic-study.dcm')), $dicom->getContent());
 
-        $this->get(route('operator.study.download', $studyId))
-            ->assertOk()
+        $download = $this->get(route('operator.study.download', $studyId));
+        $download->assertOk()
             ->assertHeader('Content-Disposition', 'attachment; filename="synthetic-study.dcm"');
+        $this->assertSame($dicom->getContent(), $download->getContent());
+    }
+
+    public function test_study_viewer_and_download_require_current_operator_scope_and_have_no_raw_fixture_route(): void
+    {
+        $fixture = $this->readyFixture();
+        $admission = $this->insertCalledXrayAdmission($fixture, 'SYNTH-ACCESS');
+        $this->postCapture($admission);
+        $studyId = (string) DB::table('image_gateway_studies')->value('id');
+
+        $this->app['auth']->logout();
+        foreach ($this->studyRoutes($studyId) as $route) {
+            $this->get($route)->assertRedirect(route('login'));
+        }
+
+        DB::table('members')->where('id', $fixture['memberId'])->update([
+            'nik_lookup_digest' => hash('sha256', 'mvp14-study-access-'.$fixture['memberId']),
+        ]);
+        $foreign = $this->operatorFixture(false);
+        $this->actingAs($foreign['operator']);
+        $this->withSession(['operator.active_site_id' => $foreign['siteLocalId']]);
+        foreach ($this->studyRoutes($studyId) as $route) {
+            $this->get($route)->assertForbidden();
+        }
+
+        $this->actingAs($fixture['operator']);
+        $this->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
+        DB::table('operator_shift_assignments')->where('operator_profile_id', $fixture['profileId'])->update(['status' => 'revoked']);
+        foreach ($this->studyRoutes($studyId) as $route) {
+            $this->get($route)->assertForbidden();
+        }
+
+        DB::table('operator_shift_assignments')->where('operator_profile_id', $fixture['profileId'])->update(['status' => 'active']);
+        $this->get('/operator/studies/'.$studyId.'/npz')->assertNotFound();
     }
 
     public function test_synthetic_bridge_is_forbidden_outside_local_and_testing(): void
@@ -182,7 +333,8 @@ final class Mvp14SyntheticCaptureGatewayTest extends TestCase
     {
         $fixture = $this->readyFixture();
         $admission = $this->insertCalledXrayAdmission($fixture);
-        $this->app->instance(AuditStore::class, new class implements AuditStore {
+        $this->app->instance(AuditStore::class, new class implements AuditStore
+        {
             public function append(AuditEvent $event): void
             {
                 throw new RuntimeException('synthetic audit failure');
@@ -201,6 +353,35 @@ final class Mvp14SyntheticCaptureGatewayTest extends TestCase
         $this->assertCount(0, Storage::disk('local')->allFiles());
     }
 
+    public function test_late_outbox_failure_rolls_back_rows_and_cleans_private_objects(): void
+    {
+        $fixture = $this->readyFixture();
+        $admission = $this->insertCalledXrayAdmission($fixture, 'SYNTH-OUTBOX-FAILURE');
+        $this->app->instance(AuditStore::class, new DatabaseAuditStore);
+        $this->app->instance(OutboxStore::class, new class implements OutboxStore
+        {
+            public function record(DomainEvent $event): void
+            {
+                throw new RuntimeException('synthetic capture outbox failure');
+            }
+
+            public function find(string $eventId): ?array
+            {
+                return null;
+            }
+
+            public function markPublished(string $eventId): void {}
+        });
+
+        $this->post(route('operator.xray-capture.store', $admission), [
+            'submission_id' => (string) Str::uuid(),
+            'radiographs' => [$this->fixtureUpload('synthetic-radiograph-01.npz')],
+            'gain' => $this->fixtureUpload('synthetic-gain-01.npz'),
+        ])->assertRedirect()->assertSessionHasErrors('capture');
+
+        $this->assertNoCaptureSideEffects($admission);
+    }
+
     /** @return array<string, mixed> */
     private function readyFixture(): array
     {
@@ -212,7 +393,7 @@ final class Mvp14SyntheticCaptureGatewayTest extends TestCase
     }
 
     /** @param array<string, mixed> $fixture */
-    private function insertCalledXrayAdmission(array $fixture): string
+    private function insertCalledXrayAdmission(array $fixture, string $ticketNumber = 'SYNTH-XRAY-01'): string
     {
         $now = now();
         $ticketId = (string) Str::uuid();
@@ -224,7 +405,7 @@ final class Mvp14SyntheticCaptureGatewayTest extends TestCase
             'member_schedule_id' => $fixture['scheduleId'],
             'operator_site_id' => $fixture['siteLocalId'],
             'operator_profile_id' => $fixture['profileId'],
-            'ticket_number' => 'SYNTH-XRAY-01',
+            'ticket_number' => $ticketNumber,
             'issued_at' => $now,
             'created_at' => $now,
             'updated_at' => $now,
@@ -245,6 +426,56 @@ final class Mvp14SyntheticCaptureGatewayTest extends TestCase
         ]);
 
         return $admissionId;
+    }
+
+    private function insertCrossShiftCalledXrayAdmission(array $fixture): string
+    {
+        $scheduleId = (string) Str::uuid();
+        $schedule = (array) DB::table('shift_schedules')->where('id', $fixture['scheduleId'])->first();
+        $schedule['id'] = $scheduleId;
+        DB::table('shift_schedules')->insert($schedule);
+
+        $bookingId = (string) Str::uuid();
+        $booking = (array) DB::table('bookings')->where('id', $fixture['bookingId'])->first();
+        $booking['id'] = $bookingId;
+        $booking['shift_schedule_id'] = $scheduleId;
+        DB::table('bookings')->insert($booking);
+
+        return $this->insertCalledXrayAdmission(
+            [...$fixture, 'scheduleId' => $scheduleId, 'bookingId' => $bookingId],
+            'SYNTH-CROSS-SHIFT',
+        );
+    }
+
+    private function copyBooking(array $fixture): string
+    {
+        $booking = (array) DB::table('bookings')->where('id', $fixture['bookingId'])->first();
+        $booking['id'] = (string) Str::uuid();
+        DB::table('bookings')->insert($booking);
+
+        return (string) $booking['id'];
+    }
+
+    /** @return list<string> */
+    private function studyRoutes(string $studyId): array
+    {
+        return [
+            route('operator.study.show', $studyId),
+            route('operator.study.dicom', $studyId),
+            route('operator.study.download', $studyId),
+        ];
+    }
+
+    private function assertNoCaptureSideEffects(string $admissionId, int $existingCaptureCount = 0): void
+    {
+        $this->assertSame('called', DB::table('operator_queue_admissions')->where('id', $admissionId)->value('state'));
+        $this->assertSame($existingCaptureCount, DB::table('image_gateway_capture_sets')->count());
+        $this->assertSame($existingCaptureCount * 2, DB::table('image_gateway_capture_objects')->count());
+        $this->assertSame($existingCaptureCount, DB::table('image_gateway_studies')->count());
+        $this->assertSame(0, DB::table('operator_queue_admission_history')->where('operator_queue_admission_id', $admissionId)->where('event_type', 'capture_accepted')->count());
+        $this->assertSame($existingCaptureCount, DB::table('audit_events')->where('action', 'image-gateway.capture-accepted')->count());
+        $this->assertSame($existingCaptureCount, DB::table('outbox_messages')->where('event_name', 'image-gateway-capture-accepted')->count());
+        $this->assertCount($existingCaptureCount * 6, Storage::disk('local')->allFiles());
     }
 
     private function fixtureUpload(string $name): UploadedFile
