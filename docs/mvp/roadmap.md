@@ -381,45 +381,27 @@ operator payouts, automated staffing, dynamic booking quotas, self-service
 rescheduling, repeat examinations, and glucose, cholesterol, and uric-acid
 screening. These exclusions remain tracked in the gap register.
 
-### Parallel Planner/Reviewer instructions
+### Consolidated Planner/Reviewer instruction — single workstream (MVP-DEC-031)
 
-Use the following instructions for the two concurrent delivery workstreams.
-They divide implementation ownership; neither creates release authorization.
-
-#### Core clinic-flow branch
-
-```text
-Read and follow `.agents/prompts/plan-create-task.md`.
-
-Assess the current repository delivery state, resolve any pending execution,
-review, remediation, approval, or baseline state first, and then perform the
-next legitimate Planner/Reviewer action for the 12 August MVP target, with
-Operator core priority:
-Member and Operator behavior required through X-ray readiness.
-
-Image Gateway, AI, and MPIPS implementation are owned by a separate branch.
-Do not implement them here. Treat their approved contract as an integration
-dependency, preserve compatibility, and stop if the core flow requires
-unavailable Gateway behavior.
-```
-
-#### Image Gateway branch
+**MVP-DEC-020 is superseded.** Per Faliq Adlan, CTO (2026-08-11), all remaining
+MVP delivery — including Image Gateway, AI, and MPIPS integration — proceeds
+sequentially on `main`. There is no separate Image Gateway feature branch.
 
 ```text
 Read and follow `.agents/prompts/plan-create-task.md`.
 
 Assess the current repository delivery state, resolve any pending execution,
 review, remediation, approval, or baseline state first, and then perform the
-next legitimate Planner/Reviewer action for the separate Image Gateway
-workstream: X-ray capture intake, MinIO storage, NPZ/gain validation, MPIPS/AI
-integration, retry handling, and administrator-visible terminal failures.
+next legitimate Planner/Reviewer action for the 12 August MVP target on `main`.
 
-Member, Operator, Member administration, and Operator administration are owned
-by the separate core branch. Do not duplicate them; integrate only through the
-approved contract.
+Priority order:
+1. Close all pending verified tasks (clinic-flow remediation, workstation UI).
+2. Continue Operator core through X-ray readiness if not yet complete.
+3. Implement Image Gateway, MinIO storage, NPZ/gain validation, MPIPS/AI
+   integration, retry handling, and administrator-visible terminal failures
+   directly on `main`, respecting the approved module boundaries in project.md.
+4. Run the integrated clinic-day rehearsal on `main` before the real B2B import.
+
+Do not create a separate Image Gateway branch. All delivery and release gates
+remain required. This is not deployment, real-data import, or release approval.
 ```
-
-After both workstreams have verified their bounded changes, merge the Gateway
-branch into the core branch and run one integrated clinic-day rehearsal before
-the real B2B import. If MPIPS requires code changes, it needs a corresponding
-branch in the MPIPS repository.

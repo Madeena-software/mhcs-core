@@ -1,10 +1,10 @@
 ---
 title: Operator Workstation Entry and Clinic Flow UI
 document_id: MHCS-TASK-OPERATOR-WORKSTATION-UI-001
-version: 0.1
-status: validated-published
+version: 0.2
+status: validated-published — remediation
 language: en-US
-last_updated: 2026-08-10
+last_updated: 2026-08-11
 scope:
   - dedicated Operator login entry point
   - Operator clinic workstation navigation
@@ -23,7 +23,7 @@ authority_note: This task is executable only at its immutable publication revisi
 `.agents/tasks/mvp-operator-workstation-ui.md`
 
 **Task contract state:**
-`Validated/Published`
+`Validated/Published — remediation`
 
 **Delivery objective / Work Package / MVP:**
 `12 August MVP delivery target / Operator priority / MVP-04 site flow`
@@ -170,3 +170,28 @@ Not authorized: Git commit, push, pull request, deployment, release, real data, 
 ## Expected terminal outcome
 
 `IMPLEMENTATION AND VERIFICATION RESULT REQUIRED` — an Executor returns the implemented revision and observed synthetic evidence for review.
+
+## Remediation
+
+**Review basis:**
+
+- Governing task revision: `.agents/tasks/mvp-operator-workstation-ui.md @ 6a9de19f5b8c86bb52fc22eba2a6aec09e640ffa`.
+- Owner-authored implementation revision: `1518206` (`15182062c5d239325097732987dc9ffe6bc63012`).
+- Reviewed working-tree state: `1518206` (HEAD, origin/main at time of review).
+- Reviewer evidence: code review confirms structural conformance — dedicated `/operator/login` route and view, `storeOperatorLogin` reusing `InteractiveMemberLoginService` and `InteractiveOperatorAccessResolver`, generic failure for non-Operator accounts, ordered workstation `<ol>` (steps 1–5), no new domain or Gateway behavior. Feature tests and a Browser Chrome test file were added. **PHPUnit/Pest run results, Browser Chrome observations, and `git diff --check` output were not observed or reported. No evidence file exists.**
+
+### Required corrections
+
+- Run the focused authentication and Operator portal feature suite (`tests/Feature/Operator/Mvp04OperatorPortalTest.php`) and report pass/fail counts and assertions.
+- Run the Browser Chrome journey (`tests/Browser/Mvp04OperatorWorkstationTest.php`) with the existing lockfile-resolved Chromium binary only; stop and report if the binary is unavailable without a network download.
+- Run `git diff --check` on the implementation diff and report the result.
+- Create `docs/mvp/evidence/mvp-operator-workstation-ui.md` recording the exact implementation revision (`1518206`), commands run, synthetic-only test results, browser observations, and confirmation that no real credential, Gateway, AI, or MPIPS behavior was used.
+
+### Additional verification
+
+- No structural implementation change is required; the correction is verification-closure only.
+- If the browser runtime is unavailable offline, stop and report that finding; do not download packages or change any lockfile.
+
+### Implementation baseline for remediation
+
+The remediation starts from the owner-committed implementation at `1518206`. No new implementation is expected; only verification and evidence creation are authorized.
