@@ -313,11 +313,11 @@ final readonly class Mvp04PaperConsentService implements OperatorPaperConsentCon
         }
     }
 
-    /** @return array{contents: string, checksum: string, bytes: int, format: string}|null */
-    private function validatedUpload(?UploadedFile $scan): ?array
+    /** @return array{contents: string, checksum: string, bytes: int, format: string} */
+    private function validatedUpload(?UploadedFile $scan): array
     {
         if ($scan === null) {
-            return null;
+            throw new MemberIdentityException('A private signed-paper upload is required.');
         }
         if (! $scan->isValid()) {
             throw new MemberIdentityException('The private signed-paper upload is invalid.');

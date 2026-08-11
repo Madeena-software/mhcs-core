@@ -50,7 +50,13 @@ final readonly class Mvp04AttendanceService implements OperatorAttendanceContrac
             throw new Mvp03Exception('Attendance time is outside the schedule window.');
         }
 
-        $rows = $this->eligibleBookingQuery($site)
+        $rows = $this->eligibleBookingQuery($site, [
+            BookingStatus::Confirmed->value,
+            BookingStatus::Arrived->value,
+            BookingStatus::CheckedIn->value,
+            BookingStatus::InProgress->value,
+            BookingStatus::Completed->value,
+        ])
             ->join('members', 'members.id', '=', 'bookings.member_id')
             ->join('service_offerings', 'service_offerings.id', '=', 'bookings.service_offering_id')
             ->where('bookings.shift_schedule_id', $scheduleId)
@@ -71,6 +77,14 @@ final readonly class Mvp04AttendanceService implements OperatorAttendanceContrac
             ->get();
 
         $result = $rows->map(function (object $row) use ($schedule, $site): array {
+            $nextAction = match ((string) $row->booking_status) {
+                BookingStatus::Confirmed->value => 'Record physical arrival',
+                BookingStatus::Arrived->value => 'Continue identity verification',
+                BookingStatus::CheckedIn->value, BookingStatus::InProgress->value => 'Open basic-examination queue',
+                BookingStatus::Completed->value => 'Visit complete',
+                default => 'Review booking status',
+            };
+
             return [
                 'booking_id' => (string) $row->booking_id,
                 'schedule_id' => (string) $row->schedule_id,
@@ -84,6 +98,7 @@ final readonly class Mvp04AttendanceService implements OperatorAttendanceContrac
                 'service_code' => (string) $row->service_code,
                 'service_name' => (string) $row->service_name,
                 'booking_status' => (string) $row->booking_status,
+                'next_action' => $nextAction,
                 'arrival_state' => 'pending_arrival',
                 'includes_ai' => (bool) $row->includes_ai,
                 'includes_doctor' => (bool) $row->includes_doctor,
@@ -344,13 +359,14 @@ final readonly class Mvp04AttendanceService implements OperatorAttendanceContrac
         return $site;
     }
 
-    private function eligibleBookingQuery(object $site): Builder
+    /** @param list<string>|null $statuses */
+    private function eligibleBookingQuery(object $site, ?array $statuses = null): Builder
     {
         return DB::table('bookings')
             ->join('shift_schedules', 'shift_schedules.id', '=', 'bookings.shift_schedule_id')
             ->where('shift_schedules.examination_site_id', $site->id)
             ->where('bookings.examination_site_id_snapshot', $site->id)
-            ->where('bookings.status', BookingStatus::Confirmed->value)
+            ->whereIn('bookings.status', $statuses ?? [BookingStatus::Confirmed->value])
             ->where('bookings.funding_source', 'personal')
             ->whereExists(function (Builder $query): void {
                 $query->selectRaw('1')

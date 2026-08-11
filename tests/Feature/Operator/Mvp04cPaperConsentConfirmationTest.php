@@ -33,25 +33,19 @@ final class Mvp04cPaperConsentConfirmationTest extends TestCase
         Storage::fake('local');
     }
 
-    public function test_assigned_operator_confirms_once_without_upload_and_booking_stays_arrived(): void
+    public function test_missing_private_scan_is_rejected_without_side_effects(): void
     {
         $fixture = $this->matchedFixture();
         $operationId = (string) Str::uuid();
 
-        $this->post(route('operator.paper-consent.store', $fixture['caseId']), $this->payload($operationId))
-            ->assertRedirect(route('operator.paper-consent.show', $fixture['caseId']));
+        $this->post(route('operator.paper-consent.store', $fixture['caseId']), $this->payloadWithoutScan($operationId))
+            ->assertRedirect()
+            ->assertSessionHasErrors('scan');
 
-        $this->assertDatabaseHas('examination_consents', [
-            'booking_id' => $fixture['bookingId'],
-            'form_name' => 'Informed Consent',
-            'form_version' => 'V1',
-            'signer_type' => 'member',
-            'signature_confirmed' => 1,
-            'private_scan_object_key' => null,
-        ]);
+        $this->assertDatabaseCount('examination_consents', 0);
         $this->assertSame('arrived', DB::table('bookings')->where('id', $fixture['bookingId'])->value('status'));
-        $this->assertSame(1, DB::table('audit_events')->where('action', 'member.booking.paper-consent.confirmed')->count());
-        $this->assertSame(1, DB::table('outbox_messages')->where('event_name', 'member.paper-consent-confirmed')->count());
+        $this->assertSame(0, DB::table('audit_events')->where('action', 'member.booking.paper-consent.confirmed')->count());
+        $this->assertSame(0, DB::table('outbox_messages')->where('event_name', 'member.paper-consent-confirmed')->count());
     }
 
     public function test_valid_private_upload_is_encrypted_private_and_not_in_shared_evidence(): void
@@ -271,6 +265,16 @@ final class Mvp04cPaperConsentConfirmationTest extends TestCase
             'signature_confirmed' => '1',
             'signed_at' => '2040-01-10T10:20:00+07:00',
             'operation_id' => $operationId,
+            'scan' => UploadedFile::fake()->createWithContent('signed-consent.pdf', "%PDF-1.7\nsynthetic signed paper\n%%EOF"),
         ];
+    }
+
+    /** @return array<string, mixed> */
+    private function payloadWithoutScan(string $operationId): array
+    {
+        $payload = $this->payload($operationId);
+        unset($payload['scan']);
+
+        return $payload;
     }
 }

@@ -19,6 +19,7 @@ use App\Shared\Time\Clock;
 use App\Shared\Time\FrozenClock;
 use DateTimeImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -311,6 +312,7 @@ final class Mvp04eAdvanceQueueAdmissionTest extends TestCase
                 'signature_confirmed' => '1',
                 'signed_at' => '2040-01-10T10:20:00+07:00',
                 'operation_id' => (string) Str::uuid(),
+                'scan' => UploadedFile::fake()->createWithContent('signed-consent.pdf', "%PDF-1.7\nsynthetic signed paper\n%%EOF"),
             ])->assertRedirect();
         }
 

@@ -11,6 +11,10 @@ uses(Mvp04Fixtures::class)->in(__FILE__);
 beforeEach(function (): void {
     mvpOperatorBrowserPrepareDatabase($this);
     $this->fixture = $this->operatorFixture(false);
+    DB::table('shift_schedules')->where('id', $this->fixture['scheduleId'])->update([
+        'starts_at' => now()->subHour()->format('Y-m-d H:i:s'),
+        'ends_at' => now()->addHour()->format('Y-m-d H:i:s'),
+    ]);
 });
 
 it('lets an operator enter the workstation, select a site, and see the ordered clinic flow', function (): void {
@@ -41,7 +45,17 @@ it('lets an operator enter the workstation, select a site, and see the ordered c
         ->assertSee('5. X-ray readiness')
         ->assertSee('0 awaiting verification')
         ->assertSee('0 ready for basic examination')
-        ->assertSee('0 ready for X-ray readiness');
+        ->assertSee('0 ready for X-ray readiness')
+        ->click('Open assigned-shift attendance')
+        ->wait(1)
+        ->assertPathIs('/operator/eligible-shifts')
+        ->click('Open attendance')
+        ->wait(1)
+        ->assertPathIs('/operator/attendance/'.$fixture['scheduleId'])
+        ->assertSee('Attendance list')
+        ->assertSee('Synthetic Arrival Member')
+        ->assertSee('1 eligible members')
+        ->assertSee('Record physical arrival');
 });
 
 function mvpOperatorBrowserPrepareDatabase(TestCase $test): void

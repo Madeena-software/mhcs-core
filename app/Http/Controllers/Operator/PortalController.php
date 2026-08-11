@@ -617,7 +617,7 @@ final class PortalController extends Controller
             'signature_confirmed' => ['accepted'],
             'signed_at' => ['required', 'string', 'max:64'],
             'operation_id' => ['required', 'uuid'],
-            'scan' => ['nullable', 'file', 'max:10240'],
+            'scan' => ['required', 'file', 'max:10240'],
         ]);
         if ($validator->fails()) {
             return back()->withErrors($validator)->withInput();

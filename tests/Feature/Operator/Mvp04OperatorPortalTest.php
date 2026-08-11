@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature\Operator;
 
 use App\Models\User;
+use App\Shared\Security\ProtectedIdentifierService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -222,6 +223,27 @@ final class Mvp04OperatorPortalTest extends TestCase
             ->assertDontSee('point balance');
     }
 
+    public function test_selected_shift_roster_keeps_all_members_and_shows_state_and_next_action(): void
+    {
+        $fixture = $this->operatorFixture(false);
+        for ($index = 1; $index <= 36; $index++) {
+            $this->insertRosterBooking($fixture, $index);
+        }
+        DB::table('bookings')->where('id', $fixture['bookingId'])->update(['status' => 'arrived']);
+
+        $this->actingAs($fixture['operator']);
+        $this->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
+        $response = $this->get('/operator/attendance/'.$fixture['scheduleId'].'?at=2040-01-10T10:15:00%2B07:00')
+            ->assertOk()
+            ->assertSee('Synthetic Arrival Member')
+            ->assertSee('Arrived')
+            ->assertSee('Continue identity verification');
+
+        for ($index = 1; $index <= 36; $index++) {
+            $response->assertSee('Roster Member '.$index);
+        }
+    }
+
     public function test_workstation_shows_the_ordered_clinic_flow_and_server_derived_queue_counts(): void
     {
         $fixture = $this->operatorFixture(false);
@@ -323,5 +345,71 @@ final class Mvp04OperatorPortalTest extends TestCase
         DB::table('operator_site_assignments')->where('operator_profile_id', $fixture['profileId'])->update(['active' => false, 'revoked_at' => now()]);
 
         $this->get('/operator/attendance/'.$fixture['scheduleId'].'?at=2040-01-10T10:15:00%2B07:00')->assertRedirect(route('operator.dashboard'));
+    }
+
+    /** @param array<string, mixed> $fixture */
+    private function insertRosterBooking(array $fixture, int $index): void
+    {
+        $now = now();
+        $memberUser = User::factory()->create(['email' => 'roster-member-'.$index.'-'.Str::lower(Str::random(6)).'@example.test']);
+        $memberId = (string) Str::uuid();
+        $bookingId = (string) Str::uuid();
+        $protected = app(ProtectedIdentifierService::class)->protect((string) (900000000100 + $index));
+        $service = DB::table('service_offerings')->where('id', $fixture['serviceId'])->first();
+        $site = DB::table('examination_site_refs')->where('id', $fixture['siteReferenceId'])->first();
+
+        DB::table('members')->insert([
+            'id' => $memberId,
+            'user_id' => $memberUser->id,
+            'family_id' => null,
+            'medical_record_number' => 'ROSTER-MRN-'.$index,
+            'identity_status' => 'verified',
+            'identity_document_type' => 'ktp',
+            'encrypted_nik' => $protected['encrypted_display'],
+            'nik_lookup_digest' => $protected['lookup_digest'],
+            'name' => 'Roster Member '.$index,
+            'birth_date' => '1988-01-10',
+            'administrative_gender' => 'unspecified',
+            'registration_source' => 'administrator',
+            'phone' => null,
+            'current_address' => 'Synthetic address',
+            'emergency_contact_name' => 'Synthetic contact',
+            'emergency_contact_relationship' => 'Sibling',
+            'emergency_contact_phone' => '0800000000',
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+        DB::table('bookings')->insert([
+            'id' => $bookingId,
+            'member_id' => $memberId,
+            'shift_schedule_id' => $fixture['scheduleId'],
+            'service_offering_id' => $fixture['serviceId'],
+            'examination_site_id_snapshot' => $fixture['siteReferenceId'],
+            'booking_type' => 'b2c',
+            'funding_source' => 'personal',
+            'status' => 'confirmed',
+            'service_code_snapshot' => $service->code,
+            'point_cost_snapshot' => $service->point_price,
+            'point_exchange_rate_id' => DB::table('point_exchange_rates')->value('id'),
+            'includes_ai_snapshot' => (bool) $service->includes_ai,
+            'includes_doctor_snapshot' => (bool) $service->includes_doctor,
+            'site_code_snapshot' => $site->code,
+            'site_name_snapshot' => $site->display_name,
+            'site_timezone_snapshot' => $site->timezone,
+            'created_at' => $now,
+            'confirmed_at' => $now,
+            'updated_at' => $now,
+        ]);
+        DB::table('point_ledger_entries')->insert([
+            'id' => (string) Str::uuid(),
+            'member_id' => $memberId,
+            'booking_id' => $bookingId,
+            'funding_source' => 'personal',
+            'entry_type' => 'charge',
+            'point_delta' => '-2.5000',
+            'source_reference' => 'test:roster:'.$bookingId,
+            'reverses_id' => null,
+            'created_at' => $now,
+        ]);
     }
 }

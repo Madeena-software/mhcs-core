@@ -16,6 +16,7 @@ use App\Shared\Infrastructure\Outbox\OutboxStore;
 use App\Shared\Storage\PrivateObjectStore;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -316,6 +317,7 @@ final class Mvp04dVerifiedCheckInTicketIssueTest extends TestCase
                 'signature_confirmed' => '1',
                 'signed_at' => '2040-01-10T10:20:00+07:00',
                 'operation_id' => (string) Str::uuid(),
+                'scan' => UploadedFile::fake()->createWithContent('signed-consent.pdf', "%PDF-1.7\nsynthetic signed paper\n%%EOF"),
             ])->assertRedirect();
         }
 
