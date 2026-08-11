@@ -901,7 +901,7 @@ The examination-day workflow remains paper based. Informed consent is confirmed
 and recorded strictly once per visit at front-desk check-in. Before Operator
 Core issues a ticket, Member Core records the applicable consent form version,
 patient or verified representative signer, signature confirmation, actual
-signing time, responsible operator, site, booking, and an optional private scan.
+signing time, responsible operator, site, booking, and a required private scan.
 The paper form remains the source document; MHCS does not synthesize an
 electronic signature. This single consent covers all examination procedures
 (basic examination & vital signs, radiograph session) during the visit.

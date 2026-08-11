@@ -123,7 +123,9 @@ when legally required. The action must be fully audited.
 - Temporary authorised links protect image access.
 - Members view images and export TIFF, JPG, or PDF; they do not download raw
   DICOM.
-- Operators view images but cannot download raw DICOM.
+- An assigned Operator may explicitly download raw DICOM for an authorised
+  active-site examination. Each download uses a short-lived purpose-bound link
+  and is audit logged. Operators never download raw NPZ.
 - Authorised doctors may explicitly download raw DICOM when clinically
   necessary; the download is audit logged.
 

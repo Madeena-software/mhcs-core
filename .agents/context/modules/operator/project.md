@@ -151,7 +151,7 @@ Any assigned operator may perform the front-desk steps:
 4. Confirm that the member has read and signed the applicable paper informed
    consent (recorded strictly once at the start of the visit).
 5. Record the consent form version, signer, signature-confirmation time,
-   responsible operator, and optional private scan through Member Core.
+   responsible operator, and required private scan through Member Core.
 6. Mark the booking `checked_in` and issue one site-and-shift ticket only after successful verification and consent confirmation, then trigger paper ticket printing via the web print dialog (`window.print()`). The printed thermal slip contains only the site name, shift & date, and prominent ticket number (omitting patient name and RM for paper privacy). A manual "Reprint Ticket" button is available in the Operator queue worklist. Issued ticket numbers are managed on-site via paper slips and are not displayed in the Member Portal. Downstream examination stations reuse this visit consent confirmation and do not re-request consent.
 
 KTP/KIA and profile photographs are purpose-bound, temporary, non-downloadable,
@@ -465,7 +465,10 @@ The Operator Core DICOM viewer is read-only:
 - zoom and pan are allowed;
 - manual window/level, contrast, brightness, rotation, annotations,
   measurements, and saved presentation state are disabled; and
-- raw DICOM and raw NPZ download are disabled for operators and administrators.
+- raw NPZ download remains disabled for operators and administrators. An
+  authorised operator may download raw DICOM only for a current-shift
+  active-site examination or an explicitly reopened repeat or correction case;
+  every download uses a short-lived purpose-bound link and is audit logged.
 
 Image Gateway supplies short-lived, purpose-bound references. Operator Core
 does not persist a second result-file copy. Operators may see processing and
@@ -599,7 +602,7 @@ The Operator module uses explicit local Member module commands and queries for:
 - idempotent walk-in creation, cash top-up, point charge, and booking;
 - `arrived`, examination-started, and examination-completed events;
 - identity-verification views and decisions;
-- paper-consent metadata and optional private scan recording;
+- paper-consent metadata and required private scan recording;
 - body-part/laterality order correction;
 - basic examination & vital signs assessment recording and correction;
 - member result-publication and requested delivery status;

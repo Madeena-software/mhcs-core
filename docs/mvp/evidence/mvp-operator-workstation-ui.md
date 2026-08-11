@@ -1,7 +1,7 @@
 # Operator Workstation Entry and Clinic Flow UI Evidence
 
 **Date:** 2026-08-11
-**Task contract:** `.agents/tasks/mvp-operator-workstation-ui.md @ 6a9de19f5b8c86bb52fc22eba2a6aec09e640ffa`
+**Task contract:** initial `.agents/tasks/mvp-operator-workstation-ui.md @ 6a9de19f5b8c86bb52fc22eba2a6aec09e640ffa`; verification remediation `.agents/tasks/mvp-operator-workstation-ui.md @ bc8756bc8f8e0ef94171bdfe9dedcd73945506ec`
 **Implementation baseline:** `65a21bbcd005d81888abb1b6db8b4e939e80f97f`
 **Implementation revision:** `15182062c5d239325097732987dc9ffe6bc63012`
 
@@ -82,3 +82,14 @@ git diff --check 65a21bb..1518206
 - `/admin/login` and `/login` remain unchanged.
 - No real credentials, B2B roster data, clinical images, or private keys were used in tests.
 - Image Gateway, MinIO storage, NPZ/gain processing, MPIPS, and AI routing remain uninvoked and deferred.
+
+## 5. Review closure
+
+On 2026-08-11, the Reviewer reran the focused feature suite, clinic-flow suite,
+LCD safety check, and Chromium workstation journey against
+`c398d5b72e552f266754965bfa7bf796cd635b3e`. They passed with 13 feature
+tests/103 assertions, 40 clinic-flow tests/520 assertions, one LCD test, and
+one browser test/16 assertions. `git diff --check` passed. The bounded
+workstation task is technically accepted at that immutable revision; this does
+not authorize deployment, real data, device rehearsal, Image Gateway, AI, or
+MPIPS work.
