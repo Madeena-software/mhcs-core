@@ -1,0 +1,173 @@
+<?php
+
+declare(strict_types=1);
+
+use Illuminate\Support\Facades\DB;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
+use Tests\Operator\Mvp04Fixtures;
+use Tests\TestCase;
+
+uses(Mvp04Fixtures::class)->in(__FILE__);
+
+beforeEach(function (): void {
+    mvp14BrowserPrepareDatabase($this);
+    putenv('APP_ENV=testing');
+    config([
+        'app.env' => 'testing',
+        'mhcs.security.object_key' => str_repeat('o', 32),
+        'mhcs.security.grant_key' => str_repeat('g', 32),
+        'mhcs.image_policy' => [
+            'file_count' => 2,
+            'per_file_bytes' => 1048576,
+            'total_bytes' => 2097152,
+            'decompressed_bytes' => 4194304,
+            'max_width' => 4096,
+            'max_height' => 4096,
+            'field_count' => 32,
+            'cpu_seconds' => 5,
+            'memory_bytes' => 134217728,
+            'execution_seconds' => 30,
+            'process_count' => 1,
+            'temporary_storage_bytes' => 8388608,
+            'accepted_forms' => ['zip-npz'],
+            'recovery_window_seconds' => 300,
+            'max_attempts' => 1,
+        ],
+    ]);
+    $this->app->instance('env', 'testing');
+    Storage::disk('local')->deleteDirectory('objects');
+    $this->fixture = $this->operatorFixture(false);
+    DB::table('shift_schedules')->where('id', $this->fixture['scheduleId'])->update([
+        'starts_at' => now()->subHour()->format('Y-m-d H:i:s'),
+        'ends_at' => now()->addHour()->format('Y-m-d H:i:s'),
+    ]);
+    $this->admission = mvp14InsertCalledXray($this->fixture);
+});
+
+it('takes an operator from synthetic X-ray capture to an actual Cornerstone viewport and download', function (): void {
+    $fixture = $this->fixture;
+
+    $page = visit(route('operator.login'))
+        ->wait(1)
+        ->fill('identifier', $fixture['operator']->email)
+        ->fill('password', 'password')
+        ->press('Sign in')
+        ->wait(1)
+        ->click('Select an assigned site')
+        ->wait(1)
+        ->press('Set active site')
+        ->wait(1)
+        ->navigate(route('operator.xray-capture.show', $this->admission))
+        ->wait(1)
+        ->assertSee('Radiograph NPZ');
+
+    $response = $this->actingAs($fixture['operator'])
+        ->withSession(['operator.active_site_id' => $fixture['siteLocalId']])
+        ->post(route('operator.xray-capture.store', $this->admission), [
+            'submission_id' => (string) Str::uuid(),
+            'radiographs' => [mvp14BrowserFixtureUpload('synthetic-radiograph-01.npz')],
+            'gain' => mvp14BrowserFixtureUpload('synthetic-gain-01.npz'),
+        ])
+        ->assertRedirect();
+    $studyId = (string) DB::table('image_gateway_studies')->value('id');
+    if ($studyId === '') {
+        throw new RuntimeException($response->getStatusCode().' '.json_encode(session()->all()));
+    }
+
+    $page
+        ->navigate(route('operator.study.show', $studyId))
+        ->wait(2)
+        ->assertPathIs('/operator/studies/'.$studyId)
+        ->assertSee('Automatic VOI')
+        ->assertSee('Zoom and pan only')
+        ->assertDontSee('Window/Level')
+        ->assertDontSee('Contrast')
+        ->assertDontSee('Brightness')
+        ->assertDontSee('Rotate')
+        ->assertDontSee('Annotation')
+        ->assertDontSee('Measurement')
+        ->assertDontSee('Invert')
+        ->assertVisible('[data-testid="dicom-viewport"]');
+
+    $page->page()->waitForFunction('window.__mhcsDicomViewerReady === true');
+    $page->assertVisible('[data-testid="dicom-viewport"]');
+    $download = $page->script('async () => { const response = await fetch(document.querySelector("a[download]").href); return { status: response.status, disposition: response.headers.get("content-disposition"), bytes: (await response.arrayBuffer()).byteLength }; }');
+
+    expect($download['status'])->toBe(200)
+        ->and($download['disposition'])->toContain('attachment')
+        ->and($download['bytes'])->toBeGreaterThan(128);
+});
+
+function mvp14BrowserPrepareDatabase(TestCase $test): void
+{
+    $database = storage_path('framework/testing/mhcs-mvp14-browser.sqlite');
+    @unlink($database);
+    config([
+        'database.default' => 'sqlite',
+        'database.connections.sqlite.database' => $database,
+    ]);
+    putenv('DB_DATABASE='.$database);
+    DB::purge('sqlite');
+    $test->artisan('migrate:fresh', ['--quiet' => true]);
+}
+
+/** @param array<string, mixed> $fixture */
+function mvp14InsertCalledXray(array $fixture): string
+{
+    $now = now();
+    $ticketId = (string) Str::uuid();
+    $admissionId = (string) Str::uuid();
+
+    DB::table('operator_paper_tickets')->insert([
+        'id' => $ticketId,
+        'booking_id' => $fixture['bookingId'],
+        'member_schedule_id' => $fixture['scheduleId'],
+        'operator_site_id' => $fixture['siteLocalId'],
+        'operator_profile_id' => $fixture['profileId'],
+        'ticket_number' => 'BROWSER-XRAY-01',
+        'issued_at' => $now,
+        'created_at' => $now,
+        'updated_at' => $now,
+    ]);
+    DB::table('operator_queue_admissions')->insert([
+        'id' => $admissionId,
+        'operator_paper_ticket_id' => $ticketId,
+        'operator_site_id' => $fixture['siteLocalId'],
+        'member_schedule_id' => $fixture['scheduleId'],
+        'queue_class' => 'advance',
+        'stage' => 'xray',
+        'state' => 'called',
+        'ready_at' => $now,
+        'operator_profile_id' => $fixture['profileId'],
+        'claimed_at' => $now,
+        'created_at' => $now,
+        'updated_at' => $now,
+    ]);
+    DB::table('operator_queue_admission_history')->insert([
+        'id' => (string) Str::uuid(),
+        'operator_queue_admission_id' => $admissionId,
+        'operator_profile_id' => $fixture['profileId'],
+        'event_type' => 'called',
+        'from_state' => 'waiting',
+        'to_state' => 'called',
+        'operation_id' => (string) Str::uuid(),
+        'occurred_at' => $now,
+        'created_at' => $now,
+        'updated_at' => $now,
+    ]);
+
+    return $admissionId;
+}
+
+function mvp14BrowserFixtureUpload(string $name): UploadedFile
+{
+    return new UploadedFile(
+        base_path('resources/fixtures/image-gateway/'.$name),
+        $name,
+        'application/octet-stream',
+        null,
+        true,
+    );
+}

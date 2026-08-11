@@ -133,6 +133,7 @@ final class FoundationArchitectureTest extends TestCase
             '2026_08_09_000002_make_operator_eligible_shift_instants_mysql_portable.php',
             '2026_08_09_000003_make_operator_arrival_and_ticket_instants_mysql_portable.php',
             '2026_08_10_000001_create_member_paper_questionnaires_table.php',
+            '2026_08_11_000001_create_image_gateway_capture_tables.php',
         ];
 
         $this->assertSame([], array_values(array_diff($migrations, $allowed)));
