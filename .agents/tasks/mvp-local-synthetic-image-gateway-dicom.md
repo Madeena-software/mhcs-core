@@ -1,10 +1,10 @@
 ---
 title: Local Synthetic Image Gateway and Operator DICOM Rehearsal
 document_id: MHCS-TASK-LOCAL-IMAGE-GATEWAY-001
-version: 1.1
+version: 1.2
 status: validated-published
 language: en-US
-last_updated: 2026-08-11
+last_updated: 2026-08-12
 scope:
   - local/testing synthetic NPZ-plus-gain submission
   - Image Gateway durable private storage and synthetic study association
@@ -47,6 +47,41 @@ or simulating MPIPS conversion.
 
 **Task revision:**
 `Resolve from the commit that publishes this exact task content before execution.`
+
+## Remediation required after review
+
+**Review basis:**
+`0d46603df02d2b29e3ce623cad68d653de892902`, reviewed against this task at
+`b783fbe203229f58531acda60a7ce3c7900a9f36`.
+
+**Verdict:**
+`REMEDIATION REQUIRED`
+
+The committed implementation provides the capture, private synthetic study,
+vertical Cornerstone viewport, and authenticated attachment endpoint, but it
+does not yet close all of this task's rehearsal and verification obligations.
+
+Before re-review, make only the following bounded corrections:
+
+- Extend `docs/mvp/local-core-walkthrough.md` through selecting the committed
+  fixture pair, accepting the capture, viewing the study, and triggering the
+  normal `.dcm` browser download. Preserve its synthetic-only and
+  local/testing limits.
+- Add focused tests for altered, missing, pair-mismatched, replay-conflict,
+  and cross-case/site/shift capture inputs; each must prove no accepted study,
+  stage change, database residue, or private object remains.
+- Add focused study, viewer-byte, and attachment-download denial tests for an
+  unauthenticated request and for a different/cross-site/current-shift-invalid
+  Operator. Assert that raw NPZ has no downloadable route.
+- Add an outbox-failure cleanup test in addition to the existing audit-failure
+  test, proving that all database work rolls back and every previously stored
+  private object is removed.
+- Run the documented seeded walkthrough in a fresh disposable database and
+  make the Chromium evidence activate the attachment download rather than
+  only fetching its URL programmatically.
+
+No MPIPS, real NPZ schema, real data, server deployment, external storage, or
+new dependency is authorised by this remediation.
 
 ## Objective
 
@@ -233,11 +268,13 @@ as the only subsequent conversion work.
 ### Required checks
 
 - Run focused Image Gateway security/acceptance, Operator X-ray, capture,
-  study-access/download, and private-object cleanup tests.
+  study-access/download, and private-object cleanup tests, including every
+  remediation negative and failure path above.
 - Run the local synthetic seeder and the full synthetic clinic journey in a
   fresh disposable database.
 - Run the focused Chromium journey through the actual Cornerstone viewport and
-  authorised raw-DICOM download; verify no prohibited tools/control appear.
+  an activated authorised raw-DICOM attachment download; verify no prohibited
+  tools/control appear.
 - Run the production-environment guard test proving the synthetic bridge is
   unavailable outside local/testing.
 - Run `npm run build`, `git diff --check`, and the relevant migration suite.
