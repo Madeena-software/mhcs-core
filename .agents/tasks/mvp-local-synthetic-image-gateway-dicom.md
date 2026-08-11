@@ -1,7 +1,7 @@
 ---
 title: Local Synthetic Image Gateway and Operator DICOM Rehearsal
 document_id: MHCS-TASK-LOCAL-IMAGE-GATEWAY-001
-version: 1.0
+version: 1.1
 status: validated-published
 language: en-US
 last_updated: 2026-08-11
@@ -53,7 +53,7 @@ or simulating MPIPS conversion.
 **Objective:**
 Enable a synthetic local clinic journey from the claimed X-ray admission to
 durable private capture-set acceptance, one locally associated synthetic DICOM
-study, a vertical read-only Cornerstone viewer, and an audited short-lived
+study, a vertical read-only Cornerstone viewer, and a standard authenticated
 raw-DICOM download, while leaving real Grabber parsing and MPIPS integration
 as the only subsequent conversion work.
 
@@ -61,7 +61,7 @@ as the only subsequent conversion work.
 
 ### Governing authority
 
-- `docs/mvp/decision-log.md` — MVP-DEC-024, MVP-DEC-031, MVP-DEC-032, and MVP-DEC-034.
+- `docs/mvp/decision-log.md` — MVP-DEC-024, MVP-DEC-031, MVP-DEC-034, and MVP-DEC-035.
 - `.agents/context/modules/operator/project.md` — NPZ submission and read-only DICOM access.
 - `.agents/context/modules/image-gateway/project.md` — Gateway ownership, private storage, and distribution boundary.
 - `docs/implementation/mhcs-core-requirements-matrix.md` — OPR-031..OPR-046, OPR-057..OPR-060, IMG-001, IMG-006..IMG-033, IMG-050, and IMG-057.
@@ -71,7 +71,7 @@ as the only subsequent conversion work.
 
 - `OPR-031..OPR-046` → bounded Operator capture, complete submission, durable acceptance, and no raw-DICOM browser upload.
 - `IMG-006..IMG-033` → Gateway-owned capture-set storage, checksum identity, authorised distribution, and raw-NPZ prohibition.
-- `OPR-057..OPR-060` → automatic VOI display, zoom/pan-only read-only view, and audited temporary raw-DICOM access.
+- `OPR-057..OPR-060` → automatic VOI display, zoom/pan-only read-only view, and standard authenticated raw-DICOM download.
 - `IMG-050` and `IMG-057` → no MHCS NPZ-to-DICOM algorithm and no MPIPS call in this task.
 
 ## Scope
@@ -106,8 +106,8 @@ as the only subsequent conversion work.
   synthetic DICOM Part-10 fixture to a durably accepted synthetic capture set.
   This association must be explicit in the Gateway record, checksum-verified,
   private, idempotent, and fail closed in every other environment.
-- Add a signed, short-lived, purpose-bound, audit-logged raw-DICOM delivery
-  path and an authenticated Operator study page. Restrict both to the assigned
+- Add an authenticated raw-DICOM attachment response and an authenticated
+  Operator study page. Restrict both to the assigned
   Operator's active-site current-shift examination or an explicitly reopened
   repeat/correction case. Never issue a raw-NPZ link.
 - Add a Vite-built Cornerstone integration using only pinned
@@ -199,8 +199,7 @@ as the only subsequent conversion work.
   must leave no partial durable record/object/link and must not advance the
   X-ray stage.
 - Viewer bytes and downloaded bytes must come from the same authorised
-  private-object reference; no second DICOM copy, permanent URL, or public
-  route is allowed.
+  private-object reference; no second DICOM copy or public route is allowed.
 - Use server-provided DICOM VOI metadata. Browser interaction is limited to
   zoom and pan; assert that prohibited tools and controls are absent.
 
@@ -222,9 +221,9 @@ as the only subsequent conversion work.
 - [ ] An assigned current-shift active-site Operator can open the study in a
   vertical Cornerstone DICOM view with automatic VOI and zoom/pan only; all
   manual image-editing functions and controls are unavailable.
-- [ ] The same authorised Operator can explicitly obtain a short-lived,
-  purpose-bound, audit-logged raw-DICOM download; expired, tampered,
-  cross-site/shift/case, unauthenticated, and raw-NPZ requests fail closed.
+- [ ] The same authorised Operator can explicitly trigger a normal browser
+  `.dcm` attachment download; cross-site/shift/case, unauthenticated, and
+  raw-NPZ requests fail closed.
 - [ ] The existing synthetic local clinic walkthrough now covers login through
   DICOM viewer/download without real data, MPIPS, external storage, or
   deployment; focused PHP, JavaScript/build, and Chromium evidence passes.

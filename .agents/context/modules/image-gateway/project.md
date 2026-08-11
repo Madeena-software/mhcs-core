@@ -120,12 +120,14 @@ when legally required. The action must be fully audited.
   and MPIPS.
 - Member, Operator, and Doctor modules receive references rather than
   permanent file copies.
-- Temporary authorised links protect image access.
+- Temporary authorised links protect image access, except the standard
+  authenticated Operator raw-DICOM attachment download defined below.
 - Members view images and export TIFF, JPG, or PDF; they do not download raw
   DICOM.
 - An assigned Operator may explicitly download raw DICOM for an authorised
-  active-site examination. Each download uses a short-lived purpose-bound link
-  and is audit logged. Operators never download raw NPZ.
+  active-site current-shift examination or an explicitly reopened repeat or
+  correction case as a standard authenticated `.dcm` attachment. Operators
+  never download raw NPZ.
 - Authorised doctors may explicitly download raw DICOM when clinically
   necessary; the download is audit logged.
 

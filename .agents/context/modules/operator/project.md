@@ -468,9 +468,11 @@ The Operator Core DICOM viewer is read-only:
 - raw NPZ download remains disabled for operators and administrators. An
   authorised operator may download raw DICOM only for a current-shift
   active-site examination or an explicitly reopened repeat or correction case;
-  every download uses a short-lived purpose-bound link and is audit logged.
+  the authenticated browser receives it as a standard `.dcm` attachment
+  download without a temporary-link, declared-purpose, or mandatory
+  application-audit step.
 
-Image Gateway supplies short-lived, purpose-bound references. Operator Core
+Image Gateway supplies authenticated authorised references. Operator Core
 does not persist a second result-file copy. Operators may see processing and
 image-availability status. AI results are visible through the read-only AI Results Status
 Monitor described above; doctor reports are never visible.
