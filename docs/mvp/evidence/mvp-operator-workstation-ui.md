@@ -1,9 +1,9 @@
 # Operator Workstation Entry and Clinic Flow UI Evidence
 
-**Date:** 2026-08-11  
-**Task contract:** `.agents/tasks/mvp-operator-workstation-ui.md @ 6a9de19f5b8c86bb52fc22eba2a6aec09e640ffa`  
-**Implementation baseline:** `65a21bbcd005d81888abb1b6db8b4e939e80f97f`  
-**Implementation revision:** `15182062c5d239325097732987dc9ffe6bc63012`  
+**Date:** 2026-08-11
+**Task contract:** `.agents/tasks/mvp-operator-workstation-ui.md @ 6a9de19f5b8c86bb52fc22eba2a6aec09e640ffa`
+**Implementation baseline:** `65a21bbcd005d81888abb1b6db8b4e939e80f97f`
+**Implementation revision:** `15182062c5d239325097732987dc9ffe6bc63012`
 
 This is the evidence report for the dedicated Operator login entry and sequential workstation interface slice.
 
