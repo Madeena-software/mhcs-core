@@ -87,10 +87,16 @@ same conversion identity, and rejects a replay whose bytes or manifest differ.
 The examination image set is complete only when every submitted capture has
 successfully produced DICOM.
 
-Only then does Image Gateway:
+As each capture successfully produces DICOM, Image Gateway makes that individual
+study available as an authorised reference to any authenticated Operator whose
+active site and current shift authorise the examination. This partial
+availability never exposes raw NPZ and does not make the result available to a
+Member or Doctor.
 
-- make the complete image set available to Member, Operator, and Doctor modules
-  as authorised references; and
+Only when every submitted capture has successfully produced DICOM does Image Gateway:
+
+- make the complete image set available to Member and Doctor modules as
+  authorised references; and
 - start each selected result workflow.
 
 A partially successful image set remains hidden from the member until the
@@ -124,10 +130,9 @@ when legally required. The action must be fully audited.
   authenticated Operator raw-DICOM attachment download defined below.
 - Members view images and export TIFF, JPG, or PDF; they do not download raw
   DICOM.
-- An assigned Operator may explicitly download raw DICOM for an authorised
-  active-site current-shift examination or an explicitly reopened repeat or
-  correction case as a standard authenticated `.dcm` attachment. Operators
-  never download raw NPZ.
+- Any authenticated Operator whose active site and current shift authorise the
+  examination may view and explicitly download each returned raw DICOM as a
+  standard authenticated `.dcm` attachment. Operators never download raw NPZ.
 - Authorised doctors may explicitly download raw DICOM when clinically
   necessary; the download is audit logged.
 

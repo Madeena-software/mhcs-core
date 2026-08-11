@@ -465,10 +465,10 @@ The Operator Core DICOM viewer is read-only:
 - zoom and pan are allowed;
 - manual window/level, contrast, brightness, rotation, annotations,
   measurements, and saved presentation state are disabled; and
-- raw NPZ download remains disabled for operators and administrators. An
-  authorised operator may download raw DICOM only for a current-shift
-  active-site examination or an explicitly reopened repeat or correction case;
-  the authenticated browser receives it as a standard `.dcm` attachment
+- raw NPZ download remains disabled for operators and administrators. Any
+  authenticated Operator whose active site and current shift authorise an
+  examination may view and download each returned raw DICOM; the authenticated
+  browser receives it as a standard `.dcm` attachment
   download without a temporary-link, declared-purpose, or mandatory
   application-audit step.
 
