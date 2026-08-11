@@ -249,4 +249,50 @@ trait Mvp04Fixtures
             ]);
         }
     }
+
+    /** @param array<string, mixed> $fixture */
+    protected function secondOperatorFixture(array $fixture): array
+    {
+        $now = now();
+        $operator = User::factory()->create(['email' => 'operator-second-'.Str::lower(Str::random(8)).'@example.test']);
+        $profileId = (string) Str::uuid();
+
+        DB::table('operator_profiles')->insert([
+            'id' => $profileId,
+            'user_id' => $operator->id,
+            'display_name' => 'Synthetic Second Operator',
+            'employee_code' => 'OPR-'.substr($profileId, 0, 8),
+            'active' => true,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+        DB::table('operator_site_assignments')->insert([
+            'id' => (string) Str::uuid(),
+            'operator_profile_id' => $profileId,
+            'operator_site_id' => $fixture['siteLocalId'],
+            'active' => true,
+            'assigned_by_user_id' => $operator->id,
+            'assigned_at' => $now,
+            'revoked_at' => null,
+            'reason' => null,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+        DB::table('operator_shift_assignments')->insert([
+            'id' => (string) Str::uuid(),
+            'operator_eligible_shift_id' => $fixture['eligibleId'],
+            'operator_profile_id' => $profileId,
+            'assigned_by_user_id' => $operator->id,
+            'status' => 'active',
+            'assigned_at' => $now,
+            'revoked_at' => null,
+            'reason' => null,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        $this->grant($operator, false);
+
+        return ['operator' => $operator, 'profileId' => $profileId];
+    }
 }

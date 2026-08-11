@@ -97,6 +97,49 @@ it('takes an operator from synthetic X-ray capture to an actual Cornerstone view
     expect($page->attribute('a[download]', 'download'))->toBe('');
 });
 
+it('lets a second current-shift operator discover and download the accepted study', function (): void {
+    $fixture = $this->fixture;
+    $second = $this->secondOperatorFixture($fixture);
+
+    $this->actingAs($fixture['operator'])
+        ->withSession(['operator.active_site_id' => $fixture['siteLocalId']])
+        ->post(route('operator.xray-capture.store', $this->admission), [
+            'submission_id' => (string) Str::uuid(),
+            'radiographs' => [mvp14BrowserFixtureUpload('synthetic-radiograph-01.npz')],
+            'gain' => mvp14BrowserFixtureUpload('synthetic-gain-01.npz'),
+        ])
+        ->assertRedirect();
+    $studyId = (string) DB::table('image_gateway_studies')->value('id');
+    $this->actingAsGuest();
+    $this->flushSession();
+
+    $page = visit(route('operator.login'))
+        ->wait(1)
+        ->fill('identifier', $second['operator']->email)
+        ->fill('password', 'password')
+        ->press('Sign in')
+        ->wait(1)
+        ->click('Select an assigned site')
+        ->wait(1)
+        ->press('Set active site')
+        ->wait(1)
+        ->click('DICOM results')
+        ->wait(1)
+        ->assertPathIs('/operator/studies')
+        ->assertSee('DICOM results worklist')
+        ->assertSee($studyId)
+        ->click('Open DICOM study')
+        ->wait(2)
+        ->assertPathIs('/operator/studies/'.$studyId)
+        ->assertSee('Automatic VOI')
+        ->assertSee('Zoom and pan only')
+        ->assertVisible('[data-testid="dicom-viewport"]');
+
+    $page->page()->waitForFunction('window.__mhcsDicomViewerReady === true');
+    $page->click('Download DICOM')->wait(1);
+    expect($page->attribute('a[download]', 'download'))->toBe('');
+});
+
 function mvp14BrowserPrepareDatabase(TestCase $test): void
 {
     $database = storage_path('framework/testing/mhcs-mvp14-browser.sqlite');

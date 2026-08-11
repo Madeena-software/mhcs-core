@@ -20,7 +20,7 @@
     <p id="dicom-viewer-error" class="error" role="alert" hidden></p>
     <p class="actions">
         <a download href="{{ route('operator.study.download', $study_id) }}">Download DICOM</a>
-        <a href="{{ route('operator.xray-readiness-worklist') }}">Back to X-ray readiness</a>
+        <a href="{{ route('operator.study.results') }}">Back to DICOM results</a>
     </p>
 </section>
 @vite('resources/js/app.js')

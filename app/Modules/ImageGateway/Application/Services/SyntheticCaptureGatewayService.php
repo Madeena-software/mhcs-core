@@ -20,6 +20,7 @@ use App\Shared\Storage\PrivateObject;
 use App\Shared\Storage\PrivateObjectStore;
 use App\Shared\Time\Clock;
 use DateTimeImmutable;
+use Illuminate\Database\Query\Builder;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -271,6 +272,36 @@ final readonly class SyntheticCaptureGatewayService
         }
     }
 
+    /** @return list<array{study_id: string, format: string, rows: int, columns: int, accepted_at: string}> */
+    public function studies(
+        AuthenticatedContext $context,
+        string $profileId,
+        string $siteId,
+        string $operatorSiteId,
+    ): array {
+        $this->assertLocalEnvironment();
+        $this->assertContext($context, self::STUDY_PURPOSE);
+
+        return $this->authorizedStudiesQuery($profileId, $siteId, $operatorSiteId)
+            ->select([
+                'studies.id',
+                'studies.format',
+                'studies.rows',
+                'studies.columns',
+                'captures.accepted_at',
+            ])
+            ->orderByDesc('captures.accepted_at')
+            ->get()
+            ->map(static fn (object $study): array => [
+                'study_id' => (string) $study->id,
+                'format' => (string) $study->format,
+                'rows' => (int) $study->rows,
+                'columns' => (int) $study->columns,
+                'accepted_at' => (string) $study->accepted_at,
+            ])
+            ->all();
+    }
+
     /** @return array<string, mixed> */
     public function study(
         AuthenticatedContext $context,
@@ -428,8 +459,7 @@ final readonly class SyntheticCaptureGatewayService
         string $admissionId,
         bool $lock,
         bool $allowAccepted = false,
-    ): object
-    {
+    ): object {
         $query = DB::table('operator_queue_admissions as admissions')
             ->join('operator_paper_tickets as tickets', 'tickets.id', '=', 'admissions.operator_paper_ticket_id')
             ->join('shift_schedules as schedules', 'schedules.id', '=', 'admissions.member_schedule_id')
@@ -469,15 +499,27 @@ final readonly class SyntheticCaptureGatewayService
         if (! Str::isUuid($studyId)) {
             throw new ImageGatewayException('study_forbidden', 'The DICOM study is unavailable.');
         }
-        $study = DB::table('image_gateway_studies as studies')
+        $study = $this->authorizedStudiesQuery($profileId, $siteId, $operatorSiteId)
+            ->where('studies.id', $studyId)
+            ->select('studies.*', 'captures.admission_id')
+            ->first();
+
+        if ($study === null) {
+            throw new ImageGatewayException('study_forbidden', 'The DICOM study is unavailable to this Operator.');
+        }
+
+        return $study;
+    }
+
+    private function authorizedStudiesQuery(string $profileId, string $siteId, string $operatorSiteId): Builder
+    {
+        return DB::table('image_gateway_studies as studies')
             ->join('image_gateway_capture_sets as captures', 'captures.id', '=', 'studies.capture_set_id')
             ->join('operator_queue_admissions as admissions', 'admissions.id', '=', 'captures.admission_id')
             ->join('shift_schedules as schedules', 'schedules.id', '=', 'captures.member_schedule_id')
             ->join('examination_site_refs as member_sites', 'member_sites.id', '=', 'schedules.examination_site_id')
-            ->where('studies.id', $studyId)
             ->where('captures.status', 'accepted')
             ->where('captures.operator_site_id', $siteId)
-            ->where('captures.operator_profile_id', $profileId)
             ->where('member_sites.operator_site_id', $operatorSiteId)
             ->whereExists(function ($query) use ($profileId, $operatorSiteId): void {
                 $query->selectRaw('1')
@@ -488,15 +530,7 @@ final readonly class SyntheticCaptureGatewayService
                     ->where('assignments.operator_profile_id', $profileId)
                     ->where('assignments.status', 'active')
                     ->where('eligible.sync_status', 'eligible');
-            })
-            ->select('studies.*', 'captures.admission_id')
-            ->first();
-
-        if ($study === null) {
-            throw new ImageGatewayException('study_forbidden', 'The DICOM study is unavailable to this Operator.');
-        }
-
-        return $study;
+            });
     }
 
     /** @param  list<PrivateObject>  $stored */

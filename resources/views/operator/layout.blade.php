@@ -55,6 +55,7 @@
             <a href="{{ route('operator.verification-worklist') }}">Verification worklist</a>
             <a href="{{ route('operator.basic-examination-worklist') }}">Basic-examination worklist</a>
             <a href="{{ route('operator.xray-readiness-worklist') }}">X-ray readiness</a>
+            <a href="{{ route('operator.study.results') }}">DICOM results</a>
             <form method="POST" action="{{ route('logout') }}">
                 @csrf
                 <button type="submit" class="secondary">Sign out</button>

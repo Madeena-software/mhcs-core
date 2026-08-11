@@ -279,6 +279,46 @@ final class Mvp14SyntheticCaptureGatewayTest extends TestCase
         $this->assertSame($dicom->getContent(), $download->getContent());
     }
 
+    public function test_second_current_shift_operator_can_discover_view_and_download_the_submitting_operators_study(): void
+    {
+        $fixture = $this->readyFixture();
+        $admission = $this->insertCalledXrayAdmission($fixture, 'SYNTH-SHARED-STUDY');
+        $this->postCapture($admission);
+        $studyId = (string) DB::table('image_gateway_studies')->value('id');
+        $objectKey = (string) DB::table('image_gateway_studies')->value('object_key');
+        $second = $this->secondOperatorFixture($fixture);
+
+        $this->actingAs($second['operator']);
+        $this->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
+
+        $this->get(route('operator.study.results'))
+            ->assertOk()
+            ->assertSee('DICOM results worklist')
+            ->assertSee($studyId)
+            ->assertSee(route('operator.study.show', $studyId))
+            ->assertDontSee($objectKey)
+            ->assertDontSee('synthetic-radiograph-01.npz')
+            ->assertDontSee('Synthetic Arrival Member');
+
+        $this->get(route('operator.study.show', $studyId))
+            ->assertOk()
+            ->assertSee('Automatic VOI')
+            ->assertSee('Zoom and pan only');
+        $this->get(route('operator.study.dicom', $studyId))->assertOk();
+        $this->get(route('operator.study.download', $studyId))
+            ->assertOk()
+            ->assertHeader('Content-Disposition', 'attachment; filename="synthetic-study.dcm"');
+
+        $this->assertSame('accepted', DB::table('image_gateway_capture_sets')->value('status'));
+        $this->assertSame($fixture['profileId'], DB::table('image_gateway_capture_sets')->value('operator_profile_id'));
+        $this->assertSame('awaiting_ai', DB::table('operator_queue_admissions')->where('id', $admission)->value('state'));
+
+        $this->actingAs($fixture['operator']);
+        $this->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
+        $this->get(route('operator.study.results'))->assertOk()->assertSee($studyId);
+        $this->get(route('operator.study.download', $studyId))->assertOk();
+    }
+
     public function test_study_viewer_and_download_require_current_operator_scope_and_have_no_raw_fixture_route(): void
     {
         $fixture = $this->readyFixture();
@@ -287,6 +327,7 @@ final class Mvp14SyntheticCaptureGatewayTest extends TestCase
         $studyId = (string) DB::table('image_gateway_studies')->value('id');
 
         $this->app['auth']->logout();
+        $this->get(route('operator.study.results'))->assertRedirect(route('login'));
         foreach ($this->studyRoutes($studyId) as $route) {
             $this->get($route)->assertRedirect(route('login'));
         }
@@ -297,6 +338,7 @@ final class Mvp14SyntheticCaptureGatewayTest extends TestCase
         $foreign = $this->operatorFixture(false);
         $this->actingAs($foreign['operator']);
         $this->withSession(['operator.active_site_id' => $foreign['siteLocalId']]);
+        $this->get(route('operator.study.results'))->assertOk()->assertDontSee($studyId);
         foreach ($this->studyRoutes($studyId) as $route) {
             $this->get($route)->assertForbidden();
         }
@@ -304,11 +346,23 @@ final class Mvp14SyntheticCaptureGatewayTest extends TestCase
         $this->actingAs($fixture['operator']);
         $this->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
         DB::table('operator_shift_assignments')->where('operator_profile_id', $fixture['profileId'])->update(['status' => 'revoked']);
+        $this->get(route('operator.study.results'))->assertOk()->assertDontSee($studyId);
         foreach ($this->studyRoutes($studyId) as $route) {
             $this->get($route)->assertForbidden();
         }
 
         DB::table('operator_shift_assignments')->where('operator_profile_id', $fixture['profileId'])->update(['status' => 'active']);
+        DB::table('operator_eligible_shifts')->where('id', $fixture['eligibleId'])->update(['sync_status' => 'ineligible']);
+        $this->get(route('operator.study.results'))->assertOk()->assertDontSee($studyId);
+        foreach ($this->studyRoutes($studyId) as $route) {
+            $this->get($route)->assertForbidden();
+        }
+
+        DB::table('operator_eligible_shifts')->where('id', $fixture['eligibleId'])->update(['sync_status' => 'eligible']);
+        $unknownStudy = (string) Str::uuid();
+        foreach ($this->studyRoutes($unknownStudy) as $route) {
+            $this->get($route)->assertForbidden();
+        }
         $this->get('/operator/studies/'.$studyId.'/npz')->assertNotFound();
     }
 

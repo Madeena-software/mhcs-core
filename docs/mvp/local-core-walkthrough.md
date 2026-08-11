@@ -1,7 +1,8 @@
 # Local clinic-core walkthrough
 
 This is a synthetic local rehearsal for the core branch only. It continues
-through the local/testing Image Gateway capture and Operator DICOM download.
+through the local/testing Image Gateway capture, shared Operator DICOM-results
+worklist, and normal DICOM download.
 Do not use a real roster, credential, NIK, paper form, or clinical image.
 
 ## Set up
@@ -53,6 +54,15 @@ spreadsheet, commit, chat, or deployment environment.
 10. Confirm the accepted study opens as a vertical, read-only DICOM view with
     automatic VOI and zoom/pan only. Click **Download DICOM** and confirm the
     browser downloads `synthetic-study.dcm` as an attachment.
+11. Sign out, sign in with the second synthetic Operator email and one-time
+    credential printed by the seeder (`mvp-operator-two@example.test`), and
+    select **Synthetic MVP-03 site**.
+12. Open **DICOM results** from the Operator navigation. Confirm the same
+    accepted study appears without patient data, open it, and confirm the
+    vertical read-only viewer renders.
+13. Click **Download DICOM** and confirm the second Operator downloads the
+    same `synthetic-study.dcm` attachment. Confirm no claim, submission, or
+    queue-state change is made by the second Operator.
 
 Stop there. This rehearsal uses only repository-owned synthetic fixtures in
 `local` or `testing`; it does not run MPIPS, convert NPZ bytes, wait for AI, or

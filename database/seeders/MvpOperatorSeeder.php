@@ -9,12 +9,15 @@ use App\Modules\Member\Application\Services\Mvp04OperatorSiteReferenceService;
 use App\Modules\Operator\Application\Services\OperatorAuthorization;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use RuntimeException;
 
 final class MvpOperatorSeeder extends Seeder
 {
     private const USER_EMAIL = 'mvp-admin@example.test';
+
+    private const SECOND_USER_EMAIL = 'mvp-operator-two@example.test';
 
     private const OPERATOR_SITE_ID = 'synthetic-operator-site-mvp03';
 
@@ -38,9 +41,16 @@ final class MvpOperatorSeeder extends Seeder
         [$scheduleId, $eligibleId] = $this->eligibleShift();
         $this->shiftAssignment($user, $profileId, $eligibleId);
 
+        $secondUser = $this->secondOperator();
+        $secondProfileId = $this->profile($secondUser, 'Synthetic Operator Two', 'SYN-OPR-02');
+        $this->claims($secondUser);
+        $this->siteAssignment($secondUser, $secondProfileId, $siteId);
+        $this->shiftAssignment($secondUser, $secondProfileId, $eligibleId);
+
         $this->command?->info('MVP-04 synthetic Operator foundation is ready.');
         $this->command?->info('Safe Operator site ID: '.$siteId);
         $this->command?->info('Safe eligible schedule ID: '.$scheduleId);
+        $this->command?->info('Second synthetic Operator email: '.self::SECOND_USER_EMAIL);
         $this->command?->info('Safe portal route: /operator');
     }
 
@@ -98,11 +108,11 @@ final class MvpOperatorSeeder extends Seeder
         return $localId;
     }
 
-    private function profile(User $user): string
+    private function profile(User $user, string $displayName = 'Synthetic Operator', string $employeeCode = 'SYN-OPR-01'): string
     {
         $profile = DB::table('operator_profiles')->where('user_id', $user->getKey())->first();
         if ($profile !== null) {
-            if (! $profile->active || $profile->display_name !== 'Synthetic Operator' || $profile->employee_code !== 'SYN-OPR-01') {
+            if (! $profile->active || $profile->display_name !== $displayName || $profile->employee_code !== $employeeCode) {
                 throw new RuntimeException('The existing synthetic Operator profile is inactive.');
             }
 
@@ -113,14 +123,48 @@ final class MvpOperatorSeeder extends Seeder
         DB::table('operator_profiles')->insert([
             'id' => $id,
             'user_id' => $user->getKey(),
-            'display_name' => 'Synthetic Operator',
-            'employee_code' => 'SYN-OPR-01',
+            'display_name' => $displayName,
+            'employee_code' => $employeeCode,
             'active' => true,
             'created_at' => now(),
             'updated_at' => now(),
         ]);
 
         return $id;
+    }
+
+    private function secondOperator(): User
+    {
+        $existing = User::query()->where('email', self::SECOND_USER_EMAIL)->first();
+        if ($existing !== null) {
+            if (! $existing->canAuthenticate() || DB::table('members')->where('user_id', $existing->getKey())->exists()) {
+                throw new RuntimeException('The existing second synthetic Operator account is inconsistent.');
+            }
+
+            return $existing;
+        }
+
+        $plaintext = bin2hex(random_bytes(24));
+        $userId = (string) Str::uuid();
+        $now = now();
+        DB::table('users')->insert([
+            'id' => $userId,
+            'email' => self::SECOND_USER_EMAIL,
+            'email_verified_at' => null,
+            'password' => Hash::make($plaintext),
+            'remember_token' => null,
+            'account_status' => 'active',
+            'login_enabled' => true,
+            'must_change_password' => false,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        if ($this->command !== null && defined('STDIN') && stream_isatty(STDIN)) {
+            $this->command->line(self::SECOND_USER_EMAIL.' development-only credential (show once): '.$plaintext);
+        }
+
+        return User::query()->whereKey($userId)->firstOrFail();
     }
 
     private function claims(User $user): void

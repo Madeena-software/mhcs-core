@@ -12,6 +12,7 @@ use App\Modules\Operator\Domain\OperatorException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\View\View;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
@@ -60,9 +61,9 @@ final class ImageGatewayController extends Controller
         try {
             $portal = $authorization->portal();
             $site = $authorization->portalSite($portal);
-            /** @var list<\Illuminate\Http\UploadedFile> $radiographs */
+            /** @var list<UploadedFile> $radiographs */
             $radiographs = $request->file('radiographs');
-            /** @var \Illuminate\Http\UploadedFile $gain */
+            /** @var UploadedFile $gain */
             $gain = $request->file('gain');
             $result = $gateway->submit(
                 $authorization->current(SyntheticCaptureGatewayService::CAPTURE_PURPOSE),
@@ -108,6 +109,26 @@ final class ImageGatewayController extends Controller
             );
 
             return view('operator.study', $metadata);
+        } catch (OperatorException|ImageGatewayException) {
+            abort(403);
+        }
+    }
+
+    public function results(
+        OperatorAuthorization $authorization,
+        SyntheticCaptureGatewayService $gateway,
+    ): View {
+        try {
+            $portal = $authorization->portal();
+            $site = $authorization->portalSite($portal);
+            $studies = $gateway->studies(
+                $authorization->current(SyntheticCaptureGatewayService::STUDY_PURPOSE),
+                (string) $portal['profile']->getKey(),
+                (string) $site->getKey(),
+                (string) $site->operator_site_id,
+            );
+
+            return view('operator.study-results', ['studies' => $studies]);
         } catch (OperatorException|ImageGatewayException) {
             abort(403);
         }
