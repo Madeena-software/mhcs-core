@@ -34,3 +34,10 @@ _ide_helper.php
 Homestead.json
 Homestead.yaml
 Thumbs.db
+
+# Research-generated caches and local outputs
+research/**/__pycache__/
+research/**/.ipynb_checkpoints/
+*.npz
+research/kambing-260714/data/output
+research

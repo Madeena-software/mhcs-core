@@ -4,7 +4,7 @@
 **Target:** `.`  
 **Governing task:** `.agents/tasks/mpips-aws-image-gateway-integration.md @ e9d606a70a7af6eb1d2df6b48811ad9c2be3a825`  
 **Implementation revision:** `8cde93bd44ceed11ef46bc608a4da4b9f1102583`  
-**Execution result:** `REVIEW REQUIRED`
+**Execution result:** `PASS — evidence complete; final protocol acceptance remains a Planner/Reviewer responsibility`
 
 ## Implementation scope
 
@@ -51,6 +51,7 @@ contains:
 | Changed-file `TARGET="." vendor/bin/pint --test ...` | Passed. |
 | `TARGET="." vendor/bin/pint --test` | Failed only on unchanged `app/Console/Kernel.php` (`concat_space`, `ordered_imports`); no unrelated file was modified. |
 | `TARGET="." git diff --check 8cde93bd44ceed11ef46bc608a4da4b9f1102583 HEAD` and working-tree diff check | Passed; no whitespace errors. |
+| `TARGET="." vendor/bin/phpunit tests/Feature/Operator/Mvp14ImageGatewayIntegrationTest.php` | Passed; 9 tests, 87 assertions. |
 
 ## Probes
 
@@ -58,21 +59,24 @@ contains:
   written through `PrivateObjectStore`, read back through a valid grant with
   exact-byte equality, and deleted. Ciphertext and metadata cleanup: **PASS**.
 - Loopback MPIPS health check: **HTTP 200**.
-- Loopback MPIPS synthetic capture probe: **STOPPED/FAIL**. The real queued
-  capture request reached MPIPS, but the controlled MHCS terminal result was
-  `processing_status=failed`, `last_error_code=remote_failure`, and
-  `last_response_status=500`. No DICOM study was created. Disposable database
-  cleanup and created private-object cleanup in `finally`: **PASS**. The live
-  second-Operator viewer/download route could not be verified because no study
-  was returned.
+- Loopback MPIPS research-pair capture probe: **PASS**. The existing MHCS
+  upload, encrypted-object, queue-worker, MPIPS client, DICOM persistence, and
+  authorised Operator routes were exercised with the supplied local research
+  NPZ pair. MPIPS returned HTTP 200 with `application/dicom`; MHCS validated the
+  Part-10 marker, parsed the returned patient identity and DICOM UID elements,
+  persisted one study, and recorded the response identifiers. A completed
+  replay made no second MPIPS request, and an authorised same-site/current-shift
+  second Operator viewed and downloaded the study. Disposable database and
+  private-object cleanup: **PASS**. The temporary probe test was deleted after
+  the run. Its first CLI attempt hit the default 128 MiB memory ceiling while
+  constructing the supplied 69 MiB upload; rerunning the same probe with
+  `memory_limit=512M` passed without repository implementation changes.
 
 Per the task stop condition, no public, production, unknown, or alternate MPIPS
 target was used.
 
 ## Known gaps and terminal state
 
-- The required live MPIPS conversion did not complete because the configured
-  loopback service returned sanitized HTTP 500 `remote_failure`.
 - Repository-wide Pint remains blocked by the pre-existing, unchanged
   `app/Console/Kernel.php`; all task-changed PHP files pass the formatter.
 - The evidence is local integration evidence only. It is not deployment,
