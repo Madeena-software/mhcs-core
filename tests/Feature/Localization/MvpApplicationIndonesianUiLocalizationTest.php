@@ -27,14 +27,16 @@ final class MvpApplicationIndonesianUiLocalizationTest extends TestCase
         foreach ([
             'A valid submission identity is required.',
             'This X-ray admission already has a capture set.',
-            'The synthetic DICOM fixture is invalid.',
             'The submission identity was reused with different capture data.',
             'A trusted Operator context is required.',
-            'Exactly one synthetic radiograph is required.',
-            'Synthetic inputs must be ZIP NPZ files.',
-            'The synthetic fixture identity is not accepted.',
-            'The synthetic fixture bytes are not accepted.',
-            'The repository-owned synthetic fixture is unavailable.',
+            'Exactly one non-empty NPZ pair is required.',
+            'NPZ uploads must be non-empty ZIP files within the size limit.',
+            'The NPZ pair exceeds the request size limit.',
+            'Authoritative capture metadata is unavailable.',
+            'DICOM study unavailable.',
+            'The DICOM viewer is unavailable.',
+            'DICOM study ready. Automatic VOI is applied.',
+            'The DICOM study could not be displayed.',
             'The X-ray admission is unavailable to this Operator.',
         ] as $message) {
             $this->assertArrayHasKey($message, $copy);
@@ -127,7 +129,7 @@ final class MvpApplicationIndonesianUiLocalizationTest extends TestCase
             ->assertSee('<html lang="id">', false);
 
         $this->view('operator.study', [
-            'study_id' => 'synthetic-study',
+            'study_id' => 'capture-study',
             'window_center' => 0,
             'window_width' => 1,
         ])

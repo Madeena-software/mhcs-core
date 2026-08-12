@@ -30,7 +30,7 @@ final class FoundationFeatureTest extends TestCase
         $requireDev = array_keys($composer['require-dev']);
         sort($require);
         sort($requireDev);
-        $this->assertSame(['filament/filament', 'laravel/framework', 'laravel/tinker', 'php'], $require);
+        $this->assertSame(['filament/filament', 'laravel/framework', 'laravel/tinker', 'league/flysystem-aws-s3-v3', 'php'], $require);
         $this->assertSame(
             ['fakerphp/faker', 'laravel/pail', 'laravel/pao', 'laravel/pint', 'mockery/mockery', 'nunomaduro/collision', 'pestphp/pest', 'pestphp/pest-plugin-browser', 'pestphp/pest-plugin-laravel', 'phpunit/phpunit'],
             $requireDev,

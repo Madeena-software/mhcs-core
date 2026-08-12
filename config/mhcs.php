@@ -47,6 +47,8 @@ return [
         'authority' => 'Image Gateway',
     ],
 
+    'private_object_disk' => env('MHCS_PRIVATE_OBJECT_DISK', 's3'),
+
     'external_adapters' => [
         'payment gateways',
         'AI providers',
@@ -63,6 +65,13 @@ return [
         'boundary' => 'private black-box external service',
         'caller' => 'image-worker',
         'direct_application_clients' => [],
+        'base_url' => rtrim((string) env('MPIPS_BASE_URL', 'http://127.0.0.1:8014'), '/'),
+        'api_key' => env('MPIPS_API_KEY'),
+        'timeout_seconds' => (int) env('MPIPS_TIMEOUT_SECONDS', 360),
+        'worker_timeout_seconds' => (int) env('IMAGE_GATEWAY_WORKER_TIMEOUT', 390),
+        'max_attempts' => 5,
+        'backoff_base_seconds' => 2,
+        'backoff_cap_seconds' => 30,
     ],
 
     'security' => [

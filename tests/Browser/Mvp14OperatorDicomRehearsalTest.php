@@ -2,8 +2,10 @@
 
 declare(strict_types=1);
 
+use App\Modules\ImageGateway\Application\Jobs\ProcessCaptureSet;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Tests\Operator\Mvp04Fixtures;
@@ -16,8 +18,13 @@ beforeEach(function (): void {
     putenv('APP_ENV=testing');
     config([
         'app.env' => 'testing',
+        'mhcs.private_object_disk' => 'local',
         'mhcs.security.object_key' => str_repeat('o', 32),
         'mhcs.security.grant_key' => str_repeat('g', 32),
+        'mhcs.security.manifest_key' => str_repeat('m', 32),
+        'mhcs.security.manifest_key_id' => 'test-key',
+        'mhcs.mpips.base_url' => 'http://127.0.0.1:8014',
+        'mhcs.mpips.api_key' => 'test-api-key',
         'mhcs.image_policy' => [
             'file_count' => 2,
             'per_file_bytes' => 1048576,
@@ -46,42 +53,53 @@ beforeEach(function (): void {
     $this->admission = mvp14InsertCalledXray($this->fixture);
 });
 
-it('takes an operator from synthetic X-ray capture to an actual Cornerstone viewport and download', function (): void {
+it('takes an operator from X-ray capture to an actual Cornerstone viewport and download', function (): void {
     $fixture = $this->fixture;
 
-    $page = visit(route('operator.login'))
+    $page = visit('/operator/login')
         ->wait(1)
         ->fill('identifier', $fixture['operator']->email)
         ->fill('password', 'password')
-        ->press('Sign in')
+        ->press('Masuk')
         ->wait(1)
-        ->click('Select an assigned site')
+        ->click('Pilih lokasi yang ditugaskan')
         ->wait(1)
-        ->press('Set active site')
+        ->press('Tetapkan lokasi aktif')
         ->wait(1)
-        ->navigate(route('operator.xray-capture.show', $this->admission))
+        ->navigate('/operator/xray-readiness-worklist/'.$this->admission.'/capture')
         ->wait(1)
-        ->assertSee('Radiograph NPZ');
+        ->assertSee('NPZ radiografi');
 
+    Http::fake(Http::response(
+        str_repeat("\0", 128).'DICM'.'browser dicom',
+        200,
+        [
+            'Content-Type' => 'application/dicom',
+            'X-Conversion-Job-ID' => '6ba7b810-9dad-51d1-80b4-00c04fd430c8',
+            'X-Correlation-ID' => '6ba7b810-9dad-41d1-80b4-00c04fd430c8',
+        ],
+    ));
     $response = $this->actingAs($fixture['operator'])
         ->withSession(['operator.active_site_id' => $fixture['siteLocalId']])
         ->post(route('operator.xray-capture.store', $this->admission), [
             'submission_id' => (string) Str::uuid(),
-            'radiographs' => [mvp14BrowserFixtureUpload('synthetic-radiograph-01.npz')],
-            'gain' => mvp14BrowserFixtureUpload('synthetic-gain-01.npz'),
+            'radiograph_npz' => mvp14BrowserFixtureUpload('synthetic-radiograph-01.npz'),
+            'gain_npz' => mvp14BrowserFixtureUpload('synthetic-gain-01.npz'),
         ])
         ->assertRedirect();
+    $captureId = (string) DB::table('image_gateway_capture_sets')->value('id');
+    app()->call([new ProcessCaptureSet($captureId), 'handle']);
     $studyId = (string) DB::table('image_gateway_studies')->value('id');
     if ($studyId === '') {
         throw new RuntimeException($response->getStatusCode().' '.json_encode(session()->all()));
     }
 
     $page
-        ->navigate(route('operator.study.show', $studyId))
+        ->navigate('/operator/studies/'.$studyId)
         ->wait(2)
         ->assertPathIs('/operator/studies/'.$studyId)
-        ->assertSee('Automatic VOI')
-        ->assertSee('Zoom and pan only')
+        ->assertSee('VOI otomatis')
+        ->assertSee('Hanya zoom dan geser')
         ->assertDontSee('Window/Level')
         ->assertDontSee('Contrast')
         ->assertDontSee('Brightness')
@@ -93,7 +111,7 @@ it('takes an operator from synthetic X-ray capture to an actual Cornerstone view
 
     $page->page()->waitForFunction('window.__mhcsDicomViewerReady === true');
     $page->assertVisible('[data-testid="dicom-viewport"]');
-    $page->click('Download DICOM')->wait(1);
+    $page->click('Unduh DICOM')->wait(1);
     expect($page->attribute('a[download]', 'download'))->toBe('');
 });
 
@@ -101,42 +119,53 @@ it('lets a second current-shift operator discover and download the accepted stud
     $fixture = $this->fixture;
     $second = $this->secondOperatorFixture($fixture);
 
+    Http::fake(Http::response(
+        str_repeat("\0", 128).'DICM'.'browser dicom',
+        200,
+        [
+            'Content-Type' => 'application/dicom',
+            'X-Conversion-Job-ID' => '6ba7b810-9dad-51d1-80b4-00c04fd430c8',
+            'X-Correlation-ID' => '6ba7b810-9dad-41d1-80b4-00c04fd430c8',
+        ],
+    ));
     $this->actingAs($fixture['operator'])
         ->withSession(['operator.active_site_id' => $fixture['siteLocalId']])
         ->post(route('operator.xray-capture.store', $this->admission), [
             'submission_id' => (string) Str::uuid(),
-            'radiographs' => [mvp14BrowserFixtureUpload('synthetic-radiograph-01.npz')],
-            'gain' => mvp14BrowserFixtureUpload('synthetic-gain-01.npz'),
+            'radiograph_npz' => mvp14BrowserFixtureUpload('synthetic-radiograph-01.npz'),
+            'gain_npz' => mvp14BrowserFixtureUpload('synthetic-gain-01.npz'),
         ])
         ->assertRedirect();
+    $captureId = (string) DB::table('image_gateway_capture_sets')->value('id');
+    app()->call([new ProcessCaptureSet($captureId), 'handle']);
     $studyId = (string) DB::table('image_gateway_studies')->value('id');
     $this->actingAsGuest();
     $this->flushSession();
 
-    $page = visit(route('operator.login'))
+    $page = visit('/operator/login')
         ->wait(1)
         ->fill('identifier', $second['operator']->email)
         ->fill('password', 'password')
-        ->press('Sign in')
+        ->press('Masuk')
         ->wait(1)
-        ->click('Select an assigned site')
+        ->click('Pilih lokasi yang ditugaskan')
         ->wait(1)
-        ->press('Set active site')
+        ->press('Tetapkan lokasi aktif')
         ->wait(1)
-        ->click('DICOM results')
+        ->click('Hasil DICOM')
         ->wait(1)
         ->assertPathIs('/operator/studies')
-        ->assertSee('DICOM results worklist')
+        ->assertSee('Daftar kerja hasil DICOM')
         ->assertSee($studyId)
-        ->click('Open DICOM study')
+        ->click('Buka studi DICOM')
         ->wait(2)
         ->assertPathIs('/operator/studies/'.$studyId)
-        ->assertSee('Automatic VOI')
-        ->assertSee('Zoom and pan only')
+        ->assertSee('VOI otomatis')
+        ->assertSee('Hanya zoom dan geser')
         ->assertVisible('[data-testid="dicom-viewport"]');
 
     $page->page()->waitForFunction('window.__mhcsDicomViewerReady === true');
-    $page->click('Download DICOM')->wait(1);
+    $page->click('Unduh DICOM')->wait(1);
     expect($page->attribute('a[download]', 'download'))->toBe('');
 });
 

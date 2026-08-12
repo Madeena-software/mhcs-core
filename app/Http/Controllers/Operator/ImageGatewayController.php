@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Operator;
 
 use App\Http\Controllers\Controller;
-use App\Modules\ImageGateway\Application\Services\SyntheticCaptureGatewayService;
+use App\Modules\ImageGateway\Application\Services\ImageGatewayCaptureService;
 use App\Modules\ImageGateway\Domain\ImageGatewayException;
 use App\Modules\Operator\Application\Services\OperatorAuthorization;
 use App\Modules\Operator\Domain\OperatorException;
@@ -23,13 +23,13 @@ final class ImageGatewayController extends Controller
     public function captureShow(
         string $admission,
         OperatorAuthorization $authorization,
-        SyntheticCaptureGatewayService $gateway,
+        ImageGatewayCaptureService $gateway,
     ): View {
         try {
             $portal = $authorization->portal();
             $site = $authorization->portalSite($portal);
             $form = $gateway->captureForm(
-                $authorization->current(SyntheticCaptureGatewayService::CAPTURE_PURPOSE),
+                $authorization->current(ImageGatewayCaptureService::CAPTURE_PURPOSE),
                 (string) $portal['profile']->getKey(),
                 (string) $site->getKey(),
                 (string) $site->operator_site_id,
@@ -46,13 +46,12 @@ final class ImageGatewayController extends Controller
         Request $request,
         string $admission,
         OperatorAuthorization $authorization,
-        SyntheticCaptureGatewayService $gateway,
+        ImageGatewayCaptureService $gateway,
     ): RedirectResponse {
         $validator = Validator::make($request->all(), [
             'submission_id' => ['required', 'uuid'],
-            'radiographs' => ['required', 'array', 'size:1'],
-            'radiographs.0' => ['required', 'file'],
-            'gain' => ['required', 'file'],
+            'radiograph_npz' => ['required', 'file'],
+            'gain_npz' => ['required', 'file'],
         ]);
         if ($validator->fails()) {
             return back()->withErrors($validator)->withInput();
@@ -61,22 +60,22 @@ final class ImageGatewayController extends Controller
         try {
             $portal = $authorization->portal();
             $site = $authorization->portalSite($portal);
-            /** @var list<UploadedFile> $radiographs */
-            $radiographs = $request->file('radiographs');
+            /** @var UploadedFile $radiograph */
+            $radiograph = $request->file('radiograph_npz');
             /** @var UploadedFile $gain */
-            $gain = $request->file('gain');
+            $gain = $request->file('gain_npz');
             $result = $gateway->submit(
-                $authorization->current(SyntheticCaptureGatewayService::CAPTURE_PURPOSE),
+                $authorization->current(ImageGatewayCaptureService::CAPTURE_PURPOSE),
                 (string) $portal['profile']->getKey(),
                 (string) $site->getKey(),
                 (string) $site->operator_site_id,
                 $admission,
                 (string) $validator->validated()['submission_id'],
-                $radiographs,
+                $radiograph,
                 $gain,
             );
 
-            return redirect()->route('operator.study.show', $result['study_id'])->with('status', __('Synthetic capture accepted.'));
+            return redirect()->route('operator.study.results')->with('status', __('Capture accepted and queued for processing.'));
         } catch (OperatorException|ImageGatewayException $exception) {
             if ($exception instanceof ImageGatewayException && $exception->category === 'environment_forbidden') {
                 abort(403);
@@ -88,20 +87,20 @@ final class ImageGatewayController extends Controller
                 throw $exception;
             }
 
-            return back()->withErrors(['capture' => __('The synthetic capture could not be accepted.')])->withInput();
+            return back()->withErrors(['capture' => __('The capture could not be accepted.')])->withInput();
         }
     }
 
     public function study(
         string $study,
         OperatorAuthorization $authorization,
-        SyntheticCaptureGatewayService $gateway,
+        ImageGatewayCaptureService $gateway,
     ): View {
         try {
             $portal = $authorization->portal();
             $site = $authorization->portalSite($portal);
             $metadata = $gateway->study(
-                $authorization->current(SyntheticCaptureGatewayService::STUDY_PURPOSE),
+                $authorization->current(ImageGatewayCaptureService::STUDY_PURPOSE),
                 (string) $portal['profile']->getKey(),
                 (string) $site->getKey(),
                 (string) $site->operator_site_id,
@@ -116,13 +115,13 @@ final class ImageGatewayController extends Controller
 
     public function results(
         OperatorAuthorization $authorization,
-        SyntheticCaptureGatewayService $gateway,
+        ImageGatewayCaptureService $gateway,
     ): View {
         try {
             $portal = $authorization->portal();
             $site = $authorization->portalSite($portal);
             $studies = $gateway->studies(
-                $authorization->current(SyntheticCaptureGatewayService::STUDY_PURPOSE),
+                $authorization->current(ImageGatewayCaptureService::STUDY_PURPOSE),
                 (string) $portal['profile']->getKey(),
                 (string) $site->getKey(),
                 (string) $site->operator_site_id,
@@ -137,7 +136,7 @@ final class ImageGatewayController extends Controller
     public function dicom(
         string $study,
         OperatorAuthorization $authorization,
-        SyntheticCaptureGatewayService $gateway,
+        ImageGatewayCaptureService $gateway,
     ): Response {
         return $this->dicomResponse($study, $authorization, $gateway, 'inline');
     }
@@ -145,7 +144,7 @@ final class ImageGatewayController extends Controller
     public function download(
         string $study,
         OperatorAuthorization $authorization,
-        SyntheticCaptureGatewayService $gateway,
+        ImageGatewayCaptureService $gateway,
     ): Response {
         return $this->dicomResponse($study, $authorization, $gateway, 'attachment');
     }
@@ -153,14 +152,14 @@ final class ImageGatewayController extends Controller
     private function dicomResponse(
         string $study,
         OperatorAuthorization $authorization,
-        SyntheticCaptureGatewayService $gateway,
+        ImageGatewayCaptureService $gateway,
         string $disposition,
     ): Response {
         try {
             $portal = $authorization->portal();
             $site = $authorization->portalSite($portal);
             $bytes = $gateway->dicom(
-                $authorization->current(SyntheticCaptureGatewayService::STUDY_PURPOSE),
+                $authorization->current(ImageGatewayCaptureService::STUDY_PURPOSE),
                 (string) $portal['profile']->getKey(),
                 (string) $site->getKey(),
                 (string) $site->operator_site_id,
@@ -169,7 +168,7 @@ final class ImageGatewayController extends Controller
 
             return response($bytes, 200, [
                 'Content-Type' => 'application/dicom',
-                'Content-Disposition' => $disposition.'; filename="synthetic-study.dcm"',
+                'Content-Disposition' => $disposition.'; filename="capture-'.$study.'.dcm"',
                 'Cache-Control' => 'no-store, private',
                 'X-Content-Type-Options' => 'nosniff',
             ]);

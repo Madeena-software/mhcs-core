@@ -5,7 +5,7 @@
 @section('content')
 <section aria-labelledby="dicom-results-title">
     <h1 id="dicom-results-title">{{ __('DICOM results worklist') }}</h1>
-    <p class="muted">{{ __('Accepted local synthetic studies available to this active site and current shift.') }}</p>
+    <p class="muted">{{ __('Accepted studies available to this active site and current shift.') }}</p>
     <section class="card">
         <div class="table-wrap">
             <table>

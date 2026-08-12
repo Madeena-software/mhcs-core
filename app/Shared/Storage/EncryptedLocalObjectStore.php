@@ -8,6 +8,7 @@ use App\Shared\Context\AuthenticatedContext;
 use App\Shared\Security\KeyMaterial;
 use App\Shared\Time\Clock;
 use DateTimeImmutable;
+use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Throwable;
@@ -25,7 +26,7 @@ final readonly class EncryptedLocalObjectStore implements PrivateObjectStore
         $this->assertContext($context, $purpose);
         $key = OpaqueObjectKey::fromString('objects/'.Str::uuid());
         $encrypted = $this->encrypt($contents);
-        $disk = Storage::disk('local');
+        $disk = $this->disk();
 
         if (! $disk->put((string) $key, $encrypted)) {
             throw new ObjectAccessException('Private object persistence failed.');
@@ -55,7 +56,7 @@ final readonly class EncryptedLocalObjectStore implements PrivateObjectStore
 
     public function delete(PrivateObject $object): void
     {
-        $disk = Storage::disk('local');
+        $disk = $this->disk();
         $disk->delete((string) $object->key);
         $disk->delete((string) $object->key.'.meta.json');
     }
@@ -91,7 +92,8 @@ final readonly class EncryptedLocalObjectStore implements PrivateObjectStore
 
         $key = OpaqueObjectKey::fromString(substr($target, strlen('private-object:')));
         $grant->verify($context, $audience, $purpose, $target, $this->clock->now(), $this->grantKey);
-        $encrypted = Storage::disk('local')->get((string) $key);
+        $disk = $this->disk();
+        $encrypted = $disk->get((string) $key);
 
         if (! is_string($encrypted)) {
             throw new ObjectAccessException('Private object does not exist.');
@@ -99,7 +101,7 @@ final readonly class EncryptedLocalObjectStore implements PrivateObjectStore
 
         try {
             $metadata = json_decode(
-                (string) Storage::disk('local')->get((string) $key.'.meta.json'),
+                (string) $disk->get((string) $key.'.meta.json'),
                 true,
                 512,
                 JSON_THROW_ON_ERROR,
@@ -135,6 +137,17 @@ final readonly class EncryptedLocalObjectStore implements PrivateObjectStore
         ) {
             throw new ObjectAccessException('Trusted authorization and purpose are required.');
         }
+    }
+
+    private function disk(): Filesystem
+    {
+        $name = config('mhcs.private_object_disk');
+
+        if (! is_string($name) || trim($name) === '' || ! array_key_exists($name, config('filesystems.disks', []))) {
+            throw new ObjectAccessException('Private object disk is not configured.');
+        }
+
+        return Storage::disk($name);
     }
 
     private function encrypt(string $contents): string

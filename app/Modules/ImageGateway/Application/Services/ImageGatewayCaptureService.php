@@ -4,9 +4,10 @@ declare(strict_types=1);
 
 namespace App\Modules\ImageGateway\Application\Services;
 
+use App\Modules\ImageGateway\Application\Jobs\ProcessCaptureSet;
 use App\Modules\ImageGateway\Domain\ImageGatewayException;
-use App\Modules\ImageGateway\Domain\Security\UntrustedImageInput;
-use App\Modules\ImageGateway\Domain\Security\UntrustedImagePolicy;
+use App\Modules\ImageGateway\Domain\Security\ConversionManifest;
+use App\Modules\ImageGateway\Domain\Security\ManifestSigner;
 use App\Shared\Audit\AuditEvent;
 use App\Shared\Audit\AuditStore;
 use App\Shared\Context\AuthenticatedContext;
@@ -26,7 +27,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Throwable;
 
-final readonly class SyntheticCaptureGatewayService
+final readonly class ImageGatewayCaptureService
 {
     public const CAPTURE_PURPOSE = 'image-gateway.capture.submit';
 
@@ -34,19 +35,9 @@ final readonly class SyntheticCaptureGatewayService
 
     private const AUDIENCE = 'operator-study';
 
-    private const FIXTURE_PAIR = 'synthetic-pair-01';
+    private const MAX_FILE_BYTES = 104857600;
 
-    private const FIXTURE_EXTENSION = 'n'.'pz';
-
-    private const FIXTURE_FORMAT = 'application/'.self::FIXTURE_EXTENSION;
-
-    private const FIXTURE_FORM = 'zip-'.self::FIXTURE_EXTENSION;
-
-    private const RADIOGRAPH_NAME = 'synthetic-radiograph-01.'.self::FIXTURE_EXTENSION;
-
-    private const GAIN_NAME = 'synthetic-gain-01.'.self::FIXTURE_EXTENSION;
-
-    private const DICOM_NAME = 'synthetic-study.dcm';
+    private const MAX_PAIR_BYTES = 314572800;
 
     public function __construct(
         private PrivateObjectStore $objects,
@@ -54,9 +45,10 @@ final readonly class SyntheticCaptureGatewayService
         private AuditStore $audit,
         private OutboxStore $outbox,
         private Clock $clock,
+        private ManifestSigner $signer,
     ) {}
 
-    /** @return array{fixture_pair_id: string, radiograph_name: string, gain_name: string} */
+    /** @return array<string, string> */
     public function captureForm(
         AuthenticatedContext $context,
         string $profileId,
@@ -64,21 +56,13 @@ final readonly class SyntheticCaptureGatewayService
         string $operatorSiteId,
         string $admissionId,
     ): array {
-        $this->assertLocalEnvironment();
         $this->assertContext($context, self::CAPTURE_PURPOSE);
         $this->admission($profileId, $siteId, $operatorSiteId, $admissionId, false);
 
-        return [
-            'fixture_pair_id' => self::FIXTURE_PAIR,
-            'radiograph_name' => self::RADIOGRAPH_NAME,
-            'gain_name' => self::GAIN_NAME,
-        ];
+        return [];
     }
 
-    /**
-     * @param  list<UploadedFile>  $radiographs
-     * @return array{capture_id: string, study_id: string, status: string}
-     */
+    /** @return array{capture_id: string, study_id: null, status: string} */
     public function submit(
         AuthenticatedContext $context,
         string $profileId,
@@ -86,10 +70,9 @@ final readonly class SyntheticCaptureGatewayService
         string $operatorSiteId,
         string $admissionId,
         string $submissionId,
-        array $radiographs,
+        UploadedFile $radiograph,
         UploadedFile $gain,
     ): array {
-        $this->assertLocalEnvironment();
         $this->assertContext($context, self::CAPTURE_PURPOSE);
         $submissionId = trim($submissionId);
         if (! Str::isUuid($submissionId)) {
@@ -97,15 +80,14 @@ final readonly class SyntheticCaptureGatewayService
         }
 
         $admission = $this->admission($profileId, $siteId, $operatorSiteId, $admissionId, false, true);
-        [$radiograph, $radiographBytes, $gainBytes] = $this->assertFixturePair($radiographs, $gain);
+        [$radiographBytes, $gainBytes] = $this->assertUploads($radiograph, $gain);
         $payload = [
             'admission_id' => $admissionId,
             'booking_id' => (string) $admission->booking_id,
             'member_schedule_id' => (string) $admission->member_schedule_id,
             'operator_site_id' => $operatorSiteId,
             'operator_profile_id' => $profileId,
-            'fixture_pair_id' => self::FIXTURE_PAIR,
-            'radiograph_checksums' => [hash('sha256', $radiographBytes)],
+            'radiograph_checksum' => hash('sha256', $radiographBytes),
             'gain_checksum' => hash('sha256', $gainBytes),
         ];
         $stored = [];
@@ -127,29 +109,35 @@ final readonly class SyntheticCaptureGatewayService
                     $radiographBytes,
                     $gainBytes,
                 ): array {
-                    $admission = $this->admission($profileId, $siteId, $operatorSiteId, $admissionId, true);
+                    $admission = $this->admission($profileId, $siteId, $operatorSiteId, $admissionId, true, true);
                     if (DB::table('image_gateway_capture_sets')->where('admission_id', $admissionId)->exists()) {
                         throw new ImageGatewayException('capture_conflict', 'This X-ray admission already has a capture set.');
                     }
 
-                    $radiographObject = $this->objects->put($radiographBytes, $captureContext, self::CAPTURE_PURPOSE);
-                    $stored[] = $radiographObject;
-                    $gainObject = $this->objects->put($gainBytes, $captureContext, self::CAPTURE_PURPOSE);
-                    $stored[] = $gainObject;
-
-                    $dicomBytes = $this->fixture(self::DICOM_NAME);
-                    if (! str_starts_with($dicomBytes, str_repeat("\0", 128).'DICM')) {
-                        throw new ImageGatewayException('capture_failure', 'The synthetic DICOM fixture is invalid.');
-                    }
-                    $dicomObject = $this->objects->put($dicomBytes, $captureContext, self::CAPTURE_PURPOSE);
-                    $stored[] = $dicomObject;
-
-                    $now = $this->clock->now();
                     $captureId = (string) Str::uuid();
-                    $studyId = (string) Str::uuid();
-                    $radiographChecksum = $radiographObject->checksum;
-                    $gainChecksum = $gainObject->checksum;
-                    $dicomChecksum = $dicomObject->checksum;
+                    $now = $this->clock->now();
+                    $manifestBytes = $this->manifest($admission, $profileId, $siteId, $now);
+                    $signed = $this->signer->sign(new ConversionManifest(
+                        conversionJobId: $captureId,
+                        radiographChecksum: hash('sha256', $radiographBytes),
+                        gainChecksum: hash('sha256', $gainBytes),
+                        metadataChecksum: hash('sha256', $manifestBytes),
+                        manifestVersion: 1,
+                        issuedAt: $now,
+                        correlationId: $captureContext->operationId === null ? $captureId : (string) $captureContext->operationId,
+                        keyId: (string) config('mhcs.security.manifest_key_id'),
+                    ));
+                    $signatureBytes = json_encode($signed->toArray(), JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+
+                    $objects = [
+                        'radiograph' => $this->objects->put($radiographBytes, $captureContext, self::CAPTURE_PURPOSE),
+                        'gain' => $this->objects->put($gainBytes, $captureContext, self::CAPTURE_PURPOSE),
+                        'manifest' => $this->objects->put($manifestBytes, $captureContext, self::CAPTURE_PURPOSE),
+                        'manifest_signature' => $this->objects->put($signatureBytes, $captureContext, self::CAPTURE_PURPOSE),
+                    ];
+                    foreach ($objects as $object) {
+                        $stored[] = $object;
+                    }
 
                     DB::table('image_gateway_capture_sets')->insert([
                         'id' => $captureId,
@@ -159,57 +147,34 @@ final readonly class SyntheticCaptureGatewayService
                         'member_schedule_id' => (string) $admission->member_schedule_id,
                         'operator_site_id' => $siteId,
                         'operator_profile_id' => $profileId,
-                        'fixture_pair_id' => self::FIXTURE_PAIR,
                         'radiograph_count' => 1,
                         'status' => 'accepted',
+                        'processing_status' => 'queued',
+                        'attempts' => 0,
+                        'manifest_checksum' => hash('sha256', $manifestBytes),
+                        'manifest_bytes' => strlen($manifestBytes),
+                        'signature_checksum' => hash('sha256', $signatureBytes),
+                        'signature_bytes' => strlen($signatureBytes),
                         'accepted_at' => $now,
                         'created_at' => $now,
                         'updated_at' => $now,
                     ]);
-                    DB::table('image_gateway_capture_objects')->insert([
-                        [
+                    $rows = [];
+                    foreach ($objects as $type => $object) {
+                        $rows[] = [
                             'id' => (string) Str::uuid(),
                             'capture_set_id' => $captureId,
-                            'object_type' => 'radiograph',
+                            'object_type' => $type,
                             'object_index' => 0,
-                            'object_key' => (string) $radiographObject->key,
-                            'checksum' => $radiographChecksum,
-                            'bytes' => $radiographObject->bytes,
-                            'format' => self::FIXTURE_FORMAT,
+                            'object_key' => (string) $object->key,
+                            'checksum' => $object->checksum,
+                            'bytes' => $object->bytes,
+                            'format' => $type === 'radiograph' || $type === 'gain' ? 'application/x-npz' : 'application/json',
                             'created_at' => $now,
                             'updated_at' => $now,
-                        ],
-                        [
-                            'id' => (string) Str::uuid(),
-                            'capture_set_id' => $captureId,
-                            'object_type' => 'gain',
-                            'object_index' => 0,
-                            'object_key' => (string) $gainObject->key,
-                            'checksum' => $gainChecksum,
-                            'bytes' => $gainObject->bytes,
-                            'format' => self::FIXTURE_FORMAT,
-                            'created_at' => $now,
-                            'updated_at' => $now,
-                        ],
-                    ]);
-                    DB::table('image_gateway_studies')->insert([
-                        'id' => $studyId,
-                        'capture_set_id' => $captureId,
-                        'object_key' => (string) $dicomObject->key,
-                        'checksum' => $dicomChecksum,
-                        'bytes' => $dicomObject->bytes,
-                        'format' => 'application/dicom',
-                        'study_instance_uid' => '1.2.826.0.1.3680043.10.543.2040.1',
-                        'series_instance_uid' => '1.2.826.0.1.3680043.10.543.2040.1.1',
-                        'sop_instance_uid' => '1.2.826.0.1.3680043.10.543.2040.1.1.1',
-                        'transfer_syntax' => '1.2.840.10008.1.2.1',
-                        'window_center' => '128',
-                        'window_width' => '256',
-                        'rows' => 32,
-                        'columns' => 32,
-                        'created_at' => $now,
-                        'updated_at' => $now,
-                    ]);
+                        ];
+                    }
+                    DB::table('image_gateway_capture_objects')->insert($rows);
                     DB::table('operator_queue_admissions')->where('id', $admissionId)->update([
                         'state' => 'awaiting_ai',
                         'updated_at' => $now,
@@ -228,13 +193,11 @@ final readonly class SyntheticCaptureGatewayService
                     ]);
                     $metadata = [
                         'capture_id' => $captureId,
-                        'study_id' => $studyId,
                         'admission_id' => $admissionId,
                         'booking_id' => (string) $admission->booking_id,
                         'operator_site_id' => $operatorSiteId,
                         'operator_profile_id' => $profileId,
-                        'fixture_pair' => self::FIXTURE_PAIR,
-                        'asset_checksums' => [$radiographChecksum, $gainChecksum, $dicomChecksum],
+                        'source_checksums' => [$objects['radiograph']->checksum, $objects['gain']->checksum],
                         'status' => 'accepted',
                     ];
                     $this->audit->append(AuditEvent::fromContext(
@@ -256,8 +219,9 @@ final readonly class SyntheticCaptureGatewayService
                         LocalId::fromString($captureId),
                         $captureContext->operationId,
                     ));
+                    ProcessCaptureSet::dispatch($captureId)->onQueue('image-gateway')->afterCommit();
 
-                    return ['capture_id' => $captureId, 'study_id' => $studyId, 'status' => 'accepted'];
+                    return ['capture_id' => $captureId, 'study_id' => null, 'status' => 'accepted'];
                 },
             )->result;
         } catch (IdempotencyConflict $exception) {
@@ -268,49 +232,32 @@ final readonly class SyntheticCaptureGatewayService
             throw $exception;
         } catch (Throwable $exception) {
             $this->deleteStored($stored);
-            throw new ImageGatewayException('capture_failure', 'The synthetic capture could not be accepted.', $exception);
+            throw new ImageGatewayException('capture_failure', 'The capture could not be accepted.', $exception);
         }
     }
 
-    /** @return list<array{study_id: string, format: string, rows: int, columns: int, accepted_at: string}> */
-    public function studies(
-        AuthenticatedContext $context,
-        string $profileId,
-        string $siteId,
-        string $operatorSiteId,
-    ): array {
-        $this->assertLocalEnvironment();
+    /** @return list<array{study_id: string, format: string, rows: ?int, columns: ?int, accepted_at: string}> */
+    public function studies(AuthenticatedContext $context, string $profileId, string $siteId, string $operatorSiteId): array
+    {
         $this->assertContext($context, self::STUDY_PURPOSE);
 
         return $this->authorizedStudiesQuery($profileId, $siteId, $operatorSiteId)
-            ->select([
-                'studies.id',
-                'studies.format',
-                'studies.rows',
-                'studies.columns',
-                'captures.accepted_at',
-            ])
+            ->select(['studies.id', 'studies.format', 'studies.rows', 'studies.columns', 'captures.accepted_at'])
             ->orderByDesc('captures.accepted_at')
             ->get()
             ->map(static fn (object $study): array => [
                 'study_id' => (string) $study->id,
                 'format' => (string) $study->format,
-                'rows' => (int) $study->rows,
-                'columns' => (int) $study->columns,
+                'rows' => $study->rows === null ? null : (int) $study->rows,
+                'columns' => $study->columns === null ? null : (int) $study->columns,
                 'accepted_at' => (string) $study->accepted_at,
             ])
             ->all();
     }
 
     /** @return array<string, mixed> */
-    public function study(
-        AuthenticatedContext $context,
-        string $profileId,
-        string $siteId,
-        string $operatorSiteId,
-        string $studyId,
-    ): array {
-        $this->assertLocalEnvironment();
+    public function study(AuthenticatedContext $context, string $profileId, string $siteId, string $operatorSiteId, string $studyId): array
+    {
         $this->assertContext($context, self::STUDY_PURPOSE);
         $study = $this->authorizedStudy($profileId, $siteId, $operatorSiteId, $studyId);
 
@@ -321,21 +268,16 @@ final readonly class SyntheticCaptureGatewayService
             'format' => (string) $study->format,
             'checksum' => (string) $study->checksum,
             'bytes' => (int) $study->bytes,
-            'window_center' => (string) $study->window_center,
-            'window_width' => (string) $study->window_width,
-            'rows' => (int) $study->rows,
-            'columns' => (int) $study->columns,
+            'filename' => (string) $study->filename,
+            'window_center' => $study->window_center,
+            'window_width' => $study->window_width,
+            'rows' => $study->rows === null ? null : (int) $study->rows,
+            'columns' => $study->columns === null ? null : (int) $study->columns,
         ];
     }
 
-    public function dicom(
-        AuthenticatedContext $context,
-        string $profileId,
-        string $siteId,
-        string $operatorSiteId,
-        string $studyId,
-    ): string {
-        $this->assertLocalEnvironment();
+    public function dicom(AuthenticatedContext $context, string $profileId, string $siteId, string $operatorSiteId, string $studyId): string
+    {
         $this->assertContext($context, self::STUDY_PURPOSE);
         $study = $this->authorizedStudy($profileId, $siteId, $operatorSiteId, $studyId);
         $object = new PrivateObject(
@@ -357,13 +299,6 @@ final readonly class SyntheticCaptureGatewayService
         return $this->objects->get($grant, $studyContext, self::AUDIENCE, self::STUDY_PURPOSE);
     }
 
-    private function assertLocalEnvironment(): void
-    {
-        if (! app()->environment(['local', 'testing'])) {
-            throw new ImageGatewayException('environment_forbidden', 'The synthetic DICOM bridge is available only in local or testing environments.');
-        }
-    }
-
     private function assertContext(AuthenticatedContext $context, string $purpose): void
     {
         if ($context->actorId === null || $context->operationId === null || $context->purpose !== $purpose) {
@@ -371,95 +306,30 @@ final readonly class SyntheticCaptureGatewayService
         }
     }
 
-    private function assertFixturePair(array $radiographs, UploadedFile $gain): array
+    /** @return array{0: string, 1: string} */
+    private function assertUploads(UploadedFile $radiograph, UploadedFile $gain): array
     {
-        if (count($radiographs) !== 1 || ! $radiographs[0] instanceof UploadedFile) {
-            throw new ImageGatewayException('capture_invalid', 'Exactly one synthetic radiograph is required.');
+        $bytes = [];
+        foreach ([$radiograph, $gain] as $file) {
+            $name = strtolower((string) $file->getClientOriginalName());
+            if ($file->getError() !== UPLOAD_ERR_OK || ! str_ends_with($name, '.npz')) {
+                throw new ImageGatewayException('capture_invalid', 'Exactly one non-empty NPZ pair is required.');
+            }
+            $contents = $file->get();
+            if (! is_string($contents) || $contents === '' || strlen($contents) > self::MAX_FILE_BYTES || ! preg_match('/\APK(?:\x03\x04|\x05\x06|\x07\x08)/', $contents)) {
+                throw new ImageGatewayException('capture_invalid', 'NPZ uploads must be non-empty ZIP files within the size limit.');
+            }
+            $bytes[] = $contents;
         }
-        $radiograph = $radiographs[0];
-        $radiographBytes = $this->assertFixtureFile($radiograph, self::RADIOGRAPH_NAME);
-        $gainBytes = $this->assertFixtureFile($gain, self::GAIN_NAME);
-        if (! str_starts_with($radiographBytes, "PK\x03\x04") || ! str_starts_with($gainBytes, "PK\x03\x04")) {
-            throw new ImageGatewayException('capture_invalid', 'Synthetic inputs must be ZIP N'.'PZ files.');
+        if (strlen($bytes[0]) + strlen($bytes[1]) > self::MAX_PAIR_BYTES) {
+            throw new ImageGatewayException('capture_invalid', 'The NPZ pair exceeds the request size limit.');
         }
-        $this->imagePolicy()->assertWithin(new UntrustedImageInput(
-            fileCount: 2,
-            perFileBytes: max(strlen($radiographBytes), strlen($gainBytes)),
-            totalBytes: strlen($radiographBytes) + strlen($gainBytes),
-            decompressedBytes: 8,
-            width: 2,
-            height: 2,
-            fieldCount: 2,
-            cpuSeconds: 0,
-            memoryBytes: 0,
-            executionSeconds: 0,
-            processCount: 0,
-            temporaryStorageBytes: 0,
-            form: self::FIXTURE_FORM,
-            recoveryWindowSeconds: 0,
-            attempts: 0,
-        ));
 
-        return [$radiograph, $radiographBytes, $gainBytes];
+        return [$bytes[0], $bytes[1]];
     }
 
-    private function imagePolicy(): UntrustedImagePolicy
+    private function admission(string $profileId, string $siteId, string $operatorSiteId, string $admissionId, bool $lock, bool $allowAccepted = false): object
     {
-        $config = (array) config('mhcs.image_policy');
-        if (app()->environment(['local', 'testing'])) {
-            $config = array_replace([
-                'file_count' => 2,
-                'per_file_bytes' => 1048576,
-                'total_bytes' => 2097152,
-                'decompressed_bytes' => 4194304,
-                'max_width' => 4096,
-                'max_height' => 4096,
-                'field_count' => 32,
-                'cpu_seconds' => 5,
-                'memory_bytes' => 134217728,
-                'execution_seconds' => 30,
-                'process_count' => 1,
-                'temporary_storage_bytes' => 8388608,
-                'accepted_forms' => [self::FIXTURE_FORM],
-                'recovery_window_seconds' => 300,
-                'max_attempts' => 1,
-            ], array_filter($config, static fn (mixed $value): bool => $value !== null));
-        }
-
-        return UntrustedImagePolicy::fromConfig($config);
-    }
-
-    private function assertFixtureFile(UploadedFile $file, string $expectedName): string
-    {
-        if ($file->getError() !== UPLOAD_ERR_OK) {
-            throw new ImageGatewayException('capture_invalid', 'The synthetic fixture identity is not accepted.');
-        }
-        $contents = $file->get();
-        if (! is_string($contents) || ! hash_equals(hash('sha256', $this->fixture($expectedName)), hash('sha256', $contents))) {
-            throw new ImageGatewayException('capture_invalid', 'The synthetic fixture bytes are not accepted.');
-        }
-
-        return $contents;
-    }
-
-    private function fixture(string $name): string
-    {
-        $contents = @file_get_contents(base_path('resources/fixtures/image-gateway/'.$name));
-        if (! is_string($contents)) {
-            throw new ImageGatewayException('capture_failure', 'The repository-owned synthetic fixture is unavailable.');
-        }
-
-        return $contents;
-    }
-
-    private function admission(
-        string $profileId,
-        string $siteId,
-        string $operatorSiteId,
-        string $admissionId,
-        bool $lock,
-        bool $allowAccepted = false,
-    ): object {
         $query = DB::table('operator_queue_admissions as admissions')
             ->join('operator_paper_tickets as tickets', 'tickets.id', '=', 'admissions.operator_paper_ticket_id')
             ->join('shift_schedules as schedules', 'schedules.id', '=', 'admissions.member_schedule_id')
@@ -494,6 +364,82 @@ final readonly class SyntheticCaptureGatewayService
         return $admission;
     }
 
+    private function manifest(object $admission, string $profileId, string $siteId, DateTimeImmutable $now): string
+    {
+        $source = DB::table('bookings')
+            ->join('members', 'members.id', '=', 'bookings.member_id')
+            ->leftJoin('service_offerings', 'service_offerings.id', '=', 'bookings.service_offering_id')
+            ->where('bookings.id', $admission->booking_id)
+            ->select([
+                'bookings.service_code_snapshot',
+                'service_offerings.name as study_description',
+                'members.id as member_id',
+                'members.medical_record_number',
+                'members.name as member_name',
+                'members.administrative_gender',
+                'members.birth_date',
+            ])
+            ->first();
+
+        if ($source === null) {
+            throw new ImageGatewayException('capture_failure', 'Authoritative capture metadata is unavailable.');
+        }
+        $site = DB::table('operator_sites')->where('id', $siteId)->first();
+        $operator = DB::table('operator_profiles')->where('id', $profileId)->first();
+        if ($site === null || $operator === null) {
+            throw new ImageGatewayException('capture_failure', 'Authoritative capture metadata is unavailable.');
+        }
+
+        $manifest = [
+            'examination' => [
+                'study_description' => (string) ($source->study_description ?? $source->service_code_snapshot),
+                'performed_at' => $now->format(DATE_ATOM),
+                'service_request_id' => (string) $admission->booking_id,
+                'encounter_id' => (string) $admission->booking_id,
+            ],
+            'patient' => [
+                'member_id' => (string) $source->member_id,
+                'medical_record_number' => (string) $source->medical_record_number,
+                'name' => (string) $source->member_name,
+                'birth_date' => (string) $source->birth_date,
+            ],
+            'operator' => [
+                'operator_id' => $profileId,
+                'name' => (string) ($operator->display_name ?? $profileId),
+            ],
+            'site' => [
+                'organization_id' => (string) $site->organization_id,
+                'site_id' => (string) $site->operator_site_id,
+                'institution_name' => (string) $site->display_name,
+            ],
+            'capture' => ['captured_at' => $now->format(DATE_ATOM)],
+        ];
+        $sex = match (strtolower((string) $source->administrative_gender)) {
+            'male', 'm' => 'male',
+            'female', 'f' => 'female',
+            'other' => 'other',
+            default => null,
+        };
+        if ($sex !== null) {
+            $manifest['patient']['sex'] = $sex;
+        }
+
+        return json_encode($this->sortKeys($manifest), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+    }
+
+    /** @param array<string, mixed> $value */
+    private function sortKeys(array $value): array
+    {
+        ksort($value);
+        foreach ($value as $key => $item) {
+            if (is_array($item)) {
+                $value[$key] = $this->sortKeys($item);
+            }
+        }
+
+        return $value;
+    }
+
     private function authorizedStudy(string $profileId, string $siteId, string $operatorSiteId, string $studyId): object
     {
         if (! Str::isUuid($studyId)) {
@@ -503,7 +449,6 @@ final readonly class SyntheticCaptureGatewayService
             ->where('studies.id', $studyId)
             ->select('studies.*', 'captures.admission_id')
             ->first();
-
         if ($study === null) {
             throw new ImageGatewayException('study_forbidden', 'The DICOM study is unavailable to this Operator.');
         }
@@ -533,7 +478,7 @@ final readonly class SyntheticCaptureGatewayService
             });
     }
 
-    /** @param  list<PrivateObject>  $stored */
+    /** @param list<PrivateObject> $stored */
     private function deleteStored(array $stored): void
     {
         foreach ($stored as $object) {

@@ -17,7 +17,7 @@ function setStatus(root, message, error = false) {
     const status = root.querySelector('#dicom-viewer-status');
     const errorNode = root.querySelector('#dicom-viewer-error');
     if (status) {
-        status.textContent = error ? 'DICOM study unavailable.' : message;
+        status.textContent = error ? root.dataset.unavailableMessage : message;
     }
     if (errorNode) {
         errorNode.hidden = !error;
@@ -64,7 +64,7 @@ async function renderStudy(root) {
 
     try {
         if (typeof dicomParser.parseDicom !== 'function') {
-            throw new Error('The pinned DICOM parser is unavailable.');
+            throw new Error(root.dataset.parserUnavailableMessage);
         }
         cornerstoneInit();
         dicomImageLoaderInit({ maxWebWorkers: 1 });
@@ -94,10 +94,10 @@ async function renderStudy(root) {
         bindZoomAndPan(element, viewport);
         root.dataset.viewerState = 'ready';
         window.__mhcsDicomViewerReady = true;
-        setStatus(root, 'DICOM study ready. Automatic VOI is applied.');
+        setStatus(root, root.dataset.readyMessage);
     } catch (error) {
         root.dataset.viewerState = 'error';
-        setStatus(root, error instanceof Error ? error.message : 'The DICOM study could not be displayed.', true);
+        setStatus(root, error instanceof Error ? error.message : root.dataset.displayErrorMessage, true);
     }
 }
 

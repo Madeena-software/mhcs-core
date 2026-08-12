@@ -80,7 +80,16 @@ final class FoundationArchitectureTest extends TestCase
 
     public function test_module_code_has_no_network_or_external_adapter_implementation(): void
     {
+        $adapters = [
+            app_path('Modules/ImageGateway/Application/Services/ImageGatewayCaptureService.php'),
+            app_path('Modules/ImageGateway/Application/Jobs/ProcessCaptureSet.php'),
+            app_path('Modules/ImageGateway/Infrastructure/MpipsClient.php'),
+        ];
+
         foreach ($this->phpFiles(app_path('Modules')) as $file) {
+            if (in_array($file->getPathname(), $adapters, true)) {
+                continue;
+            }
             $contents = strtolower($file->getContents());
 
             $this->assertStringNotContainsString('guzzlehttp', $contents, $file->getPathname());
@@ -134,6 +143,7 @@ final class FoundationArchitectureTest extends TestCase
             '2026_08_09_000003_make_operator_arrival_and_ticket_instants_mysql_portable.php',
             '2026_08_10_000001_create_member_paper_questionnaires_table.php',
             '2026_08_11_000001_create_image_gateway_capture_tables.php',
+            '2026_08_12_000001_update_image_gateway_for_mpips.php',
         ];
 
         $this->assertSame([], array_values(array_diff($migrations, $allowed)));

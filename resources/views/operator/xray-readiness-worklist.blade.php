@@ -44,7 +44,7 @@
                                     </form>
                                     <span class="status">{{ __('Claimed by you') }}</span>
                                 @else
-                                    <a href="{{ route('operator.xray-capture.show', $entry['admission_id']) }}">{{ __('Submit synthetic capture') }}</a>
+                                    <a href="{{ route('operator.xray-capture.show', $entry['admission_id']) }}">{{ __('Submit radiograph capture') }}</a>
                                 @endif
                             @else
                                 <form method="POST" action="{{ route('operator.xray-readiness-worklist.claim', $entry['admission_id']) }}">
