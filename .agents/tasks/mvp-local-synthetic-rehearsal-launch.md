@@ -1,13 +1,13 @@
 ---
 title: Local Synthetic Clinic Rehearsal Launch Guide
 document_id: MHCS-TASK-LOCAL-SYNTHETIC-LAUNCH-001
-version: 1.0
+version: 1.1
 status: validated-published
 language: en-US
 last_updated: 2026-08-12
 scope:
   - reproducible native local Laravel launch
-  - synthetic Member and two-Operator seed data
+  - five synthetic Members and two-Operator seed data
   - complete Operator/DICOM rehearsal handoff
 authority_note: This task becomes executable only when its exact content is committed and published as validated.
 ---
@@ -33,16 +33,19 @@ authority_note: This task becomes executable only when its exact content is comm
 
 ## Delivery context
 
-The Operator and local synthetic Image Gateway journey is accepted through the
-shared DICOM-results worklist. It must now be runnable by a developer without
-reading task history or guessing which seeders, commands, accounts, fixtures,
-or workflow steps apply. This task produces one safe native-local launch and
-rehearsal guide; it is not server deployment or release work.
+The owner-reviewed clinic flow, Indonesian UI localization, and atomic
+automatic-ticket allocation are accepted through the shared DICOM-results
+worklist. They must now be runnable by a developer without reading task
+history or guessing which seeders, commands, accounts, fixtures, or workflow
+steps apply. This task produces one safe native-local launch and rehearsal
+guide; it is not server deployment or release work.
 
 ## Baseline and task revision
 
 **Implementation baseline:**
-`87a6b2ac8649ecb1e692fdaf553d4212a3f00910`
+`bd8f3c8cfb5d6bcadec3776e921e2a31ca730101` — consolidated accepted local
+baseline: owner-reviewed clinic flow, Indonesian UI localization, and atomic
+automatic ticket allocation.
 
 **Task revision:**
 `Resolve from the commit that publishes this exact task content before execution.`
@@ -51,10 +54,10 @@ rehearsal guide; it is not server deployment or release work.
 
 **Objective:**
 Provide a verified, copyable local-only setup and rehearsal path that starts a
-fresh synthetic database, seeds one dummy Member and two eligible Operators,
+fresh synthetic database, seeds five dummy Members and two eligible Operators,
 launches the native Laravel application, and guides the user from Operator
-login through capture, DICOM viewing, second-Operator discovery, and normal
-attachment download.
+login through automatic ticket issue, capture, DICOM viewing, second-Operator
+discovery, and normal attachment download.
 
 ## Authoritative inputs
 
@@ -64,7 +67,11 @@ attachment download.
 - `docs/mvp/beta-scope.md` — synthetic-only boundary and separate release gate.
 - `docs/mvp/beta-gap-register.md` — MVP-GAP-020, MVP-GAP-022, and MVP-GAP-023 remain open.
 - `.agents/context/modules/operator/project.md` and `.agents/context/modules/image-gateway/project.md`.
-- Accepted local DICOM-results worklist implementation at `87a6b2ac8649ecb1e692fdaf553d4212a3f00910`.
+- Accepted local DICOM-results worklist, Indonesian UI, and automatic-ticket
+  allocation implementation at `bd8f3c8cfb5d6bcadec3776e921e2a31ca730101`.
+- `.agents/tasks/mvp-operator-automatic-ticket-allocation.md @
+  3a50211590cb81c350dda30cdab82efcda8acdb1` — blank ticket input is allocated
+  safely within the active site and shift.
 
 ### Requirement traceability
 
@@ -86,13 +93,16 @@ attachment download.
   copying, logging, or committing their values. Tell the user to retain
   one-time synthetic credentials only in the interactive terminal that seeded
   them.
-- Document the seed result without plaintext credentials: one synthetic Member,
-  primary Operator, second same-site/current-shift Operator, booking,
-  attendance URL, LCD URL, and repository-owned NPZ/gain fixtures.
+- Document the observed seed result without plaintext credentials: five
+  synthetic Members, a primary Operator, a second same-site/current-shift
+  Operator, the selected Member's booking, attendance URL, LCD URL, and
+  repository-owned NPZ/gain fixtures. The guide must identify one Member as the
+  ordered rehearsal journey without implying that the seed creates only one.
 - Provide an ordered local rehearsal: primary Operator login and active-site
-  selection; arrival through basic examination and X-ray call; synthetic
-  NPZ/gain capture; DICOM viewer/download; then second Operator login,
-  DICOM-results worklist, viewer, and download.
+  selection; arrival, verification, consent, and blank-number automatic ticket
+  issue through basic examination and X-ray call; synthetic NPZ/gain capture;
+  DICOM viewer/download; then second Operator login, DICOM-results worklist,
+  viewer, and download.
 - State the minimum synthetic file substitutions required during the rehearsal:
   a locally chosen synthetic JPEG/PNG for consent/questionnaire capture and
   the committed NPZ/gain fixture pair for the capture form.
@@ -118,7 +128,11 @@ attachment download.
 ### Preserved behavior
 
 - The existing `MvpCoreClinicSeeder` remains local/testing-only, synthetic,
-  repeatable, and the only source of dummy accounts for this rehearsal.
+  repeatable, produces five Members and two eligible Operators, and remains the
+  only source of dummy accounts for this rehearsal.
+- The documented blank ticket input exercises the existing automatic
+  site-and-shift allocation; it does not introduce a ticket format or reset
+  policy.
 - The synthetic DICOM bridge remains local/testing-only and is not represented
   as MPIPS or as server-ready conversion.
 - Private objects, raw NPZ, Member/Doctor access, public LCD privacy, and
@@ -182,9 +196,13 @@ attachment download.
 - [ ] The guide explains the destructive nature of the database reset and
   never includes a plaintext secret, generated credential, real identity, or
   real clinical file.
-- [ ] The interactive seed output supplies the synthetic Member, both
-  Operators, booking, attendance URL, and LCD URL; the guide tells the user
-  where each is used without reproducing credentials.
+- [ ] The interactive seed output supplies five synthetic Members, both
+  Operators, bookings, attendance URL, and LCD URL; the guide directs the user
+  to one selected Member without reproducing credentials or implying a
+  one-Member seed.
+- [ ] The primary-Operator journey leaves the ticket-number input blank and
+  confirms the generated private ticket before basic examination; it preserves
+  the current automatic site-and-shift allocation behavior.
 - [ ] The documented primary-Operator journey reaches synthetic capture,
   read-only vertical DICOM view, and normal attachment download; the second
   Operator can discover the same study from DICOM results and download it.
@@ -197,15 +215,16 @@ attachment download.
 
 ### Required checks
 
-- Run the local synthetic seeder test, the focused Image Gateway/Operator
-  capture and study-access suite, and existing X-ray claim/call regressions.
+- Run the local synthetic seeder test, automatic-ticket allocation regression,
+  focused Image Gateway/Operator capture and study-access suite, and existing
+  X-ray claim/call regressions.
 - Run each existing Chromium DICOM rehearsal journey, including the second
   Operator results-worklist journey, within the runner’s observable command
   window if needed.
 - Run `npm run build` and `git diff --check`.
 - Execute the documented migration/seed path only against a fresh disposable
-  local database; confirm it creates the synthetic accounts and booking without
-  recording their credentials.
+  local database; confirm it creates five synthetic Member accounts, two
+  eligible Operators, and their bookings without recording credentials.
 
 ### Required evidence
 
