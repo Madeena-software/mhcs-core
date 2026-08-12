@@ -5,22 +5,71 @@ through the local/testing Image Gateway capture, shared Operator DICOM-results
 worklist, and normal DICOM download.
 Do not use a real roster, credential, NIK, paper form, or clinical image.
 
-## Set up
+## First-time setup
+
+Use the repository's native local Laravel path. Do not use the production
+deployment material, Docker/Compose, a reverse proxy, a queue worker, MPIPS,
+or a server database for this rehearsal. The production-specialized
+[`deployment/README.md`](../../deployment/README.md) is not the supported
+local path.
+
+Install the existing dependencies and build the frontend once:
+
+```bash
+composer install
+cp .env.example .env
+npm install
+TARGET="." npm run build
+```
+
+Configure `.env` with local-only secret-managed values before running Artisan.
+Do not show, generate, copy, log, or commit the values. The required key names
+are `APP_KEY`, `MHCS_IDENTIFIER_KEY`, `MHCS_OBJECT_ENCRYPTION_KEY`,
+`MHCS_ACCESS_GRANT_KEY`, `MHCS_MANIFEST_KEY`, and `MHCS_MANIFEST_KEY_ID`.
+Configure `DB_CONNECTION`, `DB_HOST`, `DB_PORT`, `DB_DATABASE`,
+`DB_USERNAME`, and `DB_PASSWORD` to an explicitly disposable local database.
+Never use a staging, production, or shared server target.
+
+## Fresh rehearsal setup
+
+`migrate:fresh` destroys every table in the selected database. Confirm the
+configured `DB_*` values point to an empty disposable local database before
+running these commands:
 
 In an interactive local terminal, run:
 
 ```bash
-# Provide APP_KEY and the required MHCS_* key variables from local-only
-# secret-managed configuration; do not commit their values.
-php artisan migrate:fresh
-php artisan db:seed --class=Database\\Seeders\\MvpCoreClinicSeeder
-php artisan serve
+TARGET="." php artisan migrate:fresh --force
+TARGET="." php artisan db:seed --class=Database\\Seeders\\MvpCoreClinicSeeder
 ```
 
-The local-only seeder prints the temporary synthetic account credentials, the
-synthetic NIK needed for the front-desk lookup, an attendance URL, and the LCD
-URL. Keep those values in the local terminal only; do not copy them into a
-spreadsheet, commit, chat, or deployment environment.
+`MvpCoreClinicSeeder` is the only dummy-account source for this rehearsal. Its
+interactive output supplies one synthetic Member booking, the primary
+Operator, the second Operator assigned to the same site and current eligible
+shift, the attendance URL, and the LCD URL. One-time synthetic credentials are
+shown only in the terminal that seeded them; retain them there and never copy
+them into this guide, tests, logs, chat, or deployment configuration.
+
+The POC schedule is displayed from 13 August 2026 through 22 August 2026.
+Local/testing attendance preserves the 22 August end boundary but allows the
+flow to begin today even when the displayed schedule start is tomorrow.
+
+The minimum file substitutions are:
+
+- use a locally chosen synthetic JPEG or PNG for the paper-questionnaire
+  capture; never use a real consent form or clinical image;
+- use exactly
+  `resources/fixtures/image-gateway/synthetic-radiograph-01.npz` and
+  `resources/fixtures/image-gateway/synthetic-gain-01.npz` for synthetic
+  capture.
+
+Start the native Laravel server in the same local environment:
+
+```bash
+TARGET="." php artisan serve --host=127.0.0.1 --port=8013
+```
+
+Open `http://127.0.0.1:8013/operator/login`.
 
 ## Rehearse the core journey
 
@@ -66,21 +115,25 @@ spreadsheet, commit, chat, or deployment environment.
 
 Stop there. This rehearsal uses only repository-owned synthetic fixtures in
 `local` or `testing`; it does not run MPIPS, convert NPZ bytes, wait for AI, or
-create a clinical result.
+create a clinical result. It does not authorize server data, deployment,
+release, real credentials, real identity, or real clinical files.
 
 ## Focused verification
 
 ```bash
-vendor/bin/phpunit \
+TARGET="." vendor/bin/phpunit \
   tests/Feature/Operator/MvpCoreClinicSeederTest.php \
   tests/Feature/Operator/Mvp04jPrivateVitalSignsCaptureTest.php \
   tests/Feature/Operator/Mvp04kBasicExaminationCompletionTest.php \
   tests/Feature/Operator/Mvp04lAtomicXrayClaimTest.php \
   tests/Feature/Operator/Mvp04mPrivateXrayCallTest.php \
   tests/Feature/Operator/Mvp04pPublicQueueDisplayTest.php \
-  tests/Feature/Operator/Mvp14SyntheticCaptureGatewayTest.php
+  tests/Feature/Operator/Mvp14SyntheticCaptureGatewayTest.php \
+  tests/Integration/MemberDatabaseConformanceTest.php
 
 TARGET="." vendor/bin/pest tests/Browser/Mvp14OperatorDicomRehearsalTest.php --browser chrome
+TARGET="." npm run build
+TARGET="." git diff --check
 ```
 
 ## Remediation evidence — 10 August 2026

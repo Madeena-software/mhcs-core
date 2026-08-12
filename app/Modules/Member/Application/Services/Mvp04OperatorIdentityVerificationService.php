@@ -101,6 +101,7 @@ final readonly class Mvp04OperatorIdentityVerificationService implements Operato
                 'member_id' => (string) $row->member_id,
                 'member_name' => (string) $row->member_name,
                 'medical_record_number' => (string) $row->medical_record_number,
+                'nik' => $this->identifiers->display((string) $row->encrypted_nik),
                 'masked_nik' => $this->maskedIdentifier($row->encrypted_nik),
                 'booking_status' => (string) $row->booking_status,
             ];
@@ -142,6 +143,7 @@ final readonly class Mvp04OperatorIdentityVerificationService implements Operato
             'member_id' => (string) $member->id,
             'member_name' => (string) $member->name,
             'medical_record_number' => (string) $member->medical_record_number,
+            'nik' => $this->identifiers->display((string) $member->encrypted_nik),
             'masked_nik' => $this->maskedIdentifier($member->encrypted_nik),
             'booking_status' => (string) $booking->booking_status,
             'site' => (string) $booking->site_name,

@@ -6,15 +6,6 @@
 <section aria-labelledby="attendance-title">
     <h1 id="attendance-title">Attendance list</h1>
     <p class="muted">{{ $site->display_name }} · schedule <code>{{ $scheduleId }}</code> · {{ count($rows) }} eligible members</p>
-    <section class="card">
-        <form method="GET" action="{{ route('operator.attendance', $scheduleId) }}">
-            <label for="at">Attendance time (ISO 8601 with explicit offset)</label>
-            <input id="at" name="at" value="{{ $at }}" required aria-describedby="at-help">
-            <p id="at-help" class="muted">Example: 2030-01-10T10:15:00+07:00. Times are normalized to UTC for persistence.</p>
-            <div class="actions"><button type="submit">Refresh attendance</button></div>
-        </form>
-    </section>
-
     <section class="card" style="margin-top: 18px">
         <div class="table-wrap">
             <table>
@@ -22,7 +13,7 @@
                 <tbody>
                 @forelse ($rows as $row)
                     <tr>
-                        <td>{{ $row['member_name'] }}<br><span class="muted">{{ $row['masked_nik'] ?? 'Identifier withheld' }}</span></td>
+                        <td>{{ $row['member_name'] }}<br><span class="muted">NIK: {{ $row['nik'] ?? 'Identifier withheld' }}</span></td>
                         <td>{{ $row['medical_record_number'] }}</td>
                         <td>{{ $row['service_name'] }} ({{ $row['service_code'] }})</td>
                         <td class="status">{{ ucfirst(str_replace('_', ' ', $row['booking_status'])) }}</td>

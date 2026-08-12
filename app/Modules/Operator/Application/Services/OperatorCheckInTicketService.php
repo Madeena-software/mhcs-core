@@ -45,8 +45,11 @@ final readonly class OperatorCheckInTicketService
         }
 
         $schedule = DB::table('shift_schedules')
-            ->where('id', (string) $case->member_schedule_id)
-            ->where('examination_site_id', $site->getKey())
+            ->join('examination_site_refs', 'examination_site_refs.id', '=', 'shift_schedules.examination_site_id')
+            ->where('shift_schedules.id', (string) $case->member_schedule_id)
+            ->where('examination_site_refs.operator_site_id', $site->operator_site_id)
+            ->where('examination_site_refs.active', true)
+            ->select('shift_schedules.*')
             ->first();
         if ($schedule === null) {
             throw new OperatorException('ticket_unavailable', 'The check-in schedule is unavailable.');
@@ -68,7 +71,7 @@ final readonly class OperatorCheckInTicketService
     public function issue(string $caseId, string $ticketNumber, string $operationId): array
     {
         [$identity, $site, $case] = $this->matchedCase($caseId);
-        $number = $this->normalizeTicketNumber($ticketNumber);
+        $number = trim($ticketNumber) === '' ? null : $this->normalizeTicketNumber($ticketNumber);
         $operationId = $this->operation($operationId);
         $profileId = (string) $identity['profile']->getKey();
         $scheduleId = (string) $case->member_schedule_id;
@@ -93,6 +96,7 @@ final readonly class OperatorCheckInTicketService
                 self::PURPOSE,
                 $payload,
                 function () use ($context, $site, $profileId, $scheduleId, $bookingId, $caseId, $number, $operationId): array {
+                    $number = $number ?? $this->nextTicketNumber((string) $site->getKey(), $scheduleId);
                     $now = $this->clock->now();
                     $memberResult = $this->memberAttendance->transitionArrivedToCheckedIn(
                         $context,
@@ -377,6 +381,16 @@ final readonly class OperatorCheckInTicketService
         }
 
         return $ticketNumber;
+    }
+
+    private function nextTicketNumber(string $operatorSiteId, string $scheduleId): string
+    {
+        $number = DB::table('operator_paper_tickets')
+            ->where('operator_site_id', $operatorSiteId)
+            ->where('member_schedule_id', $scheduleId)
+            ->count() + 1;
+
+        return 'T-'.str_pad((string) $number, 3, '0', STR_PAD_LEFT);
     }
 
     private function ticketForBooking(string $bookingId, object $site, string $profileId): ?object

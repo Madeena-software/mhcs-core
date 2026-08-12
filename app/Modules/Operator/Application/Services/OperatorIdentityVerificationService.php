@@ -221,7 +221,7 @@ final readonly class OperatorIdentityVerificationService
                 $at,
             );
 
-            return $this->view($caseId);
+            return $this->decide($caseId, self::MATCHED, null, (string) Str::uuid());
         } catch (Throwable $exception) {
             throw new OperatorException('identity_lookup_unavailable', 'The identity lookup is unavailable.', $exception);
         }

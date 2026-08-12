@@ -11,8 +11,8 @@
         <p><strong>Shift:</strong> <time datetime="{{ $ticket['schedule_starts_at'] }}">{{ $ticket['schedule_starts_at'] }}</time> – <time datetime="{{ $ticket['schedule_ends_at'] }}">{{ $ticket['schedule_ends_at'] }}</time></p>
         <p><strong>Recorded at:</strong> {{ $ticket['issued_at'] }}</p>
         <div class="actions">
-            <a href="{{ route('operator.paper-ticket.print', $ticket['ticket_id']) }}">Open print view</a>
-            <form method="POST" action="{{ route('operator.paper-ticket.reprint', $ticket['ticket_id']) }}">
+            <a href="{{ route('operator.paper-ticket.print', $ticket['ticket_id']) }}" target="_blank" rel="noopener">Open print view</a>
+            <form method="POST" action="{{ route('operator.paper-ticket.reprint', $ticket['ticket_id']) }}" target="_blank">
                 @csrf
                 <input type="hidden" name="operation_id" value="{{ Illuminate\Support\Str::uuid() }}">
                 <button type="submit" class="secondary">Request reprint</button>

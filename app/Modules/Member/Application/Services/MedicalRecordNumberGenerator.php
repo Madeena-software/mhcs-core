@@ -10,6 +10,6 @@ final class MedicalRecordNumberGenerator
 {
     public function generate(): string
     {
-        return (string) Str::uuid();
+        return 'MRN-'.Str::upper(Str::random(8));
     }
 }

@@ -237,6 +237,15 @@ final class Mvp04OperatorFoundationTest extends TestCase
         }
     }
 
+    public function test_local_poc_attendance_allows_a_time_before_the_displayed_schedule_start(): void
+    {
+        $fixture = $this->operatorFixture(false);
+        $context = $this->operatorContext($fixture);
+        $attendance = app(OperatorAttendanceContract::class);
+
+        $this->assertCount(1, $attendance->query($context, $fixture['siteStableId'], $fixture['scheduleId'], '2040-01-09T10:15:00+07:00'));
+    }
+
     public function test_member_transition_rejects_mismatched_site_without_side_effects(): void
     {
         $fixture = $this->operatorFixture(false);

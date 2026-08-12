@@ -1,55 +1,144 @@
 <!doctype html>
-<html lang="en">
+<html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Clinic queue</title>
+    <title>{{ __('Clinic queue') }}</title>
     <style>
-        body { margin: 0; background: #0f172a; color: #f8fafc; font-family: sans-serif; }
-        main { max-width: 1100px; margin: 0 auto; padding: 5vh 5vw; }
-        h1 { font-size: clamp(2rem, 5vw, 4rem); margin: 0 0 2rem; }
-        h2 { color: #93c5fd; font-size: clamp(1.2rem, 2vw, 2rem); }
-        ul { list-style: none; padding: 0; }
-        li { display: flex; justify-content: space-between; gap: 2rem; padding: 1rem 0; border-bottom: 1px solid #334155; font-size: clamp(1.3rem, 3vw, 2.5rem); }
-        .empty { color: #cbd5e1; }
-        .status { color: #fca5a5; font-size: 1.25rem; }
+        :root {
+            --ink: #123d49;
+            --muted: #6f8a8b;
+            --surface: #f4f8f6;
+            --teal: #0d5360;
+            --teal-dark: #0a3e4b;
+            --yellow: #f6cf43;
+            --red: #ef3b3b;
+        }
+
+        * { box-sizing: border-box; }
+        body { margin: 0; min-height: 100vh; background: #dcebea; color: var(--ink); font-family: Arial, sans-serif; }
+        .lcd-shell { max-width: 1680px; min-height: 100vh; margin: 0 auto; padding: clamp(1rem, 3vw, 3rem); display: grid; gap: clamp(1rem, 2vw, 2rem); }
+        .lcd-header { display: flex; align-items: center; justify-content: space-between; gap: 2rem; padding: clamp(1rem, 2vw, 1.5rem) clamp(1.25rem, 3vw, 2.5rem); background: var(--teal-dark); color: #fff; border-radius: 1rem; box-shadow: 0 0.75rem 2rem rgb(18 61 73 / 16%); }
+        .brand { display: flex; align-items: center; gap: 1rem; }
+        .brand-mark { display: grid; place-items: center; width: 3.5rem; height: 3.5rem; border: 0.15rem solid #fff; border-radius: 50%; font-size: 0.7rem; font-weight: 800; letter-spacing: 0.08em; }
+        .brand-kicker { margin: 0 0 0.25rem; color: #a9d9d4; font-size: 0.8rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }
+        h1, h2, p { margin: 0; }
+        h1 { font-size: clamp(1.4rem, 3vw, 2.5rem); }
+        .lcd-clock { text-align: right; font-size: clamp(1.4rem, 3vw, 2.7rem); font-weight: 800; letter-spacing: 0.04em; white-space: nowrap; }
+        .lcd-date { margin-top: 0.3rem; color: #a9d9d4; font-size: clamp(0.75rem, 1.2vw, 1rem); text-transform: capitalize; }
+        .status { margin: 0; padding: 0.75rem 1rem; border-radius: 0.6rem; background: #fff2f0; color: #a52a2a; font-size: clamp(0.85rem, 1.4vw, 1.1rem); font-weight: 700; }
+        .queue-layout { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.6fr); gap: clamp(1rem, 2vw, 2rem); min-height: 0; }
+        .current-hero, .recent-panel { padding: clamp(1rem, 2vw, 2rem); border-radius: 1rem; box-shadow: 0 0.75rem 2rem rgb(18 61 73 / 12%); }
+        .current-hero { display: flex; flex-direction: column; background: var(--surface); }
+        .recent-panel { background: var(--teal); color: #fff; }
+        .section-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
+        h2 { font-size: clamp(1rem, 1.8vw, 1.5rem); text-transform: uppercase; letter-spacing: 0.06em; }
+        .section-heading::after { content: ''; display: block; width: 3rem; height: 0.35rem; background: var(--yellow); border-radius: 1rem; }
+        .current-calls { display: grid; flex: 1; gap: 0.9rem; grid-template-rows: minmax(0, 1fr); }
+        .current-calls:not(:has(.call-card-secondary)) { min-height: clamp(15rem, 34vw, 27rem); }
+        .call-card { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: clamp(1rem, 2vw, 1.5rem); border-radius: 0.75rem; }
+        .call-card-primary { flex-direction: column; align-items: flex-start; justify-content: center; min-height: clamp(15rem, 34vw, 27rem); background: var(--red); color: #fff; }
+        .call-card-secondary { background: var(--yellow); color: var(--ink); }
+        .ticket-number { font-size: clamp(3.5rem, 10vw, 8rem); font-weight: 900; line-height: 0.95; letter-spacing: 0.03em; }
+        .call-card-secondary .ticket-number { font-size: clamp(2rem, 4vw, 3.5rem); }
+        .call-destination { font-size: clamp(0.95rem, 1.8vw, 1.45rem); font-weight: 700; }
+        .empty { display: grid; place-items: center; min-height: 10rem; color: var(--muted); text-align: center; font-size: clamp(1rem, 1.8vw, 1.4rem); font-weight: 700; }
+        .recent-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: clamp(0.6rem, 1.2vw, 1rem); }
+        .recent-grid .call-card { min-height: clamp(7rem, 11vw, 10rem); flex-direction: column; align-items: flex-start; justify-content: space-between; }
+        .recent-grid .ticket-number { font-size: clamp(2rem, 4vw, 3.8rem); }
+        .recent-grid .call-destination { font-size: clamp(0.75rem, 1.2vw, 1rem); }
+        .recent-grid .call-card:nth-child(3n + 1) { background: var(--yellow); color: var(--ink); }
+        .recent-grid .call-card:nth-child(3n + 2) { background: #f4f8f6; color: var(--ink); }
+        .recent-grid .call-card:nth-child(3n) { background: var(--teal-dark); color: #fff; }
+        .recent-grid .empty { grid-column: 1 / -1; color: #d4eeee; }
+
+        @media (max-width: 900px) {
+            .queue-layout { grid-template-columns: 1fr; }
+            .current-calls:not(:has(.call-card-secondary)) { min-height: 18rem; }
+        }
+
+        @media (max-width: 560px) {
+            .lcd-header { align-items: flex-start; flex-direction: column; }
+            .lcd-clock { text-align: left; }
+            .recent-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        }
     </style>
 </head>
 <body>
-<main>
-    <h1>Clinic queue</h1>
-    <p id="queue-status" class="status" role="status" hidden>Queue disconnected — shown calls may be stale.</p>
-    <section aria-labelledby="current-calls-title">
-        <h2 id="current-calls-title">Current calls</h2>
-        <ul id="current-calls"><li class="empty">Waiting for the next call</li></ul>
-    </section>
-    <section aria-labelledby="recent-calls-title">
-        <h2 id="recent-calls-title">Recent calls</h2>
-        <ul id="recent-calls"><li class="empty">No calls yet</li></ul>
-    </section>
+<main class="lcd-shell">
+    <header class="lcd-header">
+        <div class="brand">
+            <div class="brand-mark" aria-hidden="true">MHCS</div>
+            <div>
+                <p class="brand-kicker">MHCS Core</p>
+                <h1>{{ __('Clinic queue') }}</h1>
+            </div>
+        </div>
+        <div>
+            <div id="lcd-clock" class="lcd-clock" aria-label="Waktu saat ini"></div>
+            <p id="lcd-date" class="lcd-date"></p>
+        </div>
+    </header>
+
+    <p id="queue-status" class="status" role="status" hidden>{{ __('Queue disconnected — shown calls may be stale.') }}</p>
+
+    <div class="queue-layout">
+        <section class="current-hero" aria-labelledby="current-calls-title">
+            <div class="section-heading">
+                <h2 id="current-calls-title">{{ __('Current calls') }}</h2>
+            </div>
+            <div id="current-calls" class="current-calls" aria-live="polite">
+                <p class="empty">{{ __('Waiting for the next call') }}</p>
+            </div>
+        </section>
+
+        <section class="recent-panel" aria-labelledby="recent-calls-title">
+            <div class="section-heading">
+                <h2 id="recent-calls-title">{{ __('Recent calls') }}</h2>
+            </div>
+            <div id="recent-calls" class="recent-grid" aria-live="polite">
+                <p class="empty">{{ __('No calls yet') }}</p>
+            </div>
+        </section>
+    </div>
 </main>
 <script>
     const endpoint = @json(route('lcd.queue', $siteId));
+    const currentCalls = document.getElementById('current-calls');
+    const recentCalls = document.getElementById('recent-calls');
     const status = document.getElementById('queue-status');
+    const formatters = {
+        time: new Intl.DateTimeFormat('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+        date: new Intl.DateTimeFormat('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }),
+    };
+
+    const updateClock = () => {
+        const now = new Date();
+        document.getElementById('lcd-clock').textContent = formatters.time.format(now);
+        document.getElementById('lcd-date').textContent = formatters.date.format(now);
+    };
     const setConnectionState = (connected) => {
         status.hidden = connected;
     };
-    const render = (element, entries, empty) => {
+    const text = (className, value) => {
+        const node = document.createElement('span');
+        node.className = className;
+        node.textContent = value;
+        return node;
+    };
+    const renderCalls = (element, entries, empty, primary = false) => {
         element.replaceChildren();
         if (!entries.length) {
-            const item = document.createElement('li');
+            const item = document.createElement('p');
             item.className = 'empty';
             item.textContent = empty;
             element.append(item);
             return;
         }
-        entries.forEach((entry) => {
-            const item = document.createElement('li');
-            const ticket = document.createElement('strong');
-            const destination = document.createElement('span');
-            ticket.textContent = entry.ticket_number;
-            destination.textContent = entry.destination;
-            item.append(ticket, destination);
+        entries.forEach((entry, index) => {
+            const item = document.createElement('article');
+            item.className = `call-card ${primary && index === 0 ? 'call-card-primary' : 'call-card-secondary'}`;
+            item.append(text('ticket-number', entry.ticket_number), text('call-destination', entry.destination));
             element.append(item);
         });
     };
@@ -58,13 +147,16 @@
             const response = await fetch(endpoint, { cache: 'no-store' });
             if (!response.ok) throw new Error('queue_refresh_failed');
             const queue = await response.json();
-            render(document.getElementById('current-calls'), queue.current, 'Waiting for the next call');
-            render(document.getElementById('recent-calls'), queue.recent_calls, 'No calls yet');
+            renderCalls(currentCalls, queue.current, @json(__('Waiting for the next call')), true);
+            renderCalls(recentCalls, queue.recent_calls, @json(__('No calls yet')));
             setConnectionState(true);
         } catch (_) {
             setConnectionState(false);
         }
     };
+
+    updateClock();
+    setInterval(updateClock, 1000);
     refresh();
     setInterval(refresh, 5000);
 </script>

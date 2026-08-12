@@ -136,7 +136,10 @@ final class PortalController extends Controller
         try {
             $result = $arrivals->recordConfirmed((string) $validator->validated()['confirmation_token']);
 
-            return redirect()->route('operator.attendance', $result['schedule_id'])->with('status', 'Arrival recorded for '.$result['booking_id'].'.');
+            return redirect()->route('operator.attendance', [
+                'schedule' => $result['schedule_id'],
+                'at' => $result['occurrence_at'],
+            ])->with('status', 'Arrival recorded for '.$result['booking_id'].'.');
         } catch (Throwable $exception) {
             return back()->withErrors(['arrival' => $exception instanceof OperatorException ? $exception->getMessage() : 'The arrival could not be recorded.'])->withInput();
         }
@@ -510,11 +513,13 @@ final class PortalController extends Controller
         }
 
         try {
-            return view('operator.identity-verification', $identity->lookupByNik(
+            $identity->lookupByNik(
                 $case,
                 (string) $validator->validated()['nik'],
                 (string) $validator->validated()['at'],
-            ));
+            );
+
+            return redirect()->route('operator.paper-consent.show', $case)->with('status', 'NIK verified. Continue with paper consent.');
         } catch (Throwable $exception) {
             return back()->withErrors(['identity' => $exception instanceof OperatorException ? $exception->getMessage() : 'The identity lookup is unavailable.']);
         }
@@ -615,9 +620,9 @@ final class PortalController extends Controller
             'form_version' => ['required', 'string', 'max:32'],
             'signer_type' => ['required', 'string', 'max:32'],
             'signature_confirmed' => ['accepted'],
-            'signed_at' => ['required', 'string', 'max:64'],
+            'signed_at' => ['required', 'date_format:Y-m-d'],
             'operation_id' => ['required', 'uuid'],
-            'scan' => ['required', 'file', 'max:10240'],
+            'scan' => ['required', 'file', 'max:102400'],
         ]);
         if ($validator->fails()) {
             return back()->withErrors($validator)->withInput();
@@ -654,7 +659,7 @@ final class PortalController extends Controller
     public function issueTicket(Request $request, string $case, OperatorCheckInTicketService $tickets): RedirectResponse
     {
         $validator = Validator::make($request->all(), [
-            'ticket_number' => ['required', 'string', 'max:64'],
+            'ticket_number' => ['nullable', 'string', 'max:64'],
             'operation_id' => ['required', 'uuid'],
         ]);
         if ($validator->fails()) {
@@ -663,7 +668,7 @@ final class PortalController extends Controller
 
         $input = $validator->validated();
         try {
-            $result = $tickets->issue($case, (string) $input['ticket_number'], (string) $input['operation_id']);
+            $result = $tickets->issue($case, (string) ($input['ticket_number'] ?? ''), (string) $input['operation_id']);
 
             return redirect()->route('operator.paper-ticket.show', $result['ticket_id']);
         } catch (Throwable $exception) {

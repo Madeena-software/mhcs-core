@@ -15,6 +15,22 @@ final class Mvp04pPublicQueueDisplayTest extends TestCase
     use Mvp04Fixtures;
     use RefreshDatabase;
 
+    public function test_public_lcd_page_uses_indonesian_labels(): void
+    {
+        $fixture = $this->operatorFixture(false);
+
+        $this->get(route('lcd.show', $fixture['siteLocalId']))
+            ->assertOk()
+            ->assertSee('class="lcd-shell"', false)
+            ->assertSee('id="lcd-clock"', false)
+            ->assertSee('class="current-hero"', false)
+            ->assertSee('class="recent-grid"', false)
+            ->assertSee('Antrian klinik')
+            ->assertSee('Panggilan saat ini')
+            ->assertSee('Panggilan terbaru')
+            ->assertSee('Menunggu panggilan berikutnya');
+    }
+
     public function test_public_queue_endpoint_returns_only_called_ticket_data_for_the_selected_site(): void
     {
         $fixture = $this->operatorFixture(false);
@@ -57,13 +73,22 @@ final class Mvp04pPublicQueueDisplayTest extends TestCase
         $response = $this->getJson(route('lcd.queue', $fixture['siteLocalId']))
             ->assertOk()
             ->assertJsonPath('current.0.ticket_number', 'LCD-001')
-            ->assertJsonPath('current.0.destination', 'Basic examination')
+            ->assertJsonPath('current.0.destination', 'Pemeriksaan dasar')
             ->assertJsonPath('recent_calls.0.ticket_number', 'LCD-001')
-            ->assertJsonPath('recent_calls.0.destination', 'Basic examination');
+            ->assertJsonPath('recent_calls.0.destination', 'Pemeriksaan dasar');
 
         $json = $response->getContent();
         foreach ([$fixture['memberId'], $fixture['bookingId'], $fixture['scheduleId'], $fixture['profileId'], 'Synthetic Arrival Member', 'MRN-'] as $value) {
             $this->assertStringNotContainsString($value, $json);
         }
+
+        DB::table('operator_queue_admissions')->where('id', $admissionId)->update(['stage' => 'xray']);
+
+        $this->getJson(route('lcd.queue', $fixture['siteLocalId']))
+            ->assertOk()
+            ->assertJsonPath('current.0.destination', 'Sesi foto radiografi')
+            ->assertJsonPath('recent_calls.0.destination', 'Sesi foto radiografi')
+            ->assertJsonMissing(['destination' => 'X-ray'])
+            ->assertJsonMissing(['destination' => 'Rontgen']);
     }
 }

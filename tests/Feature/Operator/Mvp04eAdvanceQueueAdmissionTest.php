@@ -310,7 +310,7 @@ final class Mvp04eAdvanceQueueAdmissionTest extends TestCase
                 'form_version' => 'V1',
                 'signer_type' => 'member',
                 'signature_confirmed' => '1',
-                'signed_at' => '2040-01-10T10:20:00+07:00',
+                'signed_at' => '2040-01-10',
                 'operation_id' => (string) Str::uuid(),
                 'scan' => UploadedFile::fake()->createWithContent('signed-consent.pdf', "%PDF-1.7\nsynthetic signed paper\n%%EOF"),
             ])->assertRedirect();

@@ -18,6 +18,12 @@ use Illuminate\Support\Str;
 
 final class MvpBookingSeeder extends Seeder
 {
+    private const SYNTHETIC_PRIMARY_SCHEDULE_START = '2026-08-13 03:00:00';
+
+    private const SYNTHETIC_SECONDARY_SCHEDULE_START = '2026-08-13 05:00:00';
+
+    private const SYNTHETIC_SCHEDULE_END = '2026-08-22 16:59:59';
+
     public function run(): void
     {
         if (! app()->environment(['local', 'testing'])) {
@@ -44,8 +50,8 @@ final class MvpBookingSeeder extends Seeder
         $this->offering('SYN-CHEST-A', 'Sesi Foto Radiografi Dasar', '12.5000', true, false);
         $this->offering('SYN-CHEST-B', 'Sesi Foto Radiografi dengan Peninjauan', '25.7500', true, true);
         $rateId = app(Mvp03PointService::class)->ensureInitialLocalRate();
-        $this->schedule($refs['site_id'], 'SYN-CHEST-A', '2030-01-10 03:00:00', '2030-01-10 04:00:00');
-        $this->schedule($refs['site_id'], 'SYN-CHEST-B', '2030-01-10 05:00:00', '2030-01-10 06:00:00');
+        $this->schedule($refs['site_id'], 'SYN-CHEST-A', self::SYNTHETIC_PRIMARY_SCHEDULE_START, self::SYNTHETIC_SCHEDULE_END);
+        $this->schedule($refs['site_id'], 'SYN-CHEST-B', self::SYNTHETIC_SECONDARY_SCHEDULE_START, self::SYNTHETIC_SCHEDULE_END);
         app(Mvp03PointService::class)->creditPersonalForLocalTesting((string) $member->id, '100.0000', 'mvp03:synthetic-personal-credit:mvp-member-one');
 
         $this->command?->info('MVP-03 synthetic catalogue, schedules, active point rate, and personal funding are ready.');

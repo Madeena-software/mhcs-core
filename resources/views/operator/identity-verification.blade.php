@@ -19,7 +19,7 @@
             <h2>Member summary</h2>
             <p><strong>Name:</strong> {{ $view['member_name'] }}</p>
             <p><strong>Medical record:</strong> {{ $view['medical_record_number'] }}</p>
-            <p><strong>Masked NIK:</strong> {{ $view['masked_nik'] ?? 'Withheld' }}</p>
+            <p><strong>NIK:</strong> {{ $view['nik'] ?? 'Withheld' }}</p>
             <p><strong>Service:</strong> {{ $view['service_name'] }}</p>
         </section>
 
@@ -88,7 +88,7 @@
         </section>
     @endif
 
-    @if ($case['state'] === 'open')
+    @if ($case['state'] === 'open' && $evidenceStatus !== 'available')
         <section class="card">
             <h2>Record decision</h2>
             <div class="actions">

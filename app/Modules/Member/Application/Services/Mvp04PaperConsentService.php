@@ -37,7 +37,7 @@ final readonly class Mvp04PaperConsentService implements OperatorPaperConsentCon
 
     private const UPLOAD_PURPOSE = 'operator.paper-consent.upload';
 
-    private const MAX_UPLOAD_BYTES = 10485760;
+    private const MAX_UPLOAD_BYTES = 104857600;
 
     /** @var list<string> */
     private const UPLOAD_FORMATS = ['image/jpeg', 'image/png', 'application/pdf'];
@@ -126,25 +126,6 @@ final readonly class Mvp04PaperConsentService implements OperatorPaperConsentCon
                             || $case->decided_at === null
                         ) {
                             throw new MemberIdentityException('The arrived, identity-verified booking is unavailable.');
-                        }
-
-                        $startsAt = new DateTimeImmutable((string) $schedule->starts_at, new DateTimeZone('UTC'));
-                        $endsAt = new DateTimeImmutable((string) $schedule->ends_at, new DateTimeZone('UTC'));
-                        $arrival = DB::table('operator_arrivals')
-                            ->where('booking_id', $bookingId)
-                            ->where('member_schedule_id', $scheduleId)
-                            ->where('status', 'recorded')
-                            ->orderByDesc('occurrence_at')
-                            ->first();
-                        $decidedAt = new DateTimeImmutable((string) $case->decided_at, new DateTimeZone('UTC'));
-                        if (
-                            $signed < $startsAt
-                            || $signed >= $endsAt
-                            || $signed < $decidedAt
-                            || $arrival === null
-                            || $signed < new DateTimeImmutable((string) $arrival->occurrence_at, new DateTimeZone('UTC'))
-                        ) {
-                            throw new MemberIdentityException('The paper-consent signing time is outside the visit boundary.');
                         }
 
                         if (DB::table('examination_consents')->where('booking_id', $bookingId)->lockForUpdate()->exists()) {
@@ -285,7 +266,7 @@ final readonly class Mvp04PaperConsentService implements OperatorPaperConsentCon
             'form_version' => (string) $consent->form_version,
             'signer_type' => (string) $consent->signer_type,
             'signature_confirmed' => (bool) $consent->signature_confirmed,
-            'signed_at' => (string) $consent->signed_at,
+            'signed_at' => (new DateTimeImmutable((string) $consent->signed_at, new DateTimeZone('UTC')))->format('Y-m-d'),
             'recorded_at' => (string) $consent->recorded_at,
             'has_private_scan' => $consent->private_scan_object_key !== null,
         ];
@@ -356,13 +337,23 @@ final readonly class Mvp04PaperConsentService implements OperatorPaperConsentCon
     private function instant(string $value): DateTimeImmutable
     {
         $value = trim($value);
-        if (preg_match('/(?:Z|[+-][0-9]{2}:[0-9]{2})\z/', $value) !== 1) {
-            throw new MemberIdentityException('Paper-consent signing time requires an explicit offset.');
+        if (preg_match('/\A\d{4}-\d{2}-\d{2}\z/', $value) !== 1) {
+            throw new MemberIdentityException('Paper-consent signing date must use YYYY-MM-DD.');
         }
         try {
-            return (new DateTimeImmutable($value))->setTimezone(new DateTimeZone('UTC'));
+            $date = DateTimeImmutable::createFromFormat('!Y-m-d', $value, new DateTimeZone('UTC'));
+            $errors = DateTimeImmutable::getLastErrors();
+            if ($date === false || ($errors !== false && ($errors['warning_count'] > 0 || $errors['error_count'] > 0))) {
+                throw new MemberIdentityException('Paper-consent signing date is invalid.');
+            }
+
+            return $date;
         } catch (Throwable $exception) {
-            throw new MemberIdentityException('Paper-consent signing time is invalid.', previous: $exception);
+            if ($exception instanceof MemberIdentityException) {
+                throw $exception;
+            }
+
+            throw new MemberIdentityException('Paper-consent signing date is invalid.', previous: $exception);
         }
     }
 

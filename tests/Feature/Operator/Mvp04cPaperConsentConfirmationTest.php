@@ -73,6 +73,28 @@ final class Mvp04cPaperConsentConfirmationTest extends TestCase
             ->assertDontSee((string) $consent->private_scan_object_key);
     }
 
+    public function test_form_uses_today_date_picker_and_100_mb_upload_copy(): void
+    {
+        $fixture = $this->matchedFixture();
+
+        $this->get(route('operator.paper-consent.show', $fixture['caseId']))
+            ->assertOk()
+            ->assertSee('Actual signing date')
+            ->assertSee('type="date"', false)
+            ->assertSee('value="'.now()->format('Y-m-d').'"', false)
+            ->assertSee('up to 100 MB');
+    }
+
+    public function test_private_uploads_over_10_mb_pass_the_100_mb_request_boundary(): void
+    {
+        $fixture = $this->matchedFixture();
+
+        $this->post(route('operator.paper-consent.store', $fixture['caseId']), [
+            ...$this->payload((string) Str::uuid()),
+            'scan' => UploadedFile::fake()->create('signed-consent.pdf', 15 * 1024, 'application/pdf'),
+        ])->assertRedirect()->assertSessionHasErrors('consent')->assertSessionDoesntHaveErrors('scan');
+    }
+
     public function test_same_input_replays_but_changed_input_and_duplicate_booking_fail_closed(): void
     {
         $fixture = $this->matchedFixture();
@@ -83,7 +105,7 @@ final class Mvp04cPaperConsentConfirmationTest extends TestCase
         $this->post(route('operator.paper-consent.store', $fixture['caseId']), $payload)->assertRedirect();
         $this->post(route('operator.paper-consent.store', $fixture['caseId']), [
             ...$payload,
-            'signed_at' => '2040-01-10T10:21:00+07:00',
+            'signed_at' => '2040-01-11',
         ])->assertRedirect();
         $this->post(route('operator.paper-consent.store', $fixture['caseId']), $this->payload((string) Str::uuid()))
             ->assertRedirect();
@@ -93,7 +115,7 @@ final class Mvp04cPaperConsentConfirmationTest extends TestCase
         $this->assertSame('arrived', DB::table('bookings')->where('id', $fixture['bookingId'])->value('status'));
     }
 
-    public function test_form_signer_signature_time_and_upload_boundaries_are_rejected_without_side_effects(): void
+    public function test_form_signer_signature_date_and_upload_boundaries_are_rejected_without_side_effects(): void
     {
         $cases = [
             ['form_name' => 'Other Consent'],
@@ -102,7 +124,7 @@ final class Mvp04cPaperConsentConfirmationTest extends TestCase
             ['signature_confirmed' => '0'],
             ['signed_at' => '2040-01-10T09:59:00+07:00'],
             ['scan' => UploadedFile::fake()->createWithContent('signed.pdf', 'plain text')],
-            ['scan' => UploadedFile::fake()->createWithContent('signed.pdf', "%PDF-1.7\n".str_repeat('x', 10485760))],
+            ['scan' => UploadedFile::fake()->create('signed.pdf', 102401, 'application/pdf')],
         ];
 
         foreach ($cases as $change) {
@@ -263,7 +285,7 @@ final class Mvp04cPaperConsentConfirmationTest extends TestCase
             'form_version' => 'V1',
             'signer_type' => 'member',
             'signature_confirmed' => '1',
-            'signed_at' => '2040-01-10T10:20:00+07:00',
+            'signed_at' => '2040-01-10',
             'operation_id' => $operationId,
             'scan' => UploadedFile::fake()->createWithContent('signed-consent.pdf', "%PDF-1.7\nsynthetic signed paper\n%%EOF"),
         ];

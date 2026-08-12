@@ -46,7 +46,7 @@ final readonly class Mvp04AttendanceService implements OperatorAttendanceContrac
         if ($schedule === null || (string) $schedule->examination_site_id !== (string) $site->id) {
             throw new Mvp03Exception('The requested attendance schedule is unavailable.');
         }
-        if (! $this->inWindow($atUtc, $schedule->starts_at, $schedule->ends_at)) {
+        if (! $this->inWindow($atUtc, $schedule->starts_at, $schedule->ends_at, allowBeforeStart: app()->environment(['local', 'testing']))) {
             throw new Mvp03Exception('Attendance time is outside the schedule window.');
         }
 
@@ -91,6 +91,7 @@ final readonly class Mvp04AttendanceService implements OperatorAttendanceContrac
                 'member_id' => (string) $row->member_id,
                 'member_name' => (string) $row->member_name,
                 'medical_record_number' => (string) $row->medical_record_number,
+                'nik' => $this->identifiers->display((string) $row->encrypted_nik),
                 'masked_nik' => $this->maskedIdentifier($row->encrypted_nik),
                 'site' => (string) $site->display_name,
                 'schedule_starts_at' => (string) $schedule->starts_at,
@@ -135,7 +136,7 @@ final readonly class Mvp04AttendanceService implements OperatorAttendanceContrac
         if ((string) $row->status !== BookingStatus::Confirmed->value) {
             throw new Mvp03Exception('Only a confirmed booking can record arrival.');
         }
-        if (! $this->inWindow($occurrence, $row->schedule_starts_at, $row->schedule_ends_at)) {
+        if (! $this->inWindow($occurrence, $row->schedule_starts_at, $row->schedule_ends_at, allowBeforeStart: app()->environment(['local', 'testing']))) {
             throw new Mvp03Exception('Arrival time is outside the schedule window.');
         }
 
@@ -187,7 +188,7 @@ final readonly class Mvp04AttendanceService implements OperatorAttendanceContrac
             ->select(['bookings.*', 'shift_schedules.starts_at as schedule_starts_at', 'shift_schedules.ends_at as schedule_ends_at', 'shift_schedules.examination_site_id as schedule_site_id'])
             ->lockForUpdate()
             ->first();
-        if ($booking === null || (string) $booking->schedule_site_id !== (string) $site->id || ! $this->inWindow($occurrence, $booking->schedule_starts_at, $booking->schedule_ends_at)) {
+        if ($booking === null || (string) $booking->schedule_site_id !== (string) $site->id || ! $this->inWindow($occurrence, $booking->schedule_starts_at, $booking->schedule_ends_at, allowBeforeStart: app()->environment(['local', 'testing']))) {
             throw new Mvp03Exception('The booking is no longer eligible for arrival.');
         }
         $target = $this->arrivalTarget($booking, $site, $operatorSiteId, $occurrence);
@@ -404,12 +405,12 @@ final readonly class Mvp04AttendanceService implements OperatorAttendanceContrac
         }
     }
 
-    private function inWindow(DateTimeImmutable $at, string $startsAt, string $endsAt): bool
+    private function inWindow(DateTimeImmutable $at, string $startsAt, string $endsAt, bool $allowBeforeStart = false): bool
     {
         $start = new DateTimeImmutable($startsAt, new DateTimeZone('UTC'));
         $end = new DateTimeImmutable($endsAt, new DateTimeZone('UTC'));
 
-        return $at >= $start && $at < $end;
+        return ($allowBeforeStart || $at >= $start) && $at < $end;
     }
 
     private function maskedIdentifier(?string $encrypted): ?string

@@ -218,9 +218,24 @@ final class Mvp04OperatorPortalTest extends TestCase
             ->assertOk()
             ->assertSee('Synthetic Arrival Member')
             ->assertSee('MRN-'.substr($fixture['memberId'], 0, 8))
-            ->assertDontSee('900000000001')
+            ->assertSee('900000000001')
+            ->assertDontSee('Refresh attendance')
             ->assertDontSee('authorization_permission_assignments')
             ->assertDontSee('point balance');
+    }
+
+    public function test_assigned_shift_attendance_link_uses_the_schedule_start_time(): void
+    {
+        $fixture = $this->operatorFixture(false);
+        $this->actingAs($fixture['operator']);
+        $this->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
+
+        $this->get(route('operator.eligible-shifts'))
+            ->assertOk()
+            ->assertSee(route('operator.attendance', [
+                'schedule' => $fixture['scheduleId'],
+                'at' => '2040-01-10T03:00:00+00:00',
+            ]), false);
     }
 
     public function test_selected_shift_roster_keeps_all_members_and_shows_state_and_next_action(): void
@@ -259,6 +274,8 @@ final class Mvp04OperatorPortalTest extends TestCase
         $this->get(route('operator.dashboard'))
             ->assertOk()
             ->assertSee('1. Attendance')
+            ->assertSee(route('lcd.show', $fixture['siteLocalId']), false)
+            ->assertSee('Open LCD queue')
             ->assertSee('2. Arrival and verification')
             ->assertSee('3. Consent and ticket')
             ->assertSee('4. Basic examination')
@@ -295,13 +312,19 @@ final class Mvp04OperatorPortalTest extends TestCase
         $this->post('/operator/arrivals', [
             'confirmation_token' => $token,
             'schedule_id' => (string) Str::uuid(),
-        ])->assertRedirect(route('operator.attendance', $fixture['scheduleId']));
+        ])->assertRedirect(route('operator.attendance', [
+            'schedule' => $fixture['scheduleId'],
+            'at' => '2040-01-10T03:15:00+00:00',
+        ]));
 
         $this->assertDatabaseHas('bookings', ['id' => $fixture['bookingId'], 'status' => 'arrived']);
         $this->get('/operator/verification-worklist')->assertOk()->assertSee('Synthetic Arrival Member')->assertSee('pending_verification');
         $this->assertDatabaseMissing('operator_arrivals', ['booking_id' => $fixture['bookingId'], 'status' => 'pending']);
 
-        $this->post('/operator/arrivals', ['confirmation_token' => $token])->assertRedirect(route('operator.attendance', $fixture['scheduleId']));
+        $this->post('/operator/arrivals', ['confirmation_token' => $token])->assertRedirect(route('operator.attendance', [
+            'schedule' => $fixture['scheduleId'],
+            'at' => '2040-01-10T03:15:00+00:00',
+        ]));
         $this->assertDatabaseCount('operator_arrivals', 1);
     }
 

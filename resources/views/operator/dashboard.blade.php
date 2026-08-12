@@ -13,6 +13,8 @@
         @if ($activeSite)
             <p><strong>{{ $activeSite->display_name }}</strong><br><span class="muted">{{ $activeSite->code }} · {{ $activeSite->timezone }}</span></p>
             <a href="{{ route('operator.site') }}">Review or switch site</a>
+            <p><strong>LCD queue</strong><br><a class="primary-action" href="{{ route('lcd.show', $activeSite->getKey()) }}" target="_blank" rel="noopener">Open LCD queue</a></p>
+            <p class="muted"><code>{{ route('lcd.show', $activeSite->getKey()) }}</code></p>
         @else
             <p class="muted">No active site is selected. Site selection is required before attendance actions.</p>
             <a class="primary-action" href="{{ route('operator.site') }}">Select an assigned site</a>

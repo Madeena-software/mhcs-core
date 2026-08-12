@@ -37,7 +37,38 @@ final class Mvp04bIdentityVerificationTest extends TestCase
         Storage::fake('local');
     }
 
-    public function test_arrived_operator_can_lookup_exact_nik_reveal_history_retrieve_inline_and_decide_without_check_in(): void
+    public function test_exact_nik_input_automatically_matches_and_redirects_to_paper_consent(): void
+    {
+        $fixture = $this->identityFixture();
+        $this->startSession();
+        $this->actingAs($fixture['operator']);
+        $this->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
+        $case = $this->arriveAndStart($fixture);
+
+        $this->get(route('operator.identity-verification.show', $case['case_id']))
+            ->assertOk()
+            ->assertSee('Verify exact NIK')
+            ->assertDontSee('Record decision');
+
+        $this->post(route('operator.identity-verification.lookup', $case['case_id']), [
+            'nik' => '900000000001',
+            'at' => '2040-01-10T10:15:00+07:00',
+        ])->assertRedirect(route('operator.paper-consent.show', $case['case_id']));
+
+        $this->assertDatabaseHas('operator_identity_verifications', [
+            'id' => $case['case_id'],
+            'state' => 'matched',
+            'active_claim_operator_profile_id' => null,
+        ]);
+        $this->assertDatabaseHas('operator_identity_verification_events', [
+            'verification_id' => $case['case_id'],
+            'event_type' => 'decision',
+            'from_state' => 'open',
+            'to_state' => 'matched',
+        ]);
+    }
+
+    public function test_arrived_operator_can_reveal_history_retrieve_inline_and_decide_without_check_in(): void
     {
         $fixture = $this->identityFixture();
         $this->startSession();
@@ -48,17 +79,10 @@ final class Mvp04bIdentityVerificationTest extends TestCase
         $this->get(route('operator.identity-verification.show', $case['case_id']))
             ->assertOk()
             ->assertSee('Synthetic Arrival Member')
+            ->assertSee('900000000001')
             ->assertSee('Current identity document')
             ->assertDontSee('Previous approved profile photograph');
 
-        $nik = '900000000001';
-        $lookup = $this->post(route('operator.identity-verification.lookup', $case['case_id']), [
-            'nik' => $nik,
-            'at' => '2040-01-10T10:15:00+07:00',
-        ]);
-        $lookup->assertOk()->assertSee('Masked NIK');
-        $this->assertStringNotContainsString($nik, $lookup->getContent());
-        $this->assertStringNotContainsString($nik, json_encode(DB::table('audit_events')->get(), JSON_THROW_ON_ERROR));
         $reveal = $this->post(route('operator.identity-verification.previous-photos', $case['case_id']), [
             'reason' => 'Latest photo is insufficient for a human comparison.',
             'operation_id' => (string) Str::uuid(),

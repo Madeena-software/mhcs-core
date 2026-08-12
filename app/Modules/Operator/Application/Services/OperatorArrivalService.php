@@ -30,7 +30,7 @@ final readonly class OperatorArrivalService
         private OperatorArrivalConfirmationService $confirmations,
     ) {}
 
-    /** @return array{arrival_id: string, booking_id: string, schedule_id: string, status: string} */
+    /** @return array{arrival_id: string, booking_id: string, schedule_id: string, status: string, occurrence_at: string} */
     private function recordUnconfirmed(string $bookingId, string $occurrenceAt, string $idempotencyKey, string $expectedScheduleId): array
     {
         $portal = null;
@@ -87,7 +87,7 @@ final readonly class OperatorArrivalService
                     );
                     $this->audit->append(AuditEvent::fromContext($portal['context'], 'operator.arrival.record', 'operator', 'success', $occurrence, OperatorArrival::class, $arrivalId, metadata: ['booking_id' => $target['booking_id'], 'schedule_id' => $target['schedule_id'], 'operator_site_id' => $site->operator_site_id, 'recorded_at_utc' => $now->format(DATE_ATOM)]));
 
-                    return ['arrival_id' => $arrivalId, 'booking_id' => $memberResult['booking_id'], 'schedule_id' => $memberResult['schedule_id'], 'status' => $memberResult['status']];
+                    return ['arrival_id' => $arrivalId, 'booking_id' => $memberResult['booking_id'], 'schedule_id' => $memberResult['schedule_id'], 'status' => $memberResult['status'], 'occurrence_at' => $occurrence->format(DATE_ATOM)];
                 });
             })->result;
         } catch (IdempotencyConflict $exception) {
@@ -143,14 +143,14 @@ final readonly class OperatorArrivalService
         ];
     }
 
-    /** @return array{arrival_id: string, booking_id: string, schedule_id: string, status: string} */
+    /** @return array{arrival_id: string, booking_id: string, schedule_id: string, status: string, occurrence_at: string} */
     public function recordConfirmed(string $confirmationToken): array
     {
         $portal = $this->authorization->portal();
         $site = $this->authorization->portalSite($portal);
         $inspection = $this->confirmations->inspect((string) $portal['profile']->getKey(), (string) $site->getKey(), $confirmationToken);
         if ($inspection['status'] === 'consumed' && is_array($inspection['state']['result'] ?? null)) {
-            return $inspection['state']['result'];
+            return [...$inspection['state']['result'], 'occurrence_at' => (string) $inspection['state']['occurrence_at']];
         }
         if ($inspection['status'] !== 'active' || ! is_array($inspection['state'] ?? null)) {
             throw new OperatorException(

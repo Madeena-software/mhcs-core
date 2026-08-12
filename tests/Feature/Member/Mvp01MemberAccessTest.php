@@ -310,11 +310,11 @@ final class Mvp01MemberAccessTest extends TestCase
 
         $this->seed(MvpMemberSeeder::class);
 
-        $this->assertCount(2, User::query()->get());
-        $this->assertCount(2, DB::table('members')->get());
-        $this->assertCount(4, DB::table('member_verification_assets')->get());
+        $this->assertCount(5, User::query()->get());
+        $this->assertCount(5, DB::table('members')->get());
+        $this->assertCount(10, DB::table('member_verification_assets')->get());
         $this->assertSame($firstPasswords, User::query()->pluck('password', 'email')->all());
-        $this->assertTrue(User::query()->where('must_change_password', true)->count() === 2);
+        $this->assertTrue(User::query()->where('must_change_password', true)->count() === 5);
         $this->assertStringNotContainsString('development-only credential', json_encode(DB::table('audit_events')->get()->all(), JSON_THROW_ON_ERROR));
     }
 

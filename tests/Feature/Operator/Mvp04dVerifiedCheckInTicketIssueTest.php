@@ -35,6 +35,16 @@ final class Mvp04dVerifiedCheckInTicketIssueTest extends TestCase
         Storage::fake('local');
     }
 
+    public function test_check_in_page_resolves_schedule_through_the_operator_site_reference(): void
+    {
+        $fixture = $this->readyFixture();
+
+        $this->get(route('operator.check-in.show', $fixture['caseId']))
+            ->assertOk()
+            ->assertSee('The system will generate the paper ticket number automatically.')
+            ->assertDontSee('Paper ticket number');
+    }
+
     public function test_verified_consent_confirmed_booking_is_checked_in_and_gets_one_private_ticket(): void
     {
         $fixture = $this->readyFixture();
@@ -55,6 +65,11 @@ final class Mvp04dVerifiedCheckInTicketIssueTest extends TestCase
         $this->assertSame(1, DB::table('outbox_messages')->where('event_name', 'member.booking-checked-in')->count());
         $this->assertSame(1, DB::table('outbox_messages')->where('event_name', 'operator.paper-ticket-issued')->count());
 
+        $this->get(route('operator.paper-ticket.show', $ticket->id))
+            ->assertOk()
+            ->assertSee('target="_blank"', false)
+            ->assertSee('rel="noopener"', false);
+
         $this->get(route('operator.paper-ticket.print', $ticket->id))
             ->assertOk()
             ->assertSee('Synthetic Operator Site')
@@ -63,6 +78,17 @@ final class Mvp04dVerifiedCheckInTicketIssueTest extends TestCase
             ->assertDontSee($fixture['bookingId'])
             ->assertDontSee('Synthetic Arrival Member')
             ->assertDontSee('MRN-');
+    }
+
+    public function test_ticket_number_is_generated_when_the_operator_does_not_submit_one(): void
+    {
+        $fixture = $this->readyFixture();
+
+        $this->post(route('operator.check-in.store', $fixture['caseId']), [
+            'operation_id' => (string) Str::uuid(),
+        ])->assertRedirect();
+
+        $this->assertSame('T-001', DB::table('operator_paper_tickets')->where('booking_id', $fixture['bookingId'])->value('ticket_number'));
     }
 
     public function test_issue_replay_is_idempotent_changed_input_and_second_attempt_fail_closed(): void
@@ -315,7 +341,7 @@ final class Mvp04dVerifiedCheckInTicketIssueTest extends TestCase
                 'form_version' => 'V1',
                 'signer_type' => 'member',
                 'signature_confirmed' => '1',
-                'signed_at' => '2040-01-10T10:20:00+07:00',
+                'signed_at' => '2040-01-10',
                 'operation_id' => (string) Str::uuid(),
                 'scan' => UploadedFile::fake()->createWithContent('signed-consent.pdf', "%PDF-1.7\nsynthetic signed paper\n%%EOF"),
             ])->assertRedirect();

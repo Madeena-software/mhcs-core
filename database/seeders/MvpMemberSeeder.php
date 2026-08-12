@@ -33,6 +33,9 @@ final class MvpMemberSeeder extends Seeder
         foreach ([
             ['name' => 'Synthetic Beta Member One', 'email' => 'mvp-member-one@example.test', 'nik' => '900000000101', 'birth_date' => '1988-01-10'],
             ['name' => 'Synthetic Beta Member Two', 'email' => 'mvp-member-two@example.test', 'nik' => '900000000102', 'birth_date' => '1992-02-20'],
+            ['name' => 'Synthetic Beta Member Three', 'email' => 'mvp-member-three@example.test', 'nik' => '900000000103', 'birth_date' => '1995-03-30'],
+            ['name' => 'Synthetic Beta Member Four', 'email' => 'mvp-member-four@example.test', 'nik' => '900000000104', 'birth_date' => '1997-04-15'],
+            ['name' => 'Synthetic Beta Member Five', 'email' => 'mvp-member-five@example.test', 'nik' => '900000000105', 'birth_date' => '2000-05-25'],
         ] as $account) {
             $existing = User::query()->where('email', $account['email'])->first();
 

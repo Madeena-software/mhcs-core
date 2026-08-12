@@ -13,13 +13,11 @@
         </section>
     @else
         <section class="card">
-            <p>Enter the number already written on the on-site paper slip. The server will recheck the matched identity case, confirmed Member consent, booking status, site, and shift assignment before committing check-in.</p>
+            <p>The system will generate the paper ticket number automatically. The server will recheck the matched identity case, confirmed Member consent, booking status, site, and shift assignment before committing check-in.</p>
             <p><strong>Site:</strong> {{ $case['site_name'] }}</p>
             <p><strong>Shift:</strong> <time datetime="{{ $case['schedule_starts_at'] }}">{{ $case['schedule_starts_at'] }}</time> – <time datetime="{{ $case['schedule_ends_at'] }}">{{ $case['schedule_ends_at'] }}</time></p>
             <form method="POST" action="{{ route('operator.check-in.store', $case['case_id']) }}">
                 @csrf
-                <label for="ticket-number">Paper ticket number</label>
-                <input id="ticket-number" name="ticket_number" maxlength="32" autocomplete="off" required>
                 <input type="hidden" name="operation_id" value="{{ Illuminate\Support\Str::uuid() }}">
                 <div class="actions"><button type="submit">Check in and issue ticket</button></div>
             </form>

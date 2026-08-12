@@ -21,7 +21,7 @@
             <h2>Confirmed</h2>
             <p><strong>Form:</strong> {{ $consent['form_name'] }} / {{ $consent['form_version'] }}</p>
             <p><strong>Signer:</strong> Member</p>
-            <p><strong>Signed at:</strong> {{ $consent['signed_at'] }}</p>
+            <p><strong>Signed date:</strong> {{ $consent['signed_at'] }}</p>
             <p><strong>Private scan:</strong> {{ $consent['has_private_scan'] ? 'Stored privately' : 'Not supplied' }}</p>
             <p><a href="{{ route('operator.check-in.show', $case['case_id']) }}">Proceed to verified check-in and paper ticket issue</a></p>
         </section>
@@ -34,12 +34,12 @@
                 <input type="hidden" name="form_version" value="V1">
                 <input type="hidden" name="signer_type" value="member">
                 <input type="hidden" name="signature_confirmed" value="1">
-                <label for="signed-at">Actual signing time</label>
-                <input id="signed-at" name="signed_at" type="text" placeholder="2040-01-10T10:20:00+07:00" required>
-                <p class="muted">Use the actual time from the signed paper form and include its time zone in the request.</p>
+                <label for="signed-at">Actual signing date</label>
+                <input id="signed-at" name="signed_at" type="date" value="{{ old('signed_at', now()->format('Y-m-d')) }}" required>
+                <p class="muted">Choose the date shown on the signed paper form.</p>
                 <label for="scan">Required signed-paper photo or scan</label>
                 <input id="scan" name="scan" type="file" accept="image/jpeg,image/png,application/pdf" required>
-                <p class="muted">JPEG, PNG, or PDF only, up to 10 MiB. The file is encrypted and is not retrievable from this portal.</p>
+                <p class="muted">JPEG, PNG, or PDF only, up to 100 MB. The file is encrypted and is not retrievable from this portal.</p>
                 <input type="hidden" name="operation_id" value="{{ Illuminate\Support\Str::uuid() }}">
                 <button type="submit">Confirm paper consent</button>
             </form>
