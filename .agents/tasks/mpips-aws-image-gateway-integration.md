@@ -1,7 +1,7 @@
 ---
 title: MPIPS v1.2 and AWS Image Gateway Integration
 document_id: MHCS-TASK-MPIPS-AWS-IMAGE-GATEWAY-001
-version: 1.1
+version: 1.2
 status: validated-published
 language: en-US
 last_updated: 2026-08-12
@@ -58,9 +58,13 @@ revision; do not revive or edit the prior rehearsal task during this work.
 ## Baseline and task revision
 
 **Implementation baseline:**
-`2cb939f31e170eeb5fec0e7b1b58cf4d964591e0` — current repository state with
-MPIPS v1.2 authoritative documentation.  This is an execution base only; it
-does not accept the prior local-rehearsal divergence.
+`59edb00d38d7315cfc39737233c6b9d17bd66165` — unaccepted implementation to
+be remediated.  It does not establish an accepted baseline.
+
+**Original execution baseline:**
+`2cb939f31e170eeb5fec0e7b1b58cf4d964591e0` — the MPIPS v1.2 authoritative
+documentation state governing the first execution attempt.  It does not accept
+the prior local-rehearsal divergence.
 
 **Superseded local task:**
 `.agents/tasks/mvp-local-synthetic-rehearsal-launch.md @
@@ -68,6 +72,80 @@ dcf315b81f0c925f753cff0d4d8c41939e9a0c10`
 
 **Task revision:**
 `resolved when published`
+
+## Remediation required
+
+### Review basis and verdict
+
+`REMEDIATION REQUIRED` — reviewed against governing task
+`.agents/tasks/mpips-aws-image-gateway-integration.md @
+c0b3901841c2d7110c61191ef1258817bea1e113`, implementation baseline
+`2cb939f31e170eeb5fec0e7b1b58cf4d964591e0`, and implementation revision
+`59edb00d38d7315cfc39737233c6b9d17bd66165`.
+
+Observed review evidence: `composer validate --no-check-publish` passed;
+the focused Feature/Localization/Architecture suite passed with 14 tests and
+1,910 assertions; `git diff --check` passed.  The combined focused suite had
+one browser-test setup error (`SQLSTATE[HY000]: disk I/O error` while creating
+its isolated SQLite database), so it is not passing browser evidence.  No
+Executor evidence report, fresh isolated-MySQL migration result, complete PHP
+suite/build/format result, reversible AWS probe result, or loopback MPIPS probe
+result was supplied or found.
+
+The reviewed queue state machine sets `processing_status` to `processing` and
+then treats every later delivery with that state as a no-op.  If a worker dies
+after that claim and before terminal completion/failure, a normal Laravel
+redelivery leaves the capture permanently stuck and never calls MPIPS.  This
+violates the durable, idempotent redelivery requirement.  The existing tests
+cover completed re-delivery but not this interrupted-attempt path.
+
+### Remediation scope
+
+- Continue from `59edb00d38d7315cfc39737233c6b9d17bd66165`; preserve all
+  already-correct submitted capture, encryption, S3, authorization, viewer,
+  and normal DICOM-download behavior.
+- Repair only the Image Gateway processing claim/state transition so a
+  redelivered job can safely recover an interrupted non-terminal attempt after
+  the configured database queue lease has expired.  It must neither leave a
+  capture permanently `processing` nor allow concurrent active deliveries to
+  create multiple studies or multiple completed transitions.  Reuse the
+  existing database queue and capture-set record; add only the minimal durable
+  claim/lease fields or state required for this invariant.
+- Add focused tests that simulate a worker interruption after its durable
+  claim and prove the eligible redelivery reaches exactly one terminal result;
+  prove a completed capture remains a no-op; and prove duplicate/concurrent
+  delivery does not create a second study.  Retain the existing success,
+  malformed-response, terminal-response, retry, private-storage, and
+  authorisation coverage.
+- Restore the required browser rehearsal without weakening, skipping, or
+  masking the isolated SQLite setup.  The disk-I/O setup failure must be
+  diagnosed and resolved as an environment or test-isolation issue before it
+  may be reported as passing.
+- Close the original task's verification evidence: fresh SQLite and isolated
+  MySQL 8.4 migration coverage; all required focused tests and the applicable
+  full PHP suite; `npm run build`; repository formatter checks; `git diff
+  --check`; Composer locked-version/audit output; the reversible synthetic AWS
+  private-object write/read/delete probe with cleanup; and the local loopback
+  MPIPS synthetic capture probe including authorised second-Operator
+  viewer/download verification and disposable-data cleanup.
+
+### Remediation acceptance criteria
+
+- [ ] A capture whose worker dies after claiming it but before a terminal
+  transition is recoverable by a valid later Laravel delivery after the queue
+  lease; it reaches one controlled retry/failure or one completed study, never
+  remains indefinitely `processing`.
+- [ ] Simultaneous or duplicate deliveries retain the existing single-study and
+  single-completed-transition guarantees; a completed capture sends no further
+  MPIPS request.
+- [ ] The focused interruption/redelivery tests, browser rehearsal, fresh
+  SQLite and isolated MySQL migration coverage, applicable full PHP suite,
+  build, formatter, Composer validation/audit, and diff check all pass with
+  observed results.
+- [ ] The original task's AWS and loopback MPIPS probes pass with the mandated
+  non-clinical data and cleanup confirmations, and the required evidence report
+  records every command and result without disclosing secrets, endpoints,
+  object keys, patient data, NPZ, or DICOM bytes.
 
 ## Objective
 
