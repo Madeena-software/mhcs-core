@@ -1,7 +1,7 @@
 ---
 title: Application-Wide Indonesian UI Localization
 document_id: MHCS-TASK-UI-ID-LOCALIZATION-001
-version: 1.1
+version: 1.2
 status: validated-published
 language: en-US
 last_updated: 2026-08-12
@@ -277,7 +277,27 @@ MPIPS, schema changes, or non-localization functional changes.
 
 ## Remediation
 
-**Review basis:**
+### First remediation closure
+
+The first remediation governed by
+`.agents/tasks/mvp-application-indonesian-ui-localization.md @ b07f08ab83847c203b6171bf65088992c88ec5a2`
+was implemented at `63249efc91a2045067f36ecb31eee46709cde236`.
+
+- Its eleven Image Gateway capture messages are registered in `lang/id.json`.
+- The visible attendance `NIK:` label now uses a registered lookup.
+- The rejected-fixture route test renders the Indonesian fixture-identity
+  message and retains the no-side-effect assertions.
+- The Reviewer observed the required focused suite pass: 145 tests and 1,574
+  assertions. `npm run build` and `git diff --check` also passed, with the
+  existing Cornerstone browser-externalization and large-chunk warnings only.
+
+**R8 — Remediation closure:** not passed. The required controller-path audit
+found a second, bounded gap in the same objective: 49 exact
+`OperatorException` messages can still reach an Operator browser response via
+`PortalController`'s `__($exception->getMessage())` paths but have no
+`lang/id.json` entry. The first remediation's corrections remain closed.
+
+### Original review basis
 
 - Governing task revision:
   `.agents/tasks/mvp-application-indonesian-ui-localization.md @ e6e663a02bde563e13b706501b1f1becfd35d269`.
@@ -291,30 +311,74 @@ MPIPS, schema changes, or non-localization functional changes.
 
 ### Required corrections
 
-- Register in `lang/id.json` every user-visible message that
-  `ImageGatewayController::captureStore` can pass through
-  `__($exception->getMessage())`. At minimum, include the exact messages from
-  `SyntheticCaptureGatewayService` for invalid submission identity, duplicate
-  capture, invalid DICOM fixture, replay conflict, missing trusted Operator
-  context, invalid radiograph count, invalid ZIP NPZ inputs, fixture identity,
-  fixture bytes, missing repository fixture, and unauthorised X-ray admission.
-  Preserve `DICOM`, `NPZ`, and the approved radiography terminology in their
-  Indonesian values.
-- Replace the hard-coded visible `NIK:` attendance label with a Laravel
-  translation lookup registered in `lang/id.json`.
-- Extend the localization test and existing synthetic-capture negative-path
-  test so a rejected fixture upload renders its Indonesian registry value, not
-  the English exception message. Keep the existing no-side-effect assertions.
-- Repeat the repository text audit for Member, Operator, LCD, welcome, and
-  user-facing controller paths. Treat a literal as closed only when it is
-  dynamic/technical/legal data or uses a registered `__()` lookup; record each
-  permitted exception in the Executor evidence.
+- Add Indonesian `lang/id.json` values for every exact message in this list.
+  Keep these source-string keys unchanged: they are existing domain messages
+  rendered at the browser boundary, not new domain behavior.
+
+  - `OperatorActiveSiteService.php`: `An authorized active site is required.`;
+    `That site is not authorized for this Operator.`; `Select an authorized
+    active site before continuing.`; `Site switching is blocked while arrival
+    work is unresolved.`; `Site switching is blocked while identity
+    verification is unresolved.`
+  - `OperatorAttendanceService.php`: `The requested attendance list is
+    unavailable.`
+  - `OperatorArrivalService.php`: `An arrival operation identity is required.`;
+    `The arrival confirmation is no longer valid.`; `The Operator is not
+    assigned to this schedule.`; `The requested arrival is unavailable.`;
+    `The arrival confirmation is missing or invalid.`; `Arrival time requires
+    an explicit offset.`; `Arrival time is invalid.`
+  - `OperatorAuthorization.php`: `Operator access is unavailable.`; `Select an
+    active site before continuing.`; `Select an authorized active site before
+    continuing.`; `Identity verification authorization is unavailable.`;
+    `Operator administration authorization is required.`; `Operator
+    administration authorization is unavailable.`
+  - `OperatorIdentityVerificationService.php`: `The Operator profile is
+    unavailable.`; `The arrived Member is unavailable for verification.`; `The
+    Operator is not assigned to this schedule.`; `The verification operation
+    conflicts with existing work.`; `This arrived Member is already claimed
+    for verification.`; `This verification case is terminal and cannot be
+    reopened.`; `Reclaiming a cancelled verification case requires explicit
+    confirmation.`; `This Operator already has an open verification case.`;
+    `The identity verification view is unavailable.`; `The requested
+    verification asset is unavailable.`; `The verification decision is
+    invalid.`; `A reason is required for this verification decision.`; `A
+    terminal verification decision cannot be changed.`; `Current approved
+    identity evidence is unavailable.`; `A terminal verification case cannot
+    be cancelled.`; `The verification case is no longer open.`; `The active
+    site is unavailable.`; `A valid verification operation is required.`; `A
+    bounded reason is required.`
+  - `OperatorPaperConsentConfirmationService.php`: `The paper-consent booking
+    is unavailable.`; `A valid paper-consent operation is required.`; `Only a
+    matched identity case can confirm paper consent.`
+  - `OperatorCheckInTicketService.php`: `The check-in schedule is unavailable.`;
+    `The Operator is not assigned to this shift.`; `The Operator is no longer
+    assigned to this shift.`; `The paper ticket could not be loaded after
+    issue.`; `The check-in case is unavailable.`; `Only a matched identity
+    case can issue a paper ticket.`; `A valid ticket operation is required.`;
+    `Ticket number must contain only letters, numbers, and hyphens up to 32
+    characters.`
+
+- Extend `MvpApplicationIndonesianUiLocalizationTest` with the above exact
+  list. Assert that each key exists in `lang/id.json`, has a non-English
+  Indonesian value, and that one representative `PortalController` error route
+  renders its Indonesian value rather than its English domain message. Reuse
+  the existing synthetic fixtures and test patterns; do not add a translation
+  abstraction or alter exception categories.
+- Retain the prior Image Gateway rejected-fixture test and its no-side-effect
+  assertions. It remains the runtime proof for the Image Gateway error path.
+- Repeat the text audit for Member, Operator, LCD, welcome, and all
+  browser-facing controller response paths. In particular, audit every
+  `__($exception->getMessage())` path in `PortalController` and
+  `ImageGatewayController`; an exact exception message is closed only when it
+  has an Indonesian `lang/id.json` value, is deliberately aborted before
+  rendering, or is documented as an allowed dynamic/technical/legal exception.
 
 ### Additional verification
 
 - Re-run the original task's localization, Member, Operator, public-LCD,
   basic-examination, X-ray readiness, synthetic-capture, study-access, and
-  DICOM-results checks; include the negative synthetic-capture assertion.
+  DICOM-results checks; include the negative synthetic-capture assertion and
+  the representative Operator-controller error assertion.
 - Re-run `npm run build` and `git diff --check`. Report warnings separately
   from failures.
 
