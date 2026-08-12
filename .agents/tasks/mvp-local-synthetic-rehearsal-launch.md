@@ -7,7 +7,7 @@ language: en-US
 last_updated: 2026-08-12
 scope:
   - reproducible native local Laravel launch
-  - five synthetic Members and two-Operator seed data
+  - five synthetic Members and three-Operator seed data
   - complete Operator/DICOM rehearsal handoff
 authority_note: This task becomes executable only when its exact content is committed and published as validated.
 ---
@@ -54,10 +54,10 @@ automatic ticket allocation.
 
 **Objective:**
 Provide a verified, copyable local-only setup and rehearsal path that starts a
-fresh synthetic database, seeds five dummy Members and two eligible Operators,
+fresh synthetic database, seeds five dummy Members and three eligible Operators,
 launches the native Laravel application, and guides the user from Operator
-login through automatic ticket issue, capture, DICOM viewing, second-Operator
-discovery, and normal attachment download.
+login through automatic ticket issue, capture, DICOM viewing, second- and
+third-Operator discovery, and normal attachment download.
 
 ## Authoritative inputs
 
@@ -76,7 +76,7 @@ discovery, and normal attachment download.
 ### Requirement traceability
 
 - `MVP-DEC-034` → local/testing synthetic capture and DICOM bridge only.
-- `MVP-DEC-035` and `MVP-DEC-036` → normal authenticated raw-DICOM download and authorised second-Operator access.
+- `MVP-DEC-035` and `MVP-DEC-036` → normal authenticated raw-DICOM download and authorised additional-Operator access.
 - `OPR-031..OPR-046`, `OPR-057..OPR-060`, and `IMG-060` → complete local Operator flow and read-only DICOM access.
 
 ## Scope
@@ -91,18 +91,18 @@ discovery, and normal attachment download.
   explicitly configured empty local database.
 - Document the required local-only application keys without showing, creating,
   copying, logging, or committing their values. Tell the user to retain
-  one-time synthetic credentials only in the interactive terminal that seeded
-  them.
+  one-time synthetic credentials only in the ignored local `credential.txt`
+  file with mode `0600`; never print them to the terminal or chat.
 - Document the observed seed result without plaintext credentials: five
-  synthetic Members, a primary Operator, a second same-site/current-shift
-  Operator, the selected Member's booking, attendance URL, LCD URL, and
+  synthetic Members, a primary Operator, two additional same-site/current-shift
+  Operators, the selected Member's booking, attendance URL, LCD URL, and
   repository-owned NPZ/gain fixtures. The guide must identify one Member as the
   ordered rehearsal journey without implying that the seed creates only one.
 - Provide an ordered local rehearsal: primary Operator login and active-site
   selection; arrival, verification, consent, and blank-number automatic ticket
   issue through basic examination and X-ray call; synthetic NPZ/gain capture;
-  DICOM viewer/download; then second Operator login, DICOM-results worklist,
-  viewer, and download.
+  DICOM viewer/download; then second and third Operator logins, DICOM-results
+  worklist, viewer, and download.
 - State the minimum synthetic file substitutions required during the rehearsal:
   a locally chosen synthetic JPEG/PNG for consent/questionnaire capture and
   the committed NPZ/gain fixture pair for the capture form.
@@ -128,7 +128,7 @@ discovery, and normal attachment download.
 ### Preserved behavior
 
 - The existing `MvpCoreClinicSeeder` remains local/testing-only, synthetic,
-  repeatable, produces five Members and two eligible Operators, and remains the
+  repeatable, produces five Members and three eligible Operators, and remains the
   only source of dummy accounts for this rehearsal.
 - The documented blank ticket input exercises the existing automatic
   site-and-shift allocation; it does not introduce a ticket format or reset

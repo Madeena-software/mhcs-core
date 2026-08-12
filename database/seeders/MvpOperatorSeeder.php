@@ -19,6 +19,8 @@ final class MvpOperatorSeeder extends Seeder
 
     private const SECOND_USER_EMAIL = 'mvp-operator-two@example.test';
 
+    private const THIRD_USER_EMAIL = 'mvp-operator-three@example.test';
+
     private const OPERATOR_SITE_ID = 'synthetic-operator-site-mvp03';
 
     private const ORGANIZATION_ID = 'synthetic-operator-org-mvp03';
@@ -47,10 +49,17 @@ final class MvpOperatorSeeder extends Seeder
         $this->siteAssignment($secondUser, $secondProfileId, $siteId);
         $this->shiftAssignment($secondUser, $secondProfileId, $eligibleId);
 
+        $thirdUser = $this->thirdOperator();
+        $thirdProfileId = $this->profile($thirdUser, 'Synthetic Operator Three', 'SYN-OPR-03');
+        $this->claims($thirdUser);
+        $this->siteAssignment($thirdUser, $thirdProfileId, $siteId);
+        $this->shiftAssignment($thirdUser, $thirdProfileId, $eligibleId);
+
         $this->command?->info('MVP-04 synthetic Operator foundation is ready.');
         $this->command?->info('Safe Operator site ID: '.$siteId);
         $this->command?->info('Safe eligible schedule ID: '.$scheduleId);
         $this->command?->info('Second synthetic Operator email: '.self::SECOND_USER_EMAIL);
+        $this->command?->info('Third synthetic Operator email: '.self::THIRD_USER_EMAIL);
         $this->command?->info('Safe portal route: /operator');
     }
 
@@ -135,21 +144,31 @@ final class MvpOperatorSeeder extends Seeder
 
     private function secondOperator(): User
     {
-        $existing = User::query()->where('email', self::SECOND_USER_EMAIL)->first();
+        return $this->createSyntheticOperator(self::SECOND_USER_EMAIL);
+    }
+
+    private function thirdOperator(): User
+    {
+        return $this->createSyntheticOperator(self::THIRD_USER_EMAIL);
+    }
+
+    private function createSyntheticOperator(string $email): User
+    {
+        $existing = User::query()->where('email', $email)->first();
         if ($existing !== null) {
             if (! $existing->canAuthenticate() || DB::table('members')->where('user_id', $existing->getKey())->exists()) {
-                throw new RuntimeException('The existing second synthetic Operator account is inconsistent.');
+                throw new RuntimeException('The existing synthetic Operator account is inconsistent.');
             }
 
             return $existing;
         }
 
-        $plaintext = bin2hex(random_bytes(24));
+        $plaintext = bin2hex(random_bytes(4));
         $userId = (string) Str::uuid();
         $now = now();
         DB::table('users')->insert([
             'id' => $userId,
-            'email' => self::SECOND_USER_EMAIL,
+            'email' => $email,
             'email_verified_at' => null,
             'password' => Hash::make($plaintext),
             'remember_token' => null,
@@ -160,9 +179,7 @@ final class MvpOperatorSeeder extends Seeder
             'updated_at' => $now,
         ]);
 
-        if ($this->command !== null && defined('STDIN') && stream_isatty(STDIN)) {
-            $this->command->line(self::SECOND_USER_EMAIL.' development-only credential (show once): '.$plaintext);
-        }
+        MvpCredentialFile::append($email, $plaintext);
 
         return User::query()->whereKey($userId)->firstOrFail();
     }

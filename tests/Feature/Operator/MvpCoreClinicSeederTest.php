@@ -28,6 +28,8 @@ final class MvpCoreClinicSeederTest extends TestCase
         ])->count());
         $this->assertDatabaseHas('users', ['email' => 'mvp-admin@example.test']);
         $this->assertDatabaseHas('users', ['email' => 'mvp-operator-two@example.test']);
+        $this->assertDatabaseHas('users', ['email' => 'mvp-operator-three@example.test']);
+        $this->assertSame(3, DB::table('operator_profiles')->count());
         $this->assertDatabaseHas('authorization_permission_assignments', [
             'user_id' => DB::table('users')->where('email', 'mvp-admin@example.test')->value('id'),
             'permission' => 'operator.identity.verify',
@@ -86,6 +88,16 @@ final class MvpCoreClinicSeederTest extends TestCase
         $this->assertDatabaseHas('operator_shift_assignments', [
             'operator_eligible_shift_id' => $eligibleId,
             'operator_profile_id' => $secondProfileId,
+            'status' => 'active',
+        ]);
+        $thirdProfileId = DB::table('operator_profiles')
+            ->join('users', 'users.id', '=', 'operator_profiles.user_id')
+            ->where('users.email', 'mvp-operator-three@example.test')
+            ->value('operator_profiles.id');
+        $this->assertNotFalse($thirdProfileId);
+        $this->assertDatabaseHas('operator_shift_assignments', [
+            'operator_eligible_shift_id' => $eligibleId,
+            'operator_profile_id' => $thirdProfileId,
             'status' => 'active',
         ]);
 

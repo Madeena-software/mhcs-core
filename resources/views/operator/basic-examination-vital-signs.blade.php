@@ -37,7 +37,7 @@
                     <select id="{{ $reasonField }}" name="{{ $reasonField }}">
                         <option value="">{{ __('Provided as a value') }}</option>
                         @foreach (['unavailable', 'refused', 'not_applicable'] as $reason)
-                            <option value="{{ $reason }}" @selected(old($reasonField) === $reason)>{{ $reason }}</option>
+                            <option value="{{ $reason }}" @selected(old($reasonField) === $reason)>{{ __($reason) }}</option>
                         @endforeach
                     </select>
                     @error($valueField)<p class="error">{{ $message }}</p>@enderror
@@ -52,7 +52,7 @@
                 <select id="bmi_missing_reason" name="bmi_missing_reason">
                     <option value="">{{ __('Calculated from height and weight') }}</option>
                     @foreach (['unavailable', 'refused', 'not_applicable'] as $reason)
-                        <option value="{{ $reason }}" @selected(old('bmi_missing_reason') === $reason)>{{ $reason }}</option>
+                        <option value="{{ $reason }}" @selected(old('bmi_missing_reason') === $reason)>{{ __($reason) }}</option>
                     @endforeach
                 </select>
                 @error('bmi_missing_reason')<p class="error">{{ $message }}</p>@enderror

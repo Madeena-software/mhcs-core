@@ -35,6 +35,7 @@
     "The arrival confirmation could not be cancelled.": "Konfirmasi kedatangan tidak dapat dibatalkan.",
     "The basic-examination worklist is unavailable.": "Daftar kerja pemeriksaan dasar tidak tersedia.",
     "The queue admission could not be claimed.": "Tiket antrean tidak dapat diklaim.",
+    "This Operator already has another queue admission in progress.": "Operator ini masih memiliki tiket antrean lain yang sedang ditangani.",
     "The queue admission could not be called.": "Tiket antrean tidak dapat dipanggil.",
     "The queue admission could not be started.": "Tiket antrean tidak dapat dimulai.",
     "The vital-signs form is unavailable.": "Formulir tanda vital tidak tersedia.",

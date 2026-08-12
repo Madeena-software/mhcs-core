@@ -42,6 +42,9 @@ final class Mvp04jPrivateVitalSignsCaptureTest extends TestCase
             ->assertSee('mmHg')
             ->assertSee('kg/m²')
             ->assertSee('Hasil skrining; bukan diagnosis')
+            ->assertSee('>Tidak tersedia</option>', false)
+            ->assertSee('>Menolak</option>', false)
+            ->assertSee('>Tidak berlaku</option>', false)
             ->assertDontSee($fixture['memberId'])
             ->assertDontSee($fixture['bookingId']);
 

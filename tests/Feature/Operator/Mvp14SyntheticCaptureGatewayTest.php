@@ -105,6 +105,21 @@ final class Mvp14SyntheticCaptureGatewayTest extends TestCase
         $this->assertCount(6, Storage::disk('local')->allFiles());
     }
 
+    public function test_fixture_bytes_are_accepted_when_uploaded_with_operator_filenames(): void
+    {
+        $fixture = $this->readyFixture();
+        $admission = $this->insertCalledXrayAdmission($fixture);
+        $submissionId = (string) Str::uuid();
+
+        $this->post(route('operator.xray-capture.store', $admission), [
+            'submission_id' => $submissionId,
+            'radiographs' => [$this->fixtureUploadAs('synthetic-radiograph-01.npz', 'BED-17833222264263-kambing.npz')],
+            'gain' => $this->fixtureUploadAs('synthetic-gain-01.npz', 'BED-1783319207291-gain.npz'),
+        ])->assertRedirect();
+
+        $this->assertSame('accepted', DB::table('image_gateway_capture_sets')->where('submission_id', $submissionId)->value('status'));
+    }
+
     public function test_invalid_or_duplicate_fixture_input_fails_without_stage_or_storage_side_effects(): void
     {
         $fixture = $this->readyFixture();
@@ -114,11 +129,11 @@ final class Mvp14SyntheticCaptureGatewayTest extends TestCase
             ->followingRedirects()
             ->post(route('operator.xray-capture.store', $admission), [
                 'submission_id' => (string) Str::uuid(),
-                'radiographs' => [$this->fixtureUploadAs('synthetic-radiograph-01.npz', 'renamed.npz')],
+                'radiographs' => [$this->fixtureUploadAs('synthetic-gain-01.npz', 'renamed.npz')],
                 'gain' => $this->fixtureUpload('synthetic-gain-01.npz'),
             ])
             ->assertOk()
-            ->assertSee('Identitas fixture sintetis tidak diterima.')
+            ->assertSee('Byte fixture sintetis tidak diterima.')
             ->assertDontSee('The synthetic fixture identity is not accepted.');
 
         $this->from(route('operator.xray-capture.show', $admission))

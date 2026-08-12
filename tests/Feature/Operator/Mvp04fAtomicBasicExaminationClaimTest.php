@@ -111,7 +111,12 @@ final class Mvp04fAtomicBasicExaminationClaimTest extends TestCase
         $second = $this->insertWaitingAdmission($fixture, $first, 'ONE-2');
 
         $this->post(route('operator.basic-examination-worklist.claim', $first->id), ['operation_id' => (string) Str::uuid()])->assertRedirect();
-        $this->post(route('operator.basic-examination-worklist.claim', $second->id), ['operation_id' => (string) Str::uuid()])->assertConflict();
+        $response = $this->post(route('operator.basic-examination-worklist.claim', $second->id), ['operation_id' => (string) Str::uuid()]);
+        $response->assertRedirect(route('operator.basic-examination-worklist'));
+        $this->assertSame(
+            __('This Operator already has another queue admission in progress.'),
+            $response->getSession()->get('status'),
+        );
 
         $this->assertDatabaseHas('operator_queue_admissions', ['id' => $first->id, 'operator_profile_id' => $fixture['profileId']]);
         $this->assertDatabaseHas('operator_queue_admissions', ['id' => $second->id, 'operator_profile_id' => null]);

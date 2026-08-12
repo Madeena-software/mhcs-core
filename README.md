@@ -57,11 +57,10 @@ php artisan migrate:fresh --force
 php artisan db:seed --class=Database\\Seeders\\MvpCoreClinicSeeder
 ```
 
-`MvpCoreClinicSeeder` is local/testing-only and repeatable. Its interactive
-terminal output identifies the synthetic Member booking, primary Operator,
-second same-site/current-shift Operator, attendance URL, and LCD URL. It emits
-one-time synthetic credentials only in that terminal; keep them there and do
-not copy them into documentation, chat, logs, or deployment configuration.
+`MvpCoreClinicSeeder` is local/testing-only and repeatable. It creates the
+primary Operator and two additional same-site/current-shift Operators. Their
+one-time local credentials are written to the ignored root `credential.txt`
+with file mode `0600`; passwords are never printed to the terminal or chat.
 
 For this POC, the displayed synthetic schedule begins on 13 August 2026 and
 ends on 22 August 2026. Local/testing attendance keeps the end boundary but
@@ -71,6 +70,10 @@ The rehearsal uses the repository-owned pair below and no clinical file:
 
 - `resources/fixtures/image-gateway/synthetic-radiograph-01.npz`
 - `resources/fixtures/image-gateway/synthetic-gain-01.npz`
+
+The upload filenames may be changed by the capture device; the local synthetic
+bridge validates the fixture bytes, not the original filename. Arbitrary BED or
+NPZ contents are still rejected.
 
 Use a locally chosen synthetic JPEG or PNG—not a real consent form or clinical
 image—when the paper-questionnaire step asks for a file.

@@ -128,6 +128,24 @@ final class Mvp04lAtomicXrayClaimTest extends TestCase
         $this->assertSame(1, DB::table('operator_queue_admission_history')->where('event_type', 'claimed')->count());
     }
 
+    public function test_existing_basic_claim_redirects_when_claiming_xray(): void
+    {
+        $fixture = $this->readyFixture();
+        $xray = $this->insertAdmission($fixture, 'XRAY-BUSY-1', 'xray');
+        $basic = $this->insertAdmission($fixture, 'BASIC-BUSY-1', 'basic_examination', $this->copyBooking($fixture));
+
+        $this->post(route('operator.basic-examination-worklist.claim', $basic->id), ['operation_id' => (string) Str::uuid()])
+            ->assertRedirect();
+
+        $this->post(route('operator.xray-readiness-worklist.claim', $xray->id), ['operation_id' => (string) Str::uuid()])
+            ->assertRedirect(route('operator.xray-readiness-worklist'))
+            ->assertSessionHas('status', 'Operator ini masih memiliki tiket antrean lain yang sedang ditangani.');
+
+        $this->assertDatabaseHas('operator_queue_admissions', ['id' => $basic->id, 'operator_profile_id' => $fixture['profileId']]);
+        $this->assertDatabaseHas('operator_queue_admissions', ['id' => $xray->id, 'operator_profile_id' => null]);
+        $this->assertSame(1, DB::table('operator_queue_admission_history')->where('event_type', 'claimed')->count());
+    }
+
     public function test_revoked_and_foreign_scope_denials_are_private_and_atomic(): void
     {
         $fixture = $this->readyFixture();

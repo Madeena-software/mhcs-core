@@ -209,6 +209,9 @@ final class PortalController extends Controller
 
             return redirect()->route('operator.basic-examination-worklist')->with('status', __('Queue admission claimed.'));
         } catch (OperatorException $exception) {
+            if ($exception->category === 'queue_claim_busy') {
+                return redirect()->route('operator.basic-examination-worklist')->with('status', __($exception->getMessage()));
+            }
             if ($exception->category === 'queue_claim_conflict') {
                 abort(409);
             }
@@ -234,6 +237,9 @@ final class PortalController extends Controller
 
             return redirect()->route('operator.xray-readiness-worklist')->with('status', __('X-ray admission claimed.'));
         } catch (OperatorException $exception) {
+            if ($exception->category === 'xray_claim_busy') {
+                return redirect()->route('operator.xray-readiness-worklist')->with('status', __($exception->getMessage()));
+            }
             if ($exception->category === 'xray_claim_conflict') {
                 abort(409);
             }

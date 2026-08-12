@@ -57,17 +57,20 @@ final readonly class OperatorWorklistService
     {
         $portal = $this->authorization->portal();
         $site = $this->authorization->portalSite($portal);
+        $profileId = (string) $portal['profile']->getKey();
         $rows = DB::table('operator_arrivals')
+            ->join('bookings', 'bookings.id', '=', 'operator_arrivals.booking_id')
             ->join('operator_profiles', 'operator_profiles.id', '=', 'operator_arrivals.operator_profile_id')
             ->leftJoin('operator_identity_verifications', 'operator_identity_verifications.arrival_id', '=', 'operator_arrivals.id')
             ->where('operator_arrivals.operator_site_id', $site->getKey())
             ->where('operator_arrivals.status', 'recorded')
+            ->where('bookings.status', 'arrived')
             ->select(['operator_arrivals.*', 'operator_profiles.display_name as operator_name'])
             ->addSelect(['operator_identity_verifications.id as verification_case_id', 'operator_identity_verifications.state as verification_state', 'operator_identity_verifications.operator_profile_id as verification_operator_profile_id'])
             ->orderByDesc('operator_arrivals.occurrence_at')
             ->get();
 
-        return $rows->map(function (object $row): array {
+        return $rows->map(function (object $row) use ($profileId): array {
             $member = $this->memberAttendance->safeArrivalSummary((string) $row->booking_id) ?? [];
 
             return [
@@ -82,6 +85,8 @@ final readonly class OperatorWorklistService
                 'verification_case_id' => $row->verification_case_id === null ? null : (string) $row->verification_case_id,
                 'verification_state' => $row->verification_state === null ? 'unclaimed' : (string) $row->verification_state,
                 'verification_operator_profile_id' => $row->verification_operator_profile_id === null ? null : (string) $row->verification_operator_profile_id,
+                'can_open_verification' => $row->verification_case_id !== null
+                    && (string) $row->verification_operator_profile_id === $profileId,
             ];
         })->all();
     }
@@ -654,6 +659,12 @@ final readonly class OperatorWorklistService
                     if (! $this->assignments->isAssigned($profileId, (string) $admission->member_schedule_id, $site->operator_site_id)) {
                         throw new OperatorException('queue_claim_forbidden', 'The queue admission is unavailable.');
                     }
+                    if (DB::table('operator_queue_admissions')
+                        ->where('operator_profile_id', $profileId)
+                        ->where('stage', 'basic_examination')
+                        ->exists()) {
+                        throw new OperatorException('queue_claim_busy', 'This Operator already has another queue admission in progress.');
+                    }
                     if (DB::table('operator_queue_admissions')->where('operator_profile_id', $profileId)->exists()) {
                         throw new OperatorException('queue_claim_conflict', 'The queue admission could not be claimed.');
                     }
@@ -779,6 +790,12 @@ final readonly class OperatorWorklistService
                     }
                     if (! $this->assignments->isAssigned($profileId, (string) $admission->member_schedule_id, $site->operator_site_id)) {
                         throw new OperatorException('xray_claim_forbidden', 'The X-ray admission is unavailable.');
+                    }
+                    if (DB::table('operator_queue_admissions')
+                        ->where('operator_profile_id', $profileId)
+                        ->whereIn('stage', ['basic_examination', 'xray'])
+                        ->exists()) {
+                        throw new OperatorException('xray_claim_busy', 'This Operator already has another queue admission in progress.');
                     }
                     if (DB::table('operator_queue_admissions')->where('operator_profile_id', $profileId)->exists()) {
                         throw new OperatorException('xray_claim_conflict', 'The X-ray admission could not be claimed.');

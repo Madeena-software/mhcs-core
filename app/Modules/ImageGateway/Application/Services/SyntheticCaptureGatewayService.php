@@ -431,7 +431,7 @@ final readonly class SyntheticCaptureGatewayService
 
     private function assertFixtureFile(UploadedFile $file, string $expectedName): string
     {
-        if ($file->getError() !== UPLOAD_ERR_OK || $file->getClientOriginalName() !== $expectedName) {
+        if ($file->getError() !== UPLOAD_ERR_OK) {
             throw new ImageGatewayException('capture_invalid', 'The synthetic fixture identity is not accepted.');
         }
         $contents = $file->get();

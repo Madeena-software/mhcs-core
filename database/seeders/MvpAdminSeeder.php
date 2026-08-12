@@ -57,7 +57,7 @@ final class MvpAdminSeeder extends Seeder
             return;
         }
 
-        $plaintext = bin2hex(random_bytes(24));
+        $plaintext = bin2hex(random_bytes(4));
         $userId = (string) Str::uuid();
 
         DB::transaction(function () use ($plaintext, $userId): void {
@@ -98,9 +98,7 @@ final class MvpAdminSeeder extends Seeder
             }
         });
 
-        if ($this->command !== null && defined('STDIN') && stream_isatty(STDIN)) {
-            $this->command->line(self::EMAIL.' development-only credential (show once): '.$plaintext);
-        }
+        MvpCredentialFile::reset(self::EMAIL, $plaintext);
     }
 
     private function assertExistingAccount(User $user): void

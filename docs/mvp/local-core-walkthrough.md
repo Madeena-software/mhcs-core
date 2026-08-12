@@ -43,12 +43,12 @@ TARGET="." php artisan migrate:fresh --force
 TARGET="." php artisan db:seed --class=Database\\Seeders\\MvpCoreClinicSeeder
 ```
 
-`MvpCoreClinicSeeder` is the only dummy-account source for this rehearsal. Its
-interactive output supplies one synthetic Member booking, the primary
-Operator, the second Operator assigned to the same site and current eligible
-shift, the attendance URL, and the LCD URL. One-time synthetic credentials are
-shown only in the terminal that seeded them; retain them there and never copy
-them into this guide, tests, logs, chat, or deployment configuration.
+`MvpCoreClinicSeeder` is the only dummy-account source for this rehearsal. It
+creates one primary Operator and two additional Operators assigned to the same
+site and current eligible shift, plus the attendance and LCD URLs. One-time
+local credentials are written to the ignored root `credential.txt` with mode
+`0600`; passwords are never printed to the terminal or copied into this guide,
+tests, logs, chat, or deployment configuration.
 
 The POC schedule is displayed from 13 August 2026 through 22 August 2026.
 Local/testing attendance preserves the 22 August end boundary but allows the
@@ -97,21 +97,25 @@ Open `http://127.0.0.1:8013/operator/login`.
 9. Open **Submit synthetic capture** for the called admission. Select exactly
    the committed pair from the repository:
    `resources/fixtures/image-gateway/synthetic-radiograph-01.npz` and
-   `resources/fixtures/image-gateway/synthetic-gain-01.npz`. Confirm the
+   `resources/fixtures/image-gateway/synthetic-gain-01.npz`. The uploaded
+   filenames may differ; the local synthetic bridge validates the exact fixture
+   bytes and rejects arbitrary BED or NPZ contents. Confirm the
    browser warns before navigation while either file is selected, then submit
    the complete capture set once.
 10. Confirm the accepted study opens as a vertical, read-only DICOM view with
     automatic VOI and zoom/pan only. Click **Download DICOM** and confirm the
     browser downloads `synthetic-study.dcm` as an attachment.
-11. Sign out, sign in with the second synthetic Operator email and one-time
-    credential printed by the seeder (`mvp-operator-two@example.test`), and
-    select **Synthetic MVP-03 site**.
+11. Sign out, sign in with `mvp-operator-two@example.test` using its one-time
+    credential from `credential.txt`, and select **Synthetic MVP-03 site**.
 12. Open **DICOM results** from the Operator navigation. Confirm the same
     accepted study appears without patient data, open it, and confirm the
     vertical read-only viewer renders.
 13. Click **Download DICOM** and confirm the second Operator downloads the
     same `synthetic-study.dcm` attachment. Confirm no claim, submission, or
     queue-state change is made by the second Operator.
+14. Repeat the DICOM results-worklist, viewer, and download checks with
+    `mvp-operator-three@example.test`. Confirm this third Operator also has
+    read-only access and cannot change the claim, submission, or queue state.
 
 Stop there. This rehearsal uses only repository-owned synthetic fixtures in
 `local` or `testing`; it does not run MPIPS, convert NPZ bytes, wait for AI, or

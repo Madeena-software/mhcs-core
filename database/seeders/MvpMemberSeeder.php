@@ -124,9 +124,8 @@ final class MvpMemberSeeder extends Seeder
                 }
             });
 
-            $this->command?->line("{$account['email']} development-only credential (show once): {$plaintext}");
         }
 
-        $this->command?->warn('These credentials are for local/testing only and are unavailable again after the first successful seed.');
+        $this->command?->info('Synthetic Member accounts are ready.');
     }
 }

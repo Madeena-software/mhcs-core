@@ -322,6 +322,41 @@ final class Mvp04bIdentityVerificationTest extends TestCase
         }
     }
 
+    public function test_worklist_does_not_link_to_another_operators_verification_case(): void
+    {
+        $fixture = $this->identityFixture();
+        $this->startSession();
+        $this->actingAs($fixture['operator']);
+        $this->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
+        $case = $this->arriveAndStart($fixture);
+        $secondOperator = $this->secondOperatorFixture($fixture);
+
+        DB::table('operator_identity_verifications')->where('id', $case['case_id'])->update([
+            'operator_profile_id' => $secondOperator['profileId'],
+            'active_claim_operator_profile_id' => $secondOperator['profileId'],
+        ]);
+
+        $this->get(route('operator.verification-worklist'))
+            ->assertOk()
+            ->assertSee(__('Unavailable'))
+            ->assertDontSee(route('operator.identity-verification.show', $case['case_id']));
+    }
+
+    public function test_worklist_drops_a_case_after_booking_is_checked_in(): void
+    {
+        $fixture = $this->identityFixture();
+        $this->startSession();
+        $this->actingAs($fixture['operator']);
+        $this->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
+        $case = $this->arriveAndStart($fixture);
+        app(OperatorIdentityVerificationService::class)->decide($case['case_id'], OperatorIdentityVerificationService::MATCHED, null, (string) Str::uuid());
+        DB::table('bookings')->where('id', $fixture['bookingId'])->update(['status' => 'checked_in']);
+
+        $this->get(route('operator.verification-worklist'))
+            ->assertOk()
+            ->assertDontSee(route('operator.identity-verification.show', $case['case_id']));
+    }
+
     public function test_matched_denies_pending_current_identity_document(): void
     {
         $fixture = $this->identityFixture();

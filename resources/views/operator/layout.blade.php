@@ -28,7 +28,9 @@
         h2 { font-size: 22px; line-height: 1.3; margin: 0 0 14px; }
         p { line-height: 1.5; }
         label { display: block; font-weight: 600; margin: 14px 0 6px; }
+        /* Inputs default to full-width for form controls, but keep checkboxes/radios small */
         input, select { width: 100%; box-sizing: border-box; border: 1px solid #71808b; border-radius: 6px; padding: 11px; font: inherit; color: #f4f7fb; background: #10181f; }
+        input[type="checkbox"], input[type="radio"] { width: auto; padding: 0; margin-right: 8px; vertical-align: middle; }
         input:focus, select:focus, button:focus, a:focus { outline: 3px solid #1adcfd; outline-offset: 2px; }
         button { border: 0; border-radius: 6px; padding: 11px 16px; color: #08202b; background: #8fdfff; font: inherit; font-weight: 700; cursor: pointer; }
         .secondary { color: #d8edf5; background: #344651; }

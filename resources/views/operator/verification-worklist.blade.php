@@ -28,7 +28,7 @@
                                     <input type="hidden" name="operation_id" value="{{ Illuminate\Support\Str::uuid() }}">
                                 <button type="submit">{{ __('Start verification') }}</button>
                                 </form>
-                            @elseif ($arrival['verification_case_id'])
+                            @elseif ($arrival['can_open_verification'])
                                 <a href="{{ route('operator.identity-verification.show', $arrival['verification_case_id']) }}">{{ __('Open case') }}</a>
                             @else
                                 <span class="muted">{{ __('Unavailable') }}</span>
