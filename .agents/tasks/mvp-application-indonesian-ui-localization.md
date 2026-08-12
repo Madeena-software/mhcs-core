@@ -1,7 +1,7 @@
 ---
 title: Application-Wide Indonesian UI Localization
 document_id: MHCS-TASK-UI-ID-LOCALIZATION-001
-version: 1.0
+version: 1.1
 status: validated-published
 language: en-US
 last_updated: 2026-08-12
@@ -274,6 +274,59 @@ introduced.
 Not authorized: Git commit, push, pull request, deployment, release, real
 data, production configuration, dependency installation, external calls,
 MPIPS, schema changes, or non-localization functional changes.
+
+## Remediation
+
+**Review basis:**
+
+- Governing task revision:
+  `.agents/tasks/mvp-application-indonesian-ui-localization.md @ e6e663a02bde563e13b706501b1f1becfd35d269`.
+- Implementation baseline: `89a6649c9c130f8e9f1f846e79954ae3eb02b277`.
+- Reviewed implementation revision:
+  `8c3200d87287fe49b20b8235a192a9f93897af5e`.
+- Observed evidence: the focused localization/Member/Operator/Image Gateway
+  suite passed 145 tests and 1,548 assertions; `npm run build` and
+  `git diff --check` passed. The build retained the existing Cornerstone
+  browser-externalization and large-chunk warnings.
+
+### Required corrections
+
+- Register in `lang/id.json` every user-visible message that
+  `ImageGatewayController::captureStore` can pass through
+  `__($exception->getMessage())`. At minimum, include the exact messages from
+  `SyntheticCaptureGatewayService` for invalid submission identity, duplicate
+  capture, invalid DICOM fixture, replay conflict, missing trusted Operator
+  context, invalid radiograph count, invalid ZIP NPZ inputs, fixture identity,
+  fixture bytes, missing repository fixture, and unauthorised X-ray admission.
+  Preserve `DICOM`, `NPZ`, and the approved radiography terminology in their
+  Indonesian values.
+- Replace the hard-coded visible `NIK:` attendance label with a Laravel
+  translation lookup registered in `lang/id.json`.
+- Extend the localization test and existing synthetic-capture negative-path
+  test so a rejected fixture upload renders its Indonesian registry value, not
+  the English exception message. Keep the existing no-side-effect assertions.
+- Repeat the repository text audit for Member, Operator, LCD, welcome, and
+  user-facing controller paths. Treat a literal as closed only when it is
+  dynamic/technical/legal data or uses a registered `__()` lookup; record each
+  permitted exception in the Executor evidence.
+
+### Additional verification
+
+- Re-run the original task's localization, Member, Operator, public-LCD,
+  basic-examination, X-ray readiness, synthetic-capture, study-access, and
+  DICOM-results checks; include the negative synthetic-capture assertion.
+- Re-run `npm run build` and `git diff --check`. Report warnings separately
+  from failures.
+
+### Unchanged remediation boundaries
+
+- This remediation changes only localization configuration, `lang/id.json`,
+  browser presentation/response copy, and tests. It must not modify the
+  `89a6649` queue, consent, NIK-data, timing, seeding, or ticket-allocation
+  behavior.
+- The independently observed automatic-ticket allocation concurrency concern
+  is outside this localization objective and is not authorised by this
+  remediation.
 
 ## Expected terminal outcome
 
