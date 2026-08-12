@@ -172,13 +172,18 @@ it('lets a second current-shift operator discover and download the accepted stud
 function mvp14BrowserPrepareDatabase(TestCase $test): void
 {
     $database = storage_path('framework/testing/mhcs-mvp14-browser.sqlite');
-    @unlink($database);
     config([
         'database.default' => 'sqlite',
         'database.connections.sqlite.database' => $database,
     ]);
     putenv('DB_DATABASE='.$database);
+    DB::disconnect('sqlite');
     DB::purge('sqlite');
+    foreach ([$database, $database.'-journal', $database.'-shm', $database.'-wal'] as $path) {
+        if (is_file($path)) {
+            unlink($path);
+        }
+    }
     $test->artisan('migrate:fresh', ['--quiet' => true]);
 }
 
