@@ -1,7 +1,7 @@
 ---
 title: MPIPS v1.2 and AWS Image Gateway Integration
 document_id: MHCS-TASK-MPIPS-AWS-IMAGE-GATEWAY-001
-version: 1.2
+version: 1.3
 status: validated-published
 language: en-US
 last_updated: 2026-08-12
@@ -58,8 +58,8 @@ revision; do not revive or edit the prior rehearsal task during this work.
 ## Baseline and task revision
 
 **Implementation baseline:**
-`59edb00d38d7315cfc39737233c6b9d17bd66165` — unaccepted implementation to
-be remediated.  It does not establish an accepted baseline.
+`7e615d011d3dd262a712a7c1f72fb5a19d781b72` — unaccepted remediation
+implementation to be completed.  It does not establish an accepted baseline.
 
 **Original execution baseline:**
 `2cb939f31e170eeb5fec0e7b1b58cf4d964591e0` — the MPIPS v1.2 authoritative
@@ -99,28 +99,39 @@ redelivery leaves the capture permanently stuck and never calls MPIPS.  This
 violates the durable, idempotent redelivery requirement.  The existing tests
 cover completed re-delivery but not this interrupted-attempt path.
 
-### Remediation scope
+### Round-two review result
 
-- Continue from `59edb00d38d7315cfc39737233c6b9d17bd66165`; preserve all
-  already-correct submitted capture, encryption, S3, authorization, viewer,
-  and normal DICOM-download behavior.
-- Repair only the Image Gateway processing claim/state transition so a
-  redelivered job can safely recover an interrupted non-terminal attempt after
-  the configured database queue lease has expired.  It must neither leave a
-  capture permanently `processing` nor allow concurrent active deliveries to
-  create multiple studies or multiple completed transitions.  Reuse the
-  existing database queue and capture-set record; add only the minimal durable
-  claim/lease fields or state required for this invariant.
-- Add focused tests that simulate a worker interruption after its durable
-  claim and prove the eligible redelivery reaches exactly one terminal result;
-  prove a completed capture remains a no-op; and prove duplicate/concurrent
-  delivery does not create a second study.  Retain the existing success,
-  malformed-response, terminal-response, retry, private-storage, and
-  authorisation coverage.
-- Restore the required browser rehearsal without weakening, skipping, or
-  masking the isolated SQLite setup.  The disk-I/O setup failure must be
-  diagnosed and resolved as an environment or test-isolation issue before it
-  may be reported as passing.
+`REMEDIATION REQUIRED` — the queue-lease correction at
+`7e615d011d3dd262a712a7c1f72fb5a19d781b72` is within scope, and the focused
+Feature/Localization/Architecture suite passed with 17 tests and 1,925
+assertions.  `composer validate --no-check-publish` and `git diff --check`
+also passed.  This is insufficient for acceptance.
+
+The required `tests/Browser/Mvp14OperatorDicomRehearsalTest.php` still fails:
+one of its two tests stops during `migrate:fresh` with `SQLSTATE[HY000]:
+General error: 10 disk I/O error` against its isolated SQLite database.  Its
+setup removes the SQLite file before purging its existing connection, and it
+does not establish one deterministic disposable database shared by the browser
+server and the test's HTTP/database setup.  No fresh MySQL migration, full PHP
+suite, build/format, AWS cleanup probe, loopback MPIPS probe, or required
+Executor evidence report has been supplied.
+
+### Round-two remediation scope
+
+- Continue from `7e615d011d3dd262a712a7c1f72fb5a19d781b72`; preserve the
+  lease-fenced queue recovery and its focused redelivery/duplicate tests, as
+  well as all submitted capture, encryption, S3, authorization, viewer, and
+  normal DICOM-download behavior.
+- Repair only the Mvp14 browser-test isolation.  Before deleting or recreating
+  a disposable SQLite file, purge/disconnect the active SQLite connection; use
+  one deterministic disposable database shared by the browser server and the
+  test's HTTP/database setup; and clean only that disposable database and its
+  SQLite sidecar files.  Do not weaken, skip, serially mask, or replace the
+  actual browser viewport and attachment-download assertions.
+- Prove both Mvp14 browser journeys run against the prepared disposable data:
+  the submitting Operator sees a ready vertical read-only Cornerstone viewport
+  and normal DICOM download, and the authorised second current-shift Operator
+  discovers, views, and downloads that same result.
 - Close the original task's verification evidence: fresh SQLite and isolated
   MySQL 8.4 migration coverage; all required focused tests and the applicable
   full PHP suite; `npm run build`; repository formatter checks; `git diff
@@ -129,15 +140,14 @@ cover completed re-delivery but not this interrupted-attempt path.
   MPIPS synthetic capture probe including authorised second-Operator
   viewer/download verification and disposable-data cleanup.
 
-### Remediation acceptance criteria
+### Round-two remediation acceptance criteria
 
-- [ ] A capture whose worker dies after claiming it but before a terminal
-  transition is recoverable by a valid later Laravel delivery after the queue
-  lease; it reaches one controlled retry/failure or one completed study, never
-  remains indefinitely `processing`.
-- [ ] Simultaneous or duplicate deliveries retain the existing single-study and
-  single-completed-transition guarantees; a completed capture sends no further
-  MPIPS request.
+- [ ] The existing lease-fenced interrupted-redelivery, concurrent-duplicate,
+  and completed-replay coverage remains passing; it never creates a second
+  DICOM study or completed transition.
+- [ ] Both Mvp14 browser tests pass from a fresh disposable SQLite database;
+  their server, HTTP, and direct database paths observe the same prepared
+  study, without a SQLite disk-I/O error or stale browser data.
 - [ ] The focused interruption/redelivery tests, browser rehearsal, fresh
   SQLite and isolated MySQL migration coverage, applicable full PHP suite,
   build, formatter, Composer validation/audit, and diff check all pass with
