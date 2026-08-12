@@ -96,7 +96,13 @@ final readonly class OperatorCheckInTicketService
                 self::PURPOSE,
                 $payload,
                 function () use ($context, $site, $profileId, $scheduleId, $bookingId, $caseId, $number, $operationId): array {
-                    $number = $number ?? $this->nextTicketNumber((string) $site->getKey(), $scheduleId);
+                    if ($number === null) {
+                        DB::table('shift_schedules')
+                            ->where('id', $scheduleId)
+                            ->lockForUpdate()
+                            ->first();
+                        $number = $this->nextTicketNumber((string) $site->getKey(), $scheduleId);
+                    }
                     $now = $this->clock->now();
                     $memberResult = $this->memberAttendance->transitionArrivedToCheckedIn(
                         $context,

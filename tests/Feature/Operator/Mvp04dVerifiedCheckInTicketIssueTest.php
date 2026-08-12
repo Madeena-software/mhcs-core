@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature\Operator;
 
 use App\Modules\Operator\Application\Services\OperatorArrivalService;
+use App\Modules\Operator\Application\Services\OperatorCheckInTicketService;
 use App\Modules\Operator\Application\Services\OperatorIdentityVerificationService;
 use App\Shared\Audit\AuditEvent;
 use App\Shared\Audit\AuditStore;
@@ -20,6 +21,7 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use PDO;
 use RuntimeException;
 use Tests\Operator\Mvp04Fixtures;
 use Tests\TestCase;
@@ -83,12 +85,119 @@ final class Mvp04dVerifiedCheckInTicketIssueTest extends TestCase
     public function test_ticket_number_is_generated_when_the_operator_does_not_submit_one(): void
     {
         $fixture = $this->readyFixture();
+        $operationId = (string) Str::uuid();
 
         $this->post(route('operator.check-in.store', $fixture['caseId']), [
-            'operation_id' => (string) Str::uuid(),
+            'operation_id' => $operationId,
         ])->assertRedirect();
 
-        $this->assertSame('T-001', DB::table('operator_paper_tickets')->where('booking_id', $fixture['bookingId'])->value('ticket_number'));
+        $ticket = DB::table('operator_paper_tickets')->where('booking_id', $fixture['bookingId'])->first();
+        $this->assertNotNull($ticket);
+        $this->assertSame('T-001', $ticket->ticket_number);
+        $this->assertSame('checked_in', DB::table('bookings')->where('id', $fixture['bookingId'])->value('status'));
+        $this->assertDatabaseCount('operator_queue_admissions', 1);
+        $this->assertDatabaseCount('operator_queue_admission_history', 1);
+        $this->assertSame(2, DB::table('audit_events')->whereIn('action', ['operator.paper-ticket.issued', 'operator.queue-admission.created'])->count());
+        $this->assertSame(2, DB::table('outbox_messages')->whereIn('event_name', ['operator.paper-ticket-issued', 'operator.queue-admission-created'])->count());
+        $this->assertDatabaseHas('idempotent_consumptions', [
+            'message_id' => $operationId,
+            'consumer' => OperatorCheckInTicketService::PURPOSE,
+            'status' => 'handled',
+        ]);
+    }
+
+    public function test_mysql_concurrent_blank_ticket_issue_allocates_two_numbers_and_keeps_each_check_in_atomic(): void
+    {
+        if (DB::connection()->getDriverName() !== 'mysql' || ! function_exists('proc_open')) {
+            $this->markTestSkipped('The automatic ticket allocation concurrency probe requires MySQL and proc_open.');
+        }
+
+        $pdo = $this->mysqlPdo();
+        $fixture = $this->mysqlConcurrentFixture($pdo);
+
+        try {
+            $worker = <<<'PHP'
+$root = getcwd();
+$stage = 'bootstrap';
+try {
+    require $root.'/vendor/autoload.php';
+    $app = require $root.'/bootstrap/app.php';
+    $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+    $input = json_decode(base64_decode($argv[1]), true, 512, JSON_THROW_ON_ERROR);
+    $stage = 'auth';
+    if (\Illuminate\Support\Facades\DB::connection()->getDriverName() !== 'mysql') {
+        throw new \RuntimeException('worker-driver-mismatch');
+    }
+    $user = \App\Models\User::query()->findOrFail($input['operator_id']);
+    \Illuminate\Support\Facades\Auth::guard()->setUser($user);
+    $stage = 'session';
+    session()->put('operator.active_site_id', $input['site_id']);
+    echo "ready\n";
+    flush();
+    fgets(STDIN);
+    $stage = 'issue';
+    $result = app(\App\Modules\Operator\Application\Services\OperatorCheckInTicketService::class)->issue($input['case_id'], '', $input['operation_id']);
+    echo 'success:'.$result['ticket_number'];
+} catch (\Throwable $exception) {
+    fwrite(STDERR, 'worker-'.$stage.'-'.(new \ReflectionClass($exception))->getShortName());
+    exit(1);
+}
+PHP;
+            $processes = [];
+            foreach ($fixture['operatorIds'] as $index => $operatorId) {
+                $input = base64_encode(json_encode([
+                    'operator_id' => $operatorId,
+                    'site_id' => $fixture['siteId'],
+                    'case_id' => $fixture['caseIds'][$index],
+                    'operation_id' => $fixture['operations'][$index],
+                ], JSON_THROW_ON_ERROR));
+                $process = proc_open([PHP_BINARY, '-r', $worker, $input], [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+                if (! is_resource($process)) {
+                    throw new RuntimeException('Unable to start the automatic ticket allocation concurrency probe.');
+                }
+                $processes[] = [$process, $pipes];
+            }
+
+            foreach ($processes as [$process, $pipes]) {
+                $ready = trim((string) fgets($pipes[1]));
+                if ($ready !== 'ready') {
+                    $error = trim((string) stream_get_contents($pipes[2]));
+                    throw new RuntimeException('Automatic ticket allocation worker did not become ready: '.($error === '' ? 'worker-unknown' : $error));
+                }
+            }
+
+            foreach ($processes as [$process, $pipes]) {
+                fwrite($pipes[0], "go\n");
+                fclose($pipes[0]);
+            }
+
+            $outcomes = [];
+            foreach ($processes as [$process, $pipes]) {
+                $outcomes[] = trim((string) stream_get_contents($pipes[1]));
+                $error = trim((string) stream_get_contents($pipes[2]));
+                fclose($pipes[1]);
+                fclose($pipes[2]);
+                $this->assertSame(0, proc_close($process), $error);
+            }
+            sort($outcomes);
+            $this->assertSame(['success:T-001', 'success:T-002'], $outcomes);
+
+            $tickets = $pdo->query("select ticket_number from operator_paper_tickets where member_schedule_id = '{$fixture['scheduleId']}' order by ticket_number")->fetchAll(PDO::FETCH_COLUMN);
+            $this->assertSame(['T-001', 'T-002'], $tickets);
+            foreach ($fixture['bookingIds'] as $bookingId) {
+                $this->assertSame('checked_in', $pdo->query("select status from bookings where id = '{$bookingId}'")->fetchColumn());
+                $this->assertSame(1, (int) $pdo->query("select count(*) from operator_paper_tickets where booking_id = '{$bookingId}'")->fetchColumn());
+                $this->assertSame(1, (int) $pdo->query("select count(*) from operator_queue_admissions where operator_paper_ticket_id in (select id from operator_paper_tickets where booking_id = '{$bookingId}')")->fetchColumn());
+                $this->assertSame(1, (int) $pdo->query("select count(*) from operator_queue_admission_history where operator_queue_admission_id in (select id from operator_queue_admissions where operator_paper_ticket_id in (select id from operator_paper_tickets where booking_id = '{$bookingId}'))")->fetchColumn());
+                $this->assertSame(1, (int) $pdo->query("select count(*) from booking_status_events where booking_id = '{$bookingId}' and event_type = 'checked_in'")->fetchColumn());
+            }
+            $this->assertSame(4, (int) $pdo->query("select count(*) from audit_events where action in ('operator.paper-ticket.issued', 'operator.queue-admission.created') and metadata like '%{$fixture['scheduleId']}%'")->fetchColumn());
+            $this->assertSame(4, (int) $pdo->query("select count(*) from outbox_messages where event_name in ('operator.paper-ticket-issued', 'operator.queue-admission-created') and payload like '%{$fixture['scheduleId']}%'")->fetchColumn());
+            $this->assertSame(2, (int) $pdo->query("select count(*) from idempotent_consumptions where consumer = 'operator.check-in.issue' and message_id in ('{$fixture['operations'][0]}', '{$fixture['operations'][1]}') and status = 'handled'")->fetchColumn());
+            fwrite(STDOUT, 'MySQL automatic allocation: outcomes='.implode(',', $outcomes).'; tickets='.implode(',', $tickets).'; issue/queue audit records=4; issue/queue outbox records=4; handled idempotency records=2'.PHP_EOL);
+        } finally {
+            $this->cleanupMysqlConcurrentFixture($pdo, $fixture);
+        }
     }
 
     public function test_issue_replay_is_idempotent_changed_input_and_second_attempt_fail_closed(): void
@@ -138,6 +247,119 @@ final class Mvp04dVerifiedCheckInTicketIssueTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+    }
+
+    /** @return array<string, mixed> */
+    private function mysqlConcurrentFixture(PDO $pdo): array
+    {
+        $now = '2026-08-12 03:10:00';
+        $operatorIds = [(string) Str::uuid(), (string) Str::uuid()];
+        $memberUserIds = [(string) Str::uuid(), (string) Str::uuid()];
+        $memberIds = [(string) Str::uuid(), (string) Str::uuid()];
+        $profileIds = [(string) Str::uuid(), (string) Str::uuid()];
+        $bookingIds = [(string) Str::uuid(), (string) Str::uuid()];
+        $arrivalIds = [(string) Str::uuid(), (string) Str::uuid()];
+        $caseIds = [(string) Str::uuid(), (string) Str::uuid()];
+        $operations = [(string) Str::uuid(), (string) Str::uuid()];
+        $siteId = (string) Str::uuid();
+        $siteReferenceId = (string) Str::uuid();
+        $organizationId = (string) Str::uuid();
+        $serviceId = (string) Str::uuid();
+        $scheduleId = (string) Str::uuid();
+        $rateId = (string) Str::uuid();
+        $eligibleId = (string) Str::uuid();
+        $stableSiteId = 'operator-concurrency-site-'.substr($siteId, 0, 8);
+        $stableOrganizationId = 'operator-concurrency-org-'.substr($organizationId, 0, 8);
+        $serviceCode = 'RAD-CONCURRENCY';
+
+        foreach ([...$operatorIds, ...$memberUserIds] as $index => $userId) {
+            $this->insertPdo($pdo, 'insert into users (id, email, email_verified_at, password, remember_token, account_status, login_enabled, must_change_password, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [$userId, 'operator-ticket-'.$index.'-'.substr($userId, 0, 8).'@example.test', null, 'hash', null, 'active', 1, 0, $now, $now]);
+        }
+        $this->insertPdo($pdo, 'insert into operator_organization_refs (id, operator_organization_id, name, source_version, active, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?)', [$organizationId, $stableOrganizationId, 'Synthetic Operator Organization', '1', 1, $now, $now]);
+        $this->insertPdo($pdo, 'insert into examination_site_refs (id, operator_site_id, operator_organization_ref_id, code, display_name, timezone, source_version, active, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [$siteReferenceId, $stableSiteId, $organizationId, 'CONCURRENCY-SITE', 'Synthetic Operator Site', 'Asia/Jakarta', '1', 1, $now, $now]);
+        $this->insertPdo($pdo, 'insert into operator_sites (id, operator_site_id, organization_id, organization_name, code, display_name, address_line, timezone, active, source_version, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [$siteId, $stableSiteId, $stableOrganizationId, 'Synthetic Operator Organization', 'CONCURRENCY-SITE', 'Synthetic Operator Site', null, 'Asia/Jakarta', 1, '1', $now, $now]);
+        $this->insertPdo($pdo, 'insert into service_offerings (id, code, name, includes_ai, includes_doctor, point_price, active, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?)', [$serviceId, $serviceCode, 'Synthetic Radiography', 1, 0, '2.5000', 1, $now, $now]);
+        $this->insertPdo($pdo, 'insert into point_exchange_rates (id, rupiah_per_point, status, effective_at, configured_by_admin_id, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?)', [$rateId, 10000, 'active', $now, null, $now, $now]);
+        $this->insertPdo($pdo, 'insert into shift_schedules (id, examination_site_id, service_offering_id, starts_at, ends_at, quota, status, eligible_at, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [$scheduleId, $siteReferenceId, $serviceId, '2040-01-10 03:00:00', '2040-01-10 04:00:00', 5, 'open', $now, $now, $now]);
+        $this->insertPdo($pdo, 'insert into operator_eligible_shifts (id, member_schedule_id, operator_site_id, schedule_starts_at, schedule_ends_at, confirmed_count_at_eligibility, quota, event_version, source_event_id, eligible_at, sync_status, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [$eligibleId, $scheduleId, $stableSiteId, '2040-01-10 03:00:00', '2040-01-10 04:00:00', 5, 5, 1, 'test:operator-concurrency:'.$scheduleId, $now, 'eligible', $now, $now]);
+
+        foreach ($operatorIds as $index => $operatorId) {
+            $profileId = $profileIds[$index];
+            $this->insertPdo($pdo, 'insert into operator_profiles (id, user_id, display_name, employee_code, active, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?)', [$profileId, $operatorId, 'Synthetic Concurrent Operator '.($index + 1), 'CONC-OPR-'.($index + 1), 1, $now, $now]);
+            $this->insertPdo($pdo, 'insert into operator_site_assignments (id, operator_profile_id, operator_site_id, active, assigned_by_user_id, assigned_at, revoked_at, reason, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [(string) Str::uuid(), $profileId, $siteId, 1, $operatorId, $now, null, null, $now, $now]);
+            $this->insertPdo($pdo, 'insert into operator_shift_assignments (id, operator_eligible_shift_id, operator_profile_id, assigned_by_user_id, status, assigned_at, revoked_at, reason, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [(string) Str::uuid(), $eligibleId, $profileId, $operatorId, 'active', $now, null, null, $now, $now]);
+            $this->insertPdo($pdo, 'insert into authorization_role_assignments (id, user_id, role, assigned_by_user_id, active, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?)', [(string) Str::uuid(), $operatorId, 'operator', null, 1, $now, $now]);
+            foreach (['operator.portal.access', 'operator.identity.verify'] as $permission) {
+                $this->insertPdo($pdo, 'insert into authorization_permission_assignments (id, user_id, permission, assigned_by_user_id, active, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?)', [(string) Str::uuid(), $operatorId, $permission, null, 1, $now, $now]);
+            }
+        }
+
+        foreach ($memberIds as $index => $memberId) {
+            $memberUserId = $memberUserIds[$index];
+            $bookingId = $bookingIds[$index];
+            $profileId = $profileIds[$index];
+            $this->insertPdo($pdo, 'insert into members (id, user_id, family_id, medical_record_number, identity_status, identity_document_type, encrypted_nik, nik_lookup_digest, name, birth_date, administrative_gender, registration_source, phone, created_at, updated_at, current_address, emergency_contact_name, emergency_contact_relationship, emergency_contact_phone) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [$memberId, $memberUserId, null, 'MRN-CONC-'.($index + 1), 'verified', 'ktp', 'synthetic-encrypted-identifier', hash('sha256', 'synthetic-concurrent-'.$memberId), 'Synthetic Concurrent Member '.($index + 1), '1988-01-10', 'unspecified', 'administrator', null, $now, $now, 'Synthetic address', 'Synthetic contact', 'Sibling', '0800000000']);
+            $this->insertPdo($pdo, 'insert into bookings (id, member_id, shift_schedule_id, service_offering_id, examination_site_id_snapshot, booking_type, funding_source, status, service_code_snapshot, point_cost_snapshot, point_exchange_rate_id, includes_ai_snapshot, includes_doctor_snapshot, site_code_snapshot, site_name_snapshot, site_timezone_snapshot, created_at, confirmed_at, updated_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [$bookingId, $memberId, $scheduleId, $serviceId, $siteReferenceId, 'b2c', 'personal', 'arrived', $serviceCode, '2.5000', $rateId, 1, 0, 'CONCURRENCY-SITE', 'Synthetic Operator Site', 'Asia/Jakarta', $now, $now, $now]);
+            $this->insertPdo($pdo, 'insert into point_ledger_entries (id, member_id, booking_id, funding_source, entry_type, point_delta, source_reference, reverses_id, created_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?)', [(string) Str::uuid(), $memberId, $bookingId, 'personal', 'charge', '-2.5000', 'test:operator-concurrency:'.$bookingId, null, $now]);
+            $arrivalId = $arrivalIds[$index];
+            $caseId = $caseIds[$index];
+            $this->insertPdo($pdo, 'insert into operator_arrivals (id, booking_id, member_schedule_id, operator_site_id, operator_profile_id, occurrence_at, recorded_at, operation_id, source, status, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [$arrivalId, $bookingId, $scheduleId, $siteId, $profileId, $now, $now, 'test:operator-concurrency:arrival:'.$bookingId, 'operator.portal', 'recorded', $now, $now]);
+            $this->insertPdo($pdo, 'insert into operator_identity_verifications (id, arrival_id, booking_id, member_schedule_id, operator_site_id, operator_profile_id, state, started_at, decided_at, reason_category, reason, operation_id, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [$caseId, $arrivalId, $bookingId, $scheduleId, $siteId, $profileId, 'matched', $now, $now, null, null, 'test:operator-concurrency:identity:'.$bookingId, $now, $now]);
+            $this->insertPdo($pdo, 'insert into operator_identity_verification_events (id, verification_id, event_type, from_state, to_state, reason, operation_id, occurred_at, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [(string) Str::uuid(), $caseId, 'decided', 'open', 'matched', null, 'test:operator-concurrency:identity-event:'.$bookingId, $now, $now, $now]);
+            $this->insertPdo($pdo, 'insert into examination_consents (id, member_id, booking_id, examination_site_id, operator_site_id, form_name, form_version, signer_type, signer_member_id, signature_confirmed, signed_at, confirmed_by_operator_id, recorded_at, idempotency_id, private_scan_object_key, private_scan_checksum, private_scan_bytes, private_scan_format, status, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [(string) Str::uuid(), $memberId, $bookingId, $siteReferenceId, $stableSiteId, 'Informed Consent', 'V1', 'member', $memberId, 1, $now, $profileId, $now, 'test:operator-concurrency:consent:'.$bookingId, 'synthetic-private-scan-'.$bookingId, hash('sha256', 'synthetic-consent'), 32, 'application/pdf', 'confirmed', $now, $now]);
+        }
+
+        return compact('siteId', 'scheduleId', 'operatorIds', 'caseIds', 'operations', 'bookingIds', 'memberIds', 'memberUserIds', 'profileIds', 'arrivalIds', 'siteReferenceId', 'organizationId', 'serviceId', 'rateId', 'eligibleId');
+    }
+
+    /** @param array<string, mixed> $fixture */
+    private function cleanupMysqlConcurrentFixture(PDO $pdo, array $fixture): void
+    {
+        $this->insertPdo($pdo, 'delete from audit_events where metadata like ?', ['%'.$fixture['scheduleId'].'%']);
+        $this->insertPdo($pdo, 'delete from outbox_messages where payload like ?', ['%'.$fixture['scheduleId'].'%']);
+        $this->insertPdo($pdo, 'delete from idempotent_consumptions where consumer = ? and message_id in (?, ?)', [OperatorCheckInTicketService::PURPOSE, ...$fixture['operations']]);
+        $this->insertPdo($pdo, 'delete from operator_queue_admission_history where operator_queue_admission_id in (select id from operator_queue_admissions where member_schedule_id = ?)', [$fixture['scheduleId']]);
+        $this->insertPdo($pdo, 'delete from operator_queue_admissions where member_schedule_id = ?', [$fixture['scheduleId']]);
+        $this->insertPdo($pdo, 'delete from operator_paper_tickets where member_schedule_id = ?', [$fixture['scheduleId']]);
+        $this->insertPdo($pdo, 'delete from booking_status_events where booking_id in (?, ?)', $fixture['bookingIds']);
+        $this->insertPdo($pdo, 'delete from examination_consents where booking_id in (?, ?)', $fixture['bookingIds']);
+        $this->insertPdo($pdo, 'delete from operator_identity_verification_events where verification_id in (?, ?)', $fixture['caseIds']);
+        $this->insertPdo($pdo, 'delete from operator_identity_verifications where id in (?, ?)', $fixture['caseIds']);
+        $this->insertPdo($pdo, 'delete from operator_arrivals where id in (?, ?)', $fixture['arrivalIds']);
+        $this->insertPdo($pdo, 'delete from point_ledger_entries where booking_id in (?, ?)', $fixture['bookingIds']);
+        $this->insertPdo($pdo, 'delete from bookings where id in (?, ?)', $fixture['bookingIds']);
+        $this->insertPdo($pdo, 'delete from members where id in (?, ?)', $fixture['memberIds']);
+        $this->insertPdo($pdo, 'delete from operator_shift_assignments where operator_eligible_shift_id = ?', [$fixture['eligibleId']]);
+        $this->insertPdo($pdo, 'delete from operator_site_assignments where operator_site_id = ?', [$fixture['siteId']]);
+        $this->insertPdo($pdo, 'delete from authorization_permission_assignments where user_id in (?, ?)', $fixture['operatorIds']);
+        $this->insertPdo($pdo, 'delete from authorization_role_assignments where user_id in (?, ?)', $fixture['operatorIds']);
+        $this->insertPdo($pdo, 'delete from operator_profiles where id in (?, ?)', $fixture['profileIds']);
+        $this->insertPdo($pdo, 'delete from operator_eligible_shifts where id = ?', [$fixture['eligibleId']]);
+        $this->insertPdo($pdo, 'delete from shift_schedules where id = ?', [$fixture['scheduleId']]);
+        $this->insertPdo($pdo, 'delete from service_offerings where id = ?', [$fixture['serviceId']]);
+        $this->insertPdo($pdo, 'delete from point_exchange_rates where id = ?', [$fixture['rateId']]);
+        $this->insertPdo($pdo, 'delete from operator_sites where id = ?', [$fixture['siteId']]);
+        $this->insertPdo($pdo, 'delete from examination_site_refs where id = ?', [$fixture['siteReferenceId']]);
+        $this->insertPdo($pdo, 'delete from operator_organization_refs where id = ?', [$fixture['organizationId']]);
+        $this->insertPdo($pdo, 'delete from users where id in (?, ?, ?, ?)', [...$fixture['operatorIds'], ...$fixture['memberUserIds']]);
+    }
+
+    private function insertPdo(PDO $pdo, string $sql, array $values): void
+    {
+        $statement = $pdo->prepare($sql);
+        $statement->execute($values);
+    }
+
+    private function mysqlPdo(): PDO
+    {
+        $config = config('database.connections.mysql');
+
+        return new PDO(
+            sprintf('mysql:host=%s;port=%s;dbname=%s;charset=%s', $config['host'], $config['port'], $config['database'], $config['charset']),
+            $config['username'],
+            $config['password'],
+            [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_EMULATE_PREPARES => false],
+        );
     }
 
     public function test_missing_consent_invalid_number_and_unmatched_case_do_not_change_booking(): void
