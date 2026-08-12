@@ -60,25 +60,52 @@ final class ProcessCaptureSet implements ShouldQueue
             return;
         }
 
-        $attempt = DB::transaction(function () use ($clock): int {
+        $claim = DB::transaction(function () use ($clock): ?array {
             $row = DB::table('image_gateway_capture_sets')->where('id', $this->captureSetId)->lockForUpdate()->first();
-            if ($row === null || in_array($row->processing_status, ['completed', 'failed', 'processing'], true)) {
-                return 0;
+            if ($row === null || in_array($row->processing_status, ['completed', 'failed'], true)) {
+                return null;
+            }
+
+            $leaseExpired = $row->processing_status !== 'processing'
+                || $row->processing_lease_expires_at === null
+                || new DateTimeImmutable((string) $row->processing_lease_expires_at) <= $clock->now();
+            if ($row->processing_status === 'processing' && ! $leaseExpired) {
+                return null;
             }
 
             $attempt = (int) $row->attempts + 1;
+            if ($attempt > (int) config('mhcs.mpips.max_attempts', 5)) {
+                $now = $clock->now();
+                DB::table('image_gateway_capture_sets')->where('id', $this->captureSetId)->update([
+                    'processing_status' => 'failed',
+                    'last_error_code' => 'retry_budget_exhausted',
+                    'failed_at' => $now,
+                    'processing_claim_id' => null,
+                    'processing_lease_expires_at' => null,
+                    'updated_at' => $now,
+                ]);
+
+                return null;
+            }
+
+            $claimId = (string) Str::uuid();
+            $now = $clock->now();
             DB::table('image_gateway_capture_sets')->where('id', $this->captureSetId)->update([
                 'processing_status' => 'processing',
                 'attempts' => $attempt,
-                'updated_at' => $clock->now(),
+                'processing_claim_id' => $claimId,
+                'processing_lease_expires_at' => $now->modify('+'.$this->queueLeaseSeconds().' seconds'),
+                'updated_at' => $now,
             ]);
 
-            return $attempt;
+            return ['attempt' => $attempt, 'claim_id' => $claimId];
         });
 
-        if ($attempt === 0) {
+        if ($claim === null) {
             return;
         }
+        $attempt = $claim['attempt'];
+        $claimId = $claim['claim_id'];
 
         $workerContext = new AuthenticatedContext(
             actorId: LocalId::fromString($this->captureSetId),
@@ -101,13 +128,13 @@ final class ProcessCaptureSet implements ShouldQueue
             $response = $client->convert($radiograph, $gain, $manifest);
 
             if ($this->retryable($response)) {
-                $this->retryOrFail($capture, $attempt, $response->status(), $this->responseDetail($response), $clock);
+                $this->retryOrFail($capture, $attempt, $claimId, $response->status(), $this->responseDetail($response), $clock);
 
                 return;
             }
 
             if (! $response->successful()) {
-                $this->fail($this->captureSetId, $response->status(), $this->responseDetail($response), $clock);
+                $this->fail($this->captureSetId, $claimId, $response->status(), $this->responseDetail($response), $clock);
 
                 return;
             }
@@ -128,12 +155,17 @@ final class ProcessCaptureSet implements ShouldQueue
                 $identifiers,
             );
 
-            $this->storeStudy($capture, $result, $identifiers, $objects, $workerContext, $clock);
+            $this->storeStudy($capture, $result, $identifiers, $claimId, $objects, $workerContext, $clock);
         } catch (ConnectionException $exception) {
-            $this->retryOrFail($capture, $attempt, null, 'transport_failure', $clock);
+            $this->retryOrFail($capture, $attempt, $claimId, null, 'transport_failure', $clock);
         } catch (Throwable $exception) {
-            $this->fail($this->captureSetId, null, $this->failureCode($exception), $clock);
+            $this->fail($this->captureSetId, $claimId, null, $this->failureCode($exception), $clock);
         }
+    }
+
+    private function queueLeaseSeconds(): int
+    {
+        return max(1, (int) config('queue.connections.database.retry_after', 420));
     }
 
     private function readObject(PrivateObjectStore $objects, ?object $row, AuthenticatedContext $context, Clock $clock): string
@@ -201,20 +233,22 @@ final class ProcessCaptureSet implements ShouldQueue
 
     /** @param array{job_id: string, correlation_id: string, bytes: string, filename: string} $result */
     /** @param array{study: string, series: string, sop: string} $identifiers */
-    private function storeStudy(object $capture, array $result, array $identifiers, PrivateObjectStore $objects, AuthenticatedContext $context, Clock $clock): void
+    private function storeStudy(object $capture, array $result, array $identifiers, string $claimId, PrivateObjectStore $objects, AuthenticatedContext $context, Clock $clock): void
     {
         $studyObject = $objects->put($result['bytes'], $context, ImageGatewayCaptureService::CAPTURE_PURPOSE);
 
         $inserted = false;
         try {
-            DB::transaction(function () use ($result, $identifiers, $studyObject, $clock): void {
+            DB::transaction(function () use ($result, $identifiers, $claimId, $studyObject, $clock): void {
                 $row = DB::table('image_gateway_capture_sets')->where('id', $this->captureSetId)->lockForUpdate()->first();
-                if ($row === null || $row->processing_status === 'completed') {
+                if ($row === null || $row->processing_status === 'completed' || $row->processing_claim_id !== $claimId) {
                     return;
                 }
                 if (DB::table('image_gateway_studies')->where('capture_set_id', $this->captureSetId)->exists()) {
                     DB::table('image_gateway_capture_sets')->where('id', $this->captureSetId)->update([
                         'processing_status' => 'completed',
+                        'processing_claim_id' => null,
+                        'processing_lease_expires_at' => null,
                         'completed_at' => $clock->now(),
                         'updated_at' => $clock->now(),
                     ]);
@@ -244,6 +278,8 @@ final class ProcessCaptureSet implements ShouldQueue
                 ]);
                 DB::table('image_gateway_capture_sets')->where('id', $this->captureSetId)->update([
                     'processing_status' => 'completed',
+                    'processing_claim_id' => null,
+                    'processing_lease_expires_at' => null,
                     'conversion_job_id' => $result['job_id'],
                     'correlation_id' => $result['correlation_id'],
                     'completed_at' => $now,
@@ -266,35 +302,50 @@ final class ProcessCaptureSet implements ShouldQueue
             || ($response->status() === 409 && $this->responseDetail($response) === 'IDEMPOTENCY_IN_PROGRESS');
     }
 
-    private function retryOrFail(object $capture, int $attempt, ?int $status, string $code, Clock $clock): void
+    private function retryOrFail(object $capture, int $attempt, string $claimId, ?int $status, string $code, Clock $clock): void
     {
         if ($attempt >= (int) config('mhcs.mpips.max_attempts', 5)) {
-            $this->fail($this->captureSetId, $status, 'retry_budget_exhausted', $clock);
+            $this->fail($this->captureSetId, $claimId, $status, 'retry_budget_exhausted', $clock);
 
             return;
         }
 
-        DB::table('image_gateway_capture_sets')->where('id', $this->captureSetId)->update([
-            'processing_status' => 'retrying',
-            'last_error_code' => $code,
-            'last_response_status' => $status,
-            'updated_at' => $clock->now(),
-        ]);
+        $updated = DB::table('image_gateway_capture_sets')
+            ->where('id', $this->captureSetId)
+            ->where('processing_status', 'processing')
+            ->where('processing_claim_id', $claimId)
+            ->update([
+                'processing_status' => 'retrying',
+                'last_error_code' => $code,
+                'last_response_status' => $status,
+                'processing_claim_id' => null,
+                'processing_lease_expires_at' => null,
+                'updated_at' => $clock->now(),
+            ]);
+        if ($updated !== 1) {
+            return;
+        }
         $cap = min((int) config('mhcs.mpips.backoff_cap_seconds', 30), (int) config('mhcs.mpips.backoff_base_seconds', 2) ** $attempt);
         if ($this->job !== null) {
             $this->release(random_int(0, max(0, $cap)));
         }
     }
 
-    private function fail(string $captureId, ?int $status, string $code, Clock $clock): void
+    private function fail(string $captureId, string $claimId, ?int $status, string $code, Clock $clock): void
     {
-        DB::table('image_gateway_capture_sets')->where('id', $captureId)->update([
-            'processing_status' => 'failed',
-            'last_error_code' => $code,
-            'last_response_status' => $status,
-            'failed_at' => $clock->now(),
-            'updated_at' => $clock->now(),
-        ]);
+        DB::table('image_gateway_capture_sets')
+            ->where('id', $captureId)
+            ->where('processing_status', 'processing')
+            ->where('processing_claim_id', $claimId)
+            ->update([
+                'processing_status' => 'failed',
+                'last_error_code' => $code,
+                'last_response_status' => $status,
+                'failed_at' => $clock->now(),
+                'processing_claim_id' => null,
+                'processing_lease_expires_at' => null,
+                'updated_at' => $clock->now(),
+            ]);
     }
 
     private function responseDetail(Response $response): string

@@ -14,6 +14,8 @@ return new class extends Migration
             $table->dropColumn('fixture_pair_id');
             $table->string('processing_status', 32)->default('completed')->index();
             $table->unsignedTinyInteger('attempts')->default(0);
+            $table->string('processing_claim_id', 36)->nullable();
+            $table->timestamp('processing_lease_expires_at')->nullable();
             $table->string('last_error_code', 64)->nullable();
             $table->unsignedSmallInteger('last_response_status')->nullable();
             $table->string('conversion_job_id', 36)->nullable()->index();
@@ -52,6 +54,8 @@ return new class extends Migration
             $table->dropColumn([
                 'processing_status',
                 'attempts',
+                'processing_claim_id',
+                'processing_lease_expires_at',
                 'last_error_code',
                 'last_response_status',
                 'conversion_job_id',

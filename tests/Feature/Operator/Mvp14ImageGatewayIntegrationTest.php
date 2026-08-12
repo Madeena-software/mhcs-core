@@ -172,6 +172,97 @@ final class Mvp14ImageGatewayIntegrationTest extends TestCase
         Http::assertSentCount(1);
     }
 
+    public function test_redelivery_recovers_a_claim_abandoned_after_the_queue_lease(): void
+    {
+        $fixture = $this->operatorFixture(false);
+        $this->actingAs($fixture['operator'])->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
+        $admission = $this->insertCalledXrayAdmission($fixture);
+        Http::fake($this->validMpipsResponse());
+
+        $this->postCapture($admission);
+        $captureId = (string) DB::table('image_gateway_capture_sets')->value('id');
+        DB::table('image_gateway_capture_sets')->where('id', $captureId)->update([
+            'processing_status' => 'processing',
+            'attempts' => 1,
+            'updated_at' => now()->subSeconds((int) config('queue.connections.database.retry_after') + 1),
+        ]);
+
+        app()->call([new ProcessCaptureSet($captureId), 'handle']);
+
+        $this->assertSame('completed', DB::table('image_gateway_capture_sets')->where('id', $captureId)->value('processing_status'));
+        $this->assertSame(1, DB::table('image_gateway_studies')->where('capture_set_id', $captureId)->count());
+        Http::assertSentCount(1);
+    }
+
+    public function test_duplicate_delivery_while_a_claim_is_active_does_not_create_a_second_study(): void
+    {
+        $fixture = $this->operatorFixture(false);
+        $this->actingAs($fixture['operator'])->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
+        $admission = $this->insertCalledXrayAdmission($fixture);
+        $captureId = null;
+        $duplicateRan = false;
+        Http::fake(function () use (&$captureId, &$duplicateRan) {
+            if (! $duplicateRan) {
+                $duplicateRan = true;
+                app()->call([new ProcessCaptureSet((string) $captureId), 'handle']);
+            }
+
+            return Http::response(
+                str_repeat("\0", 128).'DICM'.'valid dicom payload',
+                200,
+                [
+                    'Content-Type' => 'application/dicom',
+                    'X-Conversion-Job-ID' => '6ba7b810-9dad-51d1-80b4-00c04fd430c8',
+                    'X-Correlation-ID' => '6ba7b810-9dad-41d1-80b4-00c04fd430c8',
+                ],
+            );
+        });
+
+        $this->postCapture($admission);
+        $captureId = (string) DB::table('image_gateway_capture_sets')->value('id');
+        app()->call([new ProcessCaptureSet($captureId), 'handle']);
+
+        $this->assertSame('completed', DB::table('image_gateway_capture_sets')->where('id', $captureId)->value('processing_status'));
+        $this->assertSame(1, DB::table('image_gateway_studies')->where('capture_set_id', $captureId)->count());
+        Http::assertSentCount(1);
+    }
+
+    public function test_expired_claim_fences_the_interrupted_worker_from_creating_a_second_study(): void
+    {
+        $fixture = $this->operatorFixture(false);
+        $this->actingAs($fixture['operator'])->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
+        $admission = $this->insertCalledXrayAdmission($fixture);
+        $captureId = null;
+        $requests = 0;
+        Http::fake(function () use (&$captureId, &$requests) {
+            $requests++;
+            if ($requests === 1) {
+                DB::table('image_gateway_capture_sets')->where('id', $captureId)->update([
+                    'processing_lease_expires_at' => now()->subSecond(),
+                ]);
+                app()->call([new ProcessCaptureSet((string) $captureId), 'handle']);
+            }
+
+            return Http::response(
+                str_repeat("\0", 128).'DICM'.'valid dicom payload',
+                200,
+                [
+                    'Content-Type' => 'application/dicom',
+                    'X-Conversion-Job-ID' => '6ba7b810-9dad-51d1-80b4-00c04fd430c8',
+                    'X-Correlation-ID' => '6ba7b810-9dad-41d1-80b4-00c04fd430c8',
+                ],
+            );
+        });
+
+        $this->postCapture($admission);
+        $captureId = (string) DB::table('image_gateway_capture_sets')->value('id');
+        app()->call([new ProcessCaptureSet($captureId), 'handle']);
+
+        $this->assertSame('completed', DB::table('image_gateway_capture_sets')->where('id', $captureId)->value('processing_status'));
+        $this->assertSame(1, DB::table('image_gateway_studies')->where('capture_set_id', $captureId)->count());
+        Http::assertSentCount(2);
+    }
+
     public function test_same_site_current_shift_operator_can_read_the_returned_dicom_and_other_boundaries_cannot(): void
     {
         $fixture = $this->operatorFixture(false);
