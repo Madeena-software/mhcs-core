@@ -1,7 +1,7 @@
 ---
 title: MPIPS v1.2 and AWS Image Gateway Integration
 document_id: MHCS-TASK-MPIPS-AWS-IMAGE-GATEWAY-001
-version: 1.0
+version: 1.1
 status: validated-published
 language: en-US
 last_updated: 2026-08-12
@@ -58,7 +58,7 @@ revision; do not revive or edit the prior rehearsal task during this work.
 ## Baseline and task revision
 
 **Implementation baseline:**
-`2cb939f0f2acf242f446bf40d542cb7262108277` — current repository state with
+`2cb939f31e170eeb5fec0e7b1b58cf4d964591e0` — current repository state with
 MPIPS v1.2 authoritative documentation.  This is an execution base only; it
 does not accept the prior local-rehearsal divergence.
 
