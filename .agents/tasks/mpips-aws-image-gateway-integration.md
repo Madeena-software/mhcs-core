@@ -1,10 +1,10 @@
 ---
 title: MPIPS v1.2 and AWS Image Gateway Integration
 document_id: MHCS-TASK-MPIPS-AWS-IMAGE-GATEWAY-001
-version: 1.3
+version: 1.4
 status: validated-published
 language: en-US
-last_updated: 2026-08-12
+last_updated: 2026-08-13
 scope:
   - replace the local synthetic capture bridge with durable asynchronous MPIPS conversion
   - use encrypted AWS S3 private objects in local and production runtime configurations
@@ -58,8 +58,8 @@ revision; do not revive or edit the prior rehearsal task during this work.
 ## Baseline and task revision
 
 **Implementation baseline:**
-`7e615d011d3dd262a712a7c1f72fb5a19d781b72` — unaccepted remediation
-implementation to be completed.  It does not establish an accepted baseline.
+`8cde93bd44ceed11ef46bc608a4da4b9f1102583` — unaccepted remediation
+implementation to be verified.  It does not establish an accepted baseline.
 
 **Original execution baseline:**
 `2cb939f31e170eeb5fec0e7b1b58cf4d964591e0` — the MPIPS v1.2 authoritative
@@ -156,6 +156,73 @@ Executor evidence report has been supplied.
   non-clinical data and cleanup confirmations, and the required evidence report
   records every command and result without disclosing secrets, endpoints,
   object keys, patient data, NPZ, or DICOM bytes.
+
+### Round-three review result
+
+`REMEDIATION REQUIRED` — reviewed against governing task
+`.agents/tasks/mpips-aws-image-gateway-integration.md @
+85b2a0800432901df15567e1d97eb2ac6b4e7149`, implementation baseline
+`7e615d011d3dd262a712a7c1f72fb5a19d781b72`, and implementation revision
+`8cde93bd44ceed11ef46bc608a4da4b9f1102583`.
+
+The focused Image Gateway, localization, and architecture suite passed with
+17 tests and 1,925 assertions.  The required Mvp14 browser rehearsal now
+passes with 2 tests and 24 assertions.  `composer validate --no-check-publish`
+and `git diff --check 85b2a0800432901df15567e1d97eb2ac6b4e7149
+8cde93bd44ceed11ef46bc608a4da4b9f1102583` also pass.  The change is limited
+to the Browser test's SQLite connection cleanup.
+
+This is not enough for acceptance.  The original task still has no observed
+fresh SQLite and isolated-MySQL migration coverage, applicable full PHP suite,
+build, formatter, Composer audit/locked S3-adapter result, reversible AWS
+probe, loopback MPIPS probe, or repository evidence report.  Those are all
+existing mandatory verification conditions, not new product scope.
+
+### Round-three remediation scope
+
+- Continue from `8cde93bd44ceed11ef46bc608a4da4b9f1102583`.  Preserve all
+  submitted capture, encryption, S3 selection, queue-lease recovery,
+  authorization, Indonesian UI, read-only vertical viewer, and ordinary DICOM
+  attachment-download behavior.  Do not make further implementation changes
+  solely to manufacture evidence.
+- Re-run and record every original-task required check from this exact
+  baseline: fresh SQLite and isolated MySQL 8.4 migrations; focused Image
+  Gateway/Operator/authorization/storage/localization/manifest tests; the
+  complete applicable PHP suite; the Mvp14 browser rehearsal; `npm run build`;
+  `vendor/bin/pint --test`; Composer validation plus `composer audit`; and the
+  stated diff check.  A failed check is a real outcome: diagnose only the
+  bounded defect, correct it only when it remains within this task, and rerun
+  the affected evidence.  Never skip, weaken, serially mask, or mark a check
+  passing without its observed result.
+- Run the already-authorized reversible synthetic AWS private-object probe and
+  the loopback MPIPS synthetic conversion probe exactly as specified below.
+  Confirm cleanup in each case.  If either target is unavailable, unconfirmed,
+  or contract-incompatible, stop under the existing stop conditions and return
+  the sanitised terminal result; do not substitute a public, production,
+  unknown, or real-clinical target.
+- Create `docs/mvp/evidence/mpips-aws-image-gateway-integration.md` as an
+  evidence report for this delivery objective.  It must state the exact task
+  and implementation revisions, commands and observed totals/results, changed
+  files, dependency/audit result, browser/viewer/download result, probe
+  pass/fail and cleanup status, known gaps, and the required no-disclosure
+  confirmation.  It must not contain secrets, endpoints, bucket or object
+  identifiers, patient data, raw NPZ, or DICOM content.
+
+### Round-three remediation acceptance criteria
+
+- [ ] The 17-test focused regression suite and both Mvp14 browser journeys
+  pass from the disposable test state.  The submitting Operator and an
+  authorised same-site/current-shift second Operator each observe the ready
+  vertical read-only viewer and an ordinary DICOM download.
+- [ ] Fresh SQLite and isolated MySQL 8.4 migrations, the complete applicable
+  PHP suite, `npm run build`, `vendor/bin/pint --test`, Composer
+  validation/audit, and the required diff check pass with observed results.
+- [ ] The reversible AWS private-object probe and loopback MPIPS synthetic
+  capture probe pass with the mandated cleanup, or an existing stop condition
+  produces a sanitised terminal result without an unsafe substitute.
+- [ ] `docs/mvp/evidence/mpips-aws-image-gateway-integration.md` contains the
+  required observed evidence and no prohibited secret, infrastructure,
+  clinical, or binary disclosure.
 
 ## Objective
 
