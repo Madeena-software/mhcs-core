@@ -2,7 +2,7 @@
 title: MPIPS v1.2 and AWS Image Gateway Integration
 document_id: MHCS-TASK-MPIPS-AWS-IMAGE-GATEWAY-001
 version: 1.0
-status: draft
+status: validated-published
 language: en-US
 last_updated: 2026-08-12
 scope:
@@ -23,7 +23,7 @@ authority_note: This task is executable only after this exact content is committ
 `.agents/tasks/mpips-aws-image-gateway-integration.md`
 
 **Task contract state:**
-`Draft — publish only when this exact content is committed and its commit SHA is supplied.`
+`Validated/Published when this exact content is committed and its commit SHA is supplied.`
 
 **Delivery objective / Work Package / MVP:**
 `12 August MVP delivery target / Image Gateway MPIPS + AWS integration`
@@ -151,12 +151,14 @@ same active site.
   is exhausted.  Never log NPZ/DICOM bytes, patient name, birth date, MRN, or
   the API key.
 - On HTTP 200, require `application/dicom`, non-empty DICOM Part-10 preamble
-  (`DICM` at byte 128), and non-empty matching UUID response headers
-  `X-Conversion-Job-ID` and `X-Correlation-ID`.  Parse the returned DICOM with
-  `mmerlijn/dicom` before permanent acceptance; verify the parsed
-  Study/Series/SOP Instance UIDs are valid DICOM UIDs and persist them with the
-  response headers, checksum, size, transfer syntax, dimensions, and viewer
-  metadata.  Reject malformed, mismatched, or unparseable responses without a
+  (`DICM` at byte 128), and non-empty valid-UUID response headers
+  `X-Conversion-Job-ID` and `X-Correlation-ID`.  MPIPS v1.2 is the authoritative
+  DICOM dataset validator.  MHCS validates this response boundary, derives the
+  expected Study/Series/SOP Instance UIDs from the documented MPIPS UUIDv5
+  job-ID formulas, and persists those IDs with the response headers, checksum,
+  and size.  Make unavailable transfer-syntax, dimensions, and VOI metadata
+  nullable and let the existing Cornerstone viewer use its normal automatic
+  presentation.  Reject malformed or mismatched transport output without a
   study row or public result.
 - Keep the existing read-only vertical Cornerstone viewer and normal attachment
   download route.  Change it from synthetic-only wording and service binding to
@@ -219,8 +221,6 @@ same active site.
 - Existing AWS environment variables identify a private bucket usable by this
   application.  Their values are secret and must never appear in source, tests,
   task evidence, or chat.
-- PHP `ext-gd` and `ext-zlib` are present (observed locally), which the selected
-  DICOM parser requires.
 - A queue worker is available for `image-gateway` after acceptance.  This task
   configures the application contract; the later local rehearsal task will give
   end-user run instructions.
@@ -273,9 +273,10 @@ same active site.
   Laravel redelivers it.  Store the single canonical manifest JSON before
   dispatch; never rebuild it on retry.
 - Do not inspect NPZ internals, enable pickle parsing, write clinical files to
-  repository paths, or retain plaintext temporary DICOM files after parsing.
-  Create a restrictive temporary file only when required by the DICOM parser and
-  remove it in `finally`.
+  repository paths, or retain plaintext temporary DICOM files.  Do not add a
+  third-party DICOM parser or a general-purpose DICOM parser implementation:
+  MPIPS v1.2 validates its DICOM dataset before returning it and MHCS validates
+  the documented transport boundary.
 - Do not log or expose private object keys, uploads, DICOM bytes, API headers,
   `MPIPS_API_KEY`, AWS values, names, MRNs, birth dates, or full clinical
   metadata.  Operational records may contain capture ID, local submission ID,
@@ -308,9 +309,11 @@ same active site.
   not create a DICOM; duplicate delivery does not create a second study or
   repeat a completed transition.
 - [ ] A successful MPIPS response is accepted only after content type, DICOM
-  Part-10 preamble, response headers, and parser checks pass.  The stored study
-  persists the DICOM bytes only once with parsed valid Study/Series/SOP UIDs and
-  viewer metadata.  Invalid output is not visible or downloadable.
+  Part-10 preamble, and matching response-header checks pass.  The stored study
+  persists the DICOM bytes only once with Study/Series/SOP UIDs derived from
+  the documented MPIPS UUIDv5 job-ID formulas; unavailable display metadata is
+  nullable and the viewer uses automatic presentation.  Invalid transport
+  output is not visible or downloadable.
 - [ ] Each stored returned DICOM appears in the existing results worklist and
   vertical read-only viewer, and any same-active-site/current-shift Operator can
   view and download it as a normal authenticated `.dcm` attachment.  Cross-site,
@@ -325,8 +328,9 @@ same active site.
 
 ### Required checks
 
-- Run Composer validation and install the explicitly authorised S3 adapter and
-  DICOM parser; record the exact locked versions and `composer audit` result.
+- Run Composer validation and install the explicitly authorised S3 adapter;
+  record the exact locked version and `composer audit` result.  No DICOM parser
+  dependency or system package is added.
 - Run fresh migration coverage on SQLite and the repository’s isolated MySQL
   8.4 path.  Run focused Image Gateway, Operator capture/worklist, DICOM access,
   storage, authentication/authorization, Indonesian localization, and previous
@@ -370,9 +374,10 @@ or production evidence.
 - Stop if MPIPS cannot process the documented minimal request, returns a
   contract-incompatible DICOM response, or the real probe needs real clinical
   data, a secret disclosure, or a non-loopback endpoint.
-- Stop if parser integration requires an unsupported PHP extension, a new
-  system package, a native server tool, or a DICOM parser other than the
-  authorised Composer dependency.
+- Stop if the MPIPS response omits the documented job/correlation identifiers,
+  the documented UUIDv5 UID derivation cannot be reproduced deterministically,
+  or permanent acceptance would require a third-party DICOM parser, system
+  package, or a broader DICOM implementation.
 - Stop if multiple capture/projection handling, real ServiceRequest/Encounter
   records, Member/Doctor publication, AI/Doctor routing, or another task’s
   unreviewed local-rehearsal changes become necessary to satisfy acceptance.
