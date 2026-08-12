@@ -1,7 +1,7 @@
 ---
 title: MPIPS v1.2 and AWS Image Gateway Integration
 document_id: MHCS-TASK-MPIPS-AWS-IMAGE-GATEWAY-001
-version: 1.4
+version: 1.5
 status: validated-published
 language: en-US
 last_updated: 2026-08-13
@@ -58,8 +58,9 @@ revision; do not revive or edit the prior rehearsal task during this work.
 ## Baseline and task revision
 
 **Implementation baseline:**
-`8cde93bd44ceed11ef46bc608a4da4b9f1102583` — unaccepted remediation
-implementation to be verified.  It does not establish an accepted baseline.
+`8c6fd1a9c49011c44d61f78f4c04be00b9ddfc1d` — unaccepted remediation and
+evidence implementation to be completed.  It does not establish an accepted
+baseline.
 
 **Original execution baseline:**
 `2cb939f31e170eeb5fec0e7b1b58cf4d964591e0` — the MPIPS v1.2 authoritative
@@ -223,6 +224,80 @@ existing mandatory verification conditions, not new product scope.
 - [ ] `docs/mvp/evidence/mpips-aws-image-gateway-integration.md` contains the
   required observed evidence and no prohibited secret, infrastructure,
   clinical, or binary disclosure.
+
+### Round-four review result
+
+`REMEDIATION REQUIRED` — reviewed against governing task
+`.agents/tasks/mpips-aws-image-gateway-integration.md @
+e9d606a70a7af6eb1d2df6b48811ad9c2be3a825`, implementation baseline
+`8cde93bd44ceed11ef46bc608a4da4b9f1102583`, and the evidence revision
+`8c6fd1a9c49011c44d61f78f4c04be00b9ddfc1d`.
+
+The latest evidence records a successful configured-loopback MPIPS conversion,
+one stored study, completed-replay idempotency, and authorised second-Operator
+viewer/download.  It also records that the local input was a Grabber NPZ pair.
+The CTO has explicitly approved that specific local Grabber pair as a
+non-clinical integration fixture.  It remains local-only and must not be copied
+to, parsed by, or committed in this repository.
+
+The evidence still cannot establish acceptance.  It says MHCS parses returned
+patient identity and DICOM UID elements, which is not the implemented boundary:
+MHCS validates the DICOM media type, Part-10 marker, and response identifiers,
+then derives expected UIDs from the MPIPS job ID.  The report's Markdown
+trailing whitespace fails `git diff --check`.  Its claimed full Pint run also
+fails on the pre-existing `app/Console/Kernel.php`; the task requires the
+repository formatter check to pass.  Finally, its global `*.npz` ignore rule
+would impede ordinary future fixture work and is broader than protecting the
+approved local input.
+
+### Round-four remediation scope
+
+- Continue from `8c6fd1a9c49011c44d61f78f4c04be00b9ddfc1d`; preserve every
+  Image Gateway runtime behavior and all prior observed passing results.  Do
+  not change production code, MPIPS contract fields, storage policy, queue
+  policy, or DICOM viewer behavior merely to rerun evidence.
+- Treat the CTO-approved local Grabber radiograph/gain pair as the sole
+  authorised non-clinical live MPIPS fixture for this task.  Use it only from
+  its existing local location with a synthetic test patient, the configured
+  loopback endpoint, and the configured API key.  Do not commit, copy, upload
+  outside the probe, inspect NPZ contents in PHP, print its bytes or metadata,
+  or substitute real-member or clinical data.  The probe may use a local
+  process memory limit sufficient for the pair; it must not change application
+  memory configuration or introduce a parser/dependency.
+- Correct `docs/mvp/evidence/mpips-aws-image-gateway-integration.md` so it
+  describes only observed MHCS behavior: response content type, Part-10 marker,
+  UUID response identifiers, UID derivation, one persisted study, replay
+  idempotency, and authorised second-Operator viewer/download.  Record the
+  exact executed probe command and result while retaining the existing
+  no-secret/no-endpoint/no-bucket/no-object/no-patient/no-binary disclosure
+  boundary.  Remove Markdown trailing whitespace.
+- Replace the newly added global `*.npz` ignore with at most the minimal
+  `research/` directory ignore needed to keep the approved local fixture out of
+  Git.  Do not add, remove, or alter any NPZ fixture tracked by the repository.
+- Run the repository formatter on the exact pre-existing
+  `app/Console/Kernel.php` failure and accept only its mechanical Pint changes;
+  do not alter executable behavior, add logic, or refactor the class.  This is
+  the minimal correction required for the task's existing full formatter
+  verification, not a new product capability.
+- Rerun and record the complete task verification after these changes: Composer
+  validation/audit and locked S3 adapter, fresh SQLite and isolated MySQL 8.4
+  migrations, focused suite, full PHP suite, browser rehearsal, build, complete
+  Pint check, diff check, reversible AWS probe, and the successful approved
+  Grabber-pair loopback MPIPS probe with full disposable-data cleanup.
+
+### Round-four remediation acceptance criteria
+
+- [ ] The evidence accurately describes MHCS's implemented DICOM response
+  boundary, is free of trailing whitespace, and records the authorised local
+  Grabber-pair probe without disclosing prohibited data.
+- [ ] Only `research/` may remain as a new ignore rule for the local fixture;
+  no global NPZ ignore or repository fixture change is introduced.
+- [ ] `app/Console/Kernel.php` changes only by the repository formatter and
+  the complete `vendor/bin/pint --test` check passes.
+- [ ] The full original verification matrix, including the approved Grabber-pair
+  MPIPS conversion, one-study/replay result, second-Operator viewer/download,
+  AWS cleanup, migrations, tests, build, audit, and diff check, passes with
+  observed evidence.
 
 ## Objective
 
