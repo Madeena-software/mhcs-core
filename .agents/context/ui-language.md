@@ -1,13 +1,14 @@
-# MHCS Core — Member-Facing UI Language Policy
+# MHCS Core — UI Language Policy
 
 ## Purpose
 
-This document defines the approved language, terminology, tone, and content-design rules for member-facing and publicly visible MHCS Core interfaces.
+This document defines the approved language, terminology, tone, and content-design rules for MHCS Core browser interfaces and member-facing product communications.
 
 It applies to:
 
 * the Member Portal;
 * public booking flows;
+* the internal Operator Portal;
 * member onboarding;
 * member notifications;
 * member email and SMS content;
@@ -23,9 +24,9 @@ This document governs visible product language. It does not redefine the underly
 
 ## Language requirement
 
-The primary language of all member-facing and publicly visible MHCS interfaces is **Bahasa Indonesia**.
+The primary language of all MHCS browser interfaces and member-facing product communications is **Bahasa Indonesia**.
 
-Member-facing UI must not default to English.
+MHCS-authored browser UI must not default to English.
 
 This includes:
 
@@ -45,6 +46,14 @@ This includes:
 * help content;
 * result explanations; and
 * plain-language consent explanations shown alongside formal consent text.
+
+Every MHCS-authored browser-visible string must be retrieved through Laravel's
+translation helper and registered in `lang/id.json`. This includes static
+template copy, headings, buttons, labels, hints, accessibility labels,
+empty states, status messages, and validation or error text rendered to the
+browser. Trusted dynamic data such as a member name, NIK, medical-record
+number, document contents, and DICOM metadata is data rather than UI copy and
+must not be duplicated into the translation registry.
 
 English may remain only where it is:
 
@@ -1021,9 +1030,9 @@ Avoid:
 
 ## Doctor-facing and operator-facing boundary
 
-This document primarily governs member-facing and publicly visible content.
-
-Doctor-facing and internal operator-facing interfaces may use precise professional terminology where it improves safety and operational clarity.
+This document also governs internal Operator Portal copy. Operator-facing
+interfaces must use Bahasa Indonesia while retaining precise professional
+terminology where it improves safety and operational clarity.
 
 Internal terms may include:
 
