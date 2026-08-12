@@ -13,7 +13,7 @@
                 <tbody>
                 @forelse ($rows as $row)
                     <tr>
-                        <td>{{ $row['member_name'] }}<br><span class="muted">NIK: {{ $row['nik'] ?? __('Identifier withheld') }}</span></td>
+                        <td>{{ $row['member_name'] }}<br><span class="muted">{{ __('NIK:') }} {{ $row['nik'] ?? __('Identifier withheld') }}</span></td>
                         <td>{{ $row['medical_record_number'] }}</td>
                         <td>{{ $row['service_name'] }} ({{ $row['service_code'] }})</td>
                         <td class="status">{{ __($row['booking_status']) }}</td>

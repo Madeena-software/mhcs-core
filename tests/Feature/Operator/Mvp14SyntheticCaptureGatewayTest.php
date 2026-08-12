@@ -111,13 +111,15 @@ final class Mvp14SyntheticCaptureGatewayTest extends TestCase
         $admission = $this->insertCalledXrayAdmission($fixture);
 
         $this->from(route('operator.xray-capture.show', $admission))
+            ->followingRedirects()
             ->post(route('operator.xray-capture.store', $admission), [
                 'submission_id' => (string) Str::uuid(),
                 'radiographs' => [$this->fixtureUploadAs('synthetic-radiograph-01.npz', 'renamed.npz')],
                 'gain' => $this->fixtureUpload('synthetic-gain-01.npz'),
             ])
-            ->assertRedirect()
-            ->assertSessionHasErrors('capture');
+            ->assertOk()
+            ->assertSee('Identitas fixture sintetis tidak diterima.')
+            ->assertDontSee('The synthetic fixture identity is not accepted.');
 
         $this->from(route('operator.xray-capture.show', $admission))
             ->post(route('operator.xray-capture.store', $admission), [

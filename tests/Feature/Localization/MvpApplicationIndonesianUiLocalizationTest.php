@@ -23,6 +23,23 @@ final class MvpApplicationIndonesianUiLocalizationTest extends TestCase
         $this->assertSame('Antrian rumah skrining', $copy['Clinic queue']);
         $this->assertSame('SESI FOTO RADIOGRAFI', $copy['Radiography session']);
         $this->assertSame('Kolom NIK wajib diisi.', trans('validation.required', ['attribute' => 'NIK']));
+        foreach ([
+            'A valid submission identity is required.',
+            'This X-ray admission already has a capture set.',
+            'The synthetic DICOM fixture is invalid.',
+            'The submission identity was reused with different capture data.',
+            'A trusted Operator context is required.',
+            'Exactly one synthetic radiograph is required.',
+            'Synthetic inputs must be ZIP NPZ files.',
+            'The synthetic fixture identity is not accepted.',
+            'The synthetic fixture bytes are not accepted.',
+            'The repository-owned synthetic fixture is unavailable.',
+            'The X-ray admission is unavailable to this Operator.',
+        ] as $message) {
+            $this->assertArrayHasKey($message, $copy);
+            $this->assertNotSame($message, $copy[$message]);
+        }
+        $this->assertArrayHasKey('NIK:', $copy);
 
         $this->actingAs($fixture['memberUser'])
             ->get(route('member.dashboard'))
@@ -40,6 +57,13 @@ final class MvpApplicationIndonesianUiLocalizationTest extends TestCase
             ->assertOk()
             ->assertSee('Dasbor operator')
             ->assertSee('PEMERIKSAAN DASAR');
+
+        $this->get(route('operator.attendance', $fixture['scheduleId']))
+            ->assertOk()
+            ->assertSee($copy['NIK:']);
+
+        $this->get(route('operator.dashboard'))
+            ->assertSee('<html lang="id">', false);
 
         $this->view('operator.study', [
             'study_id' => 'synthetic-study',
