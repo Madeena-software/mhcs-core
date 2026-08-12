@@ -1,0 +1,405 @@
+---
+title: MPIPS v1.2 and AWS Image Gateway Integration
+document_id: MHCS-TASK-MPIPS-AWS-IMAGE-GATEWAY-001
+version: 1.0
+status: draft
+language: en-US
+last_updated: 2026-08-12
+scope:
+  - replace the local synthetic capture bridge with durable asynchronous MPIPS conversion
+  - use encrypted AWS S3 private objects in local and production runtime configurations
+  - publish each returned DICOM to authorised same-site current-shift Operators
+authority_note: This task is executable only after this exact content is committed and the immutable task revision is supplied to the Executor.
+---
+
+# Executable Task
+
+## Task identity
+
+**Task title:**
+`MPIPS v1.2 and AWS Image Gateway Integration`
+
+**Task path:**
+`.agents/tasks/mpips-aws-image-gateway-integration.md`
+
+**Task contract state:**
+`Draft — publish only when this exact content is committed and its commit SHA is supplied.`
+
+**Delivery objective / Work Package / MVP:**
+`12 August MVP delivery target / Image Gateway MPIPS + AWS integration`
+
+**Owner / designated planning authority:**
+`Faliq Adlan, CTO`
+
+## Delivery context
+
+The current capture path is an explicitly local/testing-only synthetic bridge:
+it accepts repository fixtures, attaches a fixed DICOM immediately, and does
+not call MPIPS.  It cannot satisfy the approved asynchronous clinic flow.
+
+MPIPS contract v1.2 now accepts a minimal client manifest.  MHCS sends the two
+NPZ files and a small JSON document containing real patient data; MPIPS derives
+checksums, conversion identity, gain identity, DICOM UIDs, detector type, and
+image spacing when those fields are omitted.  This removes the former need for
+MHCS to guess hardware calibration values.
+
+This task replaces that bridge with one durable acceptance path: the browser
+stores a complete capture set privately, the ticket moves to `awaiting_ai`, and
+an Image Gateway queue worker calls MPIPS.  Each valid returned DICOM becomes
+available immediately to every authenticated Operator who has the same active
+site and current-shift authority.  It is still unavailable to Members and
+Doctors until a later full-examination publication task.
+
+The earlier local-synthetic rehearsal execution is not accepted as a baseline
+and is superseded for this overlapping Image Gateway surface.  After this task
+is reviewed, a new local rehearsal task will be planned against its accepted
+revision; do not revive or edit the prior rehearsal task during this work.
+
+## Baseline and task revision
+
+**Implementation baseline:**
+`2cb939f0f2acf242f446bf40d542cb7262108277` — current repository state with
+MPIPS v1.2 authoritative documentation.  This is an execution base only; it
+does not accept the prior local-rehearsal divergence.
+
+**Superseded local task:**
+`.agents/tasks/mvp-local-synthetic-rehearsal-launch.md @
+dcf315b81f0c925f753cff0d4d8c41939e9a0c10`
+
+**Task revision:**
+`resolved when published`
+
+## Objective
+
+**Objective:**
+Replace the synthetic capture-to-DICOM bridge with a durable, encrypted S3,
+queued MPIPS v1.2 conversion flow that accepts one radiograph/gain NPZ pair,
+stores every valid returned DICOM, and exposes it for normal authenticated
+viewing and `.dcm` download to any authorised current-shift Operator at the
+same active site.
+
+## Authoritative inputs
+
+### Governing authority
+
+- `docs/mvp/decision-log.md` — MVP-DEC-031, MVP-DEC-033, MVP-DEC-035, and
+  MVP-DEC-036.
+- `.agents/context/project.md` — Image Gateway ownership, private MPIPS-only
+  network boundary, durable acceptance, queue-worker rule, and private storage.
+- `.agents/context/modules/operator/project.md` — Operator capture ownership,
+  active-site/current-shift authority, immutable submitted metadata, and raw
+  NPZ restriction.
+- `.agents/context/modules/image-gateway/project.md` — capture processing,
+  partial DICOM availability, and Image Gateway storage ownership.
+- `docs/mpips/mhcs-dicom-api.md` at `2cb939f…` — authoritative v1.2 minimal
+  multipart contract, server derivation, status handling, and retries.
+- User-approved delivery decision in this planning conversation: use configured
+  AWS object storage for both local development runtime and production runtime;
+  use the current local MPIPS endpoint for integration verification.
+
+### Requirement traceability
+
+- `MVP-DEC-031` → work is sequential on `main`; no parallel local-rehearsal
+  remediation is performed.
+- `MVP-DEC-033` → existing private consent/questionnaire objects remain private.
+- `MVP-DEC-035` → returned DICOM uses a standard authenticated browser
+  attachment response; raw NPZ is never downloadable.
+- `MVP-DEC-036` → each successful MPIPS DICOM is visible and downloadable to
+  every authorised same-active-site/current-shift Operator.
+- `OPR-031..OPR-046`, `OPR-057..OPR-060`, and `IMG-060` → operational capture,
+  asynchronous processing, and read-only DICOM access.
+
+## Scope
+
+### In scope
+
+- Replace `SyntheticCaptureGatewayService` and its synthetic-only controller,
+  view, route text, fixtures, and focused tests with one production-capable
+  Image Gateway capture service.  It accepts exactly one `radiograph_npz` and
+  one matching `gain_npz`; it does not parse NPZ arrays in PHP.
+- Remove fixture-name/fixture-byte requirements and the local/testing-only
+  environment gate.  Validate the HTTP upload boundary before persistence:
+  exactly two non-empty `.npz` uploads, ZIP/NPZ signature, 100 MiB maximum per
+  file, and 300 MiB maximum request pair.  Reject invalid input without object,
+  database, queue, ticket-state, audit, or outbox residue.
+- On accepted upload, use the existing encrypted `PrivateObjectStore` to store
+  radiograph, gain, the canonical UTF-8 minimal client manifest, and its
+  detached internal signature.  Persist checksums, byte counts, immutable
+  manifest identity, source Operator/site/booking/admission references, and
+  processing state in Image Gateway-owned tables.  Add the minimal migration
+  needed to retire the `fixture_pair_id` meaning and represent processing,
+  attempt, error, response-ID, and completion data.
+- Build the submitted MPIPS manifest from current authoritative data only:
+  `patient.member_id`, MRN, name, administrative gender when representable,
+  birth date, booking/examination description, submitting Operator, and active
+  site.  Include real `performed_at` and `captured_at` timestamps.  Apply the
+  explicitly approved temporary mapping `service_request_id = booking_id` and
+  `encounter_id = booking_id`; mark neither as a real ServiceRequest or
+  Encounter.  Omit detector type, gain ID, image spacing, file metadata,
+  conversion IDs, and DICOM UIDs so MPIPS v1.2 resolves them.
+- Dispatch one Laravel database-queue Image Gateway job only after the database
+  transaction commits.  The web request must never call MPIPS.  The job reads
+  only its immutable private objects, reuses their exact bytes and stored
+  canonical manifest semantics for every retry, and calls only configured
+  `MPIPS_BASE_URL/v1/radiographs/dicom` with `X-MPIPS-API-Key` plus exactly the
+  three mandated multipart fields: `radiograph_npz`, `gain_npz`, and `manifest`.
+- Implement the v1.2 retry matrix with a maximum of five total attempts,
+  2-second exponential base, 30-second cap, and full random jitter.  Retry
+  429, 502, 503, 504, network timeout/reset, and 409 only when detail is
+  `IDEMPOTENCY_IN_PROGRESS`; do not retry 401, 413, 422, 409 conflict, malformed
+  response, or 500.  Persist a controlled processing failure after the budget
+  is exhausted.  Never log NPZ/DICOM bytes, patient name, birth date, MRN, or
+  the API key.
+- On HTTP 200, require `application/dicom`, non-empty DICOM Part-10 preamble
+  (`DICM` at byte 128), and non-empty matching UUID response headers
+  `X-Conversion-Job-ID` and `X-Correlation-ID`.  Parse the returned DICOM with
+  `mmerlijn/dicom` before permanent acceptance; verify the parsed
+  Study/Series/SOP Instance UIDs are valid DICOM UIDs and persist them with the
+  response headers, checksum, size, transfer syntax, dimensions, and viewer
+  metadata.  Reject malformed, mismatched, or unparseable responses without a
+  study row or public result.
+- Keep the existing read-only vertical Cornerstone viewer and normal attachment
+  download route.  Change it from synthetic-only wording and service binding to
+  the real Image Gateway service.  Returned studies are listed, viewed, and
+  downloaded by any authenticated Operator whose active site and current shift
+  authorise the capture; no Member/Doctor route or raw-NPZ route is added.
+- Configure the existing encrypted private-object implementation to select a
+  configured filesystem disk instead of hard-coding `local`.  Add the Laravel
+  S3 adapter dependency (`league/flysystem-aws-s3-v3`) and configure
+  `MHCS_PRIVATE_OBJECT_DISK=s3` for local and production runtime templates.
+  Preserve encryption-before-storage, opaque object keys, grant checks, and the
+  testing disk override.  Do not print or alter `.env` secrets.
+- Add `MPIPS_BASE_URL`, timeout, queue timing, and private-object-disk names to
+  `.env.example` without values/secrets.  The default local endpoint is
+  `http://127.0.0.1:8014`; production receives its private endpoint only from
+  deployment environment configuration.
+- Update every changed browser-visible MHCS-authored string through `lang/id.json`.
+  Do not introduce English fallback UI text or a locale switcher.
+
+### Out of scope
+
+- AWS bucket/IAM creation, production deployment, release, server mutation,
+  real-member import, 37-member seed, Docker/Compose, reverse proxy, CI/CD, and
+  object-retention/legal-deletion policy.
+- Any direct browser, Member, Doctor, or Operator-to-MPIPS call; any public URL,
+  presigned DICOM link, raw-NPZ download, OCR, AI/Doctor routing, or Member/
+  Doctor result publication.
+- Multiple captures/projections per submission, capture metadata configuration
+  screens, a new queue framework, client-side concurrency semaphore, MPIPS
+  async-job API, service-request/encounter schema, or replacing the temporary
+  booking-ID mapping.
+- Changing the earlier local rehearsal task, creating credential files, custom
+  Artisan server commands, or changing unrelated Operator workflows.
+
+### Preserved behavior
+
+- Paper consent and questionnaire photos remain private encrypted objects and
+  keep their existing access controls.
+- Object data remains encrypted by MHCS before filesystem/S3 persistence;
+  neither database object keys nor S3 objects become public.
+- The browser receives a normal authenticated `.dcm` attachment response with
+  `Cache-Control: no-store, private` and `X-Content-Type-Options: nosniff`.
+- Operator access remains active-site and current-shift constrained.  The
+  submitting Operator is not the sole result recipient after a DICOM succeeds.
+- Durable NPZ acceptance moves the ticket to `awaiting_ai` before MPIPS returns;
+  failure/retry does not resurrect the member’s clinic visit or expose NPZ.
+- Existing local/testing-only synthetic tests may be replaced by real-flow tests
+  with fake S3 and fake HTTP; no test accesses actual AWS or MPIPS unless the
+  explicit live probes below are run.
+- Existing `ManifestSigner` security coverage remains meaningful: it signs the
+  frozen local submission envelope; the signature is detached and is not added
+  to the strict MPIPS minimal client JSON.
+
+## Dependencies and assumptions
+
+### Dependencies
+
+- MPIPS v1.2 at the configured local endpoint is reachable with the existing
+  `MPIPS_API_KEY`; it accepts the documented minimal manifest.
+- Existing AWS environment variables identify a private bucket usable by this
+  application.  Their values are secret and must never appear in source, tests,
+  task evidence, or chat.
+- PHP `ext-gd` and `ext-zlib` are present (observed locally), which the selected
+  DICOM parser requires.
+- A queue worker is available for `image-gateway` after acceptance.  This task
+  configures the application contract; the later local rehearsal task will give
+  end-user run instructions.
+
+### Approved assumptions
+
+- MPIPS v1.2 is authoritative for detector, gain-ID, image-spacing, checksum,
+  deterministic-job, and deterministic-DICOM-UID resolution when those client
+  fields are omitted.
+- `service_request_id` and `encounter_id` are both represented by the existing
+  `booking_id` only for this integration.  A future Member-domain task replaces
+  that temporary mapping with true identifiers.
+- The configured S3 bucket is the approved private object destination for both
+  local development runtime and production runtime.  Automated test runtime
+  may continue using `Storage::fake()` and a non-S3 testing disk.
+
+### Remaining approval requirements
+
+- A successful local AWS and local MPIPS probe is integration evidence only; it
+  does not authorize deployment, production mutation, release, real data, or
+  closing MVP-GAP-019/020/021/022/023.
+- Do not run an AWS probe if its endpoint/bucket is not confirmed as the
+  user-provided local test target.  Stop rather than trying a production or
+  unknown endpoint.
+
+## Required capabilities
+
+- Repository read/write, Composer dependency installation, PHP/Laravel, MySQL,
+  npm, and browser test execution.
+- Configured AWS S3 access for one reversible synthetic-object smoke probe.
+- Configured loopback MPIPS access for one synthetic fixture integration probe.
+
+## Execution constraints
+
+- Begin from the immutable implementation baseline.  Do not modify the old
+  local-rehearsal task or claim it accepted.
+- Use Laravel’s existing database queue and existing `PrivateObjectStore`,
+  `IdempotencyStore`, audit, outbox, authorization, and Indonesian JSON-locality
+  conventions.  Add only the MPIPS adapter, queued job, minimal migration, and
+  validation code necessary for this outcome.
+- Make the S3 disk selection explicit in app configuration.  Never fall back to
+  public storage or silently downgrade a configured S3 runtime to local disk.
+  Test-only configuration may select a fake local disk deliberately.
+- The HTTP client timeout must be configured at 360 seconds.  The `image-gateway`
+  worker timeout and database queue retry-after must exceed it (minimum 390 and
+  420 seconds respectively) so one MPIPS conversion is not executed twice by
+  Laravel’s lease expiry.
+- The job receives a capture-set ID only; it re-queries authoritative state,
+  locks the row for completion/failure transitions, and must be idempotent if
+  Laravel redelivers it.  Store the single canonical manifest JSON before
+  dispatch; never rebuild it on retry.
+- Do not inspect NPZ internals, enable pickle parsing, write clinical files to
+  repository paths, or retain plaintext temporary DICOM files after parsing.
+  Create a restrictive temporary file only when required by the DICOM parser and
+  remove it in `finally`.
+- Do not log or expose private object keys, uploads, DICOM bytes, API headers,
+  `MPIPS_API_KEY`, AWS values, names, MRNs, birth dates, or full clinical
+  metadata.  Operational records may contain capture ID, local submission ID,
+  server conversion/correlation IDs, attempt number, sanitized status, and
+  duration.
+- Preserve the strict MPIPS multipart names and minimal-client JSON shape;
+  never attach the internal detached signature or undocumented fields.
+- Update/replace tests before deleting synthetic behavior.  Cover success,
+  malformed response, terminal response, retryable response, retry stability,
+  post-commit dispatch, same-site current-shift second-Operator access, and
+  denial across site/shift/no-role boundaries.
+
+## Acceptance criteria
+
+- [ ] An authenticated, authorised X-ray Operator can upload exactly one valid
+  radiograph NPZ and one valid gain NPZ.  Acceptance persists encrypted private
+  source objects plus an immutable minimal MPIPS manifest, advances the ticket
+  to `awaiting_ai`, emits one audit/outbox result, and queues conversion only
+  after commit; it does not create a DICOM study synchronously.
+- [ ] The submitted multipart request has exactly `radiograph_npz`, `gain_npz`,
+  and `manifest` fields and the `X-MPIPS-API-Key` header.  The minimal manifest
+  supplies required patient MRN/name and real available MHCS data while omitting
+  MPIPS-derived hardware/file/ID fields.  Retries preserve exact source bytes
+  and equivalent stored manifest semantics.
+- [ ] S3 is the configured private-object disk in local and production runtime
+  templates.  Stored objects remain application-encrypted and non-public; the
+  test suite uses a fake testing disk instead of AWS.
+- [ ] Queue handling follows v1.2: eligible transient failures retry with the
+  bounded jitter policy; terminal failures record a sanitised failure and do
+  not create a DICOM; duplicate delivery does not create a second study or
+  repeat a completed transition.
+- [ ] A successful MPIPS response is accepted only after content type, DICOM
+  Part-10 preamble, response headers, and parser checks pass.  The stored study
+  persists the DICOM bytes only once with parsed valid Study/Series/SOP UIDs and
+  viewer metadata.  Invalid output is not visible or downloadable.
+- [ ] Each stored returned DICOM appears in the existing results worklist and
+  vertical read-only viewer, and any same-active-site/current-shift Operator can
+  view and download it as a normal authenticated `.dcm` attachment.  Cross-site,
+  wrong-shift, Member, Doctor, anonymous, and raw-NPZ access remain denied.
+- [ ] The browser UI is Indonesian and all MHCS-authored changed visible copy is
+  in `lang/id.json`; synthetic-only UI labels, routes, and acceptance behavior
+  no longer remain.
+- [ ] The current synthetic-only bridge is removed without modifying the prior
+  local-rehearsal task or claiming deployment/release readiness.
+
+## Verification requirements
+
+### Required checks
+
+- Run Composer validation and install the explicitly authorised S3 adapter and
+  DICOM parser; record the exact locked versions and `composer audit` result.
+- Run fresh migration coverage on SQLite and the repository’s isolated MySQL
+  8.4 path.  Run focused Image Gateway, Operator capture/worklist, DICOM access,
+  storage, authentication/authorization, Indonesian localization, and previous
+  manifest-signer tests.  Include queue/HTTP fakes and `Storage::fake()`; no
+  automated test may call AWS or MPIPS.
+- Run the entire applicable PHP feature/unit suite, `npm run build`, formatter
+  checks used by the repository, and `git diff --check`.
+- Run a reversible AWS smoke probe only against the user-provided local test
+  bucket/endpoint: write a unique synthetic non-clinical object through
+  `PrivateObjectStore`, read it through a valid grant, verify exact bytes, and
+  delete both ciphertext and metadata in `finally`.  Report only pass/fail and
+  cleanup confirmation, never bucket, endpoint, keys, object key, or content.
+- Run one local MPIPS probe only against configured loopback MPIPS with the
+  repository’s synthetic NPZ pair and a synthetic test patient.  Drive the real
+  queued capture job, record the resulting DICOM success/failure status and
+  returned IDs without patient data, verify the authorised second-Operator
+  viewer/download route, then clean the disposable database and the created
+  synthetic private objects.  Do not print headers, secrets, object keys, or
+  binary content.  If MPIPS is unavailable or rejects the documented minimal
+  request, stop and return the observed sanitised status/body code to planning.
+
+### Required evidence
+
+The Executor must report the implementation revision; exact governing task
+revision; all commands actually run; changed/deleted files; migration result;
+test totals; dependency versions/audit result; build/format/diff results;
+S3 probe pass/fail and cleanup; MPIPS probe pass/fail and sanitised status;
+browser access/download result; known gaps; and explicit confirmation that no
+secret, AWS value, MPIPS API key, bucket/object name, patient data, raw NPZ, or
+DICOM bytes were disclosed.  Local evidence must not be presented as deployment
+or production evidence.
+
+## Stop conditions
+
+- Stop if `docs/mpips/mhcs-dicom-api.md` is not v1.2, contradicts its minimal
+  client contract, or requires an extra client field not supplied by current
+  MHCS authority.
+- Stop if the AWS target cannot be established as the explicitly user-provided
+  local test target, storage cannot remain encrypted/non-public, or the task
+  would require bucket/IAM/server/deployment mutation.
+- Stop if MPIPS cannot process the documented minimal request, returns a
+  contract-incompatible DICOM response, or the real probe needs real clinical
+  data, a secret disclosure, or a non-loopback endpoint.
+- Stop if parser integration requires an unsupported PHP extension, a new
+  system package, a native server tool, or a DICOM parser other than the
+  authorised Composer dependency.
+- Stop if multiple capture/projection handling, real ServiceRequest/Encounter
+  records, Member/Doctor publication, AI/Doctor routing, or another task’s
+  unreviewed local-rehearsal changes become necessary to satisfy acceptance.
+- Stop if a migration cannot preserve existing capture/study records or a safe
+  rollback/forward migration path cannot be verified.
+
+## Side-effect authorization
+
+### Explicitly authorized side effects
+
+- Repository changes limited to this objective, including the required Composer
+  dependencies/lockfile, Image Gateway migration, configuration/template,
+  service/job/controller/view/localisation, and focused tests.
+- Disposable local database creation/reset and local browser/build/test work.
+- One reversible synthetic AWS private-object write/read/delete probe against
+  the user-provided local test target.
+- One loopback local MPIPS synthetic integration probe using the configured API
+  key without displaying, copying, or persisting the secret outside normal
+  environment use.
+
+Not authorized: Git commit, push, pull request, deployment, release, bucket or
+IAM provisioning/change, server/Docker/reverse-proxy mutation, production or
+unknown AWS/MPIPS use, real-member data, secret disclosure, credential delivery,
+or changes outside this task.
+
+## Expected terminal outcome
+
+`REVIEW REQUIRED` — return an immutable implementation revision and the full
+local synthetic verification evidence.  The Reviewer decides acceptance and,
+only after that, plans the reconciled local rehearsal followed by local testing.
