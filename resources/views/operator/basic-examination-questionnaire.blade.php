@@ -1,11 +1,11 @@
 @extends('operator.layout')
 
-@section('title', 'Paper questionnaire')
+@section('title', __('Paper questionnaire'))
 
 @section('content')
 <section aria-labelledby="paper-questionnaire-title">
-    <h1 id="paper-questionnaire-title">Paper questionnaire</h1>
-    <p class="muted">Complete the approved paper interview, then photograph the completed form. The photo is stored privately and is not shown to Members or the public queue.</p>
+    <h1 id="paper-questionnaire-title">{{ __('Paper questionnaire') }}</h1>
+    <p class="muted">{{ __('Complete the approved paper interview, then photograph the completed form. The photo is stored privately and is not shown to Members or the public queue.') }}</p>
 
     @if ($errors->any())
         <div class="alert" role="alert">
@@ -22,13 +22,13 @@
             @csrf
             <input type="hidden" name="operation_id" value="{{ (string) \Illuminate\Support\Str::uuid() }}">
             <div class="field">
-                <label><input type="checkbox" name="questionnaire_completed" value="1" @checked(old('questionnaire_completed'))> The approved paper questionnaire has been completed.</label>
+                <label><input type="checkbox" name="questionnaire_completed" value="1" @checked(old('questionnaire_completed'))> {{ __('The approved paper questionnaire has been completed.') }}</label>
             </div>
             <div class="field">
-                <label for="photo">Completed paper questionnaire photo (JPEG or PNG)</label>
+                <label for="photo">{{ __('Completed paper questionnaire photo (JPEG or PNG)') }}</label>
                 <input id="photo" name="photo" type="file" accept="image/jpeg,image/png" required>
             </div>
-            <button type="submit">Store private questionnaire photo</button>
+            <button type="submit">{{ __('Store private questionnaire photo') }}</button>
         </form>
     </section>
 </section>

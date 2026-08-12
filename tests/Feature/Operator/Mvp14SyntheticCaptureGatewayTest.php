@@ -56,7 +56,7 @@ final class Mvp14SyntheticCaptureGatewayTest extends TestCase
 
         $this->get(route('operator.xray-readiness-worklist'))
             ->assertOk()
-            ->assertSee('Submit synthetic capture')
+            ->assertSee('Kirim pengambilan gambar sintetis')
             ->assertSee(route('operator.xray-capture.show', $admission));
     }
 
@@ -67,8 +67,8 @@ final class Mvp14SyntheticCaptureGatewayTest extends TestCase
 
         $this->get(route('operator.xray-capture.show', $admission))
             ->assertOk()
-            ->assertSee('Radiograph NPZ')
-            ->assertSee('Matching gain NPZ')
+            ->assertSee('NPZ radiografi')
+            ->assertSee('NPZ gain yang sesuai')
             ->assertSee('beforeunload');
     }
 
@@ -260,8 +260,8 @@ final class Mvp14SyntheticCaptureGatewayTest extends TestCase
         $this->get(route('operator.study.show', $studyId))
             ->assertOk()
             ->assertSee('data-dicom-viewer')
-            ->assertSee('Automatic VOI')
-            ->assertSee('Zoom and pan only')
+            ->assertSee('VOI otomatis')
+            ->assertSee('Hanya zoom dan geser')
             ->assertSee('data-testid="dicom-viewport"', false)
             ->assertDontSee('Window/Level')
             ->assertDontSee('Brightness')
@@ -293,7 +293,7 @@ final class Mvp14SyntheticCaptureGatewayTest extends TestCase
 
         $this->get(route('operator.study.results'))
             ->assertOk()
-            ->assertSee('DICOM results worklist')
+            ->assertSee('Daftar kerja hasil DICOM')
             ->assertSee($studyId)
             ->assertSee(route('operator.study.show', $studyId))
             ->assertDontSee($objectKey)
@@ -302,8 +302,8 @@ final class Mvp14SyntheticCaptureGatewayTest extends TestCase
 
         $this->get(route('operator.study.show', $studyId))
             ->assertOk()
-            ->assertSee('Automatic VOI')
-            ->assertSee('Zoom and pan only');
+            ->assertSee('VOI otomatis')
+            ->assertSee('Hanya zoom dan geser');
         $this->get(route('operator.study.dicom', $studyId))->assertOk();
         $this->get(route('operator.study.download', $studyId))
             ->assertOk()

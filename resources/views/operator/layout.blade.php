@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>@yield('title', 'Operator workstation') — MHCS Core</title>
+    <title>@yield('title', __('Operator workstation')) — {{ __('MHCS Core') }}</title>
     <style>
         :root { color-scheme: dark; font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif; color: #f4f7fb; background: #10181f; }
         body { margin: 0; background: #10181f; }
@@ -46,19 +46,19 @@
 </head>
 <body>
 <div class="shell">
-    <nav class="nav" aria-label="Operator workstation navigation">
-        <a href="{{ route('operator.dashboard') }}"><strong>MHCS Core / Operator</strong></a>
+    <nav class="nav" aria-label="{{ __('Operator workstation navigation') }}">
+        <a href="{{ route('operator.dashboard') }}"><strong>{{ __('MHCS Core / Operator') }}</strong></a>
         <div class="nav-links">
-            <a href="{{ route('operator.dashboard') }}">Workstation</a>
-            <a href="{{ route('operator.site') }}">Active site</a>
-            <a href="{{ route('operator.eligible-shifts') }}">Assigned shifts</a>
-            <a href="{{ route('operator.verification-worklist') }}">Verification worklist</a>
-            <a href="{{ route('operator.basic-examination-worklist') }}">Basic-examination worklist</a>
-            <a href="{{ route('operator.xray-readiness-worklist') }}">X-ray readiness</a>
-            <a href="{{ route('operator.study.results') }}">DICOM results</a>
+            <a href="{{ route('operator.dashboard') }}">{{ __('Workstation') }}</a>
+            <a href="{{ route('operator.site') }}">{{ __('Active site') }}</a>
+            <a href="{{ route('operator.eligible-shifts') }}">{{ __('Assigned shifts') }}</a>
+            <a href="{{ route('operator.verification-worklist') }}">{{ __('Verification worklist') }}</a>
+            <a href="{{ route('operator.basic-examination-worklist') }}">{{ __('Basic-examination worklist') }}</a>
+            <a href="{{ route('operator.xray-readiness-worklist') }}">{{ __('X-ray readiness') }}</a>
+            <a href="{{ route('operator.study.results') }}">{{ __('DICOM results') }}</a>
             <form method="POST" action="{{ route('logout') }}">
                 @csrf
-                <button type="submit" class="secondary">Sign out</button>
+                <button type="submit" class="secondary">{{ __('Sign out') }}</button>
             </form>
         </div>
     </nav>

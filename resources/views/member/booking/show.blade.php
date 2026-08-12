@@ -1,22 +1,22 @@
 @extends('member.layout')
 
-@section('title', 'Detail Sesi Foto Radiografi')
+@section('title', __('Session Details'))
 
 @section('content')
 <section aria-labelledby="booking-title">
-    <h1 id="booking-title">Detail Sesi Foto Radiografi</h1>
+    <h1 id="booking-title">{{ __('Session Details') }}</h1>
     <div class="card">
         <dl class="summary">
-            <div><dt>Layanan</dt><dd>{{ $booking->service_code_snapshot }}</dd></div>
-            <div><dt>Lokasi</dt><dd>{{ $booking->site_name_snapshot }}</dd></div>
-            <div><dt>Jadwal</dt><dd>{{ $booking->schedule->starts_at->setTimezone($booking->site_timezone_snapshot)->translatedFormat('l, j F Y') }} pukul {{ $booking->schedule->starts_at->setTimezone($booking->site_timezone_snapshot)->format('H.i') }}</dd></div>
-            <div><dt>Status</dt><dd>{{ $booking->status === 'confirmed' ? 'Sesi Foto Radiografi Terjadwal' : $booking->status }}</dd></div>
-            <div><dt>Harga</dt><dd>{{ $booking->pointCost() }} Madeena Points</dd></div>
-            <div><dt>Sumber pembayaran</dt><dd>Madeena Points pribadi</dd></div>
-            <div><dt>Bantuan interpretasi otomatis</dt><dd>{{ $booking->includes_ai_snapshot ? 'Termasuk' : 'Tidak termasuk' }}</dd></div>
-            <div><dt>Peninjauan dokter</dt><dd>{{ $booking->includes_doctor_snapshot ? 'Termasuk' : 'Tidak termasuk' }}</dd></div>
+            <div><dt>{{ __('Service') }}</dt><dd>{{ $booking->service_code_snapshot }}</dd></div>
+            <div><dt>{{ __('Location') }}</dt><dd>{{ $booking->site_name_snapshot }}</dd></div>
+            <div><dt>{{ __('Schedule') }}</dt><dd>{{ $booking->schedule->starts_at->setTimezone($booking->site_timezone_snapshot)->translatedFormat('l, j F Y') }} {{ __('at') }} {{ $booking->schedule->starts_at->setTimezone($booking->site_timezone_snapshot)->format('H.i') }}</dd></div>
+            <div><dt>{{ __('Status') }}</dt><dd>{{ $booking->status === 'confirmed' ? __('Scheduled Radiography Session') : __($booking->status) }}</dd></div>
+            <div><dt>{{ __('Price') }}</dt><dd>{{ $booking->pointCost() }} Madeena Points</dd></div>
+            <div><dt>{{ __('Payment source') }}</dt><dd>{{ __('Personal Madeena Points') }}</dd></div>
+            <div><dt>{{ __('Automatic interpretation assistance') }}</dt><dd>{{ $booking->includes_ai_snapshot ? __('Included') : __('Not included') }}</dd></div>
+            <div><dt>{{ __('Doctor review') }}</dt><dd>{{ $booking->includes_doctor_snapshot ? __('Included') : __('Not included') }}</dd></div>
         </dl>
-        <p class="muted">Nomor referensi lokal: {{ $booking->imagingOrder?->id }}</p>
+        <p class="muted">{{ __('Local reference number') }}: {{ $booking->imagingOrder?->id }}</p>
     </div>
 </section>
 @endsection

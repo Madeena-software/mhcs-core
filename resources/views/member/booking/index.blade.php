@@ -1,20 +1,20 @@
 @extends('member.layout')
 
-@section('title', 'Riwayat Sesi Foto Radiografi')
+@section('title', __('History of Radiography Sessions'))
 
 @section('content')
 <section aria-labelledby="bookings-title">
-    <h1 id="bookings-title">Riwayat Sesi Foto Radiografi</h1>
+    <h1 id="bookings-title">{{ __('History of Radiography Sessions') }}</h1>
     @if ($bookings->isEmpty())
-        <div class="card"><p class="muted">Belum ada Sesi Foto Radiografi yang tercatat.</p><a href="{{ route('member.services') }}">Jadwalkan Sesi Foto Radiografi</a></div>
+        <div class="card"><p class="muted">{{ __('No Radiography Sessions have been recorded yet.') }}</p><a href="{{ route('member.services') }}">{{ __('Schedule a Radiography Session') }}</a></div>
     @else
         <div class="summary">
             @foreach ($bookings as $booking)
                 <article class="card">
                     <h2>{{ $booking->service_code_snapshot }}</h2>
                     <p>{{ $booking->site_name_snapshot }}</p>
-                    <p>Status: <strong>{{ $booking->status === 'confirmed' ? 'Sesi Foto Radiografi Terjadwal' : $booking->status }}</strong></p>
-                    <a href="{{ route('member.bookings.show', $booking->getKey()) }}">Lihat Detail Sesi</a>
+                    <p>{{ __('Status') }}: <strong>{{ $booking->status === 'confirmed' ? __('Scheduled Radiography Session') : __($booking->status) }}</strong></p>
+                    <a href="{{ route('member.bookings.show', $booking->getKey()) }}">{{ __('View Session Details') }}</a>
                 </article>
             @endforeach
         </div>

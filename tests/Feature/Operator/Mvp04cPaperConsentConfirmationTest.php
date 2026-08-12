@@ -68,7 +68,7 @@ final class Mvp04cPaperConsentConfirmationTest extends TestCase
         $this->assertStringNotContainsString($plain, json_encode(DB::table('outbox_messages')->get(), JSON_THROW_ON_ERROR));
         $this->get(route('operator.paper-consent.show', $fixture['caseId']))
             ->assertOk()
-            ->assertSee('Stored privately')
+            ->assertSee('Disimpan secara privat')
             ->assertDontSee($plain)
             ->assertDontSee((string) $consent->private_scan_object_key);
     }
@@ -79,10 +79,10 @@ final class Mvp04cPaperConsentConfirmationTest extends TestCase
 
         $this->get(route('operator.paper-consent.show', $fixture['caseId']))
             ->assertOk()
-            ->assertSee('Actual signing date')
+            ->assertSee('Tanggal penandatanganan sebenarnya')
             ->assertSee('type="date"', false)
             ->assertSee('value="'.now()->format('Y-m-d').'"', false)
-            ->assertSee('up to 100 MB');
+            ->assertSee('maksimal 100 MB');
     }
 
     public function test_private_uploads_over_10_mb_pass_the_100_mb_request_boundary(): void

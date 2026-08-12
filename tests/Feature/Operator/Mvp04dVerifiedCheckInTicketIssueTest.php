@@ -41,7 +41,7 @@ final class Mvp04dVerifiedCheckInTicketIssueTest extends TestCase
 
         $this->get(route('operator.check-in.show', $fixture['caseId']))
             ->assertOk()
-            ->assertSee('The system will generate the paper ticket number automatically.')
+            ->assertSee('Sistem akan membuat nomor tiket kertas secara otomatis.')
             ->assertDontSee('Paper ticket number');
     }
 

@@ -68,7 +68,7 @@ final class Mvp04lAtomicXrayClaimTest extends TestCase
         $this->get(route('operator.xray-readiness-worklist'))
             ->assertOk()
             ->assertSee('XRAY-CLAIM-1')
-            ->assertSee('Claimed by you')
+            ->assertSee('Diklaim oleh Anda')
             ->assertDontSee($fixture['profileId'])
             ->assertDontSee($fixture['memberId'])
             ->assertDontSee($fixture['bookingId']);

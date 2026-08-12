@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="en">
+<html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Operator workstation sign in — MHCS Core</title>
+    <title>{{ __('Operator workstation sign in — MHCS Core') }}</title>
     <style>
         :root { color-scheme: dark; font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif; color: #f3f0ef; background: #1c1b1b; }
         * { box-sizing: border-box; }
@@ -30,13 +30,13 @@
 <main>
     <header class="brand">
         <div class="mark" aria-hidden="true">MH</div>
-        <div><strong>MHCS Core</strong><span>Clinic operations</span></div>
+        <div><strong>{{ __('MHCS Core') }}</strong><span>{{ __('Clinic operations') }}</span></div>
     </header>
 
     <section class="card" aria-labelledby="operator-login-title">
-        <p class="eyebrow">Staff access</p>
-        <h1 id="operator-login-title">Operator workstation</h1>
-        <p class="muted">Sign in to manage your assigned site and clinic-day workflow.</p>
+        <p class="eyebrow">{{ __('Staff access') }}</p>
+        <h1 id="operator-login-title">{{ __('Operator workstation') }}</h1>
+        <p class="muted">{{ __('Sign in to manage your assigned site and clinic-day workflow.') }}</p>
 
         @if ($errors->any())
             <p class="error" role="alert">{{ $errors->first() }}</p>
@@ -44,16 +44,16 @@
 
         <form method="POST" action="{{ route('operator.login.store') }}">
             @csrf
-            <label for="identifier">Email or NIK</label>
+            <label for="identifier">{{ __('Email or NIK') }}</label>
             <input id="identifier" name="identifier" type="text" value="{{ old('identifier') }}" autocomplete="username" required>
 
-            <label for="password">Password</label>
+            <label for="password">{{ __('Password') }}</label>
             <input id="password" name="password" type="password" autocomplete="current-password" required>
 
-            <button type="submit">Sign in</button>
+            <button type="submit">{{ __('Sign in') }}</button>
         </form>
 
-        <p class="note">Use your authorized MHCS Operator credentials. Member and administrator access use their existing entry points.</p>
+        <p class="note">{{ __('Use your authorized MHCS Operator credentials. Member and administrator access use their existing entry points.') }}</p>
     </section>
 </main>
 </body>

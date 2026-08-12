@@ -83,8 +83,8 @@ final class Mvp04kBasicExaminationCompletionTest extends TestCase
         $this->get(route('operator.xray-readiness-worklist'))
             ->assertOk()
             ->assertSee('COMPLETE-1')
-            ->assertSee('xray')
-            ->assertSee('waiting')
+            ->assertSee('Sesi foto radiografi')
+            ->assertSee('Menunggu')
             ->assertDontSee($fixture['memberId'])
             ->assertDontSee($fixture['bookingId'])
             ->assertDontSee('120');
@@ -299,9 +299,9 @@ final class Mvp04kBasicExaminationCompletionTest extends TestCase
 
         $this->get(route('operator.basic-examination-worklist'))
             ->assertOk()
-            ->assertSee('Record vital signs')
-            ->assertSee('Upload paper questionnaire')
-            ->assertDontSee('Complete basic examination');
+            ->assertSee('Catat tanda vital')
+            ->assertSee('Unggah kuesioner kertas')
+            ->assertDontSee('Selesaikan pemeriksaan dasar');
     }
 
     public function test_completion_replay_is_idempotent_and_changed_payload_conflicts(): void

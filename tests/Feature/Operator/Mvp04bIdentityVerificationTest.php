@@ -47,7 +47,7 @@ final class Mvp04bIdentityVerificationTest extends TestCase
 
         $this->get(route('operator.identity-verification.show', $case['case_id']))
             ->assertOk()
-            ->assertSee('Verify exact NIK')
+            ->assertSee('Verifikasi NIK yang tepat')
             ->assertDontSee('Record decision');
 
         $this->post(route('operator.identity-verification.lookup', $case['case_id']), [
@@ -80,8 +80,8 @@ final class Mvp04bIdentityVerificationTest extends TestCase
             ->assertOk()
             ->assertSee('Synthetic Arrival Member')
             ->assertSee('900000000001')
-            ->assertSee('Current identity document')
-            ->assertDontSee('Previous approved profile photograph');
+            ->assertSee('Dokumen identitas saat ini')
+            ->assertDontSee('Foto profil sebelumnya yang disetujui');
 
         $reveal = $this->post(route('operator.identity-verification.previous-photos', $case['case_id']), [
             'reason' => 'Latest photo is insufficient for a human comparison.',
@@ -89,7 +89,7 @@ final class Mvp04bIdentityVerificationTest extends TestCase
         ]);
         $reveal->assertRedirect(route('operator.identity-verification.show', $case['case_id']));
         $previousView = $this->get(route('operator.identity-verification.show', $case['case_id']));
-        $previousView->assertOk()->assertSee('Previous approved profile photograph');
+        $previousView->assertOk()->assertSee('Foto profil sebelumnya yang disetujui');
         $this->assertDatabaseHas('operator_identity_verification_events', ['verification_id' => $case['case_id'], 'event_type' => 'previous_photos_revealed']);
 
         $asset = DB::table('member_verification_assets')->where('member_id', $fixture['memberId'])->where('type', 'ktp')->first();
@@ -356,14 +356,14 @@ final class Mvp04bIdentityVerificationTest extends TestCase
 
         $response = $this->get(route('operator.identity-verification.show', $case['case_id']));
         $response->assertOk()
-            ->assertSee('Current identity evidence is unavailable')
-            ->assertSee('Report mismatch')
-            ->assertSee('Insufficient evidence')
-            ->assertSee('Cancel verification')
-            ->assertDontSee('Current identity document')
-            ->assertDontSee('Verify exact NIK')
-            ->assertDontSee('Reveal previous photographs')
-            ->assertDontSee('Matched')
+            ->assertSee('Bukti identitas saat ini tidak tersedia')
+            ->assertSee('Laporkan ketidaksesuaian')
+            ->assertSee('Bukti tidak memadai')
+            ->assertSee('Batalkan verifikasi')
+            ->assertDontSee('Dokumen identitas saat ini')
+            ->assertDontSee('Verifikasi NIK yang tepat')
+            ->assertDontSee('Tampilkan foto sebelumnya')
+            ->assertDontSee('Cocok')
             ->assertDontSee('/asset/');
     }
 
@@ -378,7 +378,7 @@ final class Mvp04bIdentityVerificationTest extends TestCase
 
         $this->get(route('operator.identity-verification.show', $case['case_id']))
             ->assertOk()
-            ->assertSee('Current identity evidence is unavailable')
+            ->assertSee('Bukti identitas saat ini tidak tersedia')
             ->assertDontSee('Masked NIK')
             ->assertDontSee('Verify exact NIK');
     }

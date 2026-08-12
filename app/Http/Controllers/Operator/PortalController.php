@@ -68,9 +68,9 @@ final class PortalController extends Controller
         try {
             $site = $sites->select((string) $validator->validated()['site_id']);
 
-            return redirect()->route('operator.dashboard')->with('status', 'Active site selected: '.$site->display_name.'.');
+            return redirect()->route('operator.dashboard')->with('status', __('Active site selected: :site.', ['site' => $site->display_name]));
         } catch (Throwable $exception) {
-            return back()->withErrors(['site_id' => $exception instanceof OperatorException ? $exception->getMessage() : 'The active site could not be selected.']);
+            return back()->withErrors(['site_id' => $exception instanceof OperatorException ? __($exception->getMessage()) : __('The active site could not be selected.')]);
         }
     }
 
@@ -100,7 +100,7 @@ final class PortalController extends Controller
                 'rows' => $attendance->query($schedule, $at),
             ]);
         } catch (Throwable $exception) {
-            return redirect()->route('operator.dashboard')->withErrors(['attendance' => $exception instanceof OperatorException ? $exception->getMessage() : 'The attendance list is unavailable.']);
+            return redirect()->route('operator.dashboard')->withErrors(['attendance' => $exception instanceof OperatorException ? __($exception->getMessage()) : __('The attendance list is unavailable.')]);
         }
     }
 
@@ -122,7 +122,7 @@ final class PortalController extends Controller
 
             return view('operator.arrival-confirmation', $result);
         } catch (Throwable $exception) {
-            return back()->withErrors(['arrival' => $exception instanceof OperatorException ? $exception->getMessage() : 'The arrival could not be confirmed.'])->withInput();
+            return back()->withErrors(['arrival' => $exception instanceof OperatorException ? __($exception->getMessage()) : __('The arrival could not be confirmed.')])->withInput();
         }
     }
 
@@ -139,9 +139,9 @@ final class PortalController extends Controller
             return redirect()->route('operator.attendance', [
                 'schedule' => $result['schedule_id'],
                 'at' => $result['occurrence_at'],
-            ])->with('status', 'Arrival recorded for '.$result['booking_id'].'.');
+            ])->with('status', __('Arrival recorded for :booking.', ['booking' => $result['booking_id']]));
         } catch (Throwable $exception) {
-            return back()->withErrors(['arrival' => $exception instanceof OperatorException ? $exception->getMessage() : 'The arrival could not be recorded.'])->withInput();
+            return back()->withErrors(['arrival' => $exception instanceof OperatorException ? __($exception->getMessage()) : __('The arrival could not be recorded.')])->withInput();
         }
     }
 
@@ -157,7 +157,7 @@ final class PortalController extends Controller
 
             return redirect()->route('operator.dashboard');
         } catch (Throwable $exception) {
-            return back()->withErrors(['arrival' => $exception instanceof OperatorException ? $exception->getMessage() : 'The arrival confirmation could not be cancelled.']);
+            return back()->withErrors(['arrival' => $exception instanceof OperatorException ? __($exception->getMessage()) : __('The arrival confirmation could not be cancelled.')]);
         }
     }
 
@@ -180,7 +180,7 @@ final class PortalController extends Controller
         } catch (OperatorException) {
             abort(403);
         } catch (Throwable $exception) {
-            return redirect()->route('operator.dashboard')->withErrors(['queue' => $exception instanceof OperatorException ? $exception->getMessage() : 'The basic-examination worklist is unavailable.']);
+            return redirect()->route('operator.dashboard')->withErrors(['queue' => $exception instanceof OperatorException ? __($exception->getMessage()) : __('The basic-examination worklist is unavailable.')]);
         }
     }
 
@@ -193,7 +193,7 @@ final class PortalController extends Controller
         } catch (OperatorException) {
             abort(403);
         } catch (Throwable) {
-            return redirect()->route('operator.dashboard')->withErrors(['queue' => 'The X-ray readiness worklist is unavailable.']);
+            return redirect()->route('operator.dashboard')->withErrors(['queue' => __('The X-ray readiness worklist is unavailable.')]);
         }
     }
 
@@ -207,18 +207,18 @@ final class PortalController extends Controller
         try {
             $worklist->claimBasicExamination($admission, (string) $validator->validated()['operation_id']);
 
-            return redirect()->route('operator.basic-examination-worklist')->with('status', 'Queue admission claimed.');
+            return redirect()->route('operator.basic-examination-worklist')->with('status', __('Queue admission claimed.'));
         } catch (OperatorException $exception) {
             if ($exception->category === 'queue_claim_conflict') {
                 abort(409);
             }
             if ($exception->category === 'queue_claim_failure') {
-                return back()->withErrors(['queue' => 'The queue admission could not be claimed.']);
+                return back()->withErrors(['queue' => __('The queue admission could not be claimed.')]);
             }
 
             abort(403);
         } catch (Throwable) {
-            return back()->withErrors(['queue' => 'The queue admission could not be claimed.']);
+            return back()->withErrors(['queue' => __('The queue admission could not be claimed.')]);
         }
     }
 
@@ -232,18 +232,18 @@ final class PortalController extends Controller
         try {
             $worklist->claimXray($admission, (string) $validator->validated()['operation_id']);
 
-            return redirect()->route('operator.xray-readiness-worklist')->with('status', 'X-ray admission claimed.');
+            return redirect()->route('operator.xray-readiness-worklist')->with('status', __('X-ray admission claimed.'));
         } catch (OperatorException $exception) {
             if ($exception->category === 'xray_claim_conflict') {
                 abort(409);
             }
             if ($exception->category === 'xray_claim_failure') {
-                return back()->withErrors(['queue' => 'The X-ray admission could not be claimed.']);
+                return back()->withErrors(['queue' => __('The X-ray admission could not be claimed.')]);
             }
 
             abort(403);
         } catch (Throwable) {
-            return back()->withErrors(['queue' => 'The X-ray admission could not be claimed.']);
+            return back()->withErrors(['queue' => __('The X-ray admission could not be claimed.')]);
         }
     }
 
@@ -257,18 +257,18 @@ final class PortalController extends Controller
         try {
             $worklist->callXray($admission, (string) $validator->validated()['operation_id']);
 
-            return redirect()->route('operator.xray-readiness-worklist')->with('status', 'X-ray admission called.');
+            return redirect()->route('operator.xray-readiness-worklist')->with('status', __('X-ray admission called.'));
         } catch (OperatorException $exception) {
             if ($exception->category === 'xray_call_conflict') {
                 abort(409);
             }
             if ($exception->category === 'xray_call_failure') {
-                return back()->withErrors(['queue' => 'The X-ray admission could not be called.']);
+                return back()->withErrors(['queue' => __('The X-ray admission could not be called.')]);
             }
 
             abort(403);
         } catch (Throwable) {
-            return back()->withErrors(['queue' => 'The X-ray admission could not be called.']);
+            return back()->withErrors(['queue' => __('The X-ray admission could not be called.')]);
         }
     }
 
@@ -282,18 +282,18 @@ final class PortalController extends Controller
         try {
             $worklist->callBasicExamination($admission, (string) $validator->validated()['operation_id']);
 
-            return redirect()->route('operator.basic-examination-worklist')->with('status', 'Queue admission called.');
+            return redirect()->route('operator.basic-examination-worklist')->with('status', __('Queue admission called.'));
         } catch (OperatorException $exception) {
             if ($exception->category === 'queue_call_conflict') {
                 abort(409);
             }
             if ($exception->category === 'queue_call_failure') {
-                return back()->withErrors(['queue' => 'The queue admission could not be called.']);
+                return back()->withErrors(['queue' => __('The queue admission could not be called.')]);
             }
 
             abort(403);
         } catch (Throwable) {
-            return back()->withErrors(['queue' => 'The queue admission could not be called.']);
+            return back()->withErrors(['queue' => __('The queue admission could not be called.')]);
         }
     }
 
@@ -307,18 +307,18 @@ final class PortalController extends Controller
         try {
             $worklist->startBasicExamination($admission, (string) $validator->validated()['operation_id']);
 
-            return redirect()->route('operator.basic-examination-worklist')->with('status', 'Queue admission started.');
+            return redirect()->route('operator.basic-examination-worklist')->with('status', __('Queue admission started.'));
         } catch (OperatorException $exception) {
             if ($exception->category === 'queue_start_conflict') {
                 abort(409);
             }
             if ($exception->category === 'queue_start_failure') {
-                return back()->withErrors(['queue' => 'The queue admission could not be started.']);
+                return back()->withErrors(['queue' => __('The queue admission could not be started.')]);
             }
 
             abort(403);
         } catch (Throwable) {
-            return back()->withErrors(['queue' => 'The queue admission could not be started.']);
+            return back()->withErrors(['queue' => __('The queue admission could not be started.')]);
         }
     }
 
@@ -329,7 +329,7 @@ final class PortalController extends Controller
         } catch (OperatorException) {
             abort(403);
         } catch (Throwable) {
-            return redirect()->route('operator.dashboard')->withErrors(['vital_signs' => 'The vital-signs form is unavailable.']);
+            return redirect()->route('operator.dashboard')->withErrors(['vital_signs' => __('The vital-signs form is unavailable.')]);
         }
     }
 
@@ -354,12 +354,12 @@ final class PortalController extends Controller
                 $hasValue = $this->hasInput($request->input($field.'_value'));
                 $hasReason = $this->hasInput($request->input($field.'_missing_reason'));
                 if ($hasValue === $hasReason) {
-                    $validator->errors()->add($field.'_value', 'Provide a value or a missing reason.');
+                    $validator->errors()->add($field.'_value', __('Provide a value or a missing reason.'));
                 }
                 if (in_array($field, ['height', 'weight'], true) && $hasValue) {
                     $value = $request->input($field.'_value');
                     if (! is_numeric($value) || ! is_finite((float) $value) || (float) $value <= 0) {
-                        $validator->errors()->add($field.'_value', 'Provide a finite positive measurement.');
+                        $validator->errors()->add($field.'_value', __('Provide a finite positive measurement.'));
                     }
                 }
             }
@@ -368,10 +368,10 @@ final class PortalController extends Controller
             $hasWeight = $this->hasInput($request->input('weight_value'));
             $hasBmiReason = $this->hasInput($request->input('bmi_missing_reason'));
             if ($hasHeight && $hasWeight && $hasBmiReason) {
-                $validator->errors()->add('bmi_missing_reason', 'BMI is calculated from height and weight.');
+                $validator->errors()->add('bmi_missing_reason', __('BMI is calculated from height and weight.'));
             }
             if ((! $hasHeight || ! $hasWeight) && ! $hasBmiReason) {
-                $validator->errors()->add('bmi_missing_reason', 'Provide a missing reason when BMI cannot be calculated.');
+                $validator->errors()->add('bmi_missing_reason', __('Provide a missing reason when BMI cannot be calculated.'));
             }
         });
         if ($validator->fails()) {
@@ -385,18 +385,18 @@ final class PortalController extends Controller
                 $validator->validated(),
             );
 
-            return redirect()->route('operator.basic-examination-worklist')->with('status', 'Vital signs recorded.');
+            return redirect()->route('operator.basic-examination-worklist')->with('status', __('Vital signs recorded.'));
         } catch (OperatorException $exception) {
             if ($exception->category === 'vital_signs_conflict') {
                 abort(409);
             }
             if ($exception->category === 'vital_signs_failure') {
-                return back()->withErrors(['vital_signs' => 'The vital-signs record could not be saved.']);
+                return back()->withErrors(['vital_signs' => __('The vital-signs record could not be saved.')]);
             }
 
             abort(403);
         } catch (Throwable) {
-            return back()->withErrors(['vital_signs' => 'The vital-signs record could not be saved.']);
+            return back()->withErrors(['vital_signs' => __('The vital-signs record could not be saved.')]);
         }
     }
 
@@ -407,7 +407,7 @@ final class PortalController extends Controller
         } catch (OperatorException) {
             abort(403);
         } catch (Throwable) {
-            return redirect()->route('operator.dashboard')->withErrors(['questionnaire' => 'The paper questionnaire form is unavailable.']);
+            return redirect()->route('operator.dashboard')->withErrors(['questionnaire' => __('The paper questionnaire form is unavailable.')]);
         }
     }
 
@@ -429,18 +429,18 @@ final class PortalController extends Controller
                 $request->file('photo'),
             );
 
-            return redirect()->route('operator.basic-examination-worklist')->with('status', 'Paper questionnaire recorded privately.');
+            return redirect()->route('operator.basic-examination-worklist')->with('status', __('Paper questionnaire recorded privately.'));
         } catch (OperatorException $exception) {
             if ($exception->category === 'questionnaire_conflict') {
                 abort(409);
             }
             if ($exception->category === 'questionnaire_failure') {
-                return back()->withErrors(['questionnaire' => 'The paper questionnaire could not be saved.'])->withInput();
+                return back()->withErrors(['questionnaire' => __('The paper questionnaire could not be saved.')])->withInput();
             }
 
             abort(403);
         } catch (Throwable) {
-            return back()->withErrors(['questionnaire' => 'The paper questionnaire could not be saved.'])->withInput();
+            return back()->withErrors(['questionnaire' => __('The paper questionnaire could not be saved.')])->withInput();
         }
     }
 
@@ -454,18 +454,18 @@ final class PortalController extends Controller
         try {
             $worklist->completeBasicExamination($admission, (string) $validator->validated()['operation_id']);
 
-            return redirect()->route('operator.basic-examination-worklist')->with('status', 'Basic examination completed. X-ray is ready.');
+            return redirect()->route('operator.basic-examination-worklist')->with('status', __('Basic examination completed. X-ray is ready.'));
         } catch (OperatorException $exception) {
             if ($exception->category === 'queue_completion_conflict') {
                 abort(409);
             }
             if ($exception->category === 'queue_completion_failure') {
-                return back()->withErrors(['queue' => 'The basic examination could not be completed.']);
+                return back()->withErrors(['queue' => __('The basic examination could not be completed.')]);
             }
 
             abort(403);
         } catch (Throwable) {
-            return back()->withErrors(['queue' => 'The basic examination could not be completed.']);
+            return back()->withErrors(['queue' => __('The basic examination could not be completed.')]);
         }
     }
 
@@ -489,7 +489,7 @@ final class PortalController extends Controller
 
             return redirect()->route('operator.identity-verification.show', $case['case_id']);
         } catch (Throwable $exception) {
-            return back()->withErrors(['identity' => $exception instanceof OperatorException ? $exception->getMessage() : 'The verification case could not be started.']);
+            return back()->withErrors(['identity' => $exception instanceof OperatorException ? __($exception->getMessage()) : __('The verification case could not be started.')]);
         }
     }
 
@@ -498,7 +498,7 @@ final class PortalController extends Controller
         try {
             return view('operator.identity-verification', $identity->view($case));
         } catch (Throwable $exception) {
-            return redirect()->route('operator.verification-worklist')->withErrors(['identity' => $exception instanceof OperatorException ? $exception->getMessage() : 'The verification case is unavailable.']);
+            return redirect()->route('operator.verification-worklist')->withErrors(['identity' => $exception instanceof OperatorException ? __($exception->getMessage()) : __('The verification case is unavailable.')]);
         }
     }
 
@@ -519,9 +519,9 @@ final class PortalController extends Controller
                 (string) $validator->validated()['at'],
             );
 
-            return redirect()->route('operator.paper-consent.show', $case)->with('status', 'NIK verified. Continue with paper consent.');
+            return redirect()->route('operator.paper-consent.show', $case)->with('status', __('NIK verified. Continue with paper consent.'));
         } catch (Throwable $exception) {
-            return back()->withErrors(['identity' => $exception instanceof OperatorException ? $exception->getMessage() : 'The identity lookup is unavailable.']);
+            return back()->withErrors(['identity' => $exception instanceof OperatorException ? __($exception->getMessage()) : __('The identity lookup is unavailable.')]);
         }
     }
 
@@ -540,7 +540,7 @@ final class PortalController extends Controller
 
             return redirect()->route('operator.identity-verification.show', $case);
         } catch (Throwable $exception) {
-            return back()->withErrors(['identity' => $exception instanceof OperatorException ? $exception->getMessage() : 'Previous profile photos are unavailable.']);
+            return back()->withErrors(['identity' => $exception instanceof OperatorException ? __($exception->getMessage()) : __('Previous profile photos are unavailable.')]);
         }
     }
 
@@ -556,7 +556,7 @@ final class PortalController extends Controller
                 'Pragma' => 'no-cache',
             ]);
         } catch (Throwable $exception) {
-            return redirect()->route('operator.identity-verification.show', $case)->withErrors(['identity' => $exception instanceof OperatorException ? $exception->getMessage() : 'The verification asset is unavailable.']);
+            return redirect()->route('operator.identity-verification.show', $case)->withErrors(['identity' => $exception instanceof OperatorException ? __($exception->getMessage()) : __('The verification asset is unavailable.')]);
         }
     }
 
@@ -579,9 +579,9 @@ final class PortalController extends Controller
                 (string) $validator->validated()['operation_id'],
             );
 
-            return redirect()->route('operator.identity-verification.show', $case)->with('status', 'Verification decision recorded.');
+            return redirect()->route('operator.identity-verification.show', $case)->with('status', __('Verification decision recorded.'));
         } catch (Throwable $exception) {
-            return back()->withErrors(['identity' => $exception instanceof OperatorException ? $exception->getMessage() : 'The verification decision could not be recorded.']);
+            return back()->withErrors(['identity' => $exception instanceof OperatorException ? __($exception->getMessage()) : __('The verification decision could not be recorded.')]);
         }
     }
 
@@ -598,9 +598,9 @@ final class PortalController extends Controller
         try {
             $identity->cancel($case, (string) $validator->validated()['reason'], (string) $validator->validated()['operation_id']);
 
-            return redirect()->route('operator.verification-worklist')->with('status', 'Verification case cancelled.');
+            return redirect()->route('operator.verification-worklist')->with('status', __('Verification case cancelled.'));
         } catch (Throwable $exception) {
-            return back()->withErrors(['identity' => $exception instanceof OperatorException ? $exception->getMessage() : 'The verification case could not be cancelled.']);
+            return back()->withErrors(['identity' => $exception instanceof OperatorException ? __($exception->getMessage()) : __('The verification case could not be cancelled.')]);
         }
     }
 
@@ -609,7 +609,7 @@ final class PortalController extends Controller
         try {
             return view('operator.paper-consent', $consent->view($case));
         } catch (Throwable $exception) {
-            return redirect()->route('operator.verification-worklist')->withErrors(['consent' => $exception instanceof OperatorException ? $exception->getMessage() : 'The paper-consent case is unavailable.']);
+            return redirect()->route('operator.verification-worklist')->withErrors(['consent' => $exception instanceof OperatorException ? __($exception->getMessage()) : __('The paper-consent case is unavailable.')]);
         }
     }
 
@@ -641,9 +641,9 @@ final class PortalController extends Controller
                 $input['scan'] ?? null,
             );
 
-            return redirect()->route('operator.paper-consent.show', $case)->with('status', 'Paper consent confirmed.');
+            return redirect()->route('operator.paper-consent.show', $case)->with('status', __('Paper consent confirmed.'));
         } catch (Throwable $exception) {
-            return back()->withErrors(['consent' => $exception instanceof OperatorException ? $exception->getMessage() : 'The paper consent could not be confirmed.'])->withInput();
+            return back()->withErrors(['consent' => $exception instanceof OperatorException ? __($exception->getMessage()) : __('The paper consent could not be confirmed.')])->withInput();
         }
     }
 
@@ -652,7 +652,7 @@ final class PortalController extends Controller
         try {
             return view('operator.check-in-ticket', $tickets->view($case));
         } catch (Throwable $exception) {
-            return redirect()->route('operator.verification-worklist')->withErrors(['ticket' => $exception instanceof OperatorException ? $exception->getMessage() : 'The paper ticket case is unavailable.']);
+            return redirect()->route('operator.verification-worklist')->withErrors(['ticket' => $exception instanceof OperatorException ? __($exception->getMessage()) : __('The paper ticket case is unavailable.')]);
         }
     }
 
@@ -672,7 +672,7 @@ final class PortalController extends Controller
 
             return redirect()->route('operator.paper-ticket.show', $result['ticket_id']);
         } catch (Throwable $exception) {
-            return back()->withErrors(['ticket' => $exception instanceof OperatorException ? $exception->getMessage() : 'The paper ticket could not be issued.'])->withInput();
+            return back()->withErrors(['ticket' => $exception instanceof OperatorException ? __($exception->getMessage()) : __('The paper ticket could not be issued.')])->withInput();
         }
     }
 
@@ -681,7 +681,7 @@ final class PortalController extends Controller
         try {
             return view('operator.paper-ticket-result', ['ticket' => $tickets->show($ticket)]);
         } catch (Throwable $exception) {
-            return redirect()->route('operator.dashboard')->withErrors(['ticket' => $exception instanceof OperatorException ? $exception->getMessage() : 'The paper ticket is unavailable.']);
+            return redirect()->route('operator.dashboard')->withErrors(['ticket' => $exception instanceof OperatorException ? __($exception->getMessage()) : __('The paper ticket is unavailable.')]);
         }
     }
 
@@ -690,7 +690,7 @@ final class PortalController extends Controller
         try {
             return view('operator.paper-ticket-print', ['ticket' => $tickets->show($ticket)]);
         } catch (Throwable $exception) {
-            return redirect()->route('operator.dashboard')->withErrors(['ticket' => $exception instanceof OperatorException ? $exception->getMessage() : 'The paper ticket is unavailable.']);
+            return redirect()->route('operator.dashboard')->withErrors(['ticket' => $exception instanceof OperatorException ? __($exception->getMessage()) : __('The paper ticket is unavailable.')]);
         }
     }
 
@@ -706,7 +706,7 @@ final class PortalController extends Controller
 
             return redirect()->route('operator.paper-ticket.print', $ticket);
         } catch (Throwable $exception) {
-            return back()->withErrors(['ticket' => $exception instanceof OperatorException ? $exception->getMessage() : 'The paper ticket reprint could not be requested.']);
+            return back()->withErrors(['ticket' => $exception instanceof OperatorException ? __($exception->getMessage()) : __('The paper ticket reprint could not be requested.')]);
         }
     }
 

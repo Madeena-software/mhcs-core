@@ -40,8 +40,8 @@ final class Mvp04mPrivateXrayCallTest extends TestCase
         $this->get(route('operator.xray-readiness-worklist'))
             ->assertOk()
             ->assertSee('XRAY-CALL-1')
-            ->assertSee('Call')
-            ->assertSee('Claimed by you');
+            ->assertSee('Panggil')
+            ->assertSee('Diklaim oleh Anda');
         $this->callXray($admission->id, ['operation_id' => $operationId])
             ->assertRedirect(route('operator.xray-readiness-worklist'));
 
@@ -73,7 +73,7 @@ final class Mvp04mPrivateXrayCallTest extends TestCase
         $this->get(route('operator.xray-readiness-worklist'))
             ->assertOk()
             ->assertSee('XRAY-CALL-1')
-            ->assertSee('called')
+            ->assertSee('Dipanggil')
             ->assertDontSee($fixture['profileId'])
             ->assertDontSee($fixture['memberId'])
             ->assertDontSee($fixture['bookingId']);

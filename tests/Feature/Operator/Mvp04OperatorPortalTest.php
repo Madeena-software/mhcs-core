@@ -36,7 +36,7 @@ final class Mvp04OperatorPortalTest extends TestCase
 
         $this->get(route('operator.login'))
             ->assertOk()
-            ->assertSee('Operator workstation')
+            ->assertSee('Dasbor operator')
             ->assertDontSee('Masuk ke MHCS Core');
 
         $this->post(route('operator.login.store'), [
@@ -211,7 +211,7 @@ final class Mvp04OperatorPortalTest extends TestCase
         $fixture = $this->operatorFixture(false);
         $this->startSession();
         $this->actingAs($fixture['operator']);
-        $this->get('/operator')->assertOk()->assertSee('No active site is selected.');
+        $this->get('/operator')->assertOk()->assertSee('Belum ada lokasi aktif yang dipilih.');
         $this->post('/operator/site', ['site_id' => $fixture['siteLocalId']])->assertRedirect(route('operator.dashboard'));
 
         $this->get('/operator/attendance/'.$fixture['scheduleId'].'?at=2040-01-10T10:15:00%2B07:00')
@@ -251,8 +251,8 @@ final class Mvp04OperatorPortalTest extends TestCase
         $response = $this->get('/operator/attendance/'.$fixture['scheduleId'].'?at=2040-01-10T10:15:00%2B07:00')
             ->assertOk()
             ->assertSee('Synthetic Arrival Member')
-            ->assertSee('Arrived')
-            ->assertSee('Continue identity verification');
+            ->assertSee('Sudah tiba')
+            ->assertSee('Lanjutkan verifikasi identitas');
 
         for ($index = 1; $index <= 36; $index++) {
             $response->assertSee('Roster Member '.$index);
@@ -266,20 +266,20 @@ final class Mvp04OperatorPortalTest extends TestCase
 
         $this->get(route('operator.dashboard'))
             ->assertOk()
-            ->assertSee('Select an assigned site');
+            ->assertSee('Pilih lokasi yang ditugaskan');
 
         $this->post(route('operator.site.select'), ['site_id' => $fixture['siteLocalId']])
             ->assertRedirect(route('operator.dashboard'));
 
         $this->get(route('operator.dashboard'))
             ->assertOk()
-            ->assertSee('1. Attendance')
+            ->assertSee('1. Kehadiran')
             ->assertSee(route('lcd.show', $fixture['siteLocalId']), false)
-            ->assertSee('Open LCD queue')
-            ->assertSee('2. Arrival and verification')
-            ->assertSee('3. Consent and ticket')
-            ->assertSee('4. Basic examination')
-            ->assertSee('5. X-ray readiness')
+            ->assertSee('Buka antrean LCD')
+            ->assertSee('2. Kedatangan dan verifikasi')
+            ->assertSee('3. Persetujuan dan tiket')
+            ->assertSee('4. PEMERIKSAAN DASAR')
+            ->assertSee('5. Kesiapan sesi foto radiografi')
             ->assertSee('data-testid="verification-queue-count"', false)
             ->assertSee('data-testid="basic-examination-queue-count"', false)
             ->assertSee('data-testid="xray-queue-count"', false);
@@ -302,7 +302,7 @@ final class Mvp04OperatorPortalTest extends TestCase
         $this->post('/operator/arrivals/confirm', [
             'booking_id' => $fixture['bookingId'],
             'occurrence_at' => '2040-01-10T10:15:00+07:00',
-        ])->assertOk()->assertSee('Confirm physical arrival');
+        ])->assertOk()->assertSee('Konfirmasi dan catat kedatangan');
 
         $token = (string) data_get(session('operator.arrival_confirmation'), 'token');
         $this->assertNotSame('', $token);
@@ -318,7 +318,7 @@ final class Mvp04OperatorPortalTest extends TestCase
         ]));
 
         $this->assertDatabaseHas('bookings', ['id' => $fixture['bookingId'], 'status' => 'arrived']);
-        $this->get('/operator/verification-worklist')->assertOk()->assertSee('Synthetic Arrival Member')->assertSee('pending_verification');
+        $this->get('/operator/verification-worklist')->assertOk()->assertSee('Synthetic Arrival Member')->assertSee('Menunggu verifikasi');
         $this->assertDatabaseMissing('operator_arrivals', ['booking_id' => $fixture['bookingId'], 'status' => 'pending']);
 
         $this->post('/operator/arrivals', ['confirmation_token' => $token])->assertRedirect(route('operator.attendance', [

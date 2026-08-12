@@ -41,14 +41,14 @@ final class Mvp04jPrivateVitalSignsCaptureTest extends TestCase
             ->assertOk()
             ->assertSee('mmHg')
             ->assertSee('kg/m²')
-            ->assertSee('Screening result; not a diagnosis')
+            ->assertSee('Hasil skrining; bukan diagnosis')
             ->assertDontSee($fixture['memberId'])
             ->assertDontSee($fixture['bookingId']);
 
         $operationId = (string) Str::uuid();
         $this->post(route('operator.basic-examination-worklist.vital-signs.store', $admission->id), $this->valuePayload($operationId))
             ->assertRedirect(route('operator.basic-examination-worklist'))
-            ->assertSessionHas('status', 'Vital signs recorded.');
+            ->assertSessionHas('status', 'Tanda vital telah dicatat.');
 
         $assessment = DB::table('member_vital_signs_assessments')->where('booking_id', $fixture['bookingId'])->first();
         $execution = DB::table('operator_vital_signs_executions')->where('operator_queue_admission_id', $admission->id)->first();
@@ -148,7 +148,7 @@ final class Mvp04jPrivateVitalSignsCaptureTest extends TestCase
             $this->post(route('operator.basic-examination-worklist.vital-signs.store', $admission->id), $payload)
                 ->assertRedirect()
                 ->assertSessionHasErrors($index < 3 ? 'height_value' : 'weight_value')
-                ->assertDontSee('Vital signs recorded.');
+                ->assertDontSee('Tanda vital telah dicatat.');
 
             $this->assertDatabaseMissing('idempotent_consumptions', ['message_id' => $operationId, 'status' => 'handled']);
         }

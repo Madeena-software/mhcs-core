@@ -76,19 +76,19 @@ final class ImageGatewayController extends Controller
                 $gain,
             );
 
-            return redirect()->route('operator.study.show', $result['study_id'])->with('status', 'Synthetic capture accepted.');
+            return redirect()->route('operator.study.show', $result['study_id'])->with('status', __('Synthetic capture accepted.'));
         } catch (OperatorException|ImageGatewayException $exception) {
             if ($exception instanceof ImageGatewayException && $exception->category === 'environment_forbidden') {
                 abort(403);
             }
 
-            return back()->withErrors(['capture' => $exception->getMessage()])->withInput();
+            return back()->withErrors(['capture' => __($exception->getMessage())])->withInput();
         } catch (Throwable $exception) {
             if ($exception instanceof HttpExceptionInterface) {
                 throw $exception;
             }
 
-            return back()->withErrors(['capture' => 'The synthetic capture could not be accepted.'])->withInput();
+            return back()->withErrors(['capture' => __('The synthetic capture could not be accepted.')])->withInput();
         }
     }
 

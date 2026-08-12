@@ -37,9 +37,9 @@ final class Mvp04hPrivateBasicExaminationStartTest extends TestCase
 
         $this->get(route('operator.basic-examination-worklist'))
             ->assertOk()
-            ->assertSee('Current claimed admission')
-            ->assertSee('Start')
-            ->assertSee('Claimed by you');
+            ->assertSee('Tiket yang sedang diklaim')
+            ->assertSee('Mulai')
+            ->assertSee('Diklaim oleh Anda');
         $this->post(route('operator.basic-examination-worklist.start', $admission->id), ['operation_id' => $operationId])
             ->assertRedirect(route('operator.basic-examination-worklist'));
 

@@ -1,6 +1,6 @@
 @extends('operator.layout')
 
-@section('title', 'DICOM study')
+@section('title', __('DICOM study'))
 
 @section('content')
 <style>
@@ -11,16 +11,16 @@
          data-image-url="{{ route('operator.study.dicom', $study_id) }}"
          data-window-center="{{ $window_center }}"
          data-window-width="{{ $window_width }}">
-    <h1 id="dicom-study-title">DICOM study</h1>
-    <p class="muted">Automatic VOI. Zoom and pan only.</p>
-    <div class="dicom-viewport-stack" aria-label="DICOM viewport stack">
-        <div class="dicom-viewport" data-testid="dicom-viewport" aria-label="DICOM image viewport"></div>
+    <h1 id="dicom-study-title">{{ __('DICOM study') }}</h1>
+    <p class="muted">{{ __('Automatic VOI. Zoom and pan only.') }}</p>
+    <div class="dicom-viewport-stack" aria-label="{{ __('DICOM viewport stack') }}">
+        <div class="dicom-viewport" data-testid="dicom-viewport" aria-label="{{ __('DICOM image viewport') }}"></div>
     </div>
-    <p id="dicom-viewer-status" role="status">Loading synthetic DICOM…</p>
+    <p id="dicom-viewer-status" role="status">{{ __('Loading synthetic DICOM…') }}</p>
     <p id="dicom-viewer-error" class="error" role="alert" hidden></p>
     <p class="actions">
-        <a download href="{{ route('operator.study.download', $study_id) }}">Download DICOM</a>
-        <a href="{{ route('operator.study.results') }}">Back to DICOM results</a>
+        <a download href="{{ route('operator.study.download', $study_id) }}">{{ __('Download DICOM') }}</a>
+        <a href="{{ route('operator.study.results') }}">{{ __('Back to DICOM results') }}</a>
     </p>
 </section>
 @vite('resources/js/app.js')

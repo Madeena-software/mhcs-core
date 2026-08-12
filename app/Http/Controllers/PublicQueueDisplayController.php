@@ -14,7 +14,6 @@ final class PublicQueueDisplayController extends Controller
     public function show(string $site): View
     {
         $this->site($site);
-        app()->setLocale('id');
 
         return view('lcd.queue', ['siteId' => $site]);
     }
@@ -22,7 +21,6 @@ final class PublicQueueDisplayController extends Controller
     public function queue(string $site): JsonResponse
     {
         $this->site($site);
-        app()->setLocale('id');
 
         return response()->json([
             'current' => $this->called($site),

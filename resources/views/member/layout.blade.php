@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>@yield('title', 'Member') — MHCS Core</title>
+    <title>@yield('title', __('Member')) — {{ __('MHCS Core') }}</title>
     <style>
         :root { color-scheme: light; font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif; color: #1c1b1b; background: #fcf9f8; }
         body { margin: 0; background: #fcf9f8; }
@@ -36,18 +36,18 @@
 <body>
 <div class="shell">
     @auth
-        <nav class="nav" aria-label="Navigasi Member">
-            <a href="{{ route('member.dashboard') }}"><strong>MHCS Core</strong></a>
+        <nav class="nav" aria-label="{{ __('Member navigation') }}">
+            <a href="{{ route('member.dashboard') }}"><strong>{{ __('MHCS Core') }}</strong></a>
             <div class="nav-links">
                 @if (! auth()->user()->must_change_password)
-                    <a href="{{ route('member.dashboard') }}">Dashboard</a>
-                    <a href="{{ route('member.services') }}">Sesi Foto Radiografi</a>
-                    <a href="{{ route('member.bookings') }}">Sesi Saya</a>
-                    <a href="{{ route('member.profile') }}">Profil</a>
+                    <a href="{{ route('member.dashboard') }}">{{ __('Dashboard Member') }}</a>
+                    <a href="{{ route('member.services') }}">{{ __('Radiography Sessions') }}</a>
+                    <a href="{{ route('member.bookings') }}">{{ __('My Sessions') }}</a>
+                    <a href="{{ route('member.profile') }}">{{ __('Profile') }}</a>
                 @endif
                 <form method="POST" action="{{ route('logout') }}">
                     @csrf
-                    <button type="submit" class="secondary">Keluar</button>
+                    <button type="submit" class="secondary">{{ __('Log out') }}</button>
                 </form>
             </div>
         </nav>

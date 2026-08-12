@@ -51,9 +51,9 @@ final class ProfileController extends Controller
             'emergency_contact_relationship' => ['nullable', 'string', 'max:100'],
             'emergency_contact_phone' => ['nullable', 'string', 'max:32'],
         ], [
-            'email.email' => 'Masukkan alamat email yang valid.',
-            'email.unique' => 'Email tersebut sudah digunakan.',
-            '*.max' => 'Nilai yang dimasukkan terlalu panjang.',
+            'email.email' => __('Masukkan alamat email yang valid.'),
+            'email.unique' => __('Email tersebut sudah digunakan.'),
+            '*.max' => __('Nilai yang dimasukkan terlalu panjang.'),
         ]);
 
         if ($validator->fails()) {
@@ -73,14 +73,14 @@ final class ProfileController extends Controller
         try {
             $percentage = $profile->update((string) $user->getAuthIdentifier(), $attributes);
         } catch (\Throwable) {
-            return back()->withErrors(['profile' => 'Profil belum dapat disimpan.'])->withInput($input);
+            return back()->withErrors(['profile' => __('Profil belum dapat disimpan.')])->withInput($input);
         }
 
         if ($percentage === 100) {
-            return redirect()->route('member.dashboard')->with('status', 'Profil berhasil diperbarui.');
+            return redirect()->route('member.dashboard')->with('status', __('Profil berhasil diperbarui.'));
         }
 
-        return redirect()->route('member.profile')->with('status', 'Profil berhasil disimpan. Lengkapi data yang masih diperlukan.');
+        return redirect()->route('member.profile')->with('status', __('Profil berhasil disimpan. Lengkapi data yang masih diperlukan.'));
     }
 
     /** @return array<string, ?string> */

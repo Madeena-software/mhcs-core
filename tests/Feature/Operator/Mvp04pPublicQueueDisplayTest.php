@@ -25,7 +25,7 @@ final class Mvp04pPublicQueueDisplayTest extends TestCase
             ->assertSee('id="lcd-clock"', false)
             ->assertSee('class="current-hero"', false)
             ->assertSee('class="recent-grid"', false)
-            ->assertSee('Antrian klinik')
+            ->assertSee('Antrian rumah skrining')
             ->assertSee('Panggilan saat ini')
             ->assertSee('Panggilan terbaru')
             ->assertSee('Menunggu panggilan berikutnya');
@@ -73,9 +73,9 @@ final class Mvp04pPublicQueueDisplayTest extends TestCase
         $response = $this->getJson(route('lcd.queue', $fixture['siteLocalId']))
             ->assertOk()
             ->assertJsonPath('current.0.ticket_number', 'LCD-001')
-            ->assertJsonPath('current.0.destination', 'Pemeriksaan dasar')
+            ->assertJsonPath('current.0.destination', 'PEMERIKSAAN DASAR')
             ->assertJsonPath('recent_calls.0.ticket_number', 'LCD-001')
-            ->assertJsonPath('recent_calls.0.destination', 'Pemeriksaan dasar');
+            ->assertJsonPath('recent_calls.0.destination', 'PEMERIKSAAN DASAR');
 
         $json = $response->getContent();
         foreach ([$fixture['memberId'], $fixture['bookingId'], $fixture['scheduleId'], $fixture['profileId'], 'Synthetic Arrival Member', 'MRN-'] as $value) {
@@ -86,8 +86,8 @@ final class Mvp04pPublicQueueDisplayTest extends TestCase
 
         $this->getJson(route('lcd.queue', $fixture['siteLocalId']))
             ->assertOk()
-            ->assertJsonPath('current.0.destination', 'Sesi foto radiografi')
-            ->assertJsonPath('recent_calls.0.destination', 'Sesi foto radiografi')
+            ->assertJsonPath('current.0.destination', 'SESI FOTO RADIOGRAFI')
+            ->assertJsonPath('recent_calls.0.destination', 'SESI FOTO RADIOGRAFI')
             ->assertJsonMissing(['destination' => 'X-ray'])
             ->assertJsonMissing(['destination' => 'Rontgen']);
     }

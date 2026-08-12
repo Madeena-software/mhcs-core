@@ -35,8 +35,8 @@ final class AuthenticationController extends Controller
             'identifier' => ['required', 'string', 'max:255'],
             'password' => ['required', 'string'],
         ], [
-            'identifier.required' => 'Masukkan email atau NIK.',
-            'password.required' => 'Masukkan kata sandi.',
+            'identifier.required' => __('Masukkan email atau NIK.'),
+            'password.required' => __('Masukkan kata sandi.'),
         ]);
 
         if ($validator->fails()) {
@@ -48,7 +48,7 @@ final class AuthenticationController extends Controller
         $result = $login->authenticate($credentials['identifier'], $credentials['password'], $this->intendedPath($request));
 
         if ($result->state === InteractiveLoginState::Failure || $result->user === null) {
-            return back()->withErrors(['identifier' => 'Email atau NIK dan kata sandi tidak sesuai.']);
+            return back()->withErrors(['identifier' => __('Email atau NIK dan kata sandi tidak sesuai.')]);
         }
 
         Auth::guard('web')->login($result->user);
@@ -72,8 +72,8 @@ final class AuthenticationController extends Controller
             'identifier' => ['required', 'string', 'max:255'],
             'password' => ['required', 'string'],
         ], [
-            'identifier.required' => 'Enter your email or NIK.',
-            'password.required' => 'Enter your password.',
+            'identifier.required' => __('Enter your email or NIK.'),
+            'password.required' => __('Enter your password.'),
         ]);
 
         if ($validator->fails()) {
@@ -88,7 +88,7 @@ final class AuthenticationController extends Controller
             || $result->user === null
             || ! $operators->canAccess($result->user)
         ) {
-            return back()->withErrors(['identifier' => 'Email or NIK and password do not match.']);
+            return back()->withErrors(['identifier' => __('Email or NIK and password do not match.')]);
         }
 
         Auth::guard('web')->login($result->user);
@@ -143,14 +143,14 @@ final class AuthenticationController extends Controller
             ],
             'password_confirmation' => ['required', 'string'],
         ], [
-            'current_password.required' => 'Masukkan kata sandi saat ini.',
-            'password.required' => 'Masukkan kata sandi baru.',
-            'password.confirmed' => 'Konfirmasi kata sandi baru harus sama.',
-            'password.different' => 'Kata sandi baru harus berbeda dari kata sandi saat ini.',
-            'password.min' => 'Kata sandi baru minimal 12 karakter.',
-            'password.regex' => 'Kata sandi baru harus memiliki huruf dan angka.',
-            'password.not_regex' => 'Kata sandi baru tidak boleh diawali atau diakhiri spasi.',
-            'password_confirmation.required' => 'Konfirmasi kata sandi baru harus diisi.',
+            'current_password.required' => __('Masukkan kata sandi saat ini.'),
+            'password.required' => __('Masukkan kata sandi baru.'),
+            'password.confirmed' => __('Konfirmasi kata sandi baru harus sama.'),
+            'password.different' => __('Kata sandi baru harus berbeda dari kata sandi saat ini.'),
+            'password.min' => __('Kata sandi baru minimal 12 karakter.'),
+            'password.regex' => __('Kata sandi baru harus memiliki huruf dan angka.'),
+            'password.not_regex' => __('Kata sandi baru tidak boleh diawali atau diakhiri spasi.'),
+            'password_confirmation.required' => __('Konfirmasi kata sandi baru harus diisi.'),
         ]);
 
         $user = $request->user();
@@ -167,7 +167,7 @@ final class AuthenticationController extends Controller
             );
         } catch (\Throwable) {
             return back()->withErrors([
-                'current_password' => 'Kata sandi saat ini tidak sesuai atau perubahan tidak dapat dilakukan.',
+                'current_password' => __('Kata sandi saat ini tidak sesuai atau perubahan tidak dapat dilakukan.'),
             ]);
         }
 
@@ -183,7 +183,7 @@ final class AuthenticationController extends Controller
 
         return redirect()
             ->to($destination)
-            ->with('status', 'Kata sandi berhasil diperbarui.');
+            ->with('status', __('Kata sandi berhasil diperbarui.'));
     }
 
     public function logout(Request $request): RedirectResponse
@@ -202,7 +202,7 @@ final class AuthenticationController extends Controller
         $request->session()->regenerateToken();
 
         return redirect()->route('login')->withErrors([
-            'identifier' => 'Akun Member tidak dapat diakses saat ini.',
+            'identifier' => __('Akun Member tidak dapat diakses saat ini.'),
         ]);
     }
 

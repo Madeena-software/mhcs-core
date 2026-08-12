@@ -1,24 +1,24 @@
 @extends('operator.layout')
 
-@section('title', 'X-ray readiness worklist')
+@section('title', __('Radiography session readiness worklist'))
 
 @section('content')
 <section aria-labelledby="xray-readiness-worklist-title">
-    <h1 id="xray-readiness-worklist-title">X-ray readiness worklist</h1>
-    <p class="muted">X-ray tickets for the active site's assigned shifts, ordered by ready time.</p>
-    <p><a href="{{ route('operator.basic-examination-worklist') }}">View basic-examination worklist</a></p>
+    <h1 id="xray-readiness-worklist-title">{{ __('Radiography session readiness worklist') }}</h1>
+    <p class="muted">{{ __('Radiography session tickets for the active site\'s assigned shifts, ordered by ready time.') }}</p>
+    <p><a href="{{ route('operator.basic-examination-worklist') }}">{{ __('View basic-examination worklist') }}</a></p>
     <section class="card">
         <div class="table-wrap">
             <table>
                 <thead>
                 <tr>
-                    <th>Paper ticket</th>
-                    <th>Site</th>
-                    <th>Shift</th>
-                    <th>Stage</th>
-                    <th>State</th>
-                    <th>Ready time</th>
-                    <th>Action</th>
+                    <th>{{ __('Paper ticket') }}</th>
+                    <th>{{ __('Site') }}</th>
+                    <th>{{ __('Shift') }}</th>
+                    <th>{{ __('Stage') }}</th>
+                    <th>{{ __('State') }}</th>
+                    <th>{{ __('Ready time') }}</th>
+                    <th>{{ __('Action') }}</th>
                 </tr>
                 </thead>
                 <tbody>
@@ -31,8 +31,8 @@
                             –
                             <time datetime="{{ $entry['schedule_ends_at'] }}">{{ $entry['schedule_ends_at'] }}</time>
                         </td>
-                        <td>{{ $entry['stage'] }}</td>
-                        <td class="status">{{ $entry['state'] }}</td>
+                        <td>{{ __($entry['stage']) }}</td>
+                        <td class="status">{{ __($entry['state']) }}</td>
                         <td><time datetime="{{ $entry['ready_at'] }}">{{ $entry['ready_at'] }}</time></td>
                         <td>
                             @if ($entry['claimed_by_current_operator'])
@@ -40,23 +40,23 @@
                                     <form method="POST" action="{{ route('operator.xray-readiness-worklist.call', $entry['admission_id']) }}">
                                         @csrf
                                         <input type="hidden" name="operation_id" value="{{ (string) \Illuminate\Support\Str::uuid() }}">
-                                        <button type="submit">Call</button>
+                                    <button type="submit">{{ __('Call') }}</button>
                                     </form>
-                                    <span class="status">Claimed by you</span>
+                                    <span class="status">{{ __('Claimed by you') }}</span>
                                 @else
-                                    <a href="{{ route('operator.xray-capture.show', $entry['admission_id']) }}">Submit synthetic capture</a>
+                                    <a href="{{ route('operator.xray-capture.show', $entry['admission_id']) }}">{{ __('Submit synthetic capture') }}</a>
                                 @endif
                             @else
                                 <form method="POST" action="{{ route('operator.xray-readiness-worklist.claim', $entry['admission_id']) }}">
                                     @csrf
                                     <input type="hidden" name="operation_id" value="{{ (string) \Illuminate\Support\Str::uuid() }}">
-                                    <button type="submit">Claim</button>
+                                    <button type="submit">{{ __('Claim') }}</button>
                                 </form>
                             @endif
                         </td>
                     </tr>
                 @empty
-                    <tr><td colspan="7" class="muted">No X-ray tickets are ready.</td></tr>
+                    <tr><td colspan="7" class="muted">{{ __('No radiography session tickets are ready.') }}</td></tr>
                 @endforelse
                 </tbody>
             </table>

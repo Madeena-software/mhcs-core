@@ -68,14 +68,14 @@
 <main class="lcd-shell">
     <header class="lcd-header">
         <div class="brand">
-            <div class="brand-mark" aria-hidden="true">MHCS</div>
+            <div class="brand-mark" aria-hidden="true">{{ __('MHCS Core') }}</div>
             <div>
-                <p class="brand-kicker">MHCS Core</p>
+                <p class="brand-kicker">{{ __('MHCS Core') }}</p>
                 <h1>{{ __('Clinic queue') }}</h1>
             </div>
         </div>
         <div>
-            <div id="lcd-clock" class="lcd-clock" aria-label="Waktu saat ini"></div>
+            <div id="lcd-clock" class="lcd-clock" aria-label="{{ __('Current time') }}"></div>
             <p id="lcd-date" class="lcd-date"></p>
         </div>
     </header>

@@ -40,8 +40,8 @@ final class Mvp04gPrivateBasicExaminationCallTest extends TestCase
         $this->get(route('operator.basic-examination-worklist'))
             ->assertOk()
             ->assertSee('CALL-1')
-            ->assertSee('Call')
-            ->assertSee('Claimed by you');
+            ->assertSee('Panggil')
+            ->assertSee('Diklaim oleh Anda');
         $this->post(route('operator.basic-examination-worklist.call', $admission->id), ['operation_id' => $operationId])
             ->assertRedirect(route('operator.basic-examination-worklist'));
 

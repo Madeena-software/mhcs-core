@@ -66,9 +66,9 @@ final class Mvp03BookingController extends Controller
             'idempotency_key' => ['nullable', 'string', 'max:191'],
             'confirmation' => ['accepted'],
         ], [
-            'schedule_id.required' => 'Pilih jadwal Sesi Foto Radiografi.',
-            'confirmation.accepted' => 'Konfirmasi akhir diperlukan sebelum Madeena Points digunakan.',
-            'point_cost.regex' => 'Harga Madeena Points tidak valid.',
+            'schedule_id.required' => __('Pilih jadwal Sesi Foto Radiografi.'),
+            'confirmation.accepted' => __('Konfirmasi akhir diperlukan sebelum Madeena Points digunakan.'),
+            'point_cost.regex' => __('Harga Madeena Points tidak valid.'),
         ]);
 
         if ($validator->fails()) {
@@ -82,10 +82,10 @@ final class Mvp03BookingController extends Controller
                 $validator->validated()['point_cost'] ?? null,
             );
         } catch (\Throwable) {
-            return back()->withErrors(['booking' => 'Jadwal belum berhasil dikonfirmasi. Pilihan Anda tidak berubah. Silakan coba kembali.'])->withInput();
+            return back()->withErrors(['booking' => __('Jadwal belum berhasil dikonfirmasi. Pilihan Anda tidak berubah. Silakan coba kembali.')])->withInput();
         }
 
-        return redirect()->route('member.bookings.show', $result['booking_id'])->with('status', 'Jadwal Sesi Foto Radiografi berhasil dikonfirmasi.');
+        return redirect()->route('member.bookings.show', $result['booking_id'])->with('status', __('Jadwal Sesi Foto Radiografi berhasil dikonfirmasi.'));
     }
 
     public function index(Request $request, MemberContextResolver $members): View|RedirectResponse

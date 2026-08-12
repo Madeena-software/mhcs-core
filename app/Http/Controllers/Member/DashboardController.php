@@ -41,17 +41,17 @@ final class DashboardController extends Controller
     private function identityStatus(string $status): string
     {
         return match ($status) {
-            'verified' => 'Terverifikasi',
-            default => 'Menunggu verifikasi',
+            'verified' => __('verified'),
+            default => __('pending_verification'),
         };
     }
 
     private function accountStatus(string $status): string
     {
         return match ($status) {
-            'active' => 'Aktif',
-            'suspended' => 'Ditangguhkan',
-            default => 'Belum aktif',
+            'active' => __('active'),
+            'suspended' => __('suspended'),
+            default => __('inactive'),
         };
     }
 }

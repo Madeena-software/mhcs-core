@@ -1,19 +1,19 @@
 @extends('operator.layout')
 
-@section('title', 'Submit synthetic capture')
+@section('title', __('Submit synthetic capture'))
 
 @section('content')
 <section aria-labelledby="xray-capture-title">
-    <h1 id="xray-capture-title">Submit synthetic capture</h1>
-    <p class="muted">X-ray admission <code>{{ $admissionId }}</code>; upload only the repository-owned synthetic pair.</p>
+    <h1 id="xray-capture-title">{{ __('Submit synthetic capture') }}</h1>
+    <p class="muted">{{ __('Radiography admission') }} <code>{{ $admissionId }}</code>; {{ __('upload only the repository-owned synthetic pair.') }}</p>
     <form method="POST" action="{{ route('operator.xray-capture.store', $admissionId) }}" enctype="multipart/form-data" id="synthetic-capture-form">
         @csrf
-        <label for="radiographs">Radiograph NPZ ({{ $form['radiograph_name'] }})</label>
+        <label for="radiographs">{{ __('Radiograph NPZ') }} ({{ $form['radiograph_name'] }})</label>
         <input id="radiographs" name="radiographs[]" type="file" accept=".npz,application/octet-stream" multiple required>
-        <label for="gain">Matching gain NPZ ({{ $form['gain_name'] }})</label>
+        <label for="gain">{{ __('Matching gain NPZ') }} ({{ $form['gain_name'] }})</label>
         <input id="gain" name="gain" type="file" accept=".npz,application/octet-stream" required>
         <input type="hidden" name="submission_id" value="{{ Illuminate\Support\Str::uuid() }}">
-        <button type="submit">Submit complete capture set</button>
+        <button type="submit">{{ __('Submit complete capture set') }}</button>
     </form>
 </section>
 <script>

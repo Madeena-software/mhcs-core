@@ -1,25 +1,25 @@
 @extends('member.layout')
 
-@section('title', 'Dashboard Member')
+@section('title', __('Dashboard Member'))
 
 @section('content')
 <section aria-labelledby="dashboard-title">
-    <h1 id="dashboard-title">Dashboard Member</h1>
-    <p>Selamat datang, {{ $memberName }}.</p>
+    <h1 id="dashboard-title">{{ __('Dashboard Member') }}</h1>
+    <p>{{ __('Welcome, :name.', ['name' => $memberName]) }}</p>
 
     <dl class="summary">
-        <div><dt>Nomor rekam medis</dt><dd>{{ $medicalRecordNumber }}</dd></div>
-        <div><dt>Kelengkapan profil</dt><dd>{{ $completionPercentage }}%</dd></div>
-        <div><dt>Status identitas</dt><dd>{{ $identityStatus }}</dd></div>
-        <div><dt>Status akun</dt><dd>{{ $accountStatus }}</dd></div>
+        <div><dt>{{ __('Medical record number') }}</dt><dd>{{ $medicalRecordNumber }}</dd></div>
+        <div><dt>{{ __('Profile completeness') }}</dt><dd>{{ $completionPercentage }}%</dd></div>
+        <div><dt>{{ __('Identity status') }}</dt><dd>{{ $identityStatus }}</dd></div>
+        <div><dt>{{ __('Account status') }}</dt><dd>{{ $accountStatus }}</dd></div>
     </dl>
 
     <section class="card" aria-labelledby="services-title">
-        <h2 id="services-title">Layanan berikutnya</h2>
-        <p class="muted">Jadwalkan Sesi Foto Radiografi dan lihat status sesi Anda.</p>
+        <h2 id="services-title">{{ __('Next services') }}</h2>
+        <p class="muted">{{ __('Schedule a Radiography Session and view your session status.') }}</p>
         <div class="actions">
-            <a href="{{ route('member.services') }}">Jadwalkan Sesi Foto Radiografi</a>
-            <a href="{{ route('member.bookings') }}">Lihat Sesi Saya</a>
+            <a href="{{ route('member.services') }}">{{ __('Schedule a Radiography Session') }}</a>
+            <a href="{{ route('member.bookings') }}">{{ __('View My Sessions') }}</a>
         </div>
     </section>
 </section>
