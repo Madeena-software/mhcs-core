@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature\Localization;
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use Tests\Operator\Mvp04Fixtures;
 use Tests\TestCase;
 
@@ -40,6 +41,60 @@ final class MvpApplicationIndonesianUiLocalizationTest extends TestCase
             $this->assertNotSame($message, $copy[$message]);
         }
         $this->assertArrayHasKey('NIK:', $copy);
+        foreach ([
+            'An authorized active site is required.',
+            'That site is not authorized for this Operator.',
+            'Select an authorized active site before continuing.',
+            'Site switching is blocked while arrival work is unresolved.',
+            'Site switching is blocked while identity verification is unresolved.',
+            'The requested attendance list is unavailable.',
+            'An arrival operation identity is required.',
+            'The arrival confirmation is no longer valid.',
+            'The arrival confirmation has expired.',
+            'The Operator is not assigned to this schedule.',
+            'The requested arrival is unavailable.',
+            'The arrival confirmation is missing or invalid.',
+            'Arrival time requires an explicit offset.',
+            'Arrival time is invalid.',
+            'Operator access is unavailable.',
+            'Select an active site before continuing.',
+            'Select an authorized active site before continuing.',
+            'Identity verification authorization is unavailable.',
+            'Operator administration authorization is required.',
+            'Operator administration authorization is unavailable.',
+            'The Operator profile is unavailable.',
+            'The arrived Member is unavailable for verification.',
+            'The verification operation conflicts with existing work.',
+            'This arrived Member is already claimed for verification.',
+            'This verification case is terminal and cannot be reopened.',
+            'Reclaiming a cancelled verification case requires explicit confirmation.',
+            'This Operator already has an open verification case.',
+            'The identity verification view is unavailable.',
+            'The requested verification asset is unavailable.',
+            'The verification decision is invalid.',
+            'A reason is required for this verification decision.',
+            'A terminal verification decision cannot be changed.',
+            'Current approved identity evidence is unavailable.',
+            'A terminal verification case cannot be cancelled.',
+            'The verification case is no longer open.',
+            'The active site is unavailable.',
+            'A valid verification operation is required.',
+            'A bounded reason is required.',
+            'The paper-consent booking is unavailable.',
+            'A valid paper-consent operation is required.',
+            'Only a matched identity case can confirm paper consent.',
+            'The check-in schedule is unavailable.',
+            'The Operator is not assigned to this shift.',
+            'The Operator is no longer assigned to this shift.',
+            'The paper ticket could not be loaded after issue.',
+            'The check-in case is unavailable.',
+            'Only a matched identity case can issue a paper ticket.',
+            'A valid ticket operation is required.',
+            'Ticket number must contain only letters, numbers, and hyphens up to 32 characters.',
+        ] as $message) {
+            $this->assertArrayHasKey($message, $copy);
+            $this->assertNotSame($message, $copy[$message]);
+        }
 
         $this->actingAs($fixture['memberUser'])
             ->get(route('member.dashboard'))
@@ -61,6 +116,12 @@ final class MvpApplicationIndonesianUiLocalizationTest extends TestCase
         $this->get(route('operator.attendance', $fixture['scheduleId']))
             ->assertOk()
             ->assertSee($copy['NIK:']);
+
+        $this->followingRedirects()
+            ->get(route('operator.attendance', (string) Str::uuid()))
+            ->assertOk()
+            ->assertSee('Daftar kehadiran yang diminta tidak tersedia.')
+            ->assertDontSee('The requested attendance list is unavailable.');
 
         $this->get(route('operator.dashboard'))
             ->assertSee('<html lang="id">', false);
