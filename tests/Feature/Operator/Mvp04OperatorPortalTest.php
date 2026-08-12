@@ -224,6 +224,16 @@ final class Mvp04OperatorPortalTest extends TestCase
             ->assertDontSee('point balance');
     }
 
+    public function test_verification_worklist_redirects_to_site_selection_when_no_site_is_selected(): void
+    {
+        $fixture = $this->operatorFixture(false);
+        $this->actingAs($fixture['operator']);
+
+        $this->get(route('operator.verification-worklist'))
+            ->assertRedirect(route('operator.dashboard'))
+            ->assertSessionHasErrors(['queue' => 'Pilih lokasi aktif sebelum melanjutkan.']);
+    }
+
     public function test_assigned_shift_attendance_link_uses_the_schedule_start_time(): void
     {
         $fixture = $this->operatorFixture(false);

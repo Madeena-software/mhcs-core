@@ -161,14 +161,22 @@ final class PortalController extends Controller
         }
     }
 
-    public function worklist(OperatorWorklistService $worklist, OperatorAuthorization $authorization): View
+    public function worklist(OperatorWorklistService $worklist, OperatorAuthorization $authorization): View|RedirectResponse
     {
-        $portal = $authorization->portal();
+        try {
+            $portal = $authorization->portal();
 
-        return view('operator.verification-worklist', [
-            'arrivals' => $worklist->current(),
-            'canVerify' => $authorization->has($portal['context'], OperatorAuthorization::IDENTITY_VERIFY),
-        ]);
+            return view('operator.verification-worklist', [
+                'arrivals' => $worklist->current(),
+                'canVerify' => $authorization->has($portal['context'], OperatorAuthorization::IDENTITY_VERIFY),
+            ]);
+        } catch (Throwable $exception) {
+            return redirect()->route('operator.dashboard')->withErrors([
+                'queue' => $exception instanceof OperatorException
+                    ? __($exception->getMessage())
+                    : __('The verification worklist is unavailable.'),
+            ]);
+        }
     }
 
     public function basicExaminationWorklist(OperatorWorklistService $worklist): View|RedirectResponse
