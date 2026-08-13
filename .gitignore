@@ -38,6 +38,6 @@ Thumbs.db
 # Research-generated caches and local outputs
 research/**/__pycache__/
 research/**/.ipynb_checkpoints/
-*.npz
+research/**/*.npz
 research/kambing-260714/data/output
 research
