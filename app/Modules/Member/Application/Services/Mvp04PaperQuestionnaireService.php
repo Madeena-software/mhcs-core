@@ -29,8 +29,6 @@ final readonly class Mvp04PaperQuestionnaireService implements OperatorPaperQues
 
     private const UPLOAD_PURPOSE = 'member.paper-questionnaire.upload';
 
-    private const MAX_UPLOAD_BYTES = 10485760;
-
     /** @var list<string> */
     private const UPLOAD_FORMATS = ['image/jpeg', 'image/png'];
 
@@ -179,7 +177,7 @@ final readonly class Mvp04PaperQuestionnaireService implements OperatorPaperQues
         $path = $photo->getRealPath();
         $bytes = is_string($path) && is_file($path) ? filesize($path) : false;
         $contents = is_string($path) && is_file($path) ? file_get_contents($path) : false;
-        if (! is_int($bytes) || $bytes < 1 || $bytes > self::MAX_UPLOAD_BYTES || ! is_string($contents) || strlen($contents) !== $bytes) {
+        if (! is_int($bytes) || $bytes < 1 || $bytes > (int) config('mhcs.upload.max_file_bytes') || ! is_string($contents) || strlen($contents) !== $bytes) {
             throw new Mvp03Exception('The paper questionnaire photo exceeds the approved boundary.');
         }
 

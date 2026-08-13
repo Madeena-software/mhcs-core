@@ -264,6 +264,7 @@ final readonly class MemberVerificationAssetService
         if (
             $input->object->encryption !== 'AES-256-GCM'
             || $input->object->bytes < 1
+            || $input->object->bytes > (int) config('mhcs.upload.max_file_bytes')
             || preg_match('/\A[0-9a-f]{64}\z/i', $input->object->checksum) !== 1
             || ! str_starts_with((string) $input->object->key, 'objects/')
         ) {

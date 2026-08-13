@@ -1,6 +1,11 @@
 <?php
 
 $localLoginDefaults = in_array(env('APP_ENV', 'production'), ['local', 'testing'], true);
+$maxUploadMb = env('MHCS_MAX_UPLOAD_MB', $localLoginDefaults ? 100 : null);
+$maxUploadMb = $maxUploadMb === null ? null : (int) $maxUploadMb;
+$maxUploadBytes = $maxUploadMb === null ? null : (int) $maxUploadMb * 1024 * 1024;
+$imageFileCount = env('MHCS_IMAGE_FILE_COUNT', $localLoginDefaults ? 2 : null);
+$imagePairBytes = $maxUploadBytes === null ? null : $maxUploadBytes * 2;
 
 return [
     'modules' => [
@@ -48,6 +53,12 @@ return [
     ],
 
     'private_object_disk' => env('MHCS_PRIVATE_OBJECT_DISK', 's3'),
+
+    'upload' => [
+        'max_file_mb' => $maxUploadMb,
+        'max_file_bytes' => $maxUploadBytes,
+        'max_request_bytes' => $imagePairBytes === null ? null : $imagePairBytes + 1024 * 1024,
+    ],
 
     'external_adapters' => [
         'payment gateways',
@@ -97,9 +108,9 @@ return [
     ],
 
     'image_policy' => [
-        'file_count' => env('MHCS_IMAGE_FILE_COUNT', $localLoginDefaults ? 2 : null),
-        'per_file_bytes' => env('MHCS_IMAGE_PER_FILE_BYTES', $localLoginDefaults ? 1048576 : null),
-        'total_bytes' => env('MHCS_IMAGE_TOTAL_BYTES', $localLoginDefaults ? 2097152 : null),
+        'file_count' => $imageFileCount,
+        'per_file_bytes' => $maxUploadBytes,
+        'total_bytes' => $imagePairBytes,
         'decompressed_bytes' => env('MHCS_IMAGE_DECOMPRESSED_BYTES', $localLoginDefaults ? 4194304 : null),
         'max_width' => env('MHCS_IMAGE_MAX_WIDTH', $localLoginDefaults ? 4096 : null),
         'max_height' => env('MHCS_IMAGE_MAX_HEIGHT', $localLoginDefaults ? 4096 : null),

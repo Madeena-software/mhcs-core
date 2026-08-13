@@ -1,204 +1,149 @@
-# Local clinic-core walkthrough
+# Local Operator-to-MPIPS walkthrough
 
-This is a synthetic local rehearsal for the core branch only. It continues
-through the local/testing Image Gateway capture, shared Operator DICOM-results
-worklist, and normal DICOM download.
-Do not use a real roster, credential, NIK, paper form, or clinical image.
+This is one fresh, disposable, non-clinical local integration rehearsal for
+the existing flow:
 
-## First-time setup
-
-Use the repository's native local Laravel path. Do not use the production
-deployment material, Docker/Compose, a reverse proxy, a queue worker, MPIPS,
-or a server database for this rehearsal. The production-specialized
-[`deployment/README.md`](../../deployment/README.md) is not the supported
-local path.
-
-Install the existing dependencies and build the frontend once:
-
-```bash
-composer install
-cp .env.example .env
-npm install
-TARGET="." npm run build
+```text
+Operator capture → private S3 → database queue → local MPIPS → private DICOM
 ```
 
-Configure `.env` with local-only secret-managed values before running Artisan.
-Do not show, generate, copy, log, or commit the values. The required key names
-are `APP_KEY`, `MHCS_IDENTIFIER_KEY`, `MHCS_OBJECT_ENCRYPTION_KEY`,
-`MHCS_ACCESS_GRANT_KEY`, `MHCS_MANIFEST_KEY`, and `MHCS_MANIFEST_KEY_ID`.
-Configure `DB_CONNECTION`, `DB_HOST`, `DB_PORT`, `DB_DATABASE`,
-`DB_USERNAME`, and `DB_PASSWORD` to an explicitly disposable local database.
-Never use a staging, production, or shared server target.
+It is not deployment, production, or release evidence. Do not use a real
+roster, credential, patient, NIK, paper form, or clinical image.
 
-## Fresh rehearsal setup
+## Setup
 
-`migrate:fresh` destroys every table in the selected database. Confirm the
-configured `DB_*` values point to an empty disposable local database before
-running these commands:
+Use the native Laravel processes only. Do not use Docker/Compose, a reverse
+proxy, a server database, a new queue mechanism, or a direct MPIPS request.
 
-In an interactive local terminal, run:
+Configure these existing local-only variable names without exposing their
+values:
+
+- Application and encryption: `APP_KEY`, `MHCS_IDENTIFIER_KEY`,
+  `MHCS_OBJECT_ENCRYPTION_KEY`, `MHCS_ACCESS_GRANT_KEY`, `MHCS_MANIFEST_KEY`,
+  `MHCS_MANIFEST_KEY_ID`.
+- Database: `DB_CONNECTION`, `DB_HOST`, `DB_PORT`, `DB_DATABASE`,
+  `DB_USERNAME`, `DB_PASSWORD`.
+- Private S3: `MHCS_PRIVATE_OBJECT_DISK`, `AWS_ACCESS_KEY_ID`,
+  `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION`, `AWS_BUCKET`,
+  `AWS_USE_PATH_STYLE_ENDPOINT`.
+- MPIPS: `MPIPS_BASE_URL` using the documented local default
+  `http://127.0.0.1:8014`, `MPIPS_API_KEY`, and `MPIPS_TIMEOUT_SECONDS`.
+- Uploads: `MHCS_MAX_UPLOAD_MB=100`. This is the per-file limit for NPZ,
+  KTP/KIA, profile photo, informed consent, questionnaire, and other supported
+  uploads. The NPZ pair gets a derived 201 MB PHP request limit for multipart
+  overhead; each NPZ remains capped at 100 MB.
+- Database queue: `QUEUE_CONNECTION=database` and `DB_QUEUE_RETRY_AFTER`.
+
+WARNING immediately before the next command: `migrate:fresh` destroys every
+table in the selected database. Confirm the configured target is an empty,
+explicitly disposable local MySQL database, not a shared, staging, or
+production database.
 
 ```bash
 TARGET="." php artisan migrate:fresh --force
 TARGET="." php artisan db:seed --class=Database\\Seeders\\MvpCoreClinicSeeder
 ```
 
-`MvpCoreClinicSeeder` is the only dummy-account source for this rehearsal. It
-creates one primary Operator and two additional Operators assigned to the same
-site and current eligible shift, plus the attendance and LCD URLs. One-time
-local credentials are written to the ignored root `credential.txt` with mode
-`0600`; passwords are never printed to the terminal or copied into this guide,
-tests, logs, chat, or deployment configuration.
+The existing `MvpCoreClinicSeeder` creates five synthetic Members, one primary
+Operator, two additional Operators on the same site and current eligible
+shift, plus the attendance and LCD links. Generated credentials remain in the
+ignored root `credential.txt` with mode `0600`; obtain them locally and never
+copy their contents into documentation, evidence, logs, chat, or commands.
 
-The POC schedule is displayed from 13 August 2026 through 22 August 2026.
-Local/testing attendance preserves the 22 August end boundary but allows the
-flow to begin today even when the displayed schedule start is tomorrow.
-
-The minimum file substitutions are:
-
-- use a locally chosen synthetic JPEG or PNG for the paper-questionnaire
-  capture; never use a real consent form or clinical image;
-- use exactly
-  `resources/fixtures/image-gateway/synthetic-radiograph-01.npz` and
-  `resources/fixtures/image-gateway/synthetic-gain-01.npz` for synthetic
-  capture.
-
-Start the native Laravel server in the same local environment:
+Start these two native processes in separate terminals:
 
 ```bash
 TARGET="." php artisan serve --host=127.0.0.1 --port=8013
+TARGET="." php artisan queue:work database --queue=image-gateway --timeout=390
 ```
 
-Open `http://127.0.0.1:8013/operator/login`.
+The worker consumes only the existing `image-gateway` queue and uses the
+configured 390-second worker timeout. Do not inspect logs, object storage, or
+secrets to diagnose a visible terminal failure.
 
-## Rehearse the core journey
+## Primary Operator journey
 
-1. Sign in with the synthetic Operator account printed by the seeder, open
-   `/operator/site`, and select **Synthetic MVP-03 site**.
-2. On a separate TV/browser, open the LCD URL printed by the seeder. It needs
-   no login and shows only ticket numbers and destinations.
-3. Open the attendance URL printed by the seeder. Confirm arrival, open the
-   verification worklist, start verification, and perform the synthetic NIK
-   lookup.
-4. Confirm the paper consent, issue a ticket, then open its **Print** page on
-   the printer laptop. The browser print dialog is the one-click printer step.
-5. On the basic-examination worklist, claim the ticket and call it. Confirm
-   the ticket and destination appear on the separate LCD browser. If the LCD
-   request fails, confirm it visibly shows **Queue disconnected — shown calls
-   may be stale.**; after the next successful refresh, confirm that warning
-   clears and the safe ticket-only calls remain.
-6. Start the examination and record blood pressure, temperature, height, and
-   weight. BMI is calculated by MHCS.
-7. Complete the approved paper health questionnaire outside MHCS, photograph
-   it with a synthetic JPEG or PNG, and use **Upload paper questionnaire**.
-   The application records only completion and stores that image privately.
-8. Complete the basic examination. The ticket becomes X-ray ready. Claim and
-   call it from the X-ray readiness worklist; confirm the LCD updates again.
-9. Open **Submit synthetic capture** for the called admission. Select exactly
-   the committed pair from the repository:
-   `resources/fixtures/image-gateway/synthetic-radiograph-01.npz` and
-   `resources/fixtures/image-gateway/synthetic-gain-01.npz`. The uploaded
-   filenames may differ; the local synthetic bridge validates the exact fixture
-   bytes and rejects arbitrary BED or NPZ contents. Confirm the
-   browser warns before navigation while either file is selected, then submit
-   the complete capture set once.
-10. Confirm the accepted study opens as a vertical, read-only DICOM view with
-    automatic VOI and zoom/pan only. Click **Download DICOM** and confirm the
-    browser downloads `synthetic-study.dcm` as an attachment.
-11. Sign out, sign in with `mvp-operator-two@example.test` using its one-time
-    credential from `credential.txt`, and select **Synthetic MVP-03 site**.
-12. Open **DICOM results** from the Operator navigation. Confirm the same
-    accepted study appears without patient data, open it, and confirm the
-    vertical read-only viewer renders.
-13. Click **Download DICOM** and confirm the second Operator downloads the
-    same `synthetic-study.dcm` attachment. Confirm no claim, submission, or
-    queue-state change is made by the second Operator.
-14. Repeat the DICOM results-worklist, viewer, and download checks with
-    `mvp-operator-three@example.test`. Confirm this third Operator also has
-    read-only access and cannot change the claim, submission, or queue state.
+1. Open `http://127.0.0.1:8013/operator/login`, sign in with the generated
+   primary Operator credential, select the seeded site, and open the seeded
+   attendance link.
+2. Record the synthetic member's arrival and complete identity verification
+   using the seeded local-only identity flow.
+3. Confirm the paper consent and upload the required synthetic questionnaire
+   image. The consent and questionnaire objects remain private.
+4. Issue and print the ticket through the browser print dialog. The printed
+   ticket contains only the approved ticket information.
+5. Claim and call the ticket from the basic-examination worklist, complete the
+   required basic examination and vital signs, then complete the examination.
+6. Claim and call the X-ray-ready ticket. Open **Submit radiograph capture**
+   and select exactly one CTO-approved, non-clinical local Grabber radiograph
+   NPZ and its matching gain NPZ from their existing local location.
 
-Stop there. This rehearsal uses only repository-owned synthetic fixtures in
-`local` or `testing`; it does not run MPIPS, convert NPZ bytes, wait for AI, or
-create a clinical result. It does not authorize server data, deployment,
-release, real credentials, real identity, or real clinical files.
+   The pair is never copied, renamed, opened, hashed, committed, or recorded.
+   Do not document its path, filename, bytes, metadata, or contents. Submit
+   the pair once; do not resubmit it.
+
+7. Wait for the `image-gateway` worker to finish. The Operator surface must
+   show either one accepted DICOM result or a sanitised terminal failure. A
+   failure is terminal for this rehearsal: do not retry by resubmitting and do
+   not inspect logs, S3, MPIPS, object identifiers, or secrets.
+8. For a successful result, open the DICOM results worklist, open the returned
+   study, and confirm the vertical read-only Cornerstone viewer renders with
+   automatic VOI and zoom/pan only. Use the normal **Download DICOM**
+   attachment action once. Do not render, extract, save, or record DICOM
+   content or bytes.
+
+## Second Operator authorization check
+
+1. Sign out and sign in with the generated second Operator credential.
+2. Select the same seeded site and current shift, open **DICOM results**, and
+   confirm the same returned study is discoverable without exposing patient
+   data.
+3. Open the study, confirm the same vertical read-only viewer, and perform the
+   normal **Download DICOM** attachment action.
+4. Confirm the second Operator did not claim, submit, or change queue state.
+
+## Cleanup
+
+Use a `finally` block for the rehearsal. Stop the native web and queue
+processes, delete only private objects created by this disposable database
+through the existing application private-object store while their database
+rows are still available, then clean the disposable database. Confirm both
+database and created private-object cleanup pass. Never list a bucket or record
+object identifiers. If cleanup cannot be confirmed, stop and return the
+sanitised boundary to planning.
+
+Record only sanitised PASS/FAIL observations: seed result, queue completion or
+terminal failure, one persisted returned DICOM, primary viewer/download,
+second-Operator worklist/viewer/download, and cleanup. This manual rehearsal
+must remain clearly separate from automated fake-based tests and from
+deployment, production, and release evidence.
 
 ## Focused verification
 
 ```bash
 TARGET="." vendor/bin/phpunit \
   tests/Feature/Operator/MvpCoreClinicSeederTest.php \
+  tests/Feature/Operator/Mvp04bIdentityVerificationTest.php \
+  tests/Feature/Operator/Mvp04cPaperConsentConfirmationTest.php \
+  tests/Feature/Operator/Mvp04dVerifiedCheckInTicketIssueTest.php \
+  tests/Feature/Operator/Mvp04eAdvanceQueueAdmissionTest.php \
+  tests/Feature/Operator/Mvp04fAtomicBasicExaminationClaimTest.php \
+  tests/Feature/Operator/Mvp04gPrivateBasicExaminationCallTest.php \
+  tests/Feature/Operator/Mvp04hPrivateBasicExaminationStartTest.php \
   tests/Feature/Operator/Mvp04jPrivateVitalSignsCaptureTest.php \
   tests/Feature/Operator/Mvp04kBasicExaminationCompletionTest.php \
   tests/Feature/Operator/Mvp04lAtomicXrayClaimTest.php \
   tests/Feature/Operator/Mvp04mPrivateXrayCallTest.php \
   tests/Feature/Operator/Mvp04pPublicQueueDisplayTest.php \
-  tests/Feature/Operator/Mvp14SyntheticCaptureGatewayTest.php \
+  tests/Feature/Operator/Mvp14ImageGatewayIntegrationTest.php \
   tests/Integration/MemberDatabaseConformanceTest.php
 
 TARGET="." vendor/bin/pest tests/Browser/Mvp14OperatorDicomRehearsalTest.php --browser chrome
 TARGET="." npm run build
+TARGET="." vendor/bin/pint --test
 TARGET="." git diff --check
 ```
 
-## Remediation evidence — 10 August 2026
-
-- A fresh SQLite database was migrated and seeded with
-  `Database\\Seeders\\MvpCoreClinicSeeder` using synthetic-only data. The
-  seeder produced one synthetic booking, operator site, eligible schedule,
-  attendance URL, and LCD URL. No real roster, credential, NIK, paper form, or
-  clinical image was used or recorded here.
-- The local LCD page returned `200 OK`, included the disconnected/stale status
-  marker, and its safe endpoint returned only `current` and `recent_calls` with
-  empty arrays before any ticket was called. The native Node test executes the
-  rendered LCD script through a failed refresh and a later successful safe
-  response, verifying that the visible stale state appears and clears.
-- The exact remediation-focused command was:
-
-  ```bash
-  TARGET="." vendor/bin/phpunit tests/Feature/Operator/MvpCoreClinicSeederTest.php tests/Feature/Operator/Mvp04jPrivateVitalSignsCaptureTest.php tests/Feature/Operator/Mvp04kBasicExaminationCompletionTest.php tests/Feature/Operator/Mvp04lAtomicXrayClaimTest.php tests/Feature/Operator/Mvp04mPrivateXrayCallTest.php tests/Feature/Operator/Mvp04pPublicQueueDisplayTest.php
-  ```
-
-  It passed with 40 tests and 520 assertions. The exact LCD behavior check was:
-
-  ```bash
-  TARGET="." node --test tests/JavaScript/lcd-queue.test.js
-  ```
-
-  It passed with 1 test. The fresh SQLite `migrate:fresh --force` step,
-  `git diff --check`, and bounded Pint also passed.
-- The fresh-database Chrome journey was exercised with synthetic fixtures:
-
-  ```bash
-  TARGET="." vendor/bin/pest tests/Browser/MvpCoreLocalClinicFlowTest.php --browser chrome
-  ```
-
-  It passed with 1 test and 16 assertions. The journey verified the private
-  Printer Station ticket, absence of member identifiers, ticket-only LCD
-  calls, the visible stale warning after a failed refresh, and warning
-  clearance after refresh recovery. The broader pre-existing Browser suite
-  was also started with the task command, but its administrator closure flow
-  did not complete in this environment; no unrelated browser test was
-  changed.
-
-## Review disposition — 10 August 2026
-
-The remediation implementation at
-`65a21bbcd005d81888abb1b6db8b4e939e80f97f` is accepted as the local
-clinic-core baseline for this bounded slice.
-
-- Governing task revision:
-  `.agents/tasks/mvp-core-local-dummy-clinic-flow.md @ 6274e74a82578554ad8272a8a4fce75c1ee151d4`.
-- Accepted scope: synthetic Operator arrival, verification, consent, ticket
-  print, safe LCD calls, vital signs, private paper-questionnaire capture, and
-  X-ray readiness only.
-- Observed review evidence: the 40-test / 520-assertion focused PHP suite, the
-  LCD JavaScript test, fresh migrations, remediation-range `git diff --check`,
-  and the focused Laravel Pest Browser Chrome journey (1 test, 16 assertions).
-- Accepted limitation: the separate pre-existing
-  `Mvp03AdminBookingClosureTest` browser flow did not provide a verifiable
-  completion result in this environment. The designated planning authority
-  classified it as non-blocking for this core task because it is outside the
-  accepted Operator clinic-core objective. It remains an MVP-03 evidence gap.
-
-This acceptance is not deployment, real-data, Gateway, AI, MPIPS, or release
-authorization.
+Automated tests use fakes and never call AWS or MPIPS. The evidence report for
+the one local integration rehearsal is
+`docs/mvp/evidence/mvp-local-mpips-operator-rehearsal.md`.

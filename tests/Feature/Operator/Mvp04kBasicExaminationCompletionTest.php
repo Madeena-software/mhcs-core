@@ -191,14 +191,14 @@ final class Mvp04kBasicExaminationCompletionTest extends TestCase
         $this->assertSame([], Storage::disk('local')->allFiles());
     }
 
-    public function test_oversized_questionnaire_photo_leaves_no_record_or_private_object(): void
+    public function test_questionnaire_photo_over_100_mb_leaves_no_record_or_private_object(): void
     {
         [, $admission] = $this->inServiceFixture('QUESTIONNAIRE-OVERSIZED');
 
         $this->post(route('operator.basic-examination-worklist.questionnaire.store', $admission->id), [
             'operation_id' => (string) Str::uuid(),
             'questionnaire_completed' => '1',
-            'photo' => UploadedFile::fake()->create('questionnaire.jpg', 10241, 'image/jpeg'),
+            'photo' => UploadedFile::fake()->create('questionnaire.jpg', (100 * 1024) + 1, 'image/jpeg'),
         ])->assertRedirect()->assertSessionHasErrors('photo');
 
         $this->assertSame(0, DB::table('member_paper_questionnaires')->count());

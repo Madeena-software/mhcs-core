@@ -85,7 +85,7 @@ final class Mvp04cPaperConsentConfirmationTest extends TestCase
             ->assertSee('maksimal 100 MB');
     }
 
-    public function test_private_uploads_over_10_mb_pass_the_100_mb_request_boundary(): void
+    public function test_malformed_private_upload_is_checked_by_the_service_after_request_limit(): void
     {
         $fixture = $this->matchedFixture();
 

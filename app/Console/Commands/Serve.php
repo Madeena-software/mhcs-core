@@ -44,13 +44,15 @@ final class Serve extends BaseServeCommand
     protected function serverCommand(): array
     {
         $command = parent::serverCommand();
+        $maxFileMb = (int) config('mhcs.upload.max_file_mb');
+        $maxRequestMb = (int) ceil(((int) config('mhcs.upload.max_request_bytes')) / (1024 * 1024));
 
         return [
             $command[0],
             '-d',
-            'post_max_size='.env('MHCS_PHP_POST_MAX_SIZE', '100M'),
+            'post_max_size='.$maxRequestMb.'M',
             '-d',
-            'upload_max_filesize='.env('MHCS_PHP_UPLOAD_MAX_FILESIZE', '100M'),
+            'upload_max_filesize='.$maxFileMb.'M',
             ...array_slice($command, 1),
         ];
     }

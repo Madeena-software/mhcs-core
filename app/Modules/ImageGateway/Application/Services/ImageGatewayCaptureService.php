@@ -35,10 +35,6 @@ final readonly class ImageGatewayCaptureService
 
     private const AUDIENCE = 'operator-study';
 
-    private const MAX_FILE_BYTES = 104857600;
-
-    private const MAX_PAIR_BYTES = 314572800;
-
     public function __construct(
         private PrivateObjectStore $objects,
         private IdempotencyStore $idempotency,
@@ -309,6 +305,8 @@ final readonly class ImageGatewayCaptureService
     /** @return array{0: string, 1: string} */
     private function assertUploads(UploadedFile $radiograph, UploadedFile $gain): array
     {
+        $maxFileBytes = (int) config('mhcs.upload.max_file_bytes');
+        $maxPairBytes = (int) config('mhcs.image_policy.total_bytes');
         $bytes = [];
         foreach ([$radiograph, $gain] as $file) {
             $name = strtolower((string) $file->getClientOriginalName());
@@ -316,12 +314,12 @@ final readonly class ImageGatewayCaptureService
                 throw new ImageGatewayException('capture_invalid', 'Exactly one non-empty NPZ pair is required.');
             }
             $contents = $file->get();
-            if (! is_string($contents) || $contents === '' || strlen($contents) > self::MAX_FILE_BYTES || ! preg_match('/\APK(?:\x03\x04|\x05\x06|\x07\x08)/', $contents)) {
+            if (! is_string($contents) || $contents === '' || strlen($contents) > $maxFileBytes || ! preg_match('/\APK(?:\x03\x04|\x05\x06|\x07\x08)/', $contents)) {
                 throw new ImageGatewayException('capture_invalid', 'NPZ uploads must be non-empty ZIP files within the size limit.');
             }
             $bytes[] = $contents;
         }
-        if (strlen($bytes[0]) + strlen($bytes[1]) > self::MAX_PAIR_BYTES) {
+        if (strlen($bytes[0]) + strlen($bytes[1]) > $maxPairBytes) {
             throw new ImageGatewayException('capture_invalid', 'The NPZ pair exceeds the request size limit.');
         }
 

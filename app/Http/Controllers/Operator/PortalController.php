@@ -430,7 +430,7 @@ final class PortalController extends Controller
         $validator = Validator::make($request->all(), [
             'operation_id' => ['required', 'uuid'],
             'questionnaire_completed' => ['accepted'],
-            'photo' => ['required', 'file', 'max:10240'],
+            'photo' => ['required', 'file', 'max:'.(int) config('mhcs.upload.max_file_mb') * 1024],
         ]);
         if ($validator->fails()) {
             return back()->withErrors($validator)->withInput();
@@ -636,7 +636,7 @@ final class PortalController extends Controller
             'signature_confirmed' => ['accepted'],
             'signed_at' => ['required', 'date_format:Y-m-d'],
             'operation_id' => ['required', 'uuid'],
-            'scan' => ['required', 'file', 'max:102400'],
+            'scan' => ['required', 'file', 'max:'.(int) config('mhcs.upload.max_file_mb') * 1024],
         ]);
         if ($validator->fails()) {
             return back()->withErrors($validator)->withInput();
