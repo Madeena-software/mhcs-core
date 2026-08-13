@@ -54,6 +54,64 @@ The state of any remote object created before the timeout is therefore not
 confirmed; no bucket listing, object identifier, service log, or secret was
 read to investigate it.
 
+## Additional S3 diagnosis and decision record
+
+The application configuration was verified without printing values: the
+private-object disk resolves to `s3`, the S3 driver is active, the required AWS
+credential/region/bucket settings are loaded, path-style addressing is enabled,
+and `AWS_ENDPOINT` is configured. The endpoint and bucket values were not
+disclosed.
+
+The existing upload path was traced as:
+
+```text
+Operator NPZ upload
+→ load both NPZ files into memory
+→ encrypt each private object
+→ sequentially write radiograph, gain, manifest, and signature to S3
+→ create capture rows
+→ dispatch image-gateway queue job
+→ worker calls MPIPS
+```
+
+Observed diagnostic results using generated non-clinical payloads only:
+
+| Probe | Result |
+|---|---|
+| Laravel S3 raw 1 MiB object | **PASS** — 9.883 seconds; cleanup passed. |
+| Laravel S3 encrypted 1 MiB object (1.33 MiB encoded) | **PASS** — 17.827 seconds; cleanup passed. |
+| Laravel S3 raw 10 MiB object | **PASS** — 141.092 seconds; cleanup passed. |
+| Direct AWS SDK `PutObject`, raw 10 MiB | **PASS** — 165.505 seconds; cleanup passed. |
+| Direct AWS SDK multipart upload, raw 10 MiB | **PASS** — 157.528 seconds; cleanup passed. |
+
+These results localize the progress problem below Laravel and below the
+application encryption layer: the configured S3 endpoint or network path has
+very low large-object write throughput. Removing encryption would reduce the
+payload expansion but would not remove the observed raw 10 MiB S3 delay. The
+MPIPS API was not reached during the failed rehearsal because capture
+acceptance and queue dispatch occur after the S3 writes.
+
+The CTO-approved proposal to remove application-side NPZ encryption and run
+S3 upload and MPIPS submission in parallel was discussed but **not
+implemented**. It was intentionally deferred because it materially changes the
+private-storage security boundary and introduces partial-success behavior that
+requires explicit retry and cleanup rules. No application behavior, tests, or
+accepted Image Gateway code were changed for that proposal.
+
+### Recommendation
+
+1. Keep the current encrypted-private-object and queue-first behavior for the
+   accepted implementation.
+2. Diagnose the configured S3 endpoint/provider large-object path outside the
+   application: bandwidth, proxy/VFS gateway behavior, request limits, and
+   service-side write latency.
+3. If unencrypted private NPZ storage and parallel MPIPS submission are still
+   desired, publish a new validated task with explicit security approval,
+   partial-failure semantics, cleanup, retry, and regression requirements.
+
+The temporary staged diagnostic scripts were removed after the measurements;
+the redacted small-object CRUD harness remains in `research/scratch/`.
+
 ## Authorized local rehearsal
 
 The rehearsal stopped before database reset, seed, capture submission, queue
