@@ -23,7 +23,7 @@ final readonly class Mvp03SiteReferenceService
     /** @return array{organization_id: string, site_id: string} */
     public function bootstrap(string $organizationId, string $organizationName, string $siteId, string $code, string $name, string $timezone, string $sourceVersion = 'synthetic-v1'): array
     {
-        if (! app()->environment(['local', 'testing'])) {
+        if (! app()->environment(['local', 'testing']) && ! (bool) env('MHCS_ALLOW_PRODUCTION_MVP_SEED', false)) {
             throw new Mvp03Exception('Synthetic site references are limited to local and testing environments.');
         }
 
