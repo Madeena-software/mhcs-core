@@ -38,8 +38,9 @@ final class MvpApplicationIndonesianUiLocalizationTest extends TestCase
             'DICOM study ready. Automatic VOI is applied.',
             'The DICOM study could not be displayed.',
             'Study mode badges',
+            'Read-only DICOM study. Automatic VOI is applied; use drag to pan and wheel to zoom.',
             'Pointer drag pans the image. Use the mouse wheel to zoom.',
-            'JavaScript is unavailable. Continue in this tab; enable JavaScript for monitor viewing.',
+            'JavaScript is unavailable. Enable JavaScript to view this study in the current tab.',
             'The X-ray admission is unavailable to this Operator.',
         ] as $message) {
             $this->assertArrayHasKey($message, $copy);
@@ -138,8 +139,9 @@ final class MvpApplicationIndonesianUiLocalizationTest extends TestCase
         ])
             ->assertSee('Studi DICOM')
             ->assertSee('Indikator mode studi')
+            ->assertSee('Studi DICOM hanya-baca. VOI otomatis diterapkan; seret untuk menggeser dan gunakan roda mouse untuk memperbesar atau memperkecil.')
             ->assertSee('Seret untuk menggeser. Gunakan roda mouse untuk memperbesar atau memperkecil.')
-            ->assertSee('JavaScript tidak tersedia. Lanjutkan di tab ini; aktifkan JavaScript untuk melihat di monitor.')
+            ->assertSee('JavaScript tidak tersedia. Aktifkan JavaScript untuk melihat studi ini di tab saat ini.')
             ->assertDontSee('Study mode badges')
             ->assertSee('Unduh DICOM');
     }

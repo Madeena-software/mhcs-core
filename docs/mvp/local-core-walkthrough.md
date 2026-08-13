@@ -39,15 +39,10 @@ only and never copy its contents.
    the study in the current tab and verify a centred portrait-suitable,
    read-only viewer with automatic VOI and zoom/pan only. Use **Unduh DICOM**
    for the normal authenticated attachment download.
-4. Select **Buka di monitor**. Confirm one named compact popup opens for the
-   same protected study, remains usable after portrait resize, preserves the
-   reference/state/download, and hides broad workstation navigation. If the
-   browser blocks it, confirm the safe Indonesian fallback and continue in the
-   current tab.
-5. If the viewer cannot load, confirm it leaves “Memuat DICOM…” for the safe
+4. If the viewer cannot load, confirm it leaves “Memuat DICOM…” for the safe
    Indonesian error state with download and return actions. Do not manufacture
    a failure by changing code, data, or configuration.
-6. Sign in as the second same-site/current-shift Operator. Confirm the first
+5. Sign in as the second same-site/current-shift Operator. Confirm the first
    returned study remains discoverable, viewable, and normally downloadable;
    then open the second Operator’s own already-called X-ray capture and confirm
    it is ready for a separate NPZ pair. Confirm unauthorised access is denied

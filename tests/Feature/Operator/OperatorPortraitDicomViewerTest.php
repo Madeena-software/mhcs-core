@@ -33,7 +33,7 @@ final class OperatorPortraitDicomViewerTest extends TestCase
         Storage::fake('local');
     }
 
-    public function test_redesigned_study_view_renders_polished_indonesian_portrait_surface_with_monitor_popup_control(): void
+    public function test_study_view_renders_polished_indonesian_current_tab_surface(): void
     {
         $fixture = $this->operatorFixture(false);
         $this->actingAs($fixture['operator'])->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
@@ -50,15 +50,15 @@ final class OperatorPortraitDicomViewerTest extends TestCase
             ->assertSee('VOI otomatis')
             ->assertSee('Hanya zoom dan geser')
             ->assertSee('Indikator mode studi')
+            ->assertSee('Studi DICOM hanya-baca. VOI otomatis diterapkan; seret untuk menggeser dan gunakan roda mouse untuk memperbesar atau memperkecil.')
             ->assertSee('Seret untuk menggeser. Gunakan roda mouse untuk memperbesar atau memperkecil.')
-            ->assertSee('JavaScript tidak tersedia. Lanjutkan di tab ini; aktifkan JavaScript untuk melihat di monitor.')
-            ->assertSee('Buka di monitor')
-            ->assertSee(route('operator.study.show', $studyId), false)
+            ->assertSee('JavaScript tidak tersedia. Aktifkan JavaScript untuk melihat studi ini di tab saat ini.')
+            ->assertSee('data-image-url="'.route('operator.study.dicom', $studyId).'"', false)
             ->assertSee('Unduh DICOM')
             ->assertSee(route('operator.study.download', $studyId), false)
+            ->assertSee('download', false)
             ->assertSee('Kembali ke hasil DICOM')
             ->assertSee(route('operator.study.results'), false)
-            ->assertSee('data-popup-blocked-message="Browser memblokir jendela pop-up. Lanjutkan pada tab ini atau izinkan pop-up."', false)
             ->assertSee('data-testid="dicom-viewport"', false)
             ->assertDontSee('Study mode badges')
             ->assertDontSee('Window/Level')
@@ -71,13 +71,15 @@ final class OperatorPortraitDicomViewerTest extends TestCase
             ->assertDontSee('Invert');
     }
 
-    public function test_viewer_failure_copy_is_safe_and_popup_copy_is_registry_backed(): void
+    public function test_viewer_bootstrap_and_failure_copy_are_safe(): void
     {
-        $source = (string) file_get_contents(base_path('resources/js/operator-dicom-viewer.js'));
+        $viewerSource = (string) file_get_contents(base_path('resources/js/operator-dicom-viewer.js'));
+        $appSource = (string) file_get_contents(base_path('resources/js/app.js'));
 
-        $this->assertStringNotContainsString('Browser memblokir jendela pop-up.', $source);
-        $this->assertStringNotContainsString('error.message', $source);
-        $this->assertStringContainsString('root.dataset.displayErrorMessage', $source);
+        $this->assertStringNotContainsString('error.message', $viewerSource);
+        $this->assertStringContainsString('root.dataset.displayErrorMessage', $viewerSource);
+        $this->assertStringContainsString("import('./operator-dicom-viewer.js')", $appSource);
+        $this->assertStringContainsString('withViewerTimeout', $appSource);
     }
 
     public function test_unauthorized_operator_or_foreign_site_is_denied_access_to_study(): void

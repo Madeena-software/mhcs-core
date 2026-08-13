@@ -2,6 +2,7 @@ import { defineConfig } from 'vite';
 import laravel from 'laravel-vite-plugin';
 import { bunny } from 'laravel-vite-plugin/fonts';
 import tailwindcss from '@tailwindcss/vite';
+import { fileURLToPath } from 'node:url';
 
 export default defineConfig({
     plugins: [
@@ -16,6 +17,11 @@ export default defineConfig({
         }),
         tailwindcss(),
     ],
+    resolve: {
+        alias: {
+            events: fileURLToPath(new URL('./resources/js/browser-events.js', import.meta.url)),
+        },
+    },
     server: {
         watch: {
             ignored: ['**/storage/framework/views/**'],

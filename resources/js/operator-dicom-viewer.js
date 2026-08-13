@@ -7,6 +7,7 @@ import dicomImageLoader, {
     init as dicomImageLoaderInit,
 } from '@cornerstonejs/dicom-image-loader';
 import dicomParser from 'dicom-parser';
+import { VIEWER_TIMEOUT_MS, withViewerTimeout } from './operator-viewer-timeout.js';
 
 const VIEWPORT_ID = 'mhcs-dicom-viewport';
 const ENGINE_ID = 'mhcs-dicom-engine';
@@ -68,53 +69,10 @@ function bindZoomAndPan(element, viewport) {
     element.addEventListener('pointerleave', stopPan);
 }
 
-function showPopupFallback(root) {
-    const popupStatus = root.querySelector('#dicom-popup-status');
-    if (!popupStatus) {
-        return;
-    }
-    popupStatus.hidden = false;
-    popupStatus.textContent = root.dataset.popupBlockedMessage;
-}
+function viewerTimeout(root) {
+    const configured = Number(root.dataset.viewerTimeoutMs);
 
-export function openMonitorWindow(root) {
-    const button = root.querySelector('[data-open-monitor]');
-    if (!button) {
-        return;
-    }
-
-    try {
-        const popup = window.open(
-            button.getAttribute('data-monitor-url') || window.location.href,
-            'mhcs-dicom-monitor',
-            'width=640,height=960,resizable=yes,scrollbars=yes'
-        );
-        if (!popup || popup.closed) {
-            showPopupFallback(root);
-            return;
-        }
-        popup.focus();
-        const popupStatus = root.querySelector('#dicom-popup-status');
-        if (popupStatus) {
-            popupStatus.hidden = true;
-            popupStatus.textContent = '';
-        }
-    } catch {
-        showPopupFallback(root);
-    }
-}
-
-export function bindMonitorWindow(root) {
-    if (window.name === 'mhcs-dicom-monitor') {
-        document.body.classList.add('is-monitor-popup');
-        root.dataset.isMonitorPopup = 'true';
-    }
-
-    const button = root.querySelector('[data-open-monitor]');
-    if (!button) {
-        return;
-    }
-    button.addEventListener('click', () => openMonitorWindow(root));
+    return Number.isFinite(configured) && configured > 0 ? configured : VIEWER_TIMEOUT_MS;
 }
 
 export async function renderStudy(root) {
@@ -123,16 +81,16 @@ export async function renderStudy(root) {
         return;
     }
 
-    bindMonitorWindow(root);
     setViewerState(root, 'loading', root.dataset.loadingMessage);
     window.__mhcsDicomViewerReady = false;
+    const timeoutMs = viewerTimeout(root);
 
     try {
         if (typeof dicomParser.parseDicom !== 'function') {
             throw new Error(root.dataset.parserUnavailableMessage);
         }
-        cornerstoneInit();
-        dicomImageLoaderInit({ maxWebWorkers: 1 });
+        await withViewerTimeout(Promise.resolve(cornerstoneInit()), timeoutMs);
+        await withViewerTimeout(Promise.resolve(dicomImageLoaderInit({ maxWebWorkers: 1 })), timeoutMs);
         const renderingEngine = new RenderingEngine(ENGINE_ID);
         renderingEngine.enableElement({
             viewportId: VIEWPORT_ID,
@@ -146,8 +104,12 @@ export async function renderStudy(root) {
 
         const viewport = renderingEngine.getViewport(VIEWPORT_ID);
         const imageId = 'wadouri:' + root.dataset.imageUrl;
-        await dicomImageLoader.wadouri.loadImage(imageId).promise;
-        await viewport.setStack([imageId], 0);
+        const image = dicomImageLoader.wadouri.loadImage(imageId);
+        if (!image?.promise) {
+            throw new Error(root.dataset.parserUnavailableMessage);
+        }
+        await withViewerTimeout(image.promise, timeoutMs);
+        await withViewerTimeout(viewport.setStack([imageId], 0), timeoutMs);
 
         const center = Number(root.dataset.windowCenter);
         const width = Number(root.dataset.windowWidth);
@@ -160,18 +122,11 @@ export async function renderStudy(root) {
             });
         }
         viewport.resetCamera();
-        viewport.render();
+        await withViewerTimeout(Promise.resolve(viewport.render()), timeoutMs);
         bindZoomAndPan(element, viewport);
         window.__mhcsDicomViewerReady = true;
         setViewerState(root, 'ready', root.dataset.readyMessage);
     } catch {
         setViewerState(root, 'error');
-    }
-}
-
-if (typeof document !== 'undefined') {
-    const root = document.querySelector('[data-dicom-viewer]');
-    if (root) {
-        renderStudy(root);
     }
 }

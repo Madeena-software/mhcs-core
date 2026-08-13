@@ -27,6 +27,17 @@ Git commit.
 - External boundary: **PASS** — no AWS/S3 or MPIPS call, log inspection,
   private-object inspection, NPZ inspection, or DICOM inspection occurred.
 
+## Sanitized viewer root-cause evidence
+
+Before this task, the production browser bundle externalized Node’s `events`
+module while the transitive XML builder evaluated a class extending
+`undefined.EventEmitter`; the application therefore stopped during bootstrap
+before requesting the protected DICOM route. The current build resolves the
+local browser compatibility module, defers the viewer chunk, emits no
+`events` externalization warning, and passes the static bundle check. This is
+build evidence only; the authorised user-led study run remains required for
+product acceptance.
+
 Changed files: `README.md`, `database/seeders/MvpCoreClinicSeeder.php`,
 `tests/Feature/Operator/MvpCoreClinicSeederTest.php`,
 `docs/mvp/local-core-walkthrough.md`, and
@@ -41,12 +52,9 @@ Changed files: `README.md`, `database/seeders/MvpCoreClinicSeeder.php`,
    reopen and confirm durable polling. Retry only a reported missing component.
 3. Confirm the short `DCM-…` reference, current-tab portrait read-only viewer,
    automatic VOI, zoom/pan only, and normal **Unduh DICOM** attachment download.
-4. Use **Buka di monitor** and confirm one named compact popup, portrait resize,
-   preserved study state/reference/download, and no broad navigation. If blocked,
-   confirm the safe Indonesian fallback and continue in the current tab.
-5. If loading fails, confirm the safe Indonesian error state from
+4. If loading fails, confirm the safe Indonesian error state from
    “Memuat DICOM…”, with download and return actions. Do not manufacture failure.
-6. Second same-site/current-shift Operator: discover, view, and download the
+5. Second same-site/current-shift Operator: discover, view, and download the
    first study; open the second Operator’s own called X-ray capture; confirm it
    is ready for a separate pair and unauthorised access is safely denied.
 
@@ -56,26 +64,24 @@ Manual findings return to Planner/Reviewer and do not authorize release.
 ## Known gap
 
 The live NPZ upload, durable page-close/reopen behavior, MPIPS conversion,
-returned DICOM viewer, popup, download, and second-Operator journey remain
+returned DICOM viewer, download, and second-Operator journey remain
 manual evidence. Historical viewer/reference feedback is superseded by the
 current candidate and is not a current defect; any new symptom is a separate
 Planner/Reviewer finding.
 
 ## New user-led feedback for Planner/Reviewer
 
-The following feedback supersedes the popup portion of the checklist above and
-is recorded for planning only. No application behavior was changed under this
-readiness task.
+The following feedback is recorded for planning only. No application behavior
+was changed under this readiness task.
 
 1. The session ticket currently exposes an opaque UUID-like value. Replace it
    with a short human-readable display reference using the established `MRN-`,
    `DCM-`, and `JAD-` style. Keep the internal UUID unchanged for routing,
    authorization, audit, and idempotency.
-2. The Operator DICOM study page should become the primary, polished current-tab
-   UI/UX surface. Remove **Buka di monitor** from the intended product flow;
-   the user reports that the popup action does not work and is unnecessary if
-   the study page is made excellent. This is a product/UI task for
-   Planner/Reviewer, not a readiness-task fix.
+2. The Operator DICOM study page should remain the primary, polished
+   current-tab UI/UX surface with read-only portrait presentation, automatic
+   VOI, and zoom/pan only. This is a product/UI task for Planner/Reviewer, not
+   a readiness-task fix.
 3. The user reports that the DICOM image remains at the loading state and does
    not render. Treat this as an unresolved viewer/runtime finding requiring
    Planner/Reviewer triage. Preserve the safe Indonesian failure state and the

@@ -1,80 +1,54 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+const viewerModule = await import('../../resources/js/operator-dicom-viewer.js');
 const {
-    bindMonitorWindow,
-    openMonitorWindow,
     resizeRenderingEngine,
     setViewerState,
-} = await import('../../resources/js/operator-dicom-viewer.js');
+} = viewerModule;
+const { bootstrapViewer } = await import('../../resources/js/app.js');
+const { withViewerTimeout } = await import('../../resources/js/operator-viewer-timeout.js');
 
 function viewerRoot() {
     const status = { textContent: '' };
-    const popupStatus = { hidden: true, textContent: '' };
     const error = { hidden: true, textContent: '' };
-    const button = {
-        dataset: { monitorUrl: '/operator/studies/synthetic-study' },
-        getAttribute(name) {
-            return name === 'data-monitor-url' ? this.dataset.monitorUrl : null;
-        },
-        addEventListener(_, callback) { this.callback = callback; },
-    };
 
     return {
         dataset: {
             unavailableMessage: 'Studi DICOM tidak tersedia.',
             displayErrorMessage: 'Studi DICOM tidak dapat ditampilkan.',
-            popupBlockedMessage: 'Browser memblokir jendela pop-up. Lanjutkan pada tab ini atau izinkan pop-up.',
         },
         status,
-        popupStatus,
         error,
-        button,
         querySelector(selector) {
             return {
                 '#dicom-viewer-status': status,
-                '#dicom-popup-status': popupStatus,
                 '#dicom-viewer-error': error,
-                '[data-open-monitor]': button,
             }[selector] ?? null;
         },
     };
 }
 
-test('requests and focuses the existing protected study in one stable monitor window', () => {
-    const root = viewerRoot();
-    const calls = [];
-    let focused = false;
-    globalThis.window = {
-        open(...args) {
-            calls.push(args);
-            return { closed: false, focus() { focused = true; } };
-        },
-    };
-
-    openMonitorWindow(root);
-
-    assert.deepEqual(calls, [[
-        '/operator/studies/synthetic-study',
-        'mhcs-dicom-monitor',
-        'width=640,height=960,resizable=yes,scrollbars=yes',
-    ]]);
-    assert.equal(focused, true);
-    assert.equal(root.popupStatus.hidden, true);
+test('exposes only the supported viewer interactions', () => {
+    assert.deepEqual(viewerModule.VIEWER_INTERACTIONS, ['zoom', 'pan']);
 });
 
-test('keeps the current-tab fallback when the monitor popup is blocked or focus throws', () => {
+test('moves the study to the safe Indonesian error state when viewer bootstrap fails', async () => {
     const root = viewerRoot();
-    globalThis.window = { open: () => null };
-    openMonitorWindow(root);
-    assert.equal(root.popupStatus.hidden, false);
-    assert.equal(root.popupStatus.textContent, root.dataset.popupBlockedMessage);
+    await bootstrapViewer(root, async () => { throw new Error('bundle diagnostic'); });
 
-    root.popupStatus.hidden = true;
-    globalThis.window = { open: () => ({ closed: false, focus() { throw new Error('blocked'); } }) };
-    openMonitorWindow(root);
-    assert.equal(root.popupStatus.hidden, false);
-    assert.equal(root.popupStatus.textContent, root.dataset.popupBlockedMessage);
+    assert.equal(root.dataset.viewerState, 'error');
+    assert.equal(root.status.textContent, root.dataset.unavailableMessage);
+    assert.equal(root.error.hidden, false);
+    assert.equal(root.error.textContent, root.dataset.displayErrorMessage);
+    assert.equal(root.error.textContent.includes('bundle'), false);
+});
+
+test('bounds an unsettled viewer promise', async () => {
+    await assert.rejects(
+        withViewerTimeout(new Promise(() => {}), 5),
+        /timed out/
+    );
 });
 
 test('renders a safe Indonesian error state instead of a loader diagnostic', () => {
@@ -89,14 +63,7 @@ test('renders a safe Indonesian error state instead of a loader diagnostic', () 
     assert.equal(root.error.textContent.includes('secret'), false);
 });
 
-test('enters compact monitor mode and tolerates a stale engine during resize', () => {
-    const root = viewerRoot();
-    const classes = new Set();
-    globalThis.window = { name: 'mhcs-dicom-monitor' };
-    globalThis.document = { body: { classList: { add: (name) => classes.add(name) } } };
-    bindMonitorWindow(root);
-    assert.equal(classes.has('is-monitor-popup'), true);
-
+test('tolerates a stale engine during resize', () => {
     let resized = false;
     resizeRenderingEngine({ resize() { resized = true; } });
     resizeRenderingEngine({ resize() { throw new Error('unmounted'); } });
