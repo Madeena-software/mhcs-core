@@ -1,7 +1,7 @@
 ---
 title: Uniform Queued Capture Processing and Operator Status Synchronisation
 document_id: MHCS-TASK-OPERATOR-ASYNC-CAPTURE-001
-version: 1.0
+version: 1.1
 status: validated-published
 language: en-US
 last_updated: 2026-08-13
@@ -334,3 +334,70 @@ clinical-file inspection/copying.
 `REVIEW REQUIRED` — return one immutable implementation revision and redacted
 verification evidence.  The Reviewer must accept it before the local filesystem
 redeployment and manual-testing task is republished.
+
+## Remediation required
+
+### Review basis and verdict
+
+`REMEDIATION REQUIRED` — reviewed against this governing task at
+`f8305df9ab51037617c9965404ab54ae3914fdae`, implementation baseline
+`7bc8b14cfd1e696d5e78000555b97ed6e09a7bf5`, and implementation revision
+`91304d969daa54fbcf42eb28f97d2f77d78d8265`.
+
+The implementation correctly removes `MpipsClient` from the capture request,
+persists the paired sources, accepts and queues the capture after transaction
+commit, invokes MPIPS only from `ProcessCaptureSet`, and adds safe status,
+progress, and worklist refresh behavior. Focused feature tests, browser tests,
+the full PHPUnit suite, the frontend build, formatter, and diff check pass.
+
+One acceptance defect remains. `xray-capture.blade.php` keeps its active native
+unload guard after the status endpoint reports `queued` or `processing`. It
+therefore warns the Operator when closing the page while the server-side worker
+is processing MPIPS. This contradicts MVP-DEC-041, which supersedes the
+page-open dependency once the source pair is durable and the capture is
+accepted.
+
+### Required correction
+
+- Keep disabled file inputs, duplicate prevention, byte-level progress, and
+  native unload protection only while the browser is transmitting an NPZ pair
+  whose durable outcome is not yet known.
+- When safe status reports `queued` or `processing`, mark browser upload work
+  terminal and remove the unload warning immediately. Keep the status poll only
+  while the page remains open; closing it must not abort, cancel, duplicate, or
+  otherwise affect the accepted capture or queued MPIPS job.
+- Update the visible Indonesian warning/status copy so it tells the Operator not
+  to navigate during the upload, while clearly stating that processing continues
+  safely after durable capture acceptance. All changed visible copy remains in
+  `lang/id.json`.
+- Preserve the existing behavior for `awaiting_sources`: a failed/interrupted
+  upload still shows only the missing component and permits the same-checksum
+  retry. Preserve `failed` and `ready` terminal behavior, status-route
+  authorization, worker-only MPIPS, DICOM access, and worklist polling.
+
+### Remediation acceptance criteria
+
+- [ ] After a capture reaches safe `queued` or `processing`, the page may be
+  closed or navigated away from without a browser unload warning and without
+  altering the accepted capture, its job, or any stored source object.
+- [ ] Before durable upload outcome is known, file inputs and submission remain
+  disabled, byte-level progress remains visible when computable, and accidental
+  navigation still receives native unload protection.
+- [ ] Closing the page after acceptance is not required for queued processing;
+  reopening the authorised capture page can safely resume status polling and
+  redirect to results when its DICOM is ready.
+- [ ] Every original acceptance criterion, especially local/S3 uniform flow,
+  source-only retry, worker-only MPIPS, safe status scope, DICOM access, and
+  non-mutating worklist polling, remains passing.
+
+### Additional verification
+
+- Add or amend browser coverage that distinguishes an in-flight XHR upload from
+  a `queued`/`processing` status response. It must prove the former retains the
+  unload guard and the latter releases it while polling remains possible.
+- Re-run the focused Image Gateway and browser tests, full PHPUnit suite,
+  `npm run build`, `vendor/bin/pint --test`, and `git diff --check` using only
+  local/fake storage and fake MPIPS.
+- Update the existing redacted evidence record with the observed remediation
+  commands/results. Do not claim local deployment, live MPIPS/S3 conversion,
+  or release completion.
