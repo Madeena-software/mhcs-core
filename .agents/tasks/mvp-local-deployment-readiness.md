@@ -1,15 +1,16 @@
 ---
 title: Local MHCS Operator-to-DICOM Deployment and Manual Testing Readiness
 document_id: MHCS-TASK-LOCAL-DEPLOYMENT-READINESS-001
-version: 1.3
-status: validated-on-publication
+version: 1.4
+status: draft
 language: en-US
 last_updated: 2026-08-13
 scope:
+  - two seeded, operator-owned X-ray captures ready for immediate NPZ upload
   - disposable local deployment of the current Operator and Image Gateway candidate
   - synthetic Operator-to-DICOM manual testing handoff
   - final portrait DICOM viewer manual-review evidence
-authority_note: This revised local-testing task is validated/published only when this exact file is committed unchanged and its immutable task revision is supplied in the Executor handoff. It authorizes no production deployment, release, external probe, or application-behavior change.
+authority_note: This revised local-testing task becomes executable only when this exact content is committed unchanged and its immutable task revision is supplied in the Executor handoff. It authorizes no production deployment, release, external probe, or production application-behavior change.
 ---
 
 # Executable Task
@@ -23,10 +24,10 @@ authority_note: This revised local-testing task is validated/published only when
 `.agents/tasks/mvp-local-deployment-readiness.md`
 
 **Task contract state:**
-`Validated/Published upon immutable publication of this exact content; the governing SHA is supplied externally in the Executor handoff.`
+`Draft — this material seed/readiness revision must be republished with a new immutable governing SHA before execution.`
 
 **Delivery objective / Work Package / MVP:**
-`Pre-deployment local MVP — provide one clean, safe, user-led end-to-end Operator rehearsal for the current DICOM-viewer candidate.`
+`Pre-deployment local MVP — provide one clean, safe, user-led Operator rehearsal with two immediate NPZ-upload captures.`
 
 **Owner / designated planning authority:**
 `Faliq Adlan, CTO`
@@ -48,8 +49,8 @@ for the viewer candidate; it does not itself accept, deploy, or release it.
 ## Baseline and task revision
 
 **Repository execution baseline:**
-`73857140da680c6e15a33e1f6226935b377ec0ea` — current committed repository
-state, including the current viewer implementation and task archival.
+`10a331c960c05bd9e45f8a6bd1aa5a9e29e920d4` — current committed local-testing
+task revision and repository state before this seed/readiness update.
 
 **Manual-review candidate:**
 `a3bcf3fe48a929b87d0ed0e278d537f7a70c1394` — current portrait-viewer
@@ -61,15 +62,16 @@ governing task.
 b0b4597250137655ce38e03c93a45fb1104a41b4`.
 
 **Task revision:**
-`The full SHA of the commit containing this exact task content, supplied by the Planner after publication.`
+`Resolved when this Draft revision is committed unchanged; the Planner supplies that full SHA before Executor handoff.`
 
 ## Objective
 
-Reset and start one confirmed disposable local MHCS runtime with synthetic data,
-four native HTTP workers, and one `image-gateway` queue worker. Hand the user a
-sanitized, current checklist for testing the complete Operator-to-DICOM journey
-and the portrait viewer. Record only redacted readiness evidence and leave the
-processes running for the user.
+Reset and start one confirmed disposable local MHCS runtime with five synthetic
+Members, two synthetic X-ray admissions already called and ready for immediate
+NPZ upload, four native HTTP workers, and one `image-gateway` queue worker.
+Hand the user a sanitized, current checklist for testing the complete
+Operator-to-DICOM journey and portrait viewer. Record only redacted readiness
+evidence and leave the processes running for the user.
 
 ## Authoritative inputs
 
@@ -117,6 +119,21 @@ processes running for the user.
 - Migrate and run the existing `Database\Seeders\MvpCoreClinicSeeder`. It must
   provide the existing five synthetic Members and same-site/current-shift
   Operators. Do not disclose `credential.txt` content.
+- Extend only the existing local/testing `MvpCoreClinicSeeder` and its focused
+  test so exactly two of the five synthetic Members are ready for immediate
+  radiograph/gain NPZ submission after a fresh seed. Each must have one
+  completed prerequisite workflow and one `xray` admission in `called` state,
+  with no capture set or DICOM yet. Assign one called admission to the primary
+  synthetic Operator and the other to the second synthetic Operator; a called
+  X-ray admission remains private to its claimant.
+- Reuse existing Operator workflow/services, records, state transitions,
+  authorization, audit/outbox, and idempotency mechanisms to construct the
+  two local seed scenarios. Do not bypass the workflow with ad-hoc table
+  updates, seed an uploaded object/capture/DICOM, relax ownership/active-site/
+  current-shift checks, or create a special capture route. Re-running the seed
+  must preserve exactly two usable called X-ray admissions rather than duplicate
+  tickets, admissions, claims, capture sets, or audit/outbox facts. The other
+  three synthetic Members remain available for the ordinary earlier-stage flow.
 - Build the existing frontend. Start exactly four native loopback HTTP workers
   on `127.0.0.1:8013` with `PHP_CLI_SERVER_WORKERS=4` and `--no-reload`, plus
   exactly one existing database queue worker restricted to `image-gateway` with
@@ -147,9 +164,10 @@ processes running for the user.
 
 ### Out of scope
 
-- Application-code changes, migrations, Viewer/Cornerstone changes, new tests,
+- Production application-code changes, migrations, Viewer/Cornerstone changes,
   test-runner repair, new worker/queue types, retry-policy changes, dependency
-  changes, or implementation of manual-test feedback.
+  changes, or implementation of manual-test feedback. The one permitted code
+  change is the bounded local/testing seeder and focused test above.
 - Executor-driven NPZ submission; any AWS/S3 or MPIPS request/probe; raw NPZ
   or DICOM inspection/parsing/copying; storage listing; credential disclosure;
   or browser-automation workaround.
@@ -169,6 +187,9 @@ processes running for the user.
   The viewer remains read-only: automatic VOI, zoom, and pan only.
 - The internal UUID stays the protected route/authorization identity; the short
   `DCM-…` display reference remains the primary user-facing study label.
+- The local shortcut is seed data only: exactly two Member workflows are
+  pre-completed to the normal called X-ray state. It does not alter production
+  workflow, capture rules, queue ownership, or the remaining three Members.
 - During NPZ XHR, inputs and native unload protection remain active. At safe
   `queued`/`processing`, work is durable, the page may be closed, and retry
   uploads only a genuinely unsuccessful component.
@@ -202,7 +223,9 @@ processes running for the user.
 
 ## Required capabilities
 
-- Repository write limited to the three named guides/evidence files.
+- Repository write limited to `database/seeders/MvpCoreClinicSeeder.php`,
+  `tests/Feature/Operator/MvpCoreClinicSeederTest.php`, and the three named
+  guides/evidence files.
 - Local shell, Laravel/Node commands, loopback checks, and narrowly identified
   local process start/stop.
 - No external network, AWS/S3, MPIPS, production, credential, or clinical-file
@@ -241,6 +264,11 @@ processes running for the user.
   current-tab viewer; **Buka di monitor** named popup and portrait resize;
   automatic VOI plus zoom/pan only; safe Indonesian error state if encountered;
   and normal DICOM attachment download.
+- [ ] A fresh seed retains exactly five synthetic Members. Exactly two have
+  authorised, operator-owned `called` X-ray admissions with no capture set or
+  DICOM and are immediately able to open the existing capture form; the primary
+  and second synthetic Operators own one each. The other three are not silently
+  advanced, and a repeat seed is idempotent.
 - [ ] Evidence is sanitized and makes no production/release, real-clinical,
   secret, private-object, NPZ/DICOM-content, or external-probe claim.
 
@@ -296,17 +324,22 @@ TARGET="." php artisan queue:work database --queue=image-gateway --timeout=390
 - Verify process command lines/counts and the named loopback responses without
   logs, storage, or private-file inspection. Do not probe MPIPS; the user's
   manual browser action is the only approved live conversion trigger.
+- The focused seed test must prove the five-Member roster, the exact count of
+  two pre-called X-ray admissions, their distinct primary/second Operator
+  ownership, no associated capture/DICOM, unadvanced remaining Members, and
+  repeat-seed idempotency. Do not use a real NPZ/DICOM or external service.
 
 ### Required user manual checklist
 
 The Executor records this checklist in the walkthrough/evidence and leaves the
-runtime ready. The user performs it and returns only sanitized PASS/FAIL,
-symptoms, and non-sensitive screenshots:
+runtime ready. The user first opens the primary Operator's already-called X-ray
+capture, then later uses the second Operator's already-called capture. The user
+returns only sanitized PASS/FAIL, symptoms, and non-sensitive screenshots:
 
-1. Sign in as the primary seeded Operator, choose the assigned site, and run
-   the synthetic Member from attendance through identity verification, paper
-   consent/questionnaire, ticket printing, basic examination, and X-ray
-   readiness.
+1. Sign in as the primary seeded Operator, choose the assigned site, and open
+   its already-called X-ray capture. Confirm it has no existing capture set and
+   is immediately ready for the existing upload form. The other three synthetic
+   Members remain available if the ordinary full pre-X-ray flow is needed.
 2. Submit the approved local non-clinical radiograph/gain NPZ pair once. During
    upload, observe progress and disabled inputs. Once safe status is queued or
    processing, close and reopen the capture page; confirm durable polling and
@@ -323,10 +356,12 @@ symptoms, and non-sensitive screenshots:
 5. If the viewer cannot load, confirm it leaves “Memuat DICOM…” for the safe
    Indonesian error state and still offers download and return actions. Do not
    manufacture a failure by modifying application code, data, or configuration.
-6. Sign in as the second same-site/current-shift Operator. Confirm the returned
-   study remains discoverable, viewable, and normally downloadable without
-   queue/capture ownership changes. Confirm an unauthorised boundary is denied
-   through the existing safe behavior.
+6. Sign in as the second same-site/current-shift Operator. Confirm the first
+   returned study remains discoverable, viewable, and normally downloadable
+   without queue/capture ownership changes. Then open the second Operator's own
+   already-called X-ray capture and confirm it is immediately ready for a
+   separate NPZ pair. Confirm an unauthorised boundary is denied through the
+   existing safe behavior.
 
 ### Required evidence
 
@@ -360,14 +395,15 @@ external responses.
   synthetic data.
 - Stop only an exactly identified prior matching local web/queue process; build
   assets and start the two stated loopback processes for user testing.
-- Update only `README.md`, `docs/mvp/local-core-walkthrough.md`, and
+- Update only the bounded local/testing seeder and its focused test plus
+  `README.md`, `docs/mvp/local-core-walkthrough.md`, and
   `docs/mvp/evidence/mvp-local-deployment-readiness.md` as required for this
   local handoff.
 
-Not authorised: Git commit, push, pull request, application-code or task-file
-changes beyond this published contract, production/server mutation, release,
-AWS/S3/MPIPS call, credential disclosure, real-member import, dependency
-installation, or unbounded feedback fixes.
+Not authorised: Git commit, push, pull request, any application-code or
+task-file change beyond the bounded local/testing seed/test above,
+production/server mutation, release, AWS/S3/MPIPS call, credential disclosure,
+real-member import, dependency installation, or unbounded feedback fixes.
 
 ## Expected terminal outcome
 
