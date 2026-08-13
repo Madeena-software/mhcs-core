@@ -55,7 +55,7 @@ final readonly class ImageGatewayCaptureService implements OperatorStudyQuery
         private ManifestSigner $signer,
     ) {}
 
-    /** @return array{capture_id: ?string, submission_id: string, missing: list<string>, status: string} */
+    /** @return array{capture_id: ?string, submission_id: string, missing: list<string>, status: string, can_retry: bool} */
     public function captureForm(
         AuthenticatedContext $context,
         string $profileId,
@@ -82,6 +82,7 @@ final readonly class ImageGatewayCaptureService implements OperatorStudyQuery
             'submission_id' => (string) ($capture->submission_id ?? Str::uuid()),
             'missing' => $missing,
             'status' => (string) ($capture->status ?? 'capturing'),
+            'can_retry' => $this->canRetryProcessing($capture, $missing),
             'metadata' => $metadata,
             'metadata_editable' => $capture === null,
         ];
@@ -199,6 +200,7 @@ final readonly class ImageGatewayCaptureService implements OperatorStudyQuery
             if ($capture === null) {
                 throw new ImageGatewayException('capture_failure', 'The capture could not be accepted.');
             }
+            $this->retryFailedProcessing($capture);
             $this->advance($capture, $admission, $profileId, $siteId, $operatorSiteId, $submissionId, $uploads, $captureContext);
 
             return $this->captureState((string) $capture->id);
@@ -519,6 +521,46 @@ final readonly class ImageGatewayCaptureService implements OperatorStudyQuery
         $missing = array_values(array_filter([$capture->radiograph_status === 'success' ? null : 'radiograph', $capture->gain_status === 'success' ? null : 'gain']));
 
         return ['capture_id' => $captureId, 'status' => (string) $capture->status, 'processing_state' => $this->processingState($capture, $missing), 'missing' => $missing];
+    }
+
+    /** @param list<string> $missing */
+    private function canRetryProcessing(?object $capture, array $missing): bool
+    {
+        return $capture !== null
+            && $missing === []
+            && (string) $capture->radiograph_status === 'success'
+            && (string) $capture->gain_status === 'success'
+            && (string) $capture->processing_status === 'failed'
+            && (int) $capture->attempts < (int) config('mhcs.mpips.max_attempts', 5)
+            && ! DB::table('image_gateway_studies')->where('capture_set_id', $capture->id)->exists();
+    }
+
+    private function retryFailedProcessing(object $capture): void
+    {
+        if (! $this->canRetryProcessing($capture, [])) {
+            return;
+        }
+
+        $updated = DB::transaction(function () use ($capture): int {
+            $row = DB::table('image_gateway_capture_sets')->where('id', $capture->id)->lockForUpdate()->first();
+            if (! $this->canRetryProcessing($row, []) || $row->accepted_at === null) {
+                return 0;
+            }
+
+            return DB::table('image_gateway_capture_sets')->where('id', $row->id)->update([
+                'processing_status' => 'pending',
+                'mpips_status' => 'pending',
+                'dicom_status' => 'pending',
+                'last_error_code' => null,
+                'last_response_status' => null,
+                'failed_at' => null,
+                'updated_at' => $this->clock->now(),
+            ]);
+        });
+
+        if ($updated === 1) {
+            ProcessCaptureSet::dispatch((string) $capture->id)->onQueue('image-gateway')->afterCommit();
+        }
     }
 
     /** @param list<string> $missing */

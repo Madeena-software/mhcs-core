@@ -169,6 +169,11 @@ final readonly class OperatorWorklistService
             ->join('operator_sites as sites', 'sites.id', '=', 'admissions.operator_site_id')
             ->join('shift_schedules as schedules', 'schedules.id', '=', 'admissions.member_schedule_id')
             ->join('examination_site_refs as member_sites', 'member_sites.id', '=', 'schedules.examination_site_id')
+            ->leftJoin('image_gateway_capture_sets as captures', function ($join): void {
+                $join->on('captures.admission_id', '=', 'admissions.id')
+                    ->where('captures.status', 'accepted')
+                    ->whereNotNull('captures.accepted_at');
+            })
             ->where('admissions.operator_site_id', $site->getKey())
             ->where('member_sites.operator_site_id', $site->operator_site_id)
             ->where('admissions.queue_class', 'advance')
@@ -180,6 +185,15 @@ final readonly class OperatorWorklistService
                 })->orWhere(function ($query) use ($profileId): void {
                     $query->where('admissions.operator_profile_id', $profileId)
                         ->whereIn('admissions.state', ['waiting', 'called']);
+                })->orWhere(function ($query) use ($profileId): void {
+                    $query->where('admissions.state', 'awaiting_ai')
+                        ->where('captures.operator_profile_id', $profileId)
+                        ->where('captures.processing_status', 'failed')
+                        ->whereNotExists(function ($query): void {
+                            $query->selectRaw('1')
+                                ->from('image_gateway_studies as studies')
+                                ->whereColumn('studies.capture_set_id', 'captures.id');
+                        });
                 });
             })
             ->whereExists(function ($query) use ($profileId): void {
@@ -202,6 +216,7 @@ final readonly class OperatorWorklistService
                 'admissions.stage',
                 'admissions.state',
                 'admissions.ready_at',
+                'captures.processing_status as capture_processing_status',
             ])
             ->orderBy('admissions.ready_at')
             ->orderBy('admissions.id')
@@ -214,6 +229,7 @@ final readonly class OperatorWorklistService
                 'schedule_ends_at' => (string) $row->schedule_ends_at,
                 'stage' => (string) $row->stage,
                 'state' => (string) $row->state,
+                'capture_processing_failed' => $row->capture_processing_status === 'failed',
                 'ready_at' => (string) $row->ready_at,
                 'claimed_by_current_operator' => $row->claim_operator_profile_id !== null,
             ])->all();

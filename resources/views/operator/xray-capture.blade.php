@@ -7,7 +7,7 @@
     <h1 id="xray-capture-title">{{ __('Submit radiograph capture') }}</h1>
     <p class="muted">{{ __('Radiography admission') }} <code>{{ $admissionId }}</code>; {{ __('Upload one radiograph NPZ and its matching gain NPZ.') }}</p>
     <p class="warning" role="alert">{{ __('Do not navigate away during upload. Processing continues safely after capture acceptance.') }}</p>
-    <p id="capture-status" role="status" aria-live="polite" data-start="{{ __('Capture upload started.') }}" data-progress="{{ __('Uploading capture: :percent% (:loaded of :total bytes).') }}" data-processing="{{ __('Capture accepted. Waiting for DICOM processing.') }}" data-missing="{{ __('Capture sources are incomplete. Choose only the missing file.') }}" data-ready="{{ __('DICOM study ready. Opening results.') }}" data-failed="{{ __('Processing failed. No DICOM study is available. Retry the missing source or check status.') }}" data-error="{{ __('The capture status could not be checked. Retrying.') }}"></p>
+    <p id="capture-status" role="status" aria-live="polite" data-start="{{ __('Capture upload started.') }}" data-progress="{{ __('Uploading capture: :percent% (:loaded of :total bytes).') }}" data-processing="{{ __('Capture accepted. Waiting for DICOM processing.') }}" data-missing="{{ __('Capture sources are incomplete. Choose only the missing file.') }}" data-ready="{{ __('DICOM study ready. Opening results.') }}" data-failed="{{ __('Processing failed. No DICOM study is available. Retry DICOM processing or check status.') }}" data-error="{{ __('The capture status could not be checked. Retrying.') }}"></p>
     <progress id="capture-progress" max="100" value="0" hidden aria-label="{{ __('Capture upload progress') }}"></progress>
     @if ($form['missing'] !== [])
         <p class="muted">{{ __('Missing capture files:') }} {{ implode(', ', array_map(static fn (string $type): string => __($type === 'radiograph' ? 'Radiograph NPZ' : 'Matching gain NPZ'), $form['missing'])) }}</p>
@@ -72,8 +72,8 @@
             <input id="gain_npz" name="gain_npz" type="file" accept=".npz,application/octet-stream" required>
         @endif
         <input type="hidden" name="submission_id" value="{{ $form['submission_id'] }}">
-        @if ($form['missing'] !== [])
-            <button type="submit">{{ __('Submit capture set') }}</button>
+        @if ($form['missing'] !== [] || $form['can_retry'])
+            <button type="submit">{{ $form['can_retry'] ? __('Retry DICOM processing') : __('Submit capture set') }}</button>
         @endif
     </form>
 </section>
@@ -96,7 +96,7 @@
                 const type = input.name === 'radiograph_npz' ? 'radiograph' : 'gain';
                 input.disabled = disabled || !missing.includes(type);
             });
-            if (button) button.disabled = disabled || missing.length === 0;
+            if (button) button.disabled = disabled;
         };
         const stopPolling = () => {
             if (pollTimer !== null) window.clearTimeout(pollTimer);

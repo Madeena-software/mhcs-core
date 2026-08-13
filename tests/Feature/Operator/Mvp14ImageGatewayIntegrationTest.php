@@ -391,6 +391,53 @@ final class Mvp14ImageGatewayIntegrationTest extends TestCase
         Http::assertSentCount(2);
     }
 
+    public function test_failed_dicom_processing_can_be_requeued_without_reuploading_sources(): void
+    {
+        $fixture = $this->operatorFixture(false);
+        $this->actingAs($fixture['operator'])->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
+        $admission = $this->insertCalledXrayAdmission($fixture);
+        $submissionId = (string) Str::uuid();
+
+        $this->post(route('operator.xray-capture.store', $admission), [
+            'submission_id' => $submissionId,
+            ...$this->metadataPayload(),
+            'radiograph_npz' => $this->fixtureUpload('synthetic-radiograph-01.npz'),
+            'gain_npz' => $this->fixtureUpload('synthetic-gain-01.npz'),
+        ])->assertRedirect(route('operator.study.results'));
+
+        $captureId = (string) DB::table('image_gateway_capture_sets')->where('submission_id', $submissionId)->value('id');
+        Http::fake(Http::response(['detail' => 'conversion failed'], 500));
+        app()->call([new ProcessCaptureSet($captureId), 'handle']);
+
+        $failed = DB::table('image_gateway_capture_sets')->where('id', $captureId)->first();
+        $this->assertSame('failed', $failed->processing_status);
+        $this->assertSame('success', $failed->radiograph_status);
+        $this->assertSame('success', $failed->gain_status);
+
+        $this->get(route('operator.xray-readiness-worklist'))
+            ->assertOk()
+            ->assertSee('IMG-XRAY-01')
+            ->assertSee('Pemrosesan DICOM gagal')
+            ->assertSee('Coba proses DICOM lagi');
+
+        $this->get(route('operator.xray-capture.show', $admission))
+            ->assertOk()
+            ->assertSee('Coba proses DICOM lagi')
+            ->assertDontSee('name="radiograph_npz"', false)
+            ->assertDontSee('name="gain_npz"', false);
+
+        $this->post(route('operator.xray-capture.store', $admission), [
+            'submission_id' => $submissionId,
+        ])->assertRedirect(route('operator.study.results'));
+
+        $retried = DB::table('image_gateway_capture_sets')->where('id', $captureId)->first();
+        $this->assertSame('pending', $retried->processing_status);
+        $this->assertSame('pending', $retried->mpips_status);
+        $this->assertSame('pending', $retried->dicom_status);
+        $this->assertNull($retried->last_error_code);
+        Queue::assertPushed(ProcessCaptureSet::class, 2);
+    }
+
     public function test_capture_status_is_safe_and_capture_authorized(): void
     {
         $fixture = $this->operatorFixture(false);

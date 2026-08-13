@@ -32,10 +32,12 @@
                             <time datetime="{{ $entry['schedule_ends_at'] }}">{{ $entry['schedule_ends_at'] }}</time>
                         </td>
                         <td>{{ __($entry['stage']) }}</td>
-                        <td class="status">{{ __($entry['state']) }}</td>
+                        <td class="status">{{ $entry['capture_processing_failed'] ? __('DICOM processing failed') : __($entry['state']) }}</td>
                         <td><time datetime="{{ $entry['ready_at'] }}">{{ $entry['ready_at'] }}</time></td>
                         <td>
-                            @if ($entry['claimed_by_current_operator'])
+                            @if ($entry['capture_processing_failed'])
+                                <a href="{{ route('operator.xray-capture.show', $entry['admission_id']) }}">{{ __('Retry DICOM processing') }}</a>
+                            @elseif ($entry['claimed_by_current_operator'])
                                 @if ($entry['state'] === 'waiting')
                                     <form method="POST" action="{{ route('operator.xray-readiness-worklist.call', $entry['admission_id']) }}">
                                         @csrf
