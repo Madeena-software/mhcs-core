@@ -106,7 +106,7 @@ routes and authorization boundaries are unchanged.
 Observed verification:
 
 - Focused JavaScript, focused Operator/Image Gateway/localization PHPUnit,
-  full PHPUnit (312 tests; 305 passed; 7 skipped), production build/static
+  full PHPUnit (313 tests; 306 passed; 7 skipped), production build/static
   bundle check, formatter, and diff check: **PASS**.
 - timeout 60s env TARGET=. vendor/bin/pest tests/Browser/Mvp14OperatorDicomRehearsalTest.php --browser chrome --colors=never:
   **NOT PASS** — exited with status 124 after the timeout and produced no
@@ -125,3 +125,68 @@ storage credentials, or external object-store calls were used. A synthetic
 missing-object feature regression passes. The actual local study still needs
 the configured database and local private-object tree to be reset/re-uploaded
 together before a real 200 DICOM response can be confirmed.
+
+## Evidence report — Operator DICOM viewer and protected retrieval — 2026-08-14
+
+### Scope
+
+This report records the implementation, verification, and user-led browser
+observations from the current-tab DICOM viewer task. It is sanitized: no
+credentials, private object keys, NPZ/DICOM bytes, clinical metadata, or
+external-service responses are included.
+
+### Implemented
+
+- Replaced the previous study-page flow with the current-tab, read-only
+  workstation-style DICOM surface based on the approved local design
+  references.
+- Removed monitor-popup behavior and retained automatic VOI, zoom, pan,
+  protected inline viewing, normal attachment download, and return navigation.
+- Made Cornerstone load lazily through the browser-safe bundle path and added
+  bounded bootstrap, protected-load, parsing, and rendering waits.
+- Added safe Indonesian loading, ready, unavailable, and error states without
+  exposing exception text or private storage details.
+- Normalized private-object metadata/read failures so they no longer escape as
+  HTTP 500; the existing protected denial path is used instead.
+- Removed the HTML `download` attribute from the attachment link. Successful
+  DICOM responses still use the server `Content-Disposition` filename, while
+  an error response is no longer saved as `download.htm`.
+
+### Automated evidence
+
+All checks were run with `TARGET="."`:
+
+- JavaScript viewer tests: **PASS** — 5/5.
+- Focused Operator/Image Gateway/localization tests: **PASS** — 25/25,
+  404 assertions.
+- Full PHPUnit suite: **PASS** — 313 tests, 306 passed, 7 skipped.
+- Production Vite build and DICOM browser bundle check: **PASS**.
+- Pint formatter and `git diff --check`: **PASS**.
+- The existing browser rehearsal was previously stopped after its 60-second
+  timeout with no output; it is not reported as a pass.
+
+### User-led browser evidence
+
+- Before storage-failure normalization, the protected DICOM request returned
+  HTTP 500 because a missing private-object metadata read raised a JSON syntax
+  exception.
+- After remediation and redeployment, both the protected inline DICOM route
+  and the normal attachment route returned HTTP 403 for the previously opened
+  study.
+- The deployed process was confirmed to serve this repository with
+  `MHCS_PRIVATE_OBJECT_DISK=local`, no configuration cache, and the supplied
+  study record absent from the current database after redeployment. This
+  explains why redeployment and browser refresh did not restore the old study.
+
+### Result and remaining limitation
+
+The browser/build failure and misleading HTML download behavior are addressed.
+The current evidence does not demonstrate a real 200 DICOM response or a
+rendered clinical image. The remaining issue is runtime data alignment: the
+current database, local private-object tree, and study URL must come from the
+same local capture run. A refresh cannot recreate missing state, and another
+redeploy will not restore an old study unless its database and private-object
+storage are restored together.
+
+**Terminal assessment:** implementation verified; user-led real-study retrieval
+remains **NOT VERIFIED** pending a matching local database/private-object set.

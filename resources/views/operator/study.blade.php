@@ -78,9 +78,16 @@
     .viewer-state { color: var(--viewer-fg-2); font: 11px ui-monospace, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .viewer-meta { color: var(--viewer-fg-3); font: 10px ui-monospace, monospace; white-space: nowrap; }
     .viewer-stage { position: relative; display: grid; flex: 1; place-items: center; min-height: 0; padding: 22px; overflow: hidden; background: radial-gradient(circle at center, #242323 0%, #101010 78%); }
-    .dicom-stage-frame { position: relative; display: flex; align-items: center; justify-content: center; width: min(74%, 470px); height: min(86%, 650px); min-height: 280px; overflow: hidden; background: #050505; border: 1px solid #454b51; border-radius: 8px; box-shadow: 0 20px 50px rgba(0, 0, 0, .6); }
+    .dicom-stage-frame { position: relative; display: flex; align-items: center; justify-content: center; width: min(96%, 1200px); height: min(96%, 1200px); min-height: 360px; overflow: hidden; background: #050505; border: 1px solid #454b51; border-radius: 8px; box-shadow: 0 20px 50px rgba(0, 0, 0, .6); }
     .dicom-viewport-stack { width: 100%; height: 100%; position: relative; }
     .dicom-viewport { width: 100%; height: 100%; background: #050505; touch-action: none; }
+    .viewer-floating-toolbar { position: absolute; z-index: 3; top: 14px; left: 50%; display: none; align-items: center; gap: 4px; max-width: calc(100% - 28px); padding: 4px; overflow-x: auto; transform: translateX(-50%); background: rgba(25, 24, 24, .94); border: 1px solid var(--viewer-border); border-radius: 8px; box-shadow: 0 8px 24px rgba(0, 0, 0, .35); }
+    .viewer-control { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 28px; padding: 4px 8px; color: var(--viewer-fg-2); background: transparent; border: 1px solid transparent; border-radius: 5px; font: 700 10px ui-sans-serif, system-ui, sans-serif; white-space: nowrap; cursor: pointer; }
+    .viewer-control:hover, .viewer-control:focus-visible { color: var(--viewer-fg); background: var(--viewer-surface-3); border-color: var(--viewer-border); outline: none; }
+    .viewer-control-icon { color: var(--viewer-accent); font: 700 14px/1 ui-monospace, monospace; }
+    .viewer-stage:fullscreen { display: flex; padding: 0; background: #050505; }
+    .viewer-stage:fullscreen .dicom-stage-frame { width: 100%; height: 100%; min-height: 0; border: 0; border-radius: 0; box-shadow: none; }
+    .viewer-stage:fullscreen .viewer-floating-toolbar { top: 16px; display: flex; }
     .viewer-error-card { display: none; flex-direction: column; align-items: center; gap: 10px; width: min(86%, 330px); padding: 22px; color: var(--viewer-fg-2); background: rgba(25, 24, 24, .96); border: 1px solid #654546; border-radius: 10px; text-align: center; }
     .viewer-error-icon { display: grid; place-items: center; width: 32px; height: 32px; color: #f2a7a0; border: 1px solid #8b5758; border-radius: 50%; font-weight: 800; }
     .viewer-error-card strong { color: var(--viewer-fg); font-size: 13px; }
@@ -95,6 +102,8 @@
     .panel-header { justify-content: space-between; }
     .tools-card { display: grid; gap: 1px; margin-top: 10px; overflow: hidden; border: 1px solid var(--viewer-border); border-radius: 9px; }
     .tool-row { display: grid; grid-template-columns: 30px 1fr auto; align-items: center; gap: 9px; padding: 11px; background: var(--viewer-surface); }
+    .tool-button { width: 100%; color: inherit; border: 0; text-align: left; cursor: pointer; }
+    .tool-button:hover, .tool-button:focus-visible { background: var(--viewer-surface-3); outline: none; }
     .tool-icon { display: grid; place-items: center; width: 26px; height: 26px; color: var(--viewer-accent); background: var(--viewer-accent-soft); border-radius: 6px; font: 700 13px ui-monospace, monospace; }
     .tool-row strong { display: block; color: var(--viewer-fg-2); font-size: 11px; }
     .tool-row small { display: block; margin-top: 2px; color: var(--viewer-fg-3); font-size: 10px; }
@@ -121,6 +130,10 @@
         .dicom-workstation { grid-template-columns: 230px minmax(0, 1fr) 230px; }
         .dicom-topbar-status, .dicom-brand { min-width: 160px; }
     }
+    @media (orientation: portrait) and (min-width: 821px) {
+        .viewer-stage { padding: 14px; }
+        .dicom-stage-frame { width: min(96%, 1080px); height: min(96%, 1280px); }
+    }
     @media (max-width: 820px) {
         body:has(#dicom-study) { overflow: auto; }
         body:has(#dicom-study) .shell { height: auto; padding: 6px; }
@@ -130,7 +143,7 @@
         .center-viewer { min-height: 650px; order: 1; }
         .booth-left { order: 2; border-right: 0; border-top: 1px solid var(--viewer-border); }
         .right-sidebar { order: 3; border-left: 0; border-top: 1px solid var(--viewer-border); }
-        .dicom-stage-frame { width: min(78%, 430px); height: min(74vh, 620px); }
+        .dicom-stage-frame { width: min(94%, 720px); height: min(82vh, 720px); min-height: 300px; }
         .dicom-bottom-bar { min-height: 48px; }
         .bottom-meta { display: none; }
     }
@@ -183,7 +196,7 @@
             <div class="session-meta">
                 <div>{{ __('Read-only') }} <strong>{{ __('enabled') }}</strong></div>
                 <div>{{ __('Current tab') }} <strong>{{ __('enabled') }}</strong></div>
-                <div>{{ __('Zoom and pan only') }} <strong>2</strong></div>
+                <div>{{ __('Image controls') }} <strong>6</strong></div>
             </div>
         </aside>
 
@@ -193,8 +206,16 @@
                 <div class="viewer-toolbar-left"><span class="dicom-live-dot"></span><span class="viewer-state" data-viewer-status>{{ __('Loading DICOM…') }}</span></div>
                 <div class="viewer-toolbar-right"><span class="viewer-meta">{{ $studyFormat }} · {{ __('Read-only') }}</span><span class="viewer-readonly">{{ __('Automatic VOI') }}</span></div>
             </div>
-            <div class="viewer-stage">
+            <div class="viewer-stage" data-viewer-fullscreen-target>
                 <noscript><p class="dicom-notice" role="status">{{ __('JavaScript is unavailable. Enable JavaScript to view this study in the current tab.') }}</p></noscript>
+                <div class="viewer-floating-toolbar" aria-label="{{ __('Image controls') }}">
+                    <button class="viewer-control" type="button" data-viewer-action="reset" aria-label="{{ __('Reset view') }}" title="{{ __('Reset view') }}"><span class="viewer-control-icon">↺</span><span>{{ __('Reset') }}</span></button>
+                    <button class="viewer-control" type="button" data-viewer-action="rotate-left" aria-label="{{ __('Rotate left') }}" title="{{ __('Rotate left') }}"><span class="viewer-control-icon">↶</span><span>{{ __('Rotate left') }}</span></button>
+                    <button class="viewer-control" type="button" data-viewer-action="rotate-right" aria-label="{{ __('Rotate right') }}" title="{{ __('Rotate right') }}"><span class="viewer-control-icon">↷</span><span>{{ __('Rotate right') }}</span></button>
+                    <button class="viewer-control" type="button" data-viewer-action="flip-horizontal" aria-label="{{ __('Flip horizontal') }}" title="{{ __('Flip horizontal') }}"><span class="viewer-control-icon">↔</span><span>{{ __('Flip H') }}</span></button>
+                    <button class="viewer-control" type="button" data-viewer-action="flip-vertical" aria-label="{{ __('Flip vertical') }}" title="{{ __('Flip vertical') }}"><span class="viewer-control-icon">↕</span><span>{{ __('Flip V') }}</span></button>
+                    <button class="viewer-control" type="button" data-viewer-action="fullscreen" data-fullscreen-label="{{ __('Enter fullscreen') }}" data-exit-fullscreen-label="{{ __('Exit fullscreen') }}" aria-label="{{ __('Enter fullscreen') }}" title="{{ __('Enter fullscreen') }}"><span class="viewer-control-icon">⛶</span><span>{{ __('Fullscreen') }}</span></button>
+                </div>
                 <div class="dicom-stage-frame">
                     <div class="dicom-viewport-stack" aria-label="{{ __('DICOM viewport stack') }}">
                         <div class="dicom-viewport" data-testid="dicom-viewport" aria-label="{{ __('DICOM image viewport') }}"></div>
@@ -208,7 +229,7 @@
                 </div>
                 <p id="dicom-viewer-error" role="alert" hidden></p>
             </div>
-            <div class="viewer-info" aria-label="{{ __('Zoom and pan only') }}">
+            <div class="viewer-info" aria-label="{{ __('Image controls') }}">
                 <span class="viewer-info-item">VOI <strong>{{ __('Automatic VOI') }}</strong></span>
                 <span class="viewer-info-item">{{ __('Zoom') }} <strong>10×</strong></span>
                 <span class="viewer-info-item">{{ __('Pan') }} <strong>{{ __('Drag to pan') }}</strong></span>
@@ -221,6 +242,12 @@
                 <div class="tools-card">
                     <div class="tool-row"><span class="tool-icon">⌕</span><span><strong>{{ __('Zoom') }}</strong><small>{{ __('Wheel to zoom') }}</small></span><span class="tool-limit">10×</span></div>
                     <div class="tool-row"><span class="tool-icon">✥</span><span><strong>{{ __('Pan') }}</strong><small>{{ __('Drag to pan') }}</small></span><span class="tool-limit">↔</span></div>
+                    <button class="tool-row tool-button" type="button" data-viewer-action="reset"><span class="tool-icon">↺</span><span><strong>{{ __('Reset view') }}</strong><small>{{ __('Restore the initial view') }}</small></span><span class="tool-limit">0°</span></button>
+                    <button class="tool-row tool-button" type="button" data-viewer-action="rotate-left"><span class="tool-icon">↶</span><span><strong>{{ __('Rotate left') }}</strong><small>{{ __('Rotate 90 degrees') }}</small></span><span class="tool-limit">−90°</span></button>
+                    <button class="tool-row tool-button" type="button" data-viewer-action="rotate-right"><span class="tool-icon">↷</span><span><strong>{{ __('Rotate right') }}</strong><small>{{ __('Rotate 90 degrees') }}</small></span><span class="tool-limit">+90°</span></button>
+                    <button class="tool-row tool-button" type="button" data-viewer-action="flip-horizontal"><span class="tool-icon">↔</span><span><strong>{{ __('Flip horizontal') }}</strong><small>{{ __('Mirror left and right') }}</small></span><span class="tool-limit">H</span></button>
+                    <button class="tool-row tool-button" type="button" data-viewer-action="flip-vertical"><span class="tool-icon">↕</span><span><strong>{{ __('Flip vertical') }}</strong><small>{{ __('Mirror top and bottom') }}</small></span><span class="tool-limit">V</span></button>
+                    <button class="tool-row tool-button" type="button" data-viewer-action="fullscreen" data-fullscreen-label="{{ __('Enter fullscreen') }}" data-exit-fullscreen-label="{{ __('Exit fullscreen') }}" aria-label="{{ __('Enter fullscreen') }}"><span class="tool-icon">⛶</span><span><strong>{{ __('Fullscreen') }}</strong><small>{{ __('Expand the image stage') }}</small></span><span class="tool-limit">↗</span></button>
                 </div>
             </section>
             <section>
@@ -231,7 +258,7 @@
                     <li class="workflow-step"><span>3</span><div><strong>{{ __('Download DICOM') }}</strong><small>{{ __('Back to DICOM results') }}</small></div></li>
                 </ol>
             </section>
-            <p class="viewer-help"><strong>{{ __('Zoom and pan only') }}</strong><br>{{ __('Pointer drag pans the image. Use the mouse wheel to zoom.') }}</p>
+            <p class="viewer-help"><strong>{{ __('Image controls') }}</strong><br>{{ __('Pointer drag pans the image. Use the mouse wheel to zoom.') }} {{ __('Reset, rotate, flip, and fullscreen affect this view only.') }}</p>
         </aside>
     </div>
 

@@ -186,11 +186,12 @@ it('takes an operator from X-ray capture to an actual Cornerstone viewport and d
         ->assertPathIs('/operator/studies/'.$studyId)
         ->assertSee($studyReference)
         ->assertSee('VOI otomatis')
-        ->assertSee('Hanya zoom dan geser')
+        ->assertSee('Kontrol gambar')
+        ->assertSee('Putar ke kiri')
+        ->assertSee('Layar penuh')
         ->assertDontSee('Window/Level')
         ->assertDontSee('Contrast')
         ->assertDontSee('Brightness')
-        ->assertDontSee('Rotate')
         ->assertDontSee('Annotation')
         ->assertDontSee('Measurement')
         ->assertDontSee('Invert')
@@ -259,7 +260,9 @@ it('lets a second current-shift operator discover and download the accepted stud
         ->assertPathIs('/operator/studies/'.$studyId)
         ->assertSee($studyReference)
         ->assertSee('VOI otomatis')
-        ->assertSee('Hanya zoom dan geser')
+        ->assertSee('Kontrol gambar')
+        ->assertSee('Putar ke kiri')
+        ->assertSee('Layar penuh')
         ->assertVisible('[data-testid="dicom-viewport"]');
 
     $page->page()->waitForFunction('window.__mhcsDicomViewerReady === true');

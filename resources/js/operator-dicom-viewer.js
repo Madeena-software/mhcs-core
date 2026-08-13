@@ -9,8 +9,10 @@ import { VIEWER_TIMEOUT_MS, withViewerTimeout } from './operator-viewer-timeout.
 
 const VIEWPORT_ID = 'mhcs-dicom-viewport';
 const ENGINE_ID = 'mhcs-dicom-engine';
+const DEFAULT_VIEW = Object.freeze({ rotation: 0, flipHorizontal: true, flipVertical: false });
+const PAN_START_THRESHOLD = 3;
 
-export const VIEWER_INTERACTIONS = Object.freeze(['zoom', 'pan']);
+export const VIEWER_INTERACTIONS = Object.freeze(['zoom', 'pan', 'reset', 'rotate', 'flip', 'fullscreen']);
 
 function viewerStatusNodes(root) {
     if (typeof root.querySelectorAll === 'function') {
@@ -48,6 +50,64 @@ export function resizeRenderingEngine(renderingEngine) {
     }
 }
 
+function applyDefaultViewport(viewport) {
+    viewport.resetCamera();
+    viewport.setRotation(DEFAULT_VIEW.rotation);
+    viewport.setCamera({
+        flipHorizontal: DEFAULT_VIEW.flipHorizontal,
+        flipVertical: DEFAULT_VIEW.flipVertical,
+    });
+}
+
+export function resetViewport(viewport) {
+    applyDefaultViewport(viewport);
+    viewport.render();
+}
+
+export function rotateViewport(viewport, degrees) {
+    const rotation = ((viewport.getRotation() + degrees) % 360 + 360) % 360;
+    viewport.setRotation(rotation);
+    viewport.render();
+}
+
+export function flipViewport(viewport, axis) {
+    const camera = viewport.getCamera();
+    viewport.setCamera({
+        flipHorizontal: axis === 'horizontal' ? !camera.flipHorizontal : camera.flipHorizontal,
+        flipVertical: axis === 'vertical' ? !camera.flipVertical : camera.flipVertical,
+    });
+    viewport.render();
+}
+
+export function isPrimaryPointerDrag(event, lastPoint, startPoint = lastPoint) {
+    if (lastPoint === null || event.buttons !== 1) {
+        return false;
+    }
+    return Math.hypot(event.clientX - startPoint.x, event.clientY - startPoint.y) >= PAN_START_THRESHOLD;
+}
+
+export function panViewport(viewport, deltaX, deltaY) {
+    const pan = viewport.getPan();
+    viewport.setPan([pan[0] + deltaX, pan[1] + deltaY]);
+    viewport.render();
+}
+
+export async function toggleFullscreen(root, documentLike = globalThis.document) {
+    const target = root.querySelector('[data-viewer-fullscreen-target]');
+    if (!target) {
+        return;
+    }
+    if (documentLike.fullscreenElement === target) {
+        if (typeof documentLike.exitFullscreen === 'function') {
+            await documentLike.exitFullscreen();
+        }
+        return;
+    }
+    if (typeof target.requestFullscreen === 'function') {
+        await target.requestFullscreen();
+    }
+}
+
 function bindZoomAndPan(element, viewport) {
     element.addEventListener('wheel', (event) => {
         event.preventDefault();
@@ -57,26 +117,83 @@ function bindZoomAndPan(element, viewport) {
     }, { passive: false });
 
     let lastPoint = null;
+    let startPoint = null;
     element.addEventListener('pointerdown', (event) => {
+        if (event.button !== 0) {
+            return;
+        }
+        event.preventDefault();
         lastPoint = { x: event.clientX, y: event.clientY };
+        startPoint = lastPoint;
         element.setPointerCapture(event.pointerId);
     });
     element.addEventListener('pointermove', (event) => {
-        if (lastPoint === null) {
+        if (!isPrimaryPointerDrag(event, lastPoint, startPoint)) {
             return;
         }
-        const pan = viewport.getPan();
-        viewport.setPan({
-            x: pan.x + (event.clientX - lastPoint.x),
-            y: pan.y + (event.clientY - lastPoint.y),
-        });
+        panViewport(viewport, event.clientX - lastPoint.x, event.clientY - lastPoint.y);
         lastPoint = { x: event.clientX, y: event.clientY };
-        viewport.render();
     });
-    const stopPan = () => { lastPoint = null; };
+    const stopPan = () => { lastPoint = null; startPoint = null; };
     element.addEventListener('pointerup', stopPan);
     element.addEventListener('pointercancel', stopPan);
     element.addEventListener('pointerleave', stopPan);
+}
+
+function bindViewerControls(root, viewport, renderingEngine) {
+    const documentLike = root.ownerDocument || globalThis.document;
+    const buttons = root.querySelectorAll('[data-viewer-action]');
+    const updateFullscreenLabels = () => {
+        const fullscreen = documentLike.fullscreenElement !== null;
+        for (const button of buttons) {
+            if (button.dataset.viewerAction !== 'fullscreen') {
+                continue;
+            }
+            const label = fullscreen ? button.dataset.exitFullscreenLabel : button.dataset.fullscreenLabel;
+            button.setAttribute('aria-label', label);
+            button.title = label;
+        }
+    };
+
+    for (const button of buttons) {
+        button.addEventListener('click', async () => {
+            try {
+                switch (button.dataset.viewerAction) {
+                    case 'reset':
+                        resetViewport(viewport);
+                        break;
+                    case 'rotate-left':
+                        rotateViewport(viewport, -90);
+                        break;
+                    case 'rotate-right':
+                        rotateViewport(viewport, 90);
+                        break;
+                    case 'flip-horizontal':
+                        flipViewport(viewport, 'horizontal');
+                        break;
+                    case 'flip-vertical':
+                        flipViewport(viewport, 'vertical');
+                        break;
+                    case 'fullscreen':
+                        await toggleFullscreen(root, documentLike);
+                        break;
+                    default:
+                        break;
+                }
+            } catch {
+                // A browser may reject fullscreen after the user gesture is gone.
+            }
+        });
+    }
+    documentLike.addEventListener?.('fullscreenchange', () => {
+        updateFullscreenLabels();
+        if (typeof globalThis.requestAnimationFrame === 'function') {
+            globalThis.requestAnimationFrame(() => resizeRenderingEngine(renderingEngine));
+        } else {
+            resizeRenderingEngine(renderingEngine);
+        }
+    });
+    updateFullscreenLabels();
 }
 
 function viewerTimeout(root) {
@@ -126,9 +243,10 @@ export async function renderStudy(root) {
                 },
             });
         }
-        viewport.resetCamera();
+        applyDefaultViewport(viewport);
         await withViewerTimeout(Promise.resolve(viewport.render()), timeoutMs);
         bindZoomAndPan(element, viewport);
+        bindViewerControls(root, viewport, renderingEngine);
         window.__mhcsDicomViewerReady = true;
         setViewerState(root, 'ready', root.dataset.readyMessage);
     } catch {

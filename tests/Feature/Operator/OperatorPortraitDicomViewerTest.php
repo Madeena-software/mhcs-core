@@ -48,7 +48,9 @@ final class OperatorPortraitDicomViewerTest extends TestCase
         $response->assertOk()
             ->assertSee($studyReference)
             ->assertSee('VOI otomatis')
-            ->assertSee('Hanya zoom dan geser')
+            ->assertSee('Kontrol gambar')
+            ->assertSee('Putar ke kiri')
+            ->assertSee('Layar penuh')
             ->assertSee('Indikator mode studi')
             ->assertSee('Studi DICOM hanya-baca. VOI otomatis diterapkan; seret untuk menggeser dan gunakan roda mouse untuk memperbesar atau memperkecil.')
             ->assertSee('Seret untuk menggeser. Gunakan roda mouse untuk memperbesar atau memperkecil.')
@@ -71,7 +73,6 @@ final class OperatorPortraitDicomViewerTest extends TestCase
             ->assertDontSee('Window/Level')
             ->assertDontSee('Contrast')
             ->assertDontSee('Brightness')
-            ->assertDontSee('Rotate')
             ->assertDontSee('Annotation')
             ->assertDontSee('Measurement')
             ->assertDontSee('Crop')
@@ -89,6 +90,16 @@ final class OperatorPortraitDicomViewerTest extends TestCase
         $this->assertStringNotContainsString('dicomImageLoader.wadouri.loadImage', $viewerSource);
         $this->assertStringContainsString("import('./operator-dicom-viewer.js')", $appSource);
         $this->assertStringContainsString('withViewerTimeout', $appSource);
+    }
+
+    public function test_floating_controls_are_reserved_for_fullscreen_and_stage_uses_available_space(): void
+    {
+        $viewSource = (string) file_get_contents(resource_path('views/operator/study.blade.php'));
+
+        $this->assertMatchesRegularExpression('/\.viewer-floating-toolbar\s*\{[^}]*display:\s*none;/', $viewSource);
+        $this->assertMatchesRegularExpression('/\.viewer-stage:fullscreen \.viewer-floating-toolbar\s*\{[^}]*display:\s*flex;/', $viewSource);
+        $this->assertStringContainsString('@media (orientation: portrait) and (min-width: 821px)', $viewSource);
+        $this->assertStringContainsString('width: min(96%, 1200px)', $viewSource);
     }
 
     public function test_unauthorized_operator_or_foreign_site_is_denied_access_to_study(): void
