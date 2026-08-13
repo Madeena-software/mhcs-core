@@ -74,7 +74,9 @@ final class Mvp04fAtomicBasicExaminationClaimTest extends TestCase
 
         $this->post(route('operator.basic-examination-worklist.claim', $admission->id), $payload)->assertRedirect();
         $this->post(route('operator.basic-examination-worklist.claim', $admission->id), $payload)->assertRedirect();
-        $this->post(route('operator.basic-examination-worklist.claim', Str::uuid()), $payload)->assertConflict();
+        $this->post(route('operator.basic-examination-worklist.claim', Str::uuid()), $payload)
+            ->assertRedirect(route('operator.basic-examination-worklist'))
+            ->assertSessionHasErrors(['queue' => __('The queue admission could not be claimed.')]);
 
         $this->assertSame(1, DB::table('operator_queue_admissions')->whereNotNull('operator_profile_id')->count());
         $this->assertSame(1, DB::table('operator_queue_admission_history')->where('event_type', 'claimed')->count());
@@ -123,6 +125,18 @@ final class Mvp04fAtomicBasicExaminationClaimTest extends TestCase
         $this->assertSame(1, DB::table('operator_queue_admission_history')->where('event_type', 'claimed')->count());
     }
 
+    public function test_awaiting_ai_xray_does_not_block_a_later_basic_claim(): void
+    {
+        $fixture = $this->readyFixture();
+        $awaiting = $this->admit($fixture, 'AWAITING-AI');
+        DB::table('operator_queue_admissions')->where('id', $awaiting->id)->update(['stage' => 'xray', 'state' => 'awaiting_ai']);
+        $later = $this->insertWaitingAdmission($fixture, $awaiting, 'BASIC-AFTER-AI');
+
+        $this->post(route('operator.basic-examination-worklist.claim', $later->id), ['operation_id' => (string) Str::uuid()])
+            ->assertRedirect(route('operator.basic-examination-worklist'));
+        $this->assertDatabaseHas('operator_queue_admissions', ['id' => $later->id, 'operator_profile_id' => $fixture['profileId']]);
+    }
+
     public function test_claim_denies_revoked_shift_site_permission_account_and_active_site(): void
     {
         $fixture = $this->readyFixture();
@@ -169,7 +183,9 @@ final class Mvp04fAtomicBasicExaminationClaimTest extends TestCase
             ->assertDontSee($fixture['bookingId']);
 
         DB::table('operator_queue_admissions')->where('id', $admission->id)->update(['state' => 'called']);
-        $this->post(route('operator.basic-examination-worklist.claim', $admission->id), ['operation_id' => (string) Str::uuid()])->assertConflict();
+        $this->post(route('operator.basic-examination-worklist.claim', $admission->id), ['operation_id' => (string) Str::uuid()])
+            ->assertRedirect(route('operator.basic-examination-worklist'))
+            ->assertSessionHasErrors(['queue' => __('The queue admission could not be claimed.')]);
         $this->assertDatabaseHas('operator_queue_admissions', ['id' => $admission->id, 'operator_profile_id' => null, 'state' => 'called']);
         $this->assertSame(0, DB::table('operator_queue_admission_history')->where('event_type', 'claimed')->count());
     }

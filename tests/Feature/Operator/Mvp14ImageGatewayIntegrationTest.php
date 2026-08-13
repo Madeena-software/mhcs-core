@@ -67,6 +67,9 @@ final class Mvp14ImageGatewayIntegrationTest extends TestCase
         $this->assertSame('success', $capture->gain_status);
         $this->assertSame('pending', $capture->mpips_status);
         $this->assertSame('awaiting_ai', DB::table('operator_queue_admissions')->where('id', $admission)->value('state'));
+        $this->assertNull(DB::table('operator_queue_admissions')->where('id', $admission)->value('operator_profile_id'));
+        $this->assertSame($fixture['profileId'], $capture->operator_profile_id);
+        $this->assertSame(1, DB::table('operator_queue_admission_history')->where('operator_queue_admission_id', $admission)->where('event_type', 'capture_accepted')->count());
         $this->assertSame(0, DB::table('image_gateway_studies')->count());
         $this->assertSame(4, DB::table('image_gateway_capture_objects')->where('capture_set_id', $capture->id)->count());
         Queue::assertPushed(ProcessCaptureSet::class, 1);

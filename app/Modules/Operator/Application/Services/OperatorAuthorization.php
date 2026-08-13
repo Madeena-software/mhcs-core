@@ -134,6 +134,10 @@ final readonly class OperatorAuthorization
         /** @var AuthenticatedContext $context */
         $context = $portal['context'];
         if ($context->siteId === null) {
+            if (function_exists('session') && app()->bound('session.store') && session()->has('operator.active_site_id')) {
+                throw new OperatorException('active_site_forbidden', 'Select an authorized active site before continuing.');
+            }
+
             throw new OperatorException('active_site_required', 'Select an active site before continuing.');
         }
 
@@ -146,7 +150,7 @@ final readonly class OperatorAuthorization
             ->where('operator_site_id', $site->getKey())
             ->where('active', true)
             ->exists()) {
-            throw new OperatorException('active_site_required', 'Select an authorized active site before continuing.');
+            throw new OperatorException('active_site_forbidden', 'Select an authorized active site before continuing.');
         }
 
         return $site;

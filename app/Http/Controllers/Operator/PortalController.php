@@ -77,14 +77,22 @@ final class PortalController extends Controller
     public function eligible(
         OperatorAuthorization $authorization,
         OperatorShiftAssignmentService $assignments,
-    ): View {
-        $portal = $authorization->portal();
-        $activeSite = $authorization->portalSite($portal);
+    ): View|RedirectResponse {
+        try {
+            $portal = $authorization->portal();
+            $activeSite = $authorization->portalSite($portal);
 
-        return view('operator.eligible-shifts', [
-            'activeSite' => $activeSite,
-            'shifts' => $assignments->assignedToCurrentOperator(),
-        ]);
+            return view('operator.eligible-shifts', [
+                'activeSite' => $activeSite,
+                'shifts' => $assignments->assignedToCurrentOperator(),
+            ]);
+        } catch (OperatorException $exception) {
+            if ($exception->category === 'active_site_required') {
+                return redirect()->route('operator.site')->withErrors(['site' => __($exception->getMessage())]);
+            }
+
+            abort(403);
+        }
     }
 
     public function attendance(string $schedule, Request $request, OperatorAttendanceService $attendance, OperatorAuthorization $authorization): View|RedirectResponse
@@ -185,7 +193,11 @@ final class PortalController extends Controller
             return view('operator.basic-examination-worklist', [
                 'entries' => $worklist->basicExamination(),
             ]);
-        } catch (OperatorException) {
+        } catch (OperatorException $exception) {
+            if ($exception->category === 'active_site_required') {
+                return redirect()->route('operator.site')->withErrors(['site' => __($exception->getMessage())]);
+            }
+
             abort(403);
         } catch (Throwable $exception) {
             return redirect()->route('operator.dashboard')->withErrors(['queue' => $exception instanceof OperatorException ? __($exception->getMessage()) : __('The basic-examination worklist is unavailable.')]);
@@ -198,7 +210,11 @@ final class PortalController extends Controller
             return view('operator.xray-readiness-worklist', [
                 'entries' => $worklist->xrayReadiness(),
             ]);
-        } catch (OperatorException) {
+        } catch (OperatorException $exception) {
+            if ($exception->category === 'active_site_required') {
+                return redirect()->route('operator.site')->withErrors(['site' => __($exception->getMessage())]);
+            }
+
             abort(403);
         } catch (Throwable) {
             return redirect()->route('operator.dashboard')->withErrors(['queue' => __('The X-ray readiness worklist is unavailable.')]);
@@ -221,7 +237,7 @@ final class PortalController extends Controller
                 return redirect()->route('operator.basic-examination-worklist')->with('status', __($exception->getMessage()));
             }
             if ($exception->category === 'queue_claim_conflict') {
-                abort(409);
+                return redirect()->route('operator.basic-examination-worklist')->withErrors(['queue' => __($exception->getMessage())]);
             }
             if ($exception->category === 'queue_claim_failure') {
                 return back()->withErrors(['queue' => __('The queue admission could not be claimed.')]);
@@ -249,7 +265,7 @@ final class PortalController extends Controller
                 return redirect()->route('operator.xray-readiness-worklist')->with('status', __($exception->getMessage()));
             }
             if ($exception->category === 'xray_claim_conflict') {
-                abort(409);
+                return redirect()->route('operator.xray-readiness-worklist')->withErrors(['queue' => __($exception->getMessage())]);
             }
             if ($exception->category === 'xray_claim_failure') {
                 return back()->withErrors(['queue' => __('The X-ray admission could not be claimed.')]);

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Modules\ImageGateway\Application\Services;
 
+use App\Modules\ImageGateway\Application\Contracts\OperatorStudyQuery;
 use App\Modules\ImageGateway\Application\Jobs\ProcessCaptureSet;
 use App\Modules\ImageGateway\Domain\ImageGatewayException;
 use App\Modules\ImageGateway\Domain\Security\ConversionManifest;
@@ -29,7 +30,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Throwable;
 
-final readonly class ImageGatewayCaptureService
+final readonly class ImageGatewayCaptureService implements OperatorStudyQuery
 {
     public const CAPTURE_PURPOSE = 'image-gateway.capture.submit';
 
@@ -182,17 +183,18 @@ final readonly class ImageGatewayCaptureService
         ];
     }
 
-    /** @return list<array{study_id: string, format: string, rows: ?int, columns: ?int, accepted_at: string}> */
+    /** @return list<array{study_id: string, booking_id: string, format: string, rows: ?int, columns: ?int, accepted_at: string}> */
     public function studies(AuthenticatedContext $context, string $profileId, string $siteId, string $operatorSiteId): array
     {
         $this->assertContext($context, self::STUDY_PURPOSE);
 
         return $this->authorizedStudiesQuery($profileId, $siteId, $operatorSiteId)
-            ->select(['studies.id', 'studies.format', 'studies.rows', 'studies.columns', 'captures.accepted_at'])
+            ->select(['studies.id', 'captures.booking_id', 'studies.format', 'studies.rows', 'studies.columns', 'captures.accepted_at'])
             ->orderByDesc('captures.accepted_at')
             ->get()
             ->map(static fn (object $study): array => [
                 'study_id' => (string) $study->id,
+                'booking_id' => (string) $study->booking_id,
                 'format' => (string) $study->format,
                 'rows' => $study->rows === null ? null : (int) $study->rows,
                 'columns' => $study->columns === null ? null : (int) $study->columns,
@@ -359,7 +361,7 @@ final readonly class ImageGatewayCaptureService
             return;
         }
         if ($current->radiograph_status === 'success' && $current->gain_status === 'success') {
-            $this->acceptSources($current, $admission, $profileId, $operatorSiteId, $submissionId, $context);
+            $this->acceptSources($current, $profileId, $operatorSiteId, $submissionId, $context);
         }
     }
 
@@ -425,11 +427,15 @@ final readonly class ImageGatewayCaptureService
         );
     }
 
-    private function acceptSources(object $capture, object $admission, string $profileId, string $operatorSiteId, string $submissionId, AuthenticatedContext $context): void
+    private function acceptSources(object $capture, string $profileId, string $operatorSiteId, string $submissionId, AuthenticatedContext $context): void
     {
-        DB::transaction(function () use ($capture, $admission, $profileId, $operatorSiteId, $submissionId, $context): void {
+        DB::transaction(function () use ($capture, $profileId, $operatorSiteId, $submissionId, $context): void {
             $row = DB::table('image_gateway_capture_sets')->where('id', $capture->id)->lockForUpdate()->first();
-            if ($row === null || $row->accepted_at !== null) {
+            $admissionRow = DB::table('operator_queue_admissions')->where('id', $capture->admission_id)->lockForUpdate()->first();
+            if ($row === null || $admissionRow === null || $row->accepted_at !== null) {
+                return;
+            }
+            if ((string) $admissionRow->operator_profile_id !== $profileId || ! in_array((string) $admissionRow->state, ['called', 'in_service'], true)) {
                 return;
             }
             if ($row->radiograph_status !== 'success' || $row->gain_status !== 'success'
@@ -439,10 +445,10 @@ final readonly class ImageGatewayCaptureService
 
             $now = $this->clock->now();
             DB::table('image_gateway_capture_sets')->where('id', $row->id)->update(['status' => 'accepted', 'accepted_at' => $now, 'updated_at' => $now]);
-            DB::table('operator_queue_admissions')->where('id', $row->admission_id)->update(['state' => 'awaiting_ai', 'updated_at' => $now]);
+            DB::table('operator_queue_admissions')->where('id', $row->admission_id)->update(['state' => 'awaiting_ai', 'operator_profile_id' => null, 'claimed_at' => null, 'updated_at' => $now]);
             DB::table('operator_queue_admission_history')->insert([
                 'id' => (string) Str::uuid(), 'operator_queue_admission_id' => $row->admission_id, 'operator_profile_id' => $profileId,
-                'event_type' => 'capture_accepted', 'from_state' => (string) $admission->state, 'to_state' => 'awaiting_ai', 'operation_id' => $submissionId,
+                'event_type' => 'capture_accepted', 'from_state' => (string) $admissionRow->state, 'to_state' => 'awaiting_ai', 'operation_id' => $submissionId,
                 'occurred_at' => $now, 'created_at' => $now, 'updated_at' => $now,
             ]);
             $metadata = ['capture_id' => (string) $row->id, 'admission_id' => (string) $row->admission_id, 'operator_site_id' => $operatorSiteId, 'status' => 'accepted'];
@@ -492,7 +498,20 @@ final readonly class ImageGatewayCaptureService
             ->where('admissions.queue_class', 'advance')
             ->where('admissions.stage', 'xray')
             ->whereIn('admissions.state', $allowAccepted ? ['called', 'in_service', 'awaiting_ai'] : ['called', 'in_service'])
-            ->where('admissions.operator_profile_id', $profileId)
+            ->where(function ($query) use ($profileId): void {
+                $query->where('admissions.operator_profile_id', $profileId)
+                    ->orWhere(function ($query) use ($profileId): void {
+                        $query->where('admissions.state', 'awaiting_ai')
+                            ->whereExists(function ($query) use ($profileId): void {
+                                $query->selectRaw('1')
+                                    ->from('image_gateway_capture_sets as captures')
+                                    ->whereColumn('captures.admission_id', 'admissions.id')
+                                    ->where('captures.operator_profile_id', $profileId)
+                                    ->where('captures.status', 'accepted')
+                                    ->whereNotNull('captures.accepted_at');
+                            });
+                    });
+            })
             ->whereExists(function ($query) use ($profileId, $operatorSiteId): void {
                 $query->selectRaw('1')
                     ->from('operator_shift_assignments as assignments')

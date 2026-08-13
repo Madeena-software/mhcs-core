@@ -84,7 +84,9 @@ final class Mvp04lAtomicXrayClaimTest extends TestCase
 
         $this->post(route('operator.xray-readiness-worklist.claim', $first->id), $payload)->assertRedirect();
         $this->post(route('operator.xray-readiness-worklist.claim', $first->id), $payload)->assertRedirect();
-        $this->post(route('operator.xray-readiness-worklist.claim', $second->id), $payload)->assertConflict();
+        $this->post(route('operator.xray-readiness-worklist.claim', $second->id), $payload)
+            ->assertRedirect(route('operator.xray-readiness-worklist'))
+            ->assertSessionHasErrors(['queue' => __('The X-ray admission could not be claimed.')]);
 
         $this->assertSame(1, DB::table('operator_queue_admissions')->whereNotNull('operator_profile_id')->count());
         $this->assertSame(1, DB::table('operator_queue_admission_history')->where('event_type', 'claimed')->count());
@@ -121,7 +123,9 @@ final class Mvp04lAtomicXrayClaimTest extends TestCase
         $basic = $this->insertAdmission($fixture, 'BASIC-LIVE-1', 'basic_examination', $this->copyBooking($fixture));
 
         $this->post(route('operator.xray-readiness-worklist.claim', $xray->id), ['operation_id' => (string) Str::uuid()])->assertRedirect();
-        $this->post(route('operator.basic-examination-worklist.claim', $basic->id), ['operation_id' => (string) Str::uuid()])->assertConflict();
+        $this->post(route('operator.basic-examination-worklist.claim', $basic->id), ['operation_id' => (string) Str::uuid()])
+            ->assertRedirect(route('operator.basic-examination-worklist'))
+            ->assertSessionHasErrors(['queue' => __('The queue admission could not be claimed.')]);
 
         $this->assertDatabaseHas('operator_queue_admissions', ['id' => $xray->id, 'operator_profile_id' => $fixture['profileId'], 'state' => 'waiting']);
         $this->assertDatabaseHas('operator_queue_admissions', ['id' => $basic->id, 'operator_profile_id' => null, 'state' => 'waiting']);
@@ -144,6 +148,18 @@ final class Mvp04lAtomicXrayClaimTest extends TestCase
         $this->assertDatabaseHas('operator_queue_admissions', ['id' => $basic->id, 'operator_profile_id' => $fixture['profileId']]);
         $this->assertDatabaseHas('operator_queue_admissions', ['id' => $xray->id, 'operator_profile_id' => null]);
         $this->assertSame(1, DB::table('operator_queue_admission_history')->where('event_type', 'claimed')->count());
+    }
+
+    public function test_awaiting_ai_xray_does_not_block_a_later_xray_claim(): void
+    {
+        $fixture = $this->readyFixture();
+        $awaiting = $this->insertAdmission($fixture, 'XRAY-AWAITING-AI-1', 'xray');
+        DB::table('operator_queue_admissions')->where('id', $awaiting->id)->update(['state' => 'awaiting_ai']);
+        $later = $this->insertAdmission($fixture, 'XRAY-AFTER-AI-1', 'xray', $this->copyBooking($fixture));
+
+        $this->post(route('operator.xray-readiness-worklist.claim', $later->id), ['operation_id' => (string) Str::uuid()])
+            ->assertRedirect(route('operator.xray-readiness-worklist'));
+        $this->assertDatabaseHas('operator_queue_admissions', ['id' => $later->id, 'operator_profile_id' => $fixture['profileId']]);
     }
 
     public function test_revoked_and_foreign_scope_denials_are_private_and_atomic(): void
@@ -185,7 +201,9 @@ final class Mvp04lAtomicXrayClaimTest extends TestCase
             ->assertDontSee($foreignFixture['bookingId']);
 
         DB::table('operator_queue_admissions')->where('id', $admission->id)->update(['state' => 'called']);
-        $this->post(route('operator.xray-readiness-worklist.claim', $admission->id), ['operation_id' => (string) Str::uuid()])->assertConflict();
+        $this->post(route('operator.xray-readiness-worklist.claim', $admission->id), ['operation_id' => (string) Str::uuid()])
+            ->assertRedirect(route('operator.xray-readiness-worklist'))
+            ->assertSessionHasErrors(['queue' => __('The X-ray admission could not be claimed.')]);
 
         $this->assertDatabaseHas('operator_queue_admissions', ['id' => $admission->id, 'operator_profile_id' => null, 'state' => 'called']);
         $this->assertSame(0, DB::table('operator_queue_admission_history')->where('event_type', 'claimed')->count());

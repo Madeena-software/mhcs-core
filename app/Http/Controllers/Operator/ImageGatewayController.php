@@ -154,7 +154,7 @@ final class ImageGatewayController extends Controller
     public function results(
         OperatorAuthorization $authorization,
         ImageGatewayCaptureService $gateway,
-    ): View {
+    ): View|RedirectResponse {
         try {
             $portal = $authorization->portal();
             $site = $authorization->portalSite($portal);
@@ -166,7 +166,11 @@ final class ImageGatewayController extends Controller
             );
 
             return view('operator.study-results', ['studies' => $studies]);
-        } catch (OperatorException|ImageGatewayException) {
+        } catch (OperatorException|ImageGatewayException $exception) {
+            if ($exception instanceof OperatorException && $exception->category === 'active_site_required') {
+                return redirect()->route('operator.site')->withErrors(['site' => __($exception->getMessage())]);
+            }
+
             abort(403);
         }
     }

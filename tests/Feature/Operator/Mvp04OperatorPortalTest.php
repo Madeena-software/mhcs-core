@@ -234,6 +234,32 @@ final class Mvp04OperatorPortalTest extends TestCase
             ->assertSessionHasErrors(['queue' => 'Pilih lokasi aktif sebelum melanjutkan.']);
     }
 
+    public function test_reported_operator_get_routes_redirect_only_for_a_missing_active_site(): void
+    {
+        $fixture = $this->operatorFixture(false);
+        $this->actingAs($fixture['operator']);
+
+        foreach ([
+            route('operator.eligible-shifts'),
+            route('operator.basic-examination-worklist'),
+            route('operator.xray-readiness-worklist'),
+            route('operator.study.results'),
+        ] as $url) {
+            $this->get($url)
+                ->assertRedirect(route('operator.site'))
+                ->assertSessionHasErrors(['site' => 'Pilih lokasi aktif sebelum melanjutkan.']);
+        }
+
+    }
+
+    public function test_invalid_active_site_remains_forbidden_on_reported_worklists(): void
+    {
+        $fixture = $this->operatorFixture(false);
+        $this->actingAs($fixture['operator'])->withSession(['operator.active_site_id' => (string) Str::uuid()]);
+
+        $this->assertSame(403, $this->get(route('operator.basic-examination-worklist'))->status());
+    }
+
     public function test_assigned_shift_attendance_link_uses_the_schedule_start_time(): void
     {
         $fixture = $this->operatorFixture(false);
@@ -267,6 +293,29 @@ final class Mvp04OperatorPortalTest extends TestCase
         for ($index = 1; $index <= 36; $index++) {
             $response->assertSee('Roster Member '.$index);
         }
+    }
+
+    public function test_attendance_handoff_uses_only_authorized_returned_studies(): void
+    {
+        $fixture = $this->operatorFixture(false);
+        DB::table('bookings')->where('id', $fixture['bookingId'])->update(['status' => 'checked_in']);
+        $this->actingAs($fixture['operator'])->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
+
+        $this->get(route('operator.attendance', ['schedule' => $fixture['scheduleId'], 'at' => '2040-01-10T10:15:00+07:00']))
+            ->assertSee('Buka antrean pemeriksaan dasar');
+
+        $one = $this->insertAcceptedStudy($fixture, 'ONE');
+        $this->get(route('operator.attendance', ['schedule' => $fixture['scheduleId'], 'at' => '2040-01-10T10:15:00+07:00']))
+            ->assertSee(route('operator.study.show', $one), false)
+            ->assertSee('Buka studi DICOM')
+            ->assertDontSee('Buka antrean pemeriksaan dasar');
+
+        $this->insertAcceptedStudy($fixture, 'TWO');
+        $this->get(route('operator.attendance', ['schedule' => $fixture['scheduleId'], 'at' => '2040-01-10T10:15:00+07:00']))
+            ->assertSee(route('operator.study.results'), false)
+            ->assertDontSee(route('operator.study.show', $one), false)
+            ->assertSee('Daftar kerja hasil DICOM')
+            ->assertDontSee('Buka studi DICOM');
     }
 
     public function test_workstation_shows_the_ordered_clinic_flow_and_server_derived_queue_counts(): void
@@ -444,5 +493,86 @@ final class Mvp04OperatorPortalTest extends TestCase
             'reverses_id' => null,
             'created_at' => $now,
         ]);
+    }
+
+    /** @param array<string, mixed> $fixture */
+    private function insertAcceptedStudy(array $fixture, string $suffix): string
+    {
+        $now = now();
+        $ticketId = (string) Str::uuid();
+        $admissionId = (string) Str::uuid();
+        $captureId = (string) Str::uuid();
+        $studyId = (string) Str::uuid();
+        $ticketBookingId = (string) Str::uuid();
+        $booking = (array) DB::table('bookings')->where('id', $fixture['bookingId'])->first();
+        $booking['id'] = $ticketBookingId;
+        DB::table('bookings')->insert($booking);
+
+        DB::table('operator_paper_tickets')->insert([
+            'id' => $ticketId,
+            'booking_id' => $ticketBookingId,
+            'member_schedule_id' => $fixture['scheduleId'],
+            'operator_site_id' => $fixture['siteLocalId'],
+            'operator_profile_id' => $fixture['profileId'],
+            'ticket_number' => 'ATT-'.$suffix,
+            'issued_at' => $now,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+        DB::table('operator_queue_admissions')->insert([
+            'id' => $admissionId,
+            'operator_paper_ticket_id' => $ticketId,
+            'operator_site_id' => $fixture['siteLocalId'],
+            'member_schedule_id' => $fixture['scheduleId'],
+            'queue_class' => 'advance',
+            'stage' => 'xray',
+            'state' => 'awaiting_ai',
+            'ready_at' => $now,
+            'operator_profile_id' => null,
+            'claimed_at' => null,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+        DB::table('image_gateway_capture_sets')->insert([
+            'id' => $captureId,
+            'submission_id' => (string) Str::uuid(),
+            'admission_id' => $admissionId,
+            'booking_id' => $fixture['bookingId'],
+            'member_schedule_id' => $fixture['scheduleId'],
+            'operator_site_id' => $fixture['siteLocalId'],
+            'operator_profile_id' => $fixture['profileId'],
+            'radiograph_count' => 1,
+            'status' => 'accepted',
+            'accepted_at' => $now,
+            'processing_status' => 'completed',
+            'attempts' => 1,
+            'radiograph_status' => 'success',
+            'gain_status' => 'success',
+            'mpips_status' => 'success',
+            'dicom_status' => 'success',
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+        DB::table('image_gateway_studies')->insert([
+            'id' => $studyId,
+            'capture_set_id' => $captureId,
+            'object_key' => 'studies/'.$studyId,
+            'checksum' => hash('sha256', $studyId),
+            'bytes' => 1,
+            'format' => 'DICOM',
+            'study_instance_uid' => 'study-'.$studyId,
+            'series_instance_uid' => 'series-'.$studyId,
+            'sop_instance_uid' => 'sop-'.$studyId,
+            'transfer_syntax' => null,
+            'window_center' => null,
+            'window_width' => null,
+            'rows' => null,
+            'columns' => null,
+            'filename' => 'capture.dcm',
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        return $studyId;
     }
 }

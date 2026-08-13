@@ -28,7 +28,13 @@
                             @elseif ($row['booking_status'] === 'arrived')
                                 <a href="{{ route('operator.verification-worklist') }}">{{ __($row['next_action']) }}</a>
                             @elseif (in_array($row['booking_status'], ['checked_in', 'in_progress'], true))
-                                <a href="{{ route('operator.basic-examination-worklist') }}">{{ __($row['next_action']) }}</a>
+                                @if (($row['returned_study_count'] ?? 0) === 1)
+                                    <a href="{{ route('operator.study.show', $row['returned_study_id']) }}">{{ __($row['next_action']) }}</a>
+                                @elseif (($row['returned_study_count'] ?? 0) > 1)
+                                    <a href="{{ route('operator.study.results') }}">{{ __($row['next_action']) }}</a>
+                                @else
+                                    <a href="{{ route('operator.basic-examination-worklist') }}">{{ __($row['next_action']) }}</a>
+                                @endif
                             @else
                                 <span class="muted">{{ __($row['next_action']) }}</span>
                             @endif
