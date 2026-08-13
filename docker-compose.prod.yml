@@ -224,7 +224,7 @@ services:
         limits:
           cpus: "${MHCS_IMAGE_WORKER_CPU_LIMIT:-1.0}"
           memory: "${MHCS_IMAGE_WORKER_MEMORY_LIMIT:-1G}"
-          pids: ${MHCS_IMAGE_WORKER_PIDS_LIMIT:-256}
+          pids: 256 # MHCS_IMAGE_WORKER_PIDS_LIMIT: 256
         reservations:
           memory: 256M
     command:
