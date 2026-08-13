@@ -245,6 +245,27 @@ final class Mvp14ImageGatewayIntegrationTest extends TestCase
             ->assertDontSee('THORAX');
     }
 
+    public function test_frozen_capture_metadata_shows_laterality_code_and_label(): void
+    {
+        $fixture = $this->operatorFixture(false);
+        $this->actingAs($fixture['operator'])->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
+        $admission = $this->insertCalledXrayAdmission($fixture);
+
+        $this->post(route('operator.xray-capture.store', $admission), [
+            'submission_id' => (string) Str::uuid(),
+            'metadata' => [
+                'examination' => ['study_description' => 'CHEST RADIOGRAPH'],
+                'capture' => ['detector_type' => 'BED', 'body_part_examined' => 'CHEST', 'laterality' => 'L', 'projection' => 'PA'],
+            ],
+            'radiograph_npz' => $this->fixtureUpload('synthetic-radiograph-01.npz'),
+            'gain_npz' => $this->fixtureUpload('synthetic-gain-01.npz'),
+        ])->assertRedirect(route('operator.study.results'));
+
+        $this->get(route('operator.xray-capture.show', $admission))
+            ->assertOk()
+            ->assertSee('L (Kiri)', false);
+    }
+
     public function test_capture_metadata_boundaries_are_rejected_before_capture_creation(): void
     {
         $fixture = $this->operatorFixture(false);

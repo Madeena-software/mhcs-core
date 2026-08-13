@@ -58,7 +58,7 @@
                     <p>{{ __('Study description') }}: <code>{{ $metadata['examination']['study_description'] }}</code></p>
                     <p>{{ __('Detector type') }}: <code>{{ __($metadata['capture']['detector_type']) }}</code></p>
                     <p>{{ __('Body part examined') }}: <code>{{ __($metadata['capture']['body_part_examined']) }}</code></p>
-                    <p>{{ __('Laterality') }}: <code>{{ __($metadata['capture']['laterality']) }}</code></p>
+                    <p>{{ __('Laterality') }}: <code>{{ $metadata['capture']['laterality'] }} ({{ __($metadata['capture']['laterality']) }})</code></p>
                     <p>{{ __('Projection') }}: <code>{{ __($metadata['capture']['projection']) }}</code></p>
                 </fieldset>
             @endif
