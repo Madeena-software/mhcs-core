@@ -33,10 +33,10 @@ claim release or final implementation acceptance.
 
 ## Planner/Reviewer acceptance
 
-**Date:** 2026-08-13  
-**Verdict:** `ACCEPTED` — R8 remediation closure passed  
-**Governing task:** `.agents/tasks/operator-async-capture-status-and-worklist-sync.md @ 8afd3dedc9f7e4920d59beb9e94d2e480bd6bc9f`  
-**Implementation baseline:** `91304d969daa54fbcf42eb28f97d2f77d78d8265`  
+**Date:** 2026-08-13
+**Verdict:** `ACCEPTED` — R8 remediation closure passed
+**Governing task:** `.agents/tasks/operator-async-capture-status-and-worklist-sync.md @ 8afd3dedc9f7e4920d59beb9e94d2e480bd6bc9f`
+**Implementation baseline:** `91304d969daa54fbcf42eb28f97d2f77d78d8265`
 **Accepted implementation revision:** `19ae9e16c6cae1ec0bfadf29afcf1c5fd6b2abfd`
 
 The focused source and browser review confirmed that `beforeunload` now
