@@ -2,14 +2,14 @@
 title: Local MHCS Operator-to-DICOM Deployment and Manual Testing Readiness
 document_id: MHCS-TASK-LOCAL-DEPLOYMENT-READINESS-001
 version: 1.3
-status: draft
+status: validated-on-publication
 language: en-US
 last_updated: 2026-08-13
 scope:
   - disposable local deployment of the current Operator and Image Gateway candidate
   - synthetic Operator-to-DICOM manual testing handoff
   - final portrait DICOM viewer manual-review evidence
-authority_note: This revised local-testing task becomes executable only when this exact content is committed unchanged and its immutable task revision is supplied in the Executor handoff. It authorizes no production deployment, release, external probe, or application-behavior change.
+authority_note: This revised local-testing task is validated/published only when this exact file is committed unchanged and its immutable task revision is supplied in the Executor handoff. It authorizes no production deployment, release, external probe, or application-behavior change.
 ---
 
 # Executable Task
@@ -23,7 +23,7 @@ authority_note: This revised local-testing task becomes executable only when thi
 `.agents/tasks/mvp-local-deployment-readiness.md`
 
 **Task contract state:**
-`Draft — publish unchanged and resolve the immutable task SHA before execution.`
+`Validated/Published upon immutable publication of this exact content; the governing SHA is supplied externally in the Executor handoff.`
 
 **Delivery objective / Work Package / MVP:**
 `Pre-deployment local MVP — provide one clean, safe, user-led end-to-end Operator rehearsal for the current DICOM-viewer candidate.`
@@ -61,7 +61,7 @@ governing task.
 b0b4597250137655ce38e03c93a45fb1104a41b4`.
 
 **Task revision:**
-`Resolved when this Draft is committed unchanged; the Planner supplies that full SHA before Executor handoff.`
+`The full SHA of the commit containing this exact task content, supplied by the Planner after publication.`
 
 ## Objective
 
