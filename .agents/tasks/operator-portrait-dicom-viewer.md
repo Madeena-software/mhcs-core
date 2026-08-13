@@ -2,7 +2,7 @@
 title: Operator Portrait DICOM Viewer and Monitor Popup
 document_id: MHCS-TASK-OPERATOR-PORTRAIT-DICOM-VIEWER-001
 version: 1.0
-status: draft
+status: validated-on-publication
 language: en-US
 last_updated: 2026-08-13
 scope:
@@ -23,7 +23,7 @@ authority_note: This task becomes executable only when this exact content is com
 `.agents/tasks/operator-portrait-dicom-viewer.md`
 
 **Task contract state:**
-`Draft — publish unchanged and resolve the immutable task SHA before execution.`
+`Validated/Published upon immutable publication of this exact content; the governing SHA is supplied externally in the Executor handoff.`
 
 **Delivery objective / Work Package / MVP:**
 `Pre-deployment local MVP — resolve the final product-facing DICOM viewer feedback item`
@@ -60,7 +60,7 @@ runner hang remains a verification limitation, not a product failure.
 - `.agents/tasks/operator-awaiting-ai-release-and-safe-navigation.md @ d76086c6bb04007c53fd06886e48cd5e2e95b7f3`.
 
 **Task revision:**
-`Resolved when this Draft is committed unchanged; the Planner supplies that full SHA before Executor handoff.`
+`The full SHA of the commit containing this exact task content, supplied by the Planner after publication.`
 
 ## Objective
 
