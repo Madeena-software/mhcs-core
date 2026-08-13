@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Modules\Member\Domain\Models;
 
 use App\Modules\Member\Domain\Enums\ScheduleStatus;
+use App\Modules\Member\Domain\MemberIdentityException;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -18,6 +19,15 @@ final class ShiftSchedule extends Model
     protected $keyType = 'string';
 
     protected $guarded = [];
+
+    protected static function booted(): void
+    {
+        self::updating(function (self $schedule): void {
+            if ($schedule->isDirty('display_reference')) {
+                throw new MemberIdentityException('Schedule display_reference is immutable.');
+            }
+        });
+    }
 
     protected function casts(): array
     {

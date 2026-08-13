@@ -12,6 +12,7 @@ use App\Shared\Audit\AuditEvent;
 use App\Shared\Audit\AuditStore;
 use App\Shared\Context\AuthenticatedContext;
 use App\Shared\Time\Clock;
+use Illuminate\Database\QueryException;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -100,23 +101,37 @@ final class MvpBookingSeeder extends Seeder
             return;
         }
 
-        $id = (string) Str::uuid();
-        $displayReference = 'JAD-'.Str::upper(Str::random(8));
-        $now = app(Clock::class)->now();
-        DB::table('shift_schedules')->insert([
-            'id' => $id,
-            'display_reference' => $displayReference,
-            'examination_site_id' => $siteId,
-            'service_offering_id' => $service->id,
-            'starts_at' => $startsAt,
-            'ends_at' => $endsAt,
-            'quota' => 5,
-            'status' => 'open',
-            'eligible_at' => null,
-            'created_at' => $now,
-            'updated_at' => $now,
-        ]);
-        $this->audit('member.schedule.bootstrap', 'shift-schedule', $id, ['site_id' => $siteId, 'service_code' => $serviceCode, 'quota' => 5]);
+        for ($attempt = 0; $attempt < 5; $attempt++) {
+            $id = (string) Str::uuid();
+            $displayReference = 'JAD-'.Str::upper(Str::random(8));
+            $now = app(Clock::class)->now();
+            try {
+                DB::table('shift_schedules')->insert([
+                    'id' => $id,
+                    'display_reference' => $displayReference,
+                    'examination_site_id' => $siteId,
+                    'service_offering_id' => $service->id,
+                    'starts_at' => $startsAt,
+                    'ends_at' => $endsAt,
+                    'quota' => 5,
+                    'status' => 'open',
+                    'eligible_at' => null,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ]);
+            } catch (QueryException $exception) {
+                $message = strtolower($exception->getMessage());
+                if ($attempt === 4 || ! str_contains($message, 'display_reference') || (! str_contains($message, 'unique') && ! str_contains($message, 'duplicate'))) {
+                    throw $exception;
+                }
+
+                continue;
+            }
+
+            $this->audit('member.schedule.bootstrap', 'shift-schedule', $id, ['site_id' => $siteId, 'service_code' => $serviceCode, 'quota' => 5]);
+
+            return;
+        }
     }
 
     private function audit(string $action, string $targetType, string $targetId, array $metadata): void

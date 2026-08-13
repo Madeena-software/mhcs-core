@@ -7,6 +7,7 @@ namespace Tests\Member;
 use App\Models\User;
 use App\Modules\Member\Application\Services\Mvp03BookingService;
 use App\Modules\Member\Application\Services\Mvp03ScheduleService;
+use App\Modules\Member\Domain\MemberIdentityException;
 use App\Modules\Member\Domain\Models\Booking;
 use App\Modules\Member\Domain\Models\Member;
 use App\Modules\Member\Domain\Models\ShiftSchedule;
@@ -479,6 +480,54 @@ final class Mvp03BookingDomainTest extends TestCase
         $this->assertSame(1, DB::table('point_ledger_entries')->where('source_reference', 'mvp03:synthetic-personal-credit:mvp-member-one')->count());
         $this->assertSame(1, DB::table('users')->where('email', 'mvp-member-one@example.test')->count());
         $this->assertNotNull($member['member_id']);
+    }
+
+    public function test_schedule_display_reference_is_immutable_at_model_boundary(): void
+    {
+        $fixture = $this->fixture('immutable-schedule@example.test', '12.5000', '20.0000');
+        $schedule = ShiftSchedule::query()->findOrFail($fixture['schedule_id']);
+        $schedule->display_reference = 'JAD-CHANGED1';
+
+        $this->expectException(MemberIdentityException::class);
+        $schedule->save();
+    }
+
+    public function test_local_booking_seeder_retries_schedule_display_reference_collision(): void
+    {
+        $this->memberFixture('mvp-member-one@example.test');
+        Str::createRandomStringsUsingSequence(['AAAAAAAA', 'BBBBBBBB']);
+        try {
+            $this->seed(MvpBookingSeeder::class);
+        } finally {
+            Str::createRandomStringsNormally();
+        }
+
+        $siteId = (string) DB::table('examination_site_refs')->where('operator_site_id', 'synthetic-operator-site-mvp03')->value('id');
+        $serviceId = (string) DB::table('service_offerings')->where('code', 'SYN-CHEST-B')->value('id');
+        DB::table('shift_schedules')->where('starts_at', '2026-08-13 05:00:00')->delete();
+        DB::table('shift_schedules')->insert([
+            'id' => (string) Str::uuid(),
+            'display_reference' => 'JAD-CCCCCCCC',
+            'examination_site_id' => $siteId,
+            'service_offering_id' => $serviceId,
+            'starts_at' => '2026-08-13 07:00:00',
+            'ends_at' => '2026-08-22 16:59:59',
+            'quota' => 5,
+            'status' => 'open',
+            'eligible_at' => null,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        Str::createRandomStringsUsingSequence(['CCCCCCCC', 'DDDDDDDD']);
+        try {
+            $this->seed(MvpBookingSeeder::class);
+        } finally {
+            Str::createRandomStringsNormally();
+        }
+
+        $this->assertMatchesRegularExpression('/\AJAD-[A-Z0-9]{8}\z/', (string) DB::table('shift_schedules')->where('starts_at', '2026-08-13 05:00:00')->value('display_reference'));
+        $this->assertSame('JAD-DDDDDDDD', DB::table('shift_schedules')->where('starts_at', '2026-08-13 05:00:00')->value('display_reference'));
     }
 
     /** @return array<string, mixed> */
