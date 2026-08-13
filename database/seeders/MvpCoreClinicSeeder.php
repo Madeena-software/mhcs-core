@@ -4,9 +4,20 @@ declare(strict_types=1);
 
 namespace Database\Seeders;
 
+use App\Models\User;
 use App\Modules\Member\Application\Services\Mvp03PointService;
+use App\Modules\Member\Application\Services\Mvp04PaperConsentService;
 use App\Modules\Member\Domain\Enums\PointEntryType;
+use App\Modules\Operator\Application\Services\OperatorArrivalService;
+use App\Modules\Operator\Application\Services\OperatorAuthorization;
+use App\Modules\Operator\Application\Services\OperatorCheckInTicketService;
+use App\Modules\Operator\Application\Services\OperatorIdentityVerificationService;
+use App\Modules\Operator\Application\Services\OperatorWorklistService;
+use App\Shared\Context\AuthenticatedContext;
+use App\Shared\Identity\LocalId;
 use Illuminate\Database\Seeder;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use RuntimeException;
@@ -39,11 +50,9 @@ final class MvpCoreClinicSeeder extends Seeder
         }
         $this->call(MvpOperatorSeeder::class);
 
-        [$bookingId, $scheduleId, $siteId] = $this->confirmedBooking();
-        $this->command?->info('Synthetic clinic-core bookings are ready; primary booking: '.$bookingId);
-        $this->command?->info('Synthetic front-desk NIK lookup: 900000000101');
-        $this->command?->info('Use /operator/attendance/'.$scheduleId.'?at=2026-08-13T03:30:00+00:00 for the front-desk walkthrough.');
-        $this->command?->info('Use /lcd/'.$siteId.' on the separate LCD browser after calling a ticket.');
+        [, $scheduleId, $siteId] = $this->confirmedBooking();
+        $this->prepareCalledXrayAdmissions($scheduleId, $siteId);
+        $this->command?->info('Synthetic clinic-core local testing data is ready.');
     }
 
     /** @return array{0: string, 1: string, 2: string} */
@@ -100,6 +109,89 @@ final class MvpCoreClinicSeeder extends Seeder
         }
 
         return [(string) $bookingIds[0], (string) $schedule->id, $siteId];
+    }
+
+    private function prepareCalledXrayAdmissions(string $scheduleId, string $siteId): void
+    {
+        foreach ([
+            ['member' => 'mvp-member-one@example.test', 'operator' => 'mvp-admin@example.test', 'nik' => '900000000101'],
+            ['member' => 'mvp-member-two@example.test', 'operator' => 'mvp-operator-two@example.test', 'nik' => '900000000102'],
+        ] as $scenario) {
+            $bookingId = (string) DB::table('bookings')
+                ->join('members', 'members.id', '=', 'bookings.member_id')
+                ->join('users', 'users.id', '=', 'members.user_id')
+                ->where('users.email', $scenario['member'])
+                ->where('bookings.shift_schedule_id', $scheduleId)
+                ->value('bookings.id');
+            if ($bookingId === '') {
+                throw new RuntimeException('The synthetic readiness booking is unavailable.');
+            }
+            if (DB::table('operator_queue_admissions')
+                ->join('operator_paper_tickets', 'operator_paper_tickets.id', '=', 'operator_queue_admissions.operator_paper_ticket_id')
+                ->where('operator_paper_tickets.booking_id', $bookingId)
+                ->where('operator_queue_admissions.stage', 'xray')
+                ->where('operator_queue_admissions.state', 'called')
+                ->exists()) {
+                continue;
+            }
+            $operator = DB::table('users')->where('email', $scenario['operator'])->first();
+            if ($operator === null) {
+                throw new RuntimeException('The synthetic readiness Operator is unavailable.');
+            }
+            Auth::guard()->setUser(User::query()->findOrFail($operator->id));
+            session()->put('operator.active_site_id', $siteId);
+            $arrival = app(OperatorArrivalService::class)->confirm($bookingId, '2026-08-13T03:30:00+00:00');
+            $recorded = app(OperatorArrivalService::class)->recordConfirmed($arrival['confirmation_token']);
+            $case = app(OperatorIdentityVerificationService::class)->start($recorded['arrival_id'], (string) Str::uuid());
+            app(OperatorIdentityVerificationService::class)->lookupByNik((string) $case['case_id'], $scenario['nik'], '2026-08-13T03:30:00+00:00');
+            $portal = app(OperatorAuthorization::class)->portal();
+            $context = new AuthenticatedContext(
+                actorId: $portal['context']->actorId,
+                operationId: $portal['context']->operationId,
+                sessionId: $portal['context']->sessionId,
+                roles: $portal['context']->roles,
+                permissions: $portal['context']->permissions,
+                siteId: $portal['context']->siteId,
+                caseId: LocalId::fromString((string) $case['case_id']),
+                purpose: Mvp04PaperConsentService::PURPOSE,
+            );
+            app(Mvp04PaperConsentService::class)->confirm(
+                $context,
+                'synthetic-operator-site-mvp03',
+                $scheduleId,
+                $bookingId,
+                (string) $case['case_id'],
+                Mvp04PaperConsentService::FORM_NAME,
+                Mvp04PaperConsentService::FORM_VERSION,
+                Mvp04PaperConsentService::SIGNER_TYPE,
+                true,
+                '2026-08-13',
+                (string) Str::uuid(),
+                UploadedFile::fake()->image('consent.png', 1, 1),
+            );
+            app(OperatorCheckInTicketService::class)->issue((string) $case['case_id'], '', (string) Str::uuid());
+            $worklist = app(OperatorWorklistService::class);
+            $basicId = (string) DB::table('operator_queue_admissions')
+                ->join('operator_paper_tickets', 'operator_paper_tickets.id', '=', 'operator_queue_admissions.operator_paper_ticket_id')
+                ->where('operator_paper_tickets.booking_id', $bookingId)
+                ->where('operator_queue_admissions.stage', 'basic_examination')
+                ->value('operator_queue_admissions.id');
+            $worklist->claimBasicExamination($basicId, (string) Str::uuid());
+            $worklist->callBasicExamination($basicId, (string) Str::uuid());
+            $worklist->startBasicExamination($basicId, (string) Str::uuid());
+            $worklist->recordBasicExaminationVitalSigns($basicId, (string) Str::uuid(), [
+                'systolic_bp_value' => '120',
+                'diastolic_bp_value' => '80',
+                'temperature_value' => '36.5',
+                'height_value' => '180',
+                'weight_value' => '75',
+            ]);
+            $worklist->recordBasicExaminationQuestionnaire($basicId, (string) Str::uuid(), UploadedFile::fake()->image('questionnaire.png', 1, 1));
+            $xray = $worklist->completeBasicExamination($basicId, (string) Str::uuid());
+            $worklist->claimXray((string) $xray['xray_admission_id'], (string) Str::uuid());
+            $worklist->callXray((string) $xray['xray_admission_id'], (string) Str::uuid());
+        }
+        Auth::logout();
     }
 
     private function ensureConfirmedBooking(string $memberId, object $schedule, string $rateId): string

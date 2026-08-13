@@ -30,6 +30,27 @@ final class MvpCoreClinicSeederTest extends TestCase
         $this->assertDatabaseHas('users', ['email' => 'mvp-operator-two@example.test']);
         $this->assertDatabaseHas('users', ['email' => 'mvp-operator-three@example.test']);
         $this->assertSame(3, DB::table('operator_profiles')->count());
+        $this->assertSame(2, DB::table('operator_queue_admissions')
+            ->where('stage', 'xray')
+            ->where('state', 'called')
+            ->count());
+        $this->assertSame(2, DB::table('operator_queue_admissions')
+            ->where('stage', 'xray')
+            ->where('state', 'called')
+            ->whereNotNull('operator_profile_id')
+            ->count());
+        $this->assertSame(1, DB::table('operator_queue_admissions as admissions')
+            ->join('operator_profiles', 'operator_profiles.id', '=', 'admissions.operator_profile_id')
+            ->join('users', 'users.id', '=', 'operator_profiles.user_id')
+            ->where('admissions.stage', 'xray')->where('users.email', 'mvp-admin@example.test')->count());
+        $this->assertSame(1, DB::table('operator_queue_admissions as admissions')
+            ->join('operator_paper_tickets as tickets', 'tickets.id', '=', 'admissions.operator_paper_ticket_id')
+            ->join('operator_profiles', 'operator_profiles.id', '=', 'admissions.operator_profile_id')
+            ->join('users', 'users.id', '=', 'operator_profiles.user_id')
+            ->where('admissions.stage', 'xray')->where('users.email', 'mvp-operator-two@example.test')->count());
+        $this->assertSame(0, DB::table('image_gateway_capture_sets')->count());
+        $this->assertSame(0, DB::table('image_gateway_studies')->count());
+        $this->assertSame(2, DB::table('operator_queue_admissions')->where('stage', 'basic_examination')->count());
         $this->assertDatabaseHas('authorization_permission_assignments', [
             'user_id' => DB::table('users')->where('email', 'mvp-admin@example.test')->value('id'),
             'permission' => 'operator.identity.verify',
@@ -39,7 +60,6 @@ final class MvpCoreClinicSeederTest extends TestCase
             ->join('members', 'members.id', '=', 'bookings.member_id')
             ->join('users', 'users.id', '=', 'members.user_id')
             ->where('users.email', 'mvp-member-one@example.test')
-            ->where('bookings.status', 'confirmed')
             ->value('bookings.id');
         $this->assertIsString($bookingId);
         $scheduleId = DB::table('bookings')->where('id', $bookingId)->value('shift_schedule_id');
