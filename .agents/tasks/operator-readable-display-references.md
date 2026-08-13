@@ -322,3 +322,32 @@ revision `91982bb43f591e818299df37c011de5e9490570c`.
   `vendor/bin/pint --test`, and `git diff --check`.
 - Report the immutable remediation implementation revision, exact commands and
   observed output, tests added/changed, and any deviation or blocker.
+
+### Browser-evidence correction
+
+**Review basis:** `f4b3e33` — remediation implementation review after task
+revision `64b3bd012cb589486b05f77e72c4920f80869090`.
+
+The isolated required browser command fails before display-reference assertions
+because two pre-existing test files assert English strings while the approved
+Indonesian JSON registry renders the corresponding Indonesian strings. The
+observed screenshots show the expected authenticated pages, not a failed route
+or a display-reference error. This is a test-expectation correction only.
+
+### Required correction
+
+- In `tests/Browser/Mvp03AdminBookingClosureTest.php` and
+  `tests/Browser/Mvp04OperatorWorkstationTest.php`, replace only stale static
+  English UI assertions/actions with the already-rendered Indonesian values
+  from `lang/id.json` or established Indonesian administration labels. Preserve
+  all route, permission, workflow, fixture, and display-reference assertions.
+  Do not change application UI, translation registry, authorization, or
+  browser-test execution configuration.
+
+### Additional verification
+
+- Run the two corrected browser files in isolation, then rerun the original
+  task's focused Feature/Browser command sequentially (not concurrently with
+  a database-resetting suite).
+- Rerun `vendor/bin/phpunit`, `npm run build`, `vendor/bin/pint --test`, and
+  `git diff --check`, reporting exact observed results.
