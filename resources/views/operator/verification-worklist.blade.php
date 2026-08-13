@@ -3,7 +3,7 @@
 @section('title', __('Verification worklist'))
 
 @section('content')
-<section aria-labelledby="worklist-title">
+<section aria-labelledby="worklist-title" data-worklist-auto-refresh>
     <h1 id="worklist-title">{{ __('Verification worklist') }}</h1>
     <p class="muted">{{ __('Arrivals recorded at the active site and awaiting the next verification slice.') }}</p>
     <section class="card">

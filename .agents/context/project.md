@@ -141,12 +141,12 @@ The Image Gateway module owns:
 - publication and report-version distribution state.
 
 Operator submits a capture through the public `mhcs-core` application. The
-active request persists the radiograph and gain from temporary upload streams
-while concurrently submitting the same files to private MPIPS. Each successful
-component is immutable; a later same-admission attempt uploads only a missing
-component, and the queue remains the MPIPS recovery path after durable source
-acceptance. No application-server-to-application-server file copy or internal
-network submission exists inside `mhcs-core`.
+request durably persists the radiograph, gain, manifest, and signature to the
+configured private store, then atomically accepts the complete source set and
+queues MPIPS. Each successful component is immutable; a later same-admission
+attempt uploads only a missing component. The Image Gateway queue worker is the
+only MPIPS caller, and no application-server-to-application-server file copy or
+internal network submission exists inside `mhcs-core`.
 
 ## MPIPS black-box contract
 
@@ -169,8 +169,8 @@ Operator module
   -> local complete-submission command
 Image Gateway module
   -> capture intent
-  -> concurrent private NPZ persistence + MPIPS conversion
-  -> queued MPIPS-only recovery when needed
+  -> durable private NPZ, manifest, and signature persistence
+  -> atomic source acceptance and queued MPIPS job
 MPIPS
   -> DICOM response
 Image Gateway module

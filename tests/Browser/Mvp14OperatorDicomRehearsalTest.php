@@ -70,6 +70,28 @@ it('takes an operator from X-ray capture to an actual Cornerstone viewport and d
         ->assertSee('NPZ radiografi')
         ->assertSee('Biarkan halaman ini tetap terbuka sampai status unggahan selesai.');
 
+    expect($page->attribute('#capture-progress', 'aria-label'))->toBe(__('Capture upload progress'));
+    expect($page->script('document.querySelector("#capture-form").dataset.statusUrl'))->toContain('/capture/status');
+    expect($page->script('document.body.innerHTML.includes("XMLHttpRequest")'))->toBeTrue();
+    $page->script(<<<'JS'
+        window.XMLHttpRequest = class {
+            constructor() {
+                this.upload = { addEventListener: (_, callback) => { this.progress = callback; } };
+            }
+            open() {}
+            setRequestHeader() {}
+            send() { this.progress({ lengthComputable: true, loaded: 512, total: 1024 }); }
+            abort() {}
+        };
+        document.querySelector('#capture-form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    JS);
+    $page
+        ->assertDisabled('#radiograph_npz')
+        ->assertDisabled('#gain_npz')
+        ->assertButtonDisabled('#capture-form button')
+        ->assertVisible('#capture-progress')
+        ->assertSee('50%');
+
     Http::fake(Http::response(
         str_repeat("\0", 128).'DICM'.'browser dicom',
         200,
@@ -155,6 +177,7 @@ it('lets a second current-shift operator discover and download the accepted stud
         ->click('Hasil DICOM')
         ->wait(1)
         ->assertPathIs('/operator/studies')
+        ->assertVisible('[data-worklist-auto-refresh]')
         ->assertSee('Daftar kerja hasil DICOM')
         ->assertSee($studyId)
         ->click('Buka studi DICOM')

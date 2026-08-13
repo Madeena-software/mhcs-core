@@ -3,7 +3,7 @@
 @section('title', __('Basic-examination worklist'))
 
 @section('content')
-<section aria-labelledby="basic-examination-worklist-title">
+<section aria-labelledby="basic-examination-worklist-title" data-worklist-auto-refresh>
     <h1 id="basic-examination-worklist-title">{{ __('Basic-examination worklist') }}</h1>
     <p class="muted">{{ __('Advance-booking paper tickets admitted to the active site\'s assigned shifts, ordered by ready time.') }}</p>
     <p><a href="{{ route('operator.xray-readiness-worklist') }}">{{ __('View radiography session readiness worklist') }}</a></p>

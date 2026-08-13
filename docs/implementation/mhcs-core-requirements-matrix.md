@@ -652,3 +652,7 @@ At the snapshot date, all active rows were applicable and not-started because re
 - ID lifecycle dispositions: {'rewritten': 549, 'retired-non-normative': 10, 'moved-to-register': 7, 'merged-into': 416}; work-package totals previous/remediated: 25 / 25.
 - Every active applicable requirement has exactly one primary work package.
 - UIL reduction consolidates examples, synonyms, repeated screen instances, and duplicated terminology prose. Link-only citations and external-input names are registers, not product behavior.
+
+### MVP-DEC-041 queued capture traceability
+
+For `ARCH-030`, `ARCH-041`, `ARCH-042`, `IMG-006`, `IMG-007`, `IMG-013`, `IMG-028`, `IMG-060`, `OPR-040`, `OPR-046`, `OPR-060`, `OPR-108`, and `OPR-118`, verification must observe one uniform flow: the capture request durably writes the paired NPZ sources plus signed manifest, atomically accepts the capture and queues exactly one `ProcessCaptureSet` after commit, and only that worker calls MPIPS and stores validated DICOM. Capture status exposes only safe state to an authorized current-shift Operator; the existing four worklists refresh without queue mutation; raw NPZ and object details remain inaccessible. Local capacity wording is `PHP_CLI_SERVER_WORKERS=4` plus one `image-gateway` worker, with no route-specific upload worker.

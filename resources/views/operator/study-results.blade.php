@@ -3,7 +3,7 @@
 @section('title', __('DICOM results worklist'))
 
 @section('content')
-<section aria-labelledby="dicom-results-title">
+<section aria-labelledby="dicom-results-title" data-worklist-auto-refresh>
     <h1 id="dicom-results-title">{{ __('DICOM results worklist') }}</h1>
     <p class="muted">{{ __('Accepted studies available to this active site and current shift.') }}</p>
     <section class="card">

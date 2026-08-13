@@ -76,5 +76,12 @@
 
     @yield('content')
 </div>
+<script>
+    (() => {
+        if (!document.querySelector('[data-worklist-auto-refresh]')) return;
+        const timer = window.setInterval(() => window.location.reload(), 5000);
+        window.addEventListener('pagehide', () => window.clearInterval(timer), { once: true });
+    })();
+</script>
 </body>
 </html>

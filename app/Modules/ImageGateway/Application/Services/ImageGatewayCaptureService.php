@@ -8,10 +8,6 @@ use App\Modules\ImageGateway\Application\Jobs\ProcessCaptureSet;
 use App\Modules\ImageGateway\Domain\ImageGatewayException;
 use App\Modules\ImageGateway\Domain\Security\ConversionManifest;
 use App\Modules\ImageGateway\Domain\Security\ManifestSigner;
-use App\Modules\ImageGateway\Domain\Security\PermanentAcceptanceGate;
-use App\Modules\ImageGateway\Domain\Security\SignedManifest;
-use App\Modules\ImageGateway\Domain\Security\ValidationEvidence;
-use App\Modules\ImageGateway\Infrastructure\MpipsClient;
 use App\Shared\Audit\AuditEvent;
 use App\Shared\Audit\AuditStore;
 use App\Shared\Context\AuthenticatedContext;
@@ -28,11 +24,9 @@ use App\Shared\Time\Clock;
 use DateTimeImmutable;
 use GuzzleHttp\Promise\Utils;
 use Illuminate\Database\Query\Builder;
-use Illuminate\Http\Client\Response;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
-use Ramsey\Uuid\Uuid;
 use Throwable;
 
 final readonly class ImageGatewayCaptureService
@@ -50,10 +44,9 @@ final readonly class ImageGatewayCaptureService
         private OutboxStore $outbox,
         private Clock $clock,
         private ManifestSigner $signer,
-        private MpipsClient $mpips,
     ) {}
 
-    /** @return array{submission_id: string, missing: list<string>, status: string} */
+    /** @return array{capture_id: ?string, submission_id: string, missing: list<string>, status: string} */
     public function captureForm(
         AuthenticatedContext $context,
         string $profileId,
@@ -71,13 +64,14 @@ final readonly class ImageGatewayCaptureService
         ]));
 
         return [
+            'capture_id' => $capture === null ? null : (string) $capture->id,
             'submission_id' => (string) ($capture->submission_id ?? Str::uuid()),
             'missing' => $missing,
             'status' => (string) ($capture->status ?? 'capturing'),
         ];
     }
 
-    /** @return array{capture_id: string, study_id: ?string, status: string, missing: list<string>} */
+    /** @return array{capture_id: string, status: string, processing_state: string, missing: list<string>} */
     public function submit(
         AuthenticatedContext $context,
         string $profileId,
@@ -163,6 +157,29 @@ final readonly class ImageGatewayCaptureService
             }
             throw new ImageGatewayException('capture_failure', 'The capture could not be accepted.', $exception);
         }
+    }
+
+    /** @return array{capture_id: ?string, processing_state: string, missing_components: list<string>} */
+    public function captureStatus(
+        AuthenticatedContext $context,
+        string $profileId,
+        string $siteId,
+        string $operatorSiteId,
+        string $admissionId,
+    ): array {
+        $this->assertContext($context, self::CAPTURE_PURPOSE);
+        $this->admission($profileId, $siteId, $operatorSiteId, $admissionId, false, true);
+        $capture = DB::table('image_gateway_capture_sets')->where('admission_id', $admissionId)->first();
+        $missing = $capture === null ? ['radiograph', 'gain'] : array_values(array_filter([
+            $capture->radiograph_status === 'success' ? null : 'radiograph',
+            $capture->gain_status === 'success' ? null : 'gain',
+        ]));
+
+        return [
+            'capture_id' => $capture === null ? null : (string) $capture->id,
+            'processing_state' => $this->processingState($capture, $missing),
+            'missing_components' => $missing,
+        ];
     }
 
     /** @return list<array{study_id: string, format: string, rows: ?int, columns: ?int, accepted_at: string}> */
@@ -275,7 +292,7 @@ final readonly class ImageGatewayCaptureService
         }
 
         foreach (['radiograph', 'gain'] as $type) {
-            if ($uploads[$type] === null || (string) $capture->{$type.'_status'} === 'success') {
+            if ($uploads[$type] === null) {
                 continue;
             }
 
@@ -291,84 +308,49 @@ final readonly class ImageGatewayCaptureService
     private function advance(object $capture, object $admission, string $profileId, string $siteId, string $operatorSiteId, string $submissionId, array $uploads, AuthenticatedContext $context): void
     {
         $captureId = (string) $capture->id;
-        $manifest = $this->ensureManifest($capture, $admission, $profileId, $siteId, $submissionId, $context);
-        $objects = DB::table('image_gateway_capture_objects')->where('capture_set_id', $captureId)->get()->keyBy('object_type');
+        $this->ensureManifest($capture, $admission, $profileId, $siteId, $submissionId, $context);
         $promises = [];
         $handles = [];
-        foreach (['radiograph', 'gain'] as $type) {
-            $upload = $uploads[$type];
-            $status = (string) $capture->{$type.'_status'};
-            if ($upload !== null && $status === 'success') {
-                throw new ImageGatewayException('capture_conflict', 'A completed capture component cannot be replaced.');
-            }
-            if ($upload === null || $status === 'success') {
-                continue;
-            }
-            $handle = fopen($upload['path'], 'rb');
-            if ($handle === false) {
-                throw new ImageGatewayException('capture_failure', 'The temporary NPZ upload is unavailable.');
-            }
-            $handles[] = $handle;
-            $promises[$type] = $this->objects->putStreamAsync(
-                $handle,
-                $upload['bytes'],
-                $upload['checksum'],
-                $context,
-                self::CAPTURE_PURPOSE,
-                OpaqueObjectKey::fromString('objects/'.$captureId.'/'.$type),
-            );
-        }
-
-        $mpipsPromise = null;
-        $mpipsHandles = [];
-        if ((string) $capture->mpips_status === 'pending' && ! DB::table('image_gateway_studies')->where('capture_set_id', $captureId)->exists()) {
-            $mpipsStreams = [];
+        try {
             foreach (['radiograph', 'gain'] as $type) {
                 $upload = $uploads[$type];
-                if ($upload !== null && (string) $capture->{$type.'_status'} !== 'success') {
-                    $stream = fopen($upload['path'], 'rb');
-                } elseif ($objects->get($type) !== null) {
-                    $stream = $this->readObjectStream($objects->get($type), $context);
-                } else {
-                    $stream = false;
-                }
-                if ($stream === false) {
-                    $mpipsStreams = [];
-                    break;
-                }
-                $mpipsStreams[$type] = $stream;
-                $mpipsHandles[] = $stream;
-            }
-            if (count($mpipsStreams) === 2) {
-                $mpipsPromise = $this->mpips->convertStreams($mpipsStreams['radiograph'], $mpipsStreams['gain'], $manifest['bytes']);
-                $promises['mpips'] = $mpipsPromise;
-            }
-        }
-
-        if ($promises !== []) {
-            $settled = Utils::settle($promises)->wait();
-            foreach (['radiograph', 'gain'] as $type) {
-                if (! isset($settled[$type])) {
+                if ($upload === null || (string) $capture->{$type.'_status'} === 'success') {
                     continue;
                 }
-                if ($settled[$type]['state'] === 'fulfilled') {
-                    $this->recordObject($captureId, $type, $settled[$type]['value'], 'application/x-npz');
-                    DB::table('image_gateway_capture_sets')->where('id', $captureId)->update([$type.'_status' => 'success', 'updated_at' => $this->clock->now()]);
-                } else {
-                    DB::table('image_gateway_capture_sets')->where('id', $captureId)->update([$type.'_status' => 'failed', 'updated_at' => $this->clock->now()]);
+                $handle = fopen($upload['path'], 'rb');
+                if ($handle === false) {
+                    throw new ImageGatewayException('capture_failure', 'The temporary NPZ upload is unavailable.');
+                }
+                $handles[] = $handle;
+                $promises[$type] = $this->objects->putStreamAsync(
+                    $handle,
+                    $upload['bytes'],
+                    $upload['checksum'],
+                    $context,
+                    self::CAPTURE_PURPOSE,
+                    OpaqueObjectKey::fromString('objects/'.$captureId.'/'.$type),
+                );
+            }
+
+            if ($promises !== []) {
+                $settled = Utils::settle($promises)->wait();
+                foreach (['radiograph', 'gain'] as $type) {
+                    if (! isset($settled[$type])) {
+                        continue;
+                    }
+                    if ($settled[$type]['state'] === 'fulfilled') {
+                        $this->recordObject($captureId, $type, $settled[$type]['value'], 'application/x-npz');
+                        DB::table('image_gateway_capture_sets')->where('id', $captureId)->update([$type.'_status' => 'success', 'updated_at' => $this->clock->now()]);
+                    } else {
+                        DB::table('image_gateway_capture_sets')->where('id', $captureId)->update([$type.'_status' => 'failed', 'updated_at' => $this->clock->now()]);
+                    }
                 }
             }
-            if (isset($settled['mpips'])) {
-                if ($settled['mpips']['state'] !== 'fulfilled') {
-                    DB::table('image_gateway_capture_sets')->where('id', $captureId)->update(['mpips_status' => 'failed', 'processing_status' => 'retrying', 'last_error_code' => 'transport_failure', 'updated_at' => $this->clock->now()]);
-                } else {
-                    $this->acceptMpipsResponse($captureId, $settled['mpips']['value'], $manifest['signature'], $context);
+        } finally {
+            foreach ($handles as $handle) {
+                if (is_resource($handle)) {
+                    fclose($handle);
                 }
-            }
-        }
-        foreach (array_merge($handles, $mpipsHandles) as $handle) {
-            if (is_resource($handle)) {
-                fclose($handle);
             }
         }
 
@@ -378,9 +360,6 @@ final readonly class ImageGatewayCaptureService
         }
         if ($current->radiograph_status === 'success' && $current->gain_status === 'success') {
             $this->acceptSources($current, $admission, $profileId, $operatorSiteId, $submissionId, $context);
-            if ($current->mpips_status === 'failed' && ! DB::table('image_gateway_studies')->where('capture_set_id', $captureId)->exists()) {
-                ProcessCaptureSet::dispatch($captureId)->onQueue('image-gateway');
-            }
         }
     }
 
@@ -420,11 +399,6 @@ final readonly class ImageGatewayCaptureService
         return ['bytes' => $bytes, 'signature' => $signature];
     }
 
-    private function readObjectStream(object $row, AuthenticatedContext $context)
-    {
-        return $this->objects->getStream($this->grantForRow($row, $context), $context, 'capture-intent', self::CAPTURE_PURPOSE);
-    }
-
     private function grantForRow(object $row, AuthenticatedContext $context): AccessGrant
     {
         return $this->objects->grant(new PrivateObject(
@@ -453,94 +427,57 @@ final readonly class ImageGatewayCaptureService
 
     private function acceptSources(object $capture, object $admission, string $profileId, string $operatorSiteId, string $submissionId, AuthenticatedContext $context): void
     {
-        $now = $this->clock->now();
-        if ($capture->accepted_at !== null) {
-            return;
-        }
-        DB::table('image_gateway_capture_sets')->where('id', $capture->id)->update(['status' => 'accepted', 'accepted_at' => $now, 'updated_at' => $now]);
-        DB::table('operator_queue_admissions')->where('id', $capture->admission_id)->update(['state' => 'awaiting_ai', 'updated_at' => $now]);
-        DB::table('operator_queue_admission_history')->insert([
-            'id' => (string) Str::uuid(), 'operator_queue_admission_id' => $capture->admission_id, 'operator_profile_id' => $profileId,
-            'event_type' => 'capture_accepted', 'from_state' => (string) $admission->state, 'to_state' => 'awaiting_ai', 'operation_id' => $submissionId,
-            'occurred_at' => $now, 'created_at' => $now, 'updated_at' => $now,
-        ]);
-        $metadata = ['capture_id' => (string) $capture->id, 'admission_id' => (string) $capture->admission_id, 'operator_site_id' => $operatorSiteId, 'status' => 'accepted'];
-        $this->audit->append(AuditEvent::fromContext($context, 'image-gateway.capture-accepted', 'image-gateway', 'success', $now, 'image-gateway.capture-set', (string) $capture->id, metadata: $metadata));
-        $this->outbox->record(new VersionedDomainEvent(LocalId::fromString((string) Str::uuid()), 'image-gateway-capture-accepted', 1, $now, $metadata, LocalId::fromString((string) $capture->id), $context->operationId));
-    }
-
-    private function acceptMpipsResponse(string $captureId, mixed $response, string $signature, AuthenticatedContext $context): void
-    {
-        if (! $response instanceof Response || ! $response->successful()) {
-            DB::table('image_gateway_capture_sets')->where('id', $captureId)->update(['mpips_status' => 'failed', 'processing_status' => 'retrying', 'last_error_code' => 'remote_failure', 'last_response_status' => $response instanceof Response ? $response->status() : null, 'updated_at' => $this->clock->now()]);
-
-            return;
-        }
-        try {
-            $result = $this->validateResponse($response);
-            $signed = SignedManifest::fromArray(json_decode($signature, true, 512, JSON_THROW_ON_ERROR));
-            $capture = DB::table('image_gateway_capture_sets')->where('id', $captureId)->first();
-            (new PermanentAcceptanceGate($this->signer))->accept($signed, new ValidationEvidence(true, $signed->manifest->conversionJobId, (string) $capture->radiograph_checksum, (string) $capture->gain_checksum, (string) $capture->manifest_checksum, $signed->signature, $this->uids($result['job_id'])), $this->uids($result['job_id']));
-            try {
-                $this->persistDicom($capture, $result, $context);
-            } catch (Throwable) {
-                $this->persistDicom($capture, $result, $context);
+        DB::transaction(function () use ($capture, $admission, $profileId, $operatorSiteId, $submissionId, $context): void {
+            $row = DB::table('image_gateway_capture_sets')->where('id', $capture->id)->lockForUpdate()->first();
+            if ($row === null || $row->accepted_at !== null) {
+                return;
             }
-            DB::table('image_gateway_capture_sets')->where('id', $captureId)->update(['mpips_status' => 'success', 'dicom_status' => 'success', 'processing_status' => 'completed', 'updated_at' => $this->clock->now()]);
-        } catch (Throwable $exception) {
-            DB::table('image_gateway_capture_sets')->where('id', $captureId)->update(['mpips_status' => 'failed', 'processing_status' => 'retrying', 'last_error_code' => str_contains($exception->getMessage(), 'invalid_transport_response') ? 'transport_invalid' : 'processing_failure', 'updated_at' => $this->clock->now()]);
-        }
-    }
+            if ($row->radiograph_status !== 'success' || $row->gain_status !== 'success'
+                || DB::table('image_gateway_capture_objects')->where('capture_set_id', $row->id)->whereIn('object_type', ['radiograph', 'gain', 'manifest', 'manifest_signature'])->count() !== 4) {
+                return;
+            }
 
-    /** @return array{job_id: string, correlation_id: string, bytes: string, filename: string} */
-    private function validateResponse(Response $response): array
-    {
-        $bytes = $response->body();
-        $jobId = (string) $response->header('X-Conversion-Job-ID');
-        $correlationId = (string) $response->header('X-Correlation-ID');
-        if (strtolower(trim(explode(';', (string) $response->header('Content-Type'))[0])) !== 'application/dicom' || strlen($bytes) < 132 || substr($bytes, 128, 4) !== 'DICM' || ! Str::isUuid($jobId) || ! Str::isUuid($correlationId)) {
-            throw new \RuntimeException('invalid_transport_response');
-        }
-
-        return ['job_id' => $jobId, 'correlation_id' => $correlationId, 'bytes' => $bytes, 'filename' => 'capture-'.str_replace('-', '', $jobId).'.dcm'];
-    }
-
-    /** @param array{job_id: string, correlation_id: string, bytes: string, filename: string} $result */
-    private function persistDicom(object $capture, array $result, AuthenticatedContext $context): void
-    {
-        $stream = fopen('php://temp', 'w+b');
-        if ($stream === false) {
-            throw new \RuntimeException('dicom_persistence_failure');
-        }
-        fwrite($stream, $result['bytes']);
-        rewind($stream);
-        try {
-            $object = $this->objects->putStream($stream, strlen($result['bytes']), hash('sha256', $result['bytes']), $context, self::CAPTURE_PURPOSE, OpaqueObjectKey::fromString('objects/'.$capture->id.'/dicom'));
-            $identifiers = $this->uids($result['job_id']);
-            DB::table('image_gateway_studies')->updateOrInsert(['capture_set_id' => $capture->id], [
-                'id' => (string) Str::uuid(), 'object_key' => (string) $object->key, 'checksum' => $object->checksum, 'bytes' => $object->bytes, 'format' => 'application/dicom', 'filename' => $result['filename'],
-                'study_instance_uid' => $identifiers['study'], 'series_instance_uid' => $identifiers['series'], 'sop_instance_uid' => $identifiers['sop'], 'transfer_syntax' => null, 'window_center' => null, 'window_width' => null, 'rows' => null, 'columns' => null, 'created_at' => $object->createdAt, 'updated_at' => $object->createdAt,
+            $now = $this->clock->now();
+            DB::table('image_gateway_capture_sets')->where('id', $row->id)->update(['status' => 'accepted', 'accepted_at' => $now, 'updated_at' => $now]);
+            DB::table('operator_queue_admissions')->where('id', $row->admission_id)->update(['state' => 'awaiting_ai', 'updated_at' => $now]);
+            DB::table('operator_queue_admission_history')->insert([
+                'id' => (string) Str::uuid(), 'operator_queue_admission_id' => $row->admission_id, 'operator_profile_id' => $profileId,
+                'event_type' => 'capture_accepted', 'from_state' => (string) $admission->state, 'to_state' => 'awaiting_ai', 'operation_id' => $submissionId,
+                'occurred_at' => $now, 'created_at' => $now, 'updated_at' => $now,
             ]);
-        } finally {
-            fclose($stream);
-        }
+            $metadata = ['capture_id' => (string) $row->id, 'admission_id' => (string) $row->admission_id, 'operator_site_id' => $operatorSiteId, 'status' => 'accepted'];
+            $this->audit->append(AuditEvent::fromContext($context, 'image-gateway.capture-accepted', 'image-gateway', 'success', $now, 'image-gateway.capture-set', (string) $row->id, metadata: $metadata));
+            $this->outbox->record(new VersionedDomainEvent(LocalId::fromString((string) Str::uuid()), 'image-gateway-capture-accepted', 1, $now, $metadata, LocalId::fromString((string) $row->id), $context->operationId));
+            ProcessCaptureSet::dispatch((string) $row->id)->onQueue('image-gateway')->afterCommit();
+        });
     }
 
-    /** @return array{study: string, series: string, sop: string} */
-    private function uids(string $jobId): array
-    {
-        $namespace = Uuid::fromString('6ba7b810-9dad-11d1-80b4-00c04fd430c8');
-
-        return ['study' => '2.25.'.Uuid::uuid5($namespace, 'mpips:study:'.$jobId)->getInteger()->toString(), 'series' => '2.25.'.Uuid::uuid5($namespace, 'mpips:series:'.$jobId)->getInteger()->toString(), 'sop' => '2.25.'.Uuid::uuid5($namespace, 'mpips:sop:'.$jobId)->getInteger()->toString()];
-    }
-
-    /** @return array{capture_id: string, study_id: ?string, status: string, missing: list<string>} */
+    /** @return array{capture_id: string, status: string, processing_state: string, missing: list<string>} */
     private function captureState(string $captureId): array
     {
         $capture = DB::table('image_gateway_capture_sets')->where('id', $captureId)->first();
-        $study = DB::table('image_gateway_studies')->where('capture_set_id', $captureId)->value('id');
+        $missing = array_values(array_filter([$capture->radiograph_status === 'success' ? null : 'radiograph', $capture->gain_status === 'success' ? null : 'gain']));
 
-        return ['capture_id' => $captureId, 'study_id' => $study === null ? null : (string) $study, 'status' => (string) $capture->status, 'missing' => array_values(array_filter([$capture->radiograph_status === 'success' ? null : 'radiograph', $capture->gain_status === 'success' ? null : 'gain']))];
+        return ['capture_id' => $captureId, 'status' => (string) $capture->status, 'processing_state' => $this->processingState($capture, $missing), 'missing' => $missing];
+    }
+
+    /** @param list<string> $missing */
+    private function processingState(?object $capture, array $missing): string
+    {
+        if ($capture === null || $missing !== []) {
+            return 'awaiting_sources';
+        }
+        if (DB::table('image_gateway_studies')->where('capture_set_id', $capture->id)->exists()) {
+            return 'ready';
+        }
+        if ((string) $capture->processing_status === 'failed') {
+            return 'failed';
+        }
+        if (in_array((string) $capture->processing_status, ['processing', 'retrying'], true)) {
+            return 'processing';
+        }
+
+        return 'queued';
     }
 
     private function admission(string $profileId, string $siteId, string $operatorSiteId, string $admissionId, bool $lock, bool $allowAccepted = false): object

@@ -633,10 +633,12 @@ accounts, earnings, or payout data.
 
 After the authenticated browser submits the complete set to `mhcs-core`, the
 Operator module invokes one local, idempotent `AcceptCompleteCaptureSet`
-command on the Image Gateway module.
+command on the Image Gateway module. The request waits only for durable source
+acceptance; the Image Gateway queue worker performs MPIPS conversion later.
 
 The active capture page keeps selected browser `File` objects only while the
-request is active and warns the Operator to keep the page open. The command
+upload is active, reports transmitted bytes, and polls safe processing status.
+The command
 contains one immutable metadata manifest, every confirmed radiograph NPZ, and
 the required matching gain NPZ input. The manifest includes
 file names used only for correlation, byte sizes, radiograph/gain checksums,

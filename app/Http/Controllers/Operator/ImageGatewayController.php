@@ -9,6 +9,7 @@ use App\Modules\ImageGateway\Application\Services\ImageGatewayCaptureService;
 use App\Modules\ImageGateway\Domain\ImageGatewayException;
 use App\Modules\Operator\Application\Services\OperatorAuthorization;
 use App\Modules\Operator\Domain\OperatorException;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -37,6 +38,28 @@ final class ImageGatewayController extends Controller
             );
 
             return view('operator.xray-capture', ['admissionId' => $admission, 'form' => $form]);
+        } catch (OperatorException|ImageGatewayException) {
+            abort(403);
+        }
+    }
+
+    public function captureStatus(
+        string $admission,
+        OperatorAuthorization $authorization,
+        ImageGatewayCaptureService $gateway,
+    ): JsonResponse {
+        try {
+            $portal = $authorization->portal();
+            $site = $authorization->portalSite($portal);
+            $status = $gateway->captureStatus(
+                $authorization->current(ImageGatewayCaptureService::CAPTURE_PURPOSE),
+                (string) $portal['profile']->getKey(),
+                (string) $site->getKey(),
+                (string) $site->operator_site_id,
+                $admission,
+            );
+
+            return response()->json($status + ['ready_results_url' => route('operator.study.results')]);
         } catch (OperatorException|ImageGatewayException) {
             abort(403);
         }

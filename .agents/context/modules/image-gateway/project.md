@@ -60,10 +60,10 @@ copying the same clinical file between application servers.
 ## Processing coordination
 
 - Every submitted radiograph NPZ must be processed with its matching gain NPZ.
-- The active MHCS capture request persists both source objects from temporary
-  streams while starting the private MPIPS conversion concurrently. The worker
-  remains the recovery path when both source objects are durable but MPIPS was
-  not accepted.
+- The active MHCS capture request persists both source objects, manifest, and
+  signature to the configured private store. Once the complete source set is
+  durable, it is atomically accepted and the Image Gateway worker queues the
+  private MPIPS conversion.
 - Successful capture results are preserved if a sibling capture fails.
 - Only the failed capture is retried.
 - A failed capture receives three total processing attempts.

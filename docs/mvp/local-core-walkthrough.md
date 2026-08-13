@@ -1,10 +1,10 @@
-# Local Operator-to-MPIPS walkthrough
+# Local Operator-to-DICOM walkthrough
 
 This is one fresh, disposable, non-clinical local integration rehearsal for
-the existing flow:
+the queued capture flow:
 
 ```text
-Operator capture → concurrent private S3/local MPIPS → private DICOM
+Operator capture → durable private source set → queued MPIPS worker → private DICOM
 ```
 
 It is not deployment, production, or release evidence. Do not use a real
@@ -23,7 +23,9 @@ values:
   `MHCS_MANIFEST_KEY_ID`.
 - Database: `DB_CONNECTION`, `DB_HOST`, `DB_PORT`, `DB_DATABASE`,
   `DB_USERNAME`, `DB_PASSWORD`.
-- Private S3: `MHCS_PRIVATE_OBJECT_DISK`, `AWS_ACCESS_KEY_ID`,
+- Private storage: `MHCS_PRIVATE_OBJECT_DISK=local` for this disposable local
+  runtime. Production retains the existing private S3 disk and its variables:
+  `AWS_ACCESS_KEY_ID`,
   `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION`, `AWS_BUCKET`,
   `AWS_USE_PATH_STYLE_ENDPOINT`.
 - MPIPS: `MPIPS_BASE_URL` using the documented local default
@@ -50,10 +52,13 @@ shift, plus the attendance and LCD links. Generated credentials remain in the
 ignored root `credential.txt` with mode `0600`; obtain them locally and never
 copy their contents into documentation, evidence, logs, chat, or commands.
 
-Start these two native processes in separate terminals:
+For the later local redeployment, set the ignored local
+`PHP_CLI_SERVER_WORKERS=4`. The four native HTTP workers are interchangeable
+and serve pages, consent/questionnaire uploads, and NPZ uploads. Start those
+four workers plus the one Image Gateway queue worker in separate terminals:
 
 ```bash
-TARGET="." php artisan serve --host=127.0.0.1 --port=8013
+PHP_CLI_SERVER_WORKERS=4 TARGET="." php artisan serve --host=127.0.0.1 --port=8013
 TARGET="." php artisan queue:work database --queue=image-gateway --timeout=390
 ```
 
@@ -82,10 +87,11 @@ secrets to diagnose a visible terminal failure.
    Do not document its path, filename, bytes, metadata, or contents. Submit
    the pair once; do not resubmit it.
 
-7. Keep the capture page open until the status is terminal. The initial
-   request starts private S3 persistence and MPIPS together. If one NPZ is
-   missing after an interrupted request, the page identifies only that file;
-   retry that component once. MPIPS-only recovery uses the existing worker.
+7. Submit the pair once. The request durably stores the NPZ pair, manifest, and
+   signature, then accepts the capture and queues MPIPS. The page polls safe
+   status until DICOM is ready; after an interruption it identifies only a
+   missing source component and permits only that original component to retry.
+   The existing Image Gateway worker is the only MPIPS caller.
 8. For a successful result, open the DICOM results worklist, open the returned
    study, and confirm the vertical read-only Cornerstone viewer renders with
    automatic VOI and zoom/pan only. Use the normal **Download DICOM**

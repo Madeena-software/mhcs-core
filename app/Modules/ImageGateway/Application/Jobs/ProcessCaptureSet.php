@@ -56,11 +56,11 @@ final class ProcessCaptureSet implements ShouldQueue
         ImageWorkerBoundary::assertCaller(ImageWorkerBoundary::CALLER);
         $capture = DB::table('image_gateway_capture_sets')->where('id', $this->captureSetId)->first();
 
-        if ($capture === null || $capture->processing_status === 'completed' || $capture->processing_status === 'failed') {
+        if ($capture === null || $capture->accepted_at === null || $capture->radiograph_status !== 'success' || $capture->gain_status !== 'success' || $capture->processing_status === 'completed' || $capture->processing_status === 'failed') {
             return;
         }
         if (DB::table('image_gateway_studies')->where('capture_set_id', $this->captureSetId)->exists()) {
-            DB::table('image_gateway_capture_sets')->where('id', $this->captureSetId)->update(['processing_status' => 'completed', 'processing_claim_id' => null, 'processing_lease_expires_at' => null, 'completed_at' => $clock->now(), 'updated_at' => $clock->now()]);
+            DB::table('image_gateway_capture_sets')->where('id', $this->captureSetId)->update(['processing_status' => 'completed', 'mpips_status' => 'success', 'dicom_status' => 'success', 'processing_claim_id' => null, 'processing_lease_expires_at' => null, 'completed_at' => $clock->now(), 'updated_at' => $clock->now()]);
 
             return;
         }
@@ -83,6 +83,7 @@ final class ProcessCaptureSet implements ShouldQueue
                 $now = $clock->now();
                 DB::table('image_gateway_capture_sets')->where('id', $this->captureSetId)->update([
                     'processing_status' => 'failed',
+                    'mpips_status' => 'failed',
                     'last_error_code' => 'retry_budget_exhausted',
                     'failed_at' => $now,
                     'processing_claim_id' => null,
@@ -97,6 +98,7 @@ final class ProcessCaptureSet implements ShouldQueue
             $now = $clock->now();
             DB::table('image_gateway_capture_sets')->where('id', $this->captureSetId)->update([
                 'processing_status' => 'processing',
+                'mpips_status' => 'processing',
                 'attempts' => $attempt,
                 'processing_claim_id' => $claimId,
                 'processing_lease_expires_at' => $now->modify('+'.$this->queueLeaseSeconds().' seconds'),
@@ -295,6 +297,8 @@ final class ProcessCaptureSet implements ShouldQueue
                 if (DB::table('image_gateway_studies')->where('capture_set_id', $this->captureSetId)->exists()) {
                     DB::table('image_gateway_capture_sets')->where('id', $this->captureSetId)->update([
                         'processing_status' => 'completed',
+                        'mpips_status' => 'success',
+                        'dicom_status' => 'success',
                         'processing_claim_id' => null,
                         'processing_lease_expires_at' => null,
                         'completed_at' => $clock->now(),
@@ -326,6 +330,8 @@ final class ProcessCaptureSet implements ShouldQueue
                 ]);
                 DB::table('image_gateway_capture_sets')->where('id', $this->captureSetId)->update([
                     'processing_status' => 'completed',
+                    'mpips_status' => 'success',
+                    'dicom_status' => 'success',
                     'processing_claim_id' => null,
                     'processing_lease_expires_at' => null,
                     'conversion_job_id' => $result['job_id'],
@@ -364,6 +370,7 @@ final class ProcessCaptureSet implements ShouldQueue
             ->where('processing_claim_id', $claimId)
             ->update([
                 'processing_status' => 'retrying',
+                'mpips_status' => 'failed',
                 'last_error_code' => $code,
                 'last_response_status' => $status,
                 'processing_claim_id' => null,
@@ -387,6 +394,8 @@ final class ProcessCaptureSet implements ShouldQueue
             ->where('processing_claim_id', $claimId)
             ->update([
                 'processing_status' => 'failed',
+                'mpips_status' => 'failed',
+                'dicom_status' => 'failed',
                 'last_error_code' => $code,
                 'last_response_status' => $status,
                 'failed_at' => $clock->now(),
