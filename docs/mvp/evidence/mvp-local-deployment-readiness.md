@@ -6,7 +6,9 @@
 **Task revision:** `12e585fad0dfd5db5d9bbd103fb1a882a4b394fa`
 **Implementation baseline:** `19ae9e16c6cae1ec0bfadf29afcf1c5fd6b2abfd`
 **Execution repository revision:** `6c7b6675cd77dec72ed456494fe7c3f55f3dfc49`
-**Terminal state:** `USER TESTING READY`
+**Terminal state:** `STOPPED FOR PLANNING` — local preparation passed; the
+user-led capture journey exposed a separate application defect before source
+acceptance.
 
 ## Redacted readiness evidence
 
@@ -125,3 +127,22 @@ required before the capture journey can continue.
 This record contains no secret, credential, database name, object identifier,
 patient data, NPZ content or metadata, DICOM content or bytes, or external
 service response.
+
+## Planner/Reviewer disposition
+
+**Date:** 2026-08-13
+**Verdict:** `VALID STOP RESULT / PLANNING REQUIRED`
+**Reviewed execution revision:** `552759acc3c81e8eb6136a2c33c48df91852b796`
+
+The local preparation portion of the governing task passed: it used the local
+private filesystem, synthetic data, four native HTTP workers, one
+`image-gateway` worker, and no Executor-side S3/AWS/MPIPS request. The manual
+capture observation is corroborated by the current capture-page source: it
+locks file inputs before calling `new FormData(form)`, so native FormData omits
+them. The task correctly excluded application behavior changes, so the
+Executor stopped instead of broadening scope.
+
+`552759acc3c81e8eb6136a2c33c48df91852b796` is not a new accepted application
+baseline. The separate remediation contract is
+`.agents/tasks/operator-capture-formdata-snapshot-remediation.md`; the user
+must retry the live local journey only after that task is reviewed and accepted.
