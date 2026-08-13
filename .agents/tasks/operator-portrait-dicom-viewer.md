@@ -2,14 +2,14 @@
 title: Operator Portrait DICOM Viewer and Monitor Popup
 document_id: MHCS-TASK-OPERATOR-PORTRAIT-DICOM-VIEWER-001
 version: 1.0
-status: draft
+status: validated-on-publication
 language: en-US
 last_updated: 2026-08-13
 scope:
   - polished read-only Operator DICOM study screen
   - portrait-oriented named browser monitor popup
   - existing protected DICOM delivery and normal attachment download
-authority_note: This remediation revision becomes executable only when this exact content is committed unchanged and its immutable commit SHA is supplied in the Executor handoff. It does not authorize public image access, clinical image editing, deployment, or external calls.
+authority_note: This remediation revision is validated/published only when this exact file is committed unchanged and its immutable commit SHA is supplied in the Executor handoff. It does not authorize public image access, clinical image editing, deployment, or external calls.
 ---
 
 # Executable Task
@@ -23,7 +23,7 @@ authority_note: This remediation revision becomes executable only when this exac
 `.agents/tasks/operator-portrait-dicom-viewer.md`
 
 **Task contract state:**
-`Draft — remediation must be republished with a new immutable governing SHA before execution.`
+`Validated/Published upon immutable publication of this exact remediation content; the governing SHA is supplied externally in the Executor handoff.`
 
 **Delivery objective / Work Package / MVP:**
 `Pre-deployment local MVP — resolve the final product-facing DICOM viewer feedback item`
@@ -61,7 +61,7 @@ remediation. The last accepted implementation remains
 - `.agents/tasks/operator-awaiting-ai-release-and-safe-navigation.md @ d76086c6bb04007c53fd06886e48cd5e2e95b7f3`.
 
 **Task revision:**
-`Resolved when this Draft remediation is committed unchanged; the Planner supplies that full SHA before Executor handoff.`
+`The full SHA of the commit containing this exact remediation task content, supplied by the Planner after publication.`
 
 ## Objective
 
