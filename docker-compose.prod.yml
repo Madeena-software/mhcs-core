@@ -227,9 +227,6 @@ services:
           pids: ${MHCS_IMAGE_WORKER_PIDS_LIMIT:-256}
         reservations:
           memory: 256M
-    cpus: ${MHCS_IMAGE_WORKER_CPU_LIMIT:-1.0}
-    mem_limit: ${MHCS_IMAGE_WORKER_MEMORY_LIMIT:-1G}
-    pids_limit: ${MHCS_IMAGE_WORKER_PIDS_LIMIT:-256}
     command:
       - sh
       - -lc
