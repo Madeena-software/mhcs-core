@@ -16,19 +16,19 @@ authority_note: This task is validated/published only when this exact file is co
 
 ## Task identity
 
-**Task title:**  
+**Task title:**
 `Operator-Readable Schedule and DICOM References`
 
-**Task path:**  
+**Task path:**
 `.agents/tasks/operator-readable-display-references.md`
 
-**Task contract state:**  
+**Task contract state:**
 `Validated/Published upon immutable publication of this exact content; the governing SHA is supplied externally in the Executor handoff.`
 
-**Delivery objective / Work Package / MVP:**  
+**Delivery objective / Work Package / MVP:**
 `Pre-deployment local MVP — resolve the readable-reference finding before the separate DICOM viewer task`
 
-**Owner / designated planning authority:**  
+**Owner / designated planning authority:**
 `Faliq Adlan, CTO`
 
 ## Delivery context
@@ -48,7 +48,7 @@ manual/UI task and remains out of scope.
 
 ## Baseline and task revision
 
-**Implementation baseline:**  
+**Implementation baseline:**
 `9c051813ffc74fae57f305af767224264997cbf7` — accepted Operator capture
 metadata implementation.
 
@@ -57,7 +57,7 @@ metadata implementation.
 - `.agents/tasks/operator-awaiting-ai-release-and-safe-navigation.md @ d76086c6bb04007c53fd06886e48cd5e2e95b7f3`
 - `.agents/tasks/operator-capture-manifest-metadata.md @ b3115bb1ef133091593951908cbc62beb59cfc4e`
 
-**Task revision:**  
+**Task revision:**
 `The full SHA of the commit containing this exact task content, supplied by the Planner after publication.`
 
 ## Objective
