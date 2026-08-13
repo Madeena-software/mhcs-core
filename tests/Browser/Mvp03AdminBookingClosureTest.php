@@ -52,6 +52,7 @@ it('lets a managing administrator create and edit offerings and schedules from n
         ->wait(1)
         ->assertPathIs('/admin/shift-schedules')
         ->assertSeeLink('New Jadwal')
+        ->assertSee($fixture['schedule_display_reference'])
         ->click('a[href$="/admin/shift-schedules/create"]')
         ->wait(1)
         ->assertPathIs('/admin/shift-schedules/create')
@@ -164,7 +165,8 @@ function browserFixture(): array
     DB::table('examination_site_refs')->insert(['id' => $siteId, 'operator_site_id' => 'site-'.$siteId, 'operator_organization_ref_id' => $organizationId, 'code' => 'SITE-BROWSER', 'display_name' => 'Lokasi Browser', 'timezone' => 'Asia/Jakarta', 'active' => true, 'created_at' => $now, 'updated_at' => $now]);
     DB::table('service_offerings')->insert(['id' => $serviceId, 'code' => $serviceCode, 'name' => 'Layanan Browser', 'includes_ai' => true, 'includes_doctor' => false, 'point_price' => '2.5000', 'active' => true, 'created_at' => $now, 'updated_at' => $now]);
     DB::table('point_exchange_rates')->insert(['id' => $rateId, 'rupiah_per_point' => 10000, 'status' => 'active', 'effective_at' => $now, 'configured_by_admin_id' => null, 'created_at' => $now, 'updated_at' => $now]);
-    DB::table('shift_schedules')->insert(['id' => $scheduleId, 'examination_site_id' => $siteId, 'service_offering_id' => $serviceId, 'starts_at' => '2040-05-01 03:00:00', 'ends_at' => '2040-05-01 04:00:00', 'quota' => 5, 'status' => 'open', 'eligible_at' => null, 'created_at' => $now, 'updated_at' => $now]);
+    $scheduleDisplayReference = 'JAD-'.Str::upper(Str::random(8));
+    DB::table('shift_schedules')->insert(['id' => $scheduleId, 'display_reference' => $scheduleDisplayReference, 'examination_site_id' => $siteId, 'service_offering_id' => $serviceId, 'starts_at' => '2040-05-01 03:00:00', 'ends_at' => '2040-05-01 04:00:00', 'quota' => 5, 'status' => 'open', 'eligible_at' => null, 'created_at' => $now, 'updated_at' => $now]);
     DB::table('point_ledger_entries')->insert(['id' => (string) Str::uuid(), 'member_id' => $memberId, 'booking_id' => null, 'funding_source' => 'personal', 'entry_type' => 'credit', 'point_delta' => '10.0000', 'source_reference' => 'test:browser-credit:'.$suffix, 'reverses_id' => null, 'created_at' => $now]);
 
     browserGrant($manageAdmin, ['member.admin.access', 'member.catalogue.read', 'member.catalogue.manage', 'member.schedule.read', 'member.schedule.manage']);
@@ -177,6 +179,7 @@ function browserFixture(): array
         'read_admin' => ['email' => $readAdmin->email],
         'service_id' => $serviceId,
         'schedule_id' => $scheduleId,
+        'schedule_display_reference' => $scheduleDisplayReference,
         'service_code' => $serviceCode,
     ];
 }

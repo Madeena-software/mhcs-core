@@ -175,6 +175,7 @@ it('takes an operator from X-ray capture to an actual Cornerstone viewport and d
     $captureId = (string) DB::table('image_gateway_capture_sets')->value('id');
     app()->call([new ProcessCaptureSet($captureId), 'handle']);
     $studyId = (string) DB::table('image_gateway_studies')->value('id');
+    $studyReference = (string) DB::table('image_gateway_studies')->value('display_reference');
     if ($studyId === '') {
         throw new RuntimeException($response->getStatusCode().' '.json_encode(session()->all()));
     }
@@ -183,6 +184,7 @@ it('takes an operator from X-ray capture to an actual Cornerstone viewport and d
         ->navigate('/operator/studies/'.$studyId)
         ->wait(2)
         ->assertPathIs('/operator/studies/'.$studyId)
+        ->assertSee($studyReference)
         ->assertSee('VOI otomatis')
         ->assertSee('Hanya zoom dan geser')
         ->assertDontSee('Window/Level')
@@ -228,6 +230,7 @@ it('lets a second current-shift operator discover and download the accepted stud
     $captureId = (string) DB::table('image_gateway_capture_sets')->value('id');
     app()->call([new ProcessCaptureSet($captureId), 'handle']);
     $studyId = (string) DB::table('image_gateway_studies')->value('id');
+    $studyReference = (string) DB::table('image_gateway_studies')->value('display_reference');
     $this->actingAsGuest();
     $this->flushSession();
 
@@ -246,10 +249,11 @@ it('lets a second current-shift operator discover and download the accepted stud
         ->assertPathIs('/operator/studies')
         ->assertVisible('[data-worklist-auto-refresh]')
         ->assertSee('Daftar kerja hasil DICOM')
-        ->assertSee($studyId)
+        ->assertSee($studyReference)
         ->click('Buka studi DICOM')
         ->wait(2)
         ->assertPathIs('/operator/studies/'.$studyId)
+        ->assertSee($studyReference)
         ->assertSee('VOI otomatis')
         ->assertSee('Hanya zoom dan geser')
         ->assertVisible('[data-testid="dicom-viewport"]');

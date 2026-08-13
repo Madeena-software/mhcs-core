@@ -50,6 +50,7 @@ final class ShiftScheduleResource extends Resource
     public static function table(Table $table): Table
     {
         return $table->columns([
+            TextColumn::make('display_reference')->label(__('Schedule reference'))->searchable(),
             TextColumn::make('site.display_name')->label('Lokasi')->searchable(),
             TextColumn::make('service.name')->label('Layanan')->searchable(),
             TextColumn::make('starts_at')->label('Mulai')->dateTime()->sortable(),

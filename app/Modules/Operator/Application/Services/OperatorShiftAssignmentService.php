@@ -106,7 +106,9 @@ final readonly class OperatorShiftAssignmentService
             ->where('operator_shift_assignments.status', 'active')
             ->where('operator_eligible_shifts.operator_site_id', $site->operator_site_id)
             ->where('operator_eligible_shifts.sync_status', 'eligible')
+            ->join('shift_schedules', 'shift_schedules.id', '=', 'operator_eligible_shifts.member_schedule_id')
             ->select('operator_eligible_shifts.*')
+            ->addSelect('shift_schedules.display_reference as schedule_display_reference')
             ->orderBy('operator_eligible_shifts.schedule_starts_at')
             ->get()
             ->all();

@@ -21,6 +21,7 @@ use App\Shared\Time\Clock;
 use DateTimeImmutable;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Response;
@@ -289,58 +290,70 @@ final class ProcessCaptureSet implements ShouldQueue
 
         $inserted = false;
         try {
-            DB::transaction(function () use ($result, $identifiers, $claimId, $studyObject, $clock): void {
-                $row = DB::table('image_gateway_capture_sets')->where('id', $this->captureSetId)->lockForUpdate()->first();
-                if ($row === null || $row->processing_status === 'completed' || $row->processing_claim_id !== $claimId) {
-                    return;
-                }
-                if (DB::table('image_gateway_studies')->where('capture_set_id', $this->captureSetId)->exists()) {
-                    DB::table('image_gateway_capture_sets')->where('id', $this->captureSetId)->update([
-                        'processing_status' => 'completed',
-                        'mpips_status' => 'success',
-                        'dicom_status' => 'success',
-                        'processing_claim_id' => null,
-                        'processing_lease_expires_at' => null,
-                        'completed_at' => $clock->now(),
-                        'updated_at' => $clock->now(),
-                    ]);
+            for ($attempt = 0; $attempt < 5; $attempt++) {
+                try {
+                    DB::transaction(function () use ($result, $identifiers, $claimId, $studyObject, $clock): void {
+                        $row = DB::table('image_gateway_capture_sets')->where('id', $this->captureSetId)->lockForUpdate()->first();
+                        if ($row === null || $row->processing_status === 'completed' || $row->processing_claim_id !== $claimId) {
+                            return;
+                        }
+                        if (DB::table('image_gateway_studies')->where('capture_set_id', $this->captureSetId)->exists()) {
+                            DB::table('image_gateway_capture_sets')->where('id', $this->captureSetId)->update([
+                                'processing_status' => 'completed',
+                                'mpips_status' => 'success',
+                                'dicom_status' => 'success',
+                                'processing_claim_id' => null,
+                                'processing_lease_expires_at' => null,
+                                'completed_at' => $clock->now(),
+                                'updated_at' => $clock->now(),
+                            ]);
 
-                    return;
-                }
+                            return;
+                        }
 
-                $now = $clock->now();
-                DB::table('image_gateway_studies')->insert([
-                    'id' => (string) Str::uuid(),
-                    'capture_set_id' => $this->captureSetId,
-                    'object_key' => (string) $studyObject->key,
-                    'checksum' => $studyObject->checksum,
-                    'bytes' => $studyObject->bytes,
-                    'format' => 'application/dicom',
-                    'filename' => $result['filename'],
-                    'study_instance_uid' => $identifiers['study'],
-                    'series_instance_uid' => $identifiers['series'],
-                    'sop_instance_uid' => $identifiers['sop'],
-                    'transfer_syntax' => null,
-                    'window_center' => null,
-                    'window_width' => null,
-                    'rows' => null,
-                    'columns' => null,
-                    'created_at' => $now,
-                    'updated_at' => $now,
-                ]);
-                DB::table('image_gateway_capture_sets')->where('id', $this->captureSetId)->update([
-                    'processing_status' => 'completed',
-                    'mpips_status' => 'success',
-                    'dicom_status' => 'success',
-                    'processing_claim_id' => null,
-                    'processing_lease_expires_at' => null,
-                    'conversion_job_id' => $result['job_id'],
-                    'correlation_id' => $result['correlation_id'],
-                    'completed_at' => $now,
-                    'updated_at' => $now,
-                ]);
-            });
-            $inserted = DB::table('image_gateway_studies')->where('capture_set_id', $this->captureSetId)->where('object_key', (string) $studyObject->key)->exists();
+                        $now = $clock->now();
+                        $displayReference = 'DCM-'.Str::upper(Str::random(8));
+                        DB::table('image_gateway_studies')->insert([
+                            'id' => (string) Str::uuid(),
+                            'capture_set_id' => $this->captureSetId,
+                            'display_reference' => $displayReference,
+                            'object_key' => (string) $studyObject->key,
+                            'checksum' => $studyObject->checksum,
+                            'bytes' => $studyObject->bytes,
+                            'format' => 'application/dicom',
+                            'filename' => $displayReference.'.dcm',
+                            'study_instance_uid' => $identifiers['study'],
+                            'series_instance_uid' => $identifiers['series'],
+                            'sop_instance_uid' => $identifiers['sop'],
+                            'transfer_syntax' => null,
+                            'window_center' => null,
+                            'window_width' => null,
+                            'rows' => null,
+                            'columns' => null,
+                            'created_at' => $now,
+                            'updated_at' => $now,
+                        ]);
+                        DB::table('image_gateway_capture_sets')->where('id', $this->captureSetId)->update([
+                            'processing_status' => 'completed',
+                            'mpips_status' => 'success',
+                            'dicom_status' => 'success',
+                            'processing_claim_id' => null,
+                            'processing_lease_expires_at' => null,
+                            'conversion_job_id' => $result['job_id'],
+                            'correlation_id' => $result['correlation_id'],
+                            'completed_at' => $now,
+                            'updated_at' => $now,
+                        ]);
+                    });
+                    $inserted = DB::table('image_gateway_studies')->where('capture_set_id', $this->captureSetId)->where('object_key', (string) $studyObject->key)->exists();
+                    break;
+                } catch (QueryException $exception) {
+                    $message = strtolower($exception->getMessage());
+                    if ($attempt === 4 || ! str_contains($message, 'display_reference') || (! str_contains($message, 'unique') && ! str_contains($message, 'duplicate'))) {
+                        throw $exception;
+                    }
+                }
+            }
         } catch (Throwable $exception) {
             $objects->delete($studyObject);
             throw $exception;

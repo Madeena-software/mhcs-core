@@ -192,6 +192,7 @@ final class Mvp04lAtomicXrayClaimTest extends TestCase
         $foreignScheduleId = (string) Str::uuid();
         $foreignSchedule = (array) DB::table('shift_schedules')->where('id', $fixture['scheduleId'])->first();
         $foreignSchedule['id'] = $foreignScheduleId;
+        $foreignSchedule['display_reference'] = 'JAD-'.Str::upper(Str::random(8));
         DB::table('shift_schedules')->insert($foreignSchedule);
         $foreignFixture = [...$fixture, 'scheduleId' => $foreignScheduleId, 'bookingId' => $this->copyBooking($fixture, $foreignScheduleId)];
         $foreignAdmission = $this->insertAdmission($foreignFixture, 'XRAY-FOREIGN-1', 'xray');

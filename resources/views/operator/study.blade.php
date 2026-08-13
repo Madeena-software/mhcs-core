@@ -1,6 +1,6 @@
 @extends('operator.layout')
 
-@section('title', __('DICOM study'))
+@section('title', __('DICOM study :reference', ['reference' => $display_reference ?? __('Identifier withheld')]))
 
 @section('content')
 <style>
@@ -15,7 +15,7 @@
          data-display-error-message="{{ __('The DICOM study could not be displayed.') }}"
          @if ($window_center !== null) data-window-center="{{ $window_center }}" @endif
          @if ($window_width !== null) data-window-width="{{ $window_width }}" @endif>
-    <h1 id="dicom-study-title">{{ __('DICOM study') }}</h1>
+    <h1 id="dicom-study-title">{{ __('DICOM study :reference', ['reference' => $display_reference ?? __('Identifier withheld')]) }}</h1>
     <p class="muted">{{ __('Automatic VOI. Zoom and pan only.') }}</p>
     <div class="dicom-viewport-stack" aria-label="{{ __('DICOM viewport stack') }}">
         <div class="dicom-viewport" data-testid="dicom-viewport" aria-label="{{ __('DICOM image viewport') }}"></div>

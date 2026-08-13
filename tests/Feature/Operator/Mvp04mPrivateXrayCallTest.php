@@ -176,6 +176,7 @@ final class Mvp04mPrivateXrayCallTest extends TestCase
         $foreignScheduleId = (string) Str::uuid();
         $foreignSchedule = (array) DB::table('shift_schedules')->where('id', $fixture['scheduleId'])->first();
         $foreignSchedule['id'] = $foreignScheduleId;
+        $foreignSchedule['display_reference'] = 'JAD-'.Str::upper(Str::random(8));
         DB::table('shift_schedules')->insert($foreignSchedule);
         $foreign = $this->admit([...$fixture, 'scheduleId' => $foreignScheduleId, 'bookingId' => $this->copyBooking($fixture, $foreignScheduleId)], 'XRAY-CROSS-SHIFT');
         DB::table('operator_queue_admissions')->where('id', $foreign->id)->update(['operator_profile_id' => $fixture['profileId'], 'claimed_at' => now()]);

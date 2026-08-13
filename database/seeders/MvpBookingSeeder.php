@@ -101,9 +101,11 @@ final class MvpBookingSeeder extends Seeder
         }
 
         $id = (string) Str::uuid();
+        $displayReference = 'JAD-'.Str::upper(Str::random(8));
         $now = app(Clock::class)->now();
         DB::table('shift_schedules')->insert([
             'id' => $id,
+            'display_reference' => $displayReference,
             'examination_site_id' => $siteId,
             'service_offering_id' => $service->id,
             'starts_at' => $startsAt,

@@ -342,7 +342,7 @@ final class Mvp04OperatorFoundationTest extends TestCase
         $scheduleId = (string) Str::uuid();
         DB::table('service_offerings')->insert(['id' => (string) Str::uuid(), 'code' => 'ADMIN-RAD', 'name' => 'Admin Radiography', 'includes_ai' => false, 'includes_doctor' => false, 'point_price' => '1.0000', 'active' => true, 'created_at' => now(), 'updated_at' => now()]);
         $serviceId = (string) DB::table('service_offerings')->where('code', 'ADMIN-RAD')->value('id');
-        DB::table('shift_schedules')->insert(['id' => $scheduleId, 'examination_site_id' => $memberSite->id, 'service_offering_id' => $serviceId, 'starts_at' => '2040-02-01 03:00:00', 'ends_at' => '2040-02-01 04:00:00', 'quota' => 5, 'status' => 'open', 'eligible_at' => null, 'created_at' => now(), 'updated_at' => now()]);
+        DB::table('shift_schedules')->insert(['id' => $scheduleId, 'display_reference' => 'JAD-'.Str::upper(Str::random(8)), 'examination_site_id' => $memberSite->id, 'service_offering_id' => $serviceId, 'starts_at' => '2040-02-01 03:00:00', 'ends_at' => '2040-02-01 04:00:00', 'quota' => 5, 'status' => 'open', 'eligible_at' => null, 'created_at' => now(), 'updated_at' => now()]);
 
         app(OperatorSiteService::class)->setActive($site, false);
 
@@ -372,7 +372,7 @@ final class Mvp04OperatorFoundationTest extends TestCase
         DB::table('operator_organization_refs')->insert(['id' => $organizationId, 'operator_organization_id' => 'synthetic-operator-org-mvp03', 'name' => 'Synthetic Operator Organization', 'source_version' => 'mvp04-v1', 'active' => true, 'created_at' => now(), 'updated_at' => now()]);
         DB::table('examination_site_refs')->insert(['id' => $siteReferenceId, 'operator_site_id' => 'synthetic-operator-site-mvp03', 'operator_organization_ref_id' => $organizationId, 'code' => 'SYN-MVP03', 'display_name' => 'Synthetic MVP-03 site', 'timezone' => 'Asia/Jakarta', 'source_version' => 'mvp04-v1', 'active' => true, 'created_at' => now(), 'updated_at' => now()]);
         DB::table('service_offerings')->insert(['id' => $serviceId, 'code' => 'SEED-RAD', 'name' => 'Seed Radiography', 'includes_ai' => false, 'includes_doctor' => false, 'point_price' => '1.0000', 'active' => true, 'created_at' => now(), 'updated_at' => now()]);
-        DB::table('shift_schedules')->insert(['id' => $scheduleId, 'examination_site_id' => $siteReferenceId, 'service_offering_id' => $serviceId, 'starts_at' => '2040-03-01 03:00:00', 'ends_at' => '2040-03-01 04:00:00', 'quota' => 5, 'status' => 'open', 'eligible_at' => now(), 'created_at' => now(), 'updated_at' => now()]);
+        DB::table('shift_schedules')->insert(['id' => $scheduleId, 'display_reference' => 'JAD-'.Str::upper(Str::random(8)), 'examination_site_id' => $siteReferenceId, 'service_offering_id' => $serviceId, 'starts_at' => '2040-03-01 03:00:00', 'ends_at' => '2040-03-01 04:00:00', 'quota' => 5, 'status' => 'open', 'eligible_at' => now(), 'created_at' => now(), 'updated_at' => now()]);
 
         $this->seed(MvpOperatorSeeder::class);
         $counts = [

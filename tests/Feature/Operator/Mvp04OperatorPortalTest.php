@@ -553,8 +553,10 @@ final class Mvp04OperatorPortalTest extends TestCase
             'created_at' => $now,
             'updated_at' => $now,
         ]);
+        $displayReference = 'DCM-'.Str::upper(Str::random(8));
         DB::table('image_gateway_studies')->insert([
             'id' => $studyId,
+            'display_reference' => $displayReference,
             'capture_set_id' => $captureId,
             'object_key' => 'studies/'.$studyId,
             'checksum' => hash('sha256', $studyId),
@@ -568,7 +570,7 @@ final class Mvp04OperatorPortalTest extends TestCase
             'window_width' => null,
             'rows' => null,
             'columns' => null,
-            'filename' => 'capture.dcm',
+            'filename' => $displayReference.'.dcm',
             'created_at' => $now,
             'updated_at' => $now,
         ]);

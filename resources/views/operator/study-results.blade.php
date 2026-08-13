@@ -21,7 +21,7 @@
                 <tbody>
                 @forelse ($studies as $study)
                     <tr>
-                        <td>{{ $study['study_id'] }}</td>
+                        <td><strong>{{ $study['display_reference'] }}</strong></td>
                         <td>{{ $study['format'] }}</td>
                         <td>{{ $study['columns'] }} × {{ $study['rows'] }}</td>
                         <td><time datetime="{{ $study['accepted_at'] }}">{{ $study['accepted_at'] }}</time></td>

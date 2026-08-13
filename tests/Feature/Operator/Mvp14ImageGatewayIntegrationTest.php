@@ -11,6 +11,7 @@ use App\Shared\Storage\PrivateObjectStore;
 use DateTimeImmutable;
 use GuzzleHttp\Promise\Promise;
 use GuzzleHttp\Promise\PromiseInterface;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Http\Client\Response;
@@ -18,6 +19,7 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Mockery;
@@ -536,20 +538,23 @@ final class Mvp14ImageGatewayIntegrationTest extends TestCase
         app()->call([new ProcessCaptureSet($captureId), 'handle']);
         $studyId = (string) DB::table('image_gateway_studies')->value('id');
         $this->assertNotSame('', $studyId);
+        $studyReference = (string) DB::table('image_gateway_studies')->value('display_reference');
+        $this->assertMatchesRegularExpression('/\ADCM-[A-Z0-9]{8}\z/', $studyReference);
         app()->call([new ProcessCaptureSet($captureId), 'handle']);
         $this->assertSame(1, DB::table('image_gateway_studies')->count());
+        $this->assertSame($studyReference, DB::table('image_gateway_studies')->value('display_reference'));
         Http::assertSentCount(1);
 
         $second = $this->secondOperatorFixture($fixture);
         $this->actingAs($second['operator'])->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
-        $this->get(route('operator.study.results'))->assertOk()->assertSee($studyId);
+        $this->get(route('operator.study.results'))->assertOk()->assertSee($studyReference)->assertDontSee('<strong>'.$studyId.'</strong>', false);
         $this->get(route('operator.study.dicom', $studyId))
             ->assertOk()
             ->assertHeader('Content-Type', 'application/dicom')
             ->assertHeader('Cache-Control', 'no-store, private');
         $download = $this->get(route('operator.study.download', $studyId));
         $download->assertOk();
-        $this->assertStringStartsWith('attachment; filename="capture-', (string) $download->headers->get('Content-Disposition'));
+        $this->assertSame('attachment; filename="'.$studyReference.'.dcm"', (string) $download->headers->get('Content-Disposition'));
 
         DB::table('members')->where('id', $fixture['memberId'])->update([
             'nik_lookup_digest' => hash('sha256', 'image-gateway-foreign-'.$fixture['memberId']),
@@ -568,6 +573,37 @@ final class Mvp14ImageGatewayIntegrationTest extends TestCase
         $this->actingAs($fixture['memberUser'])->withSession([]);
         $this->get(route('operator.study.results'))->assertForbidden();
         $this->get('/operator/studies/'.$studyId.'/npz')->assertNotFound();
+    }
+
+    public function test_display_reference_migration_backfills_a_legacy_study(): void
+    {
+        $fixture = $this->operatorFixture(false);
+        $this->actingAs($fixture['operator'])->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
+        $admission = $this->insertCalledXrayAdmission($fixture);
+        Http::fake($this->validMpipsResponse());
+        $this->postCapture($admission);
+        $captureId = (string) DB::table('image_gateway_capture_sets')->value('id');
+        app()->call([new ProcessCaptureSet($captureId), 'handle']);
+        $studyId = (string) DB::table('image_gateway_studies')->value('id');
+
+        DB::table('image_gateway_studies')->where('id', $studyId)->update(['filename' => 'capture-'.$studyId.'.dcm']);
+        DB::statement('PRAGMA defer_foreign_keys = ON');
+        Schema::table('shift_schedules', function (Blueprint $table): void {
+            $table->dropUnique('shift_schedules_display_reference_unique');
+            $table->dropColumn('display_reference');
+        });
+        Schema::table('image_gateway_studies', function (Blueprint $table): void {
+            $table->dropUnique('image_gateway_studies_display_reference_unique');
+            $table->dropColumn('display_reference');
+        });
+        $migration = require base_path('database/migrations/2026_08_13_000003_add_operator_display_references.php');
+        $migration->up();
+
+        $studyReference = (string) DB::table('image_gateway_studies')->where('id', $studyId)->value('display_reference');
+        $this->assertMatchesRegularExpression('/\ADCM-[A-Z0-9]{8}\z/', $studyReference);
+        $this->assertSame($studyReference.'.dcm', DB::table('image_gateway_studies')->where('id', $studyId)->value('filename'));
+        $migration->down();
+        $migration->up();
     }
 
     private function insertCalledXrayAdmission(array $fixture): string

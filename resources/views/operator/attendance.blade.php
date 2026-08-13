@@ -5,7 +5,7 @@
 @section('content')
 <section aria-labelledby="attendance-title">
     <h1 id="attendance-title">{{ __('Attendance list') }}</h1>
-    <p class="muted">{{ $site->display_name }} · {{ __('schedule') }} <code>{{ $scheduleId }}</code> · {{ __(':count eligible members', ['count' => count($rows)]) }}</p>
+    <p class="muted">{{ $site->display_name }} · {{ __('Schedule reference') }} <strong>{{ $scheduleDisplayReference ?: __('Identifier withheld') }}</strong> · {{ __(':count eligible members', ['count' => count($rows)]) }}</p>
     <section class="card" style="margin-top: 18px">
         <div class="table-wrap">
             <table>

@@ -26,8 +26,10 @@ use App\Shared\Audit\AuditStore;
 use App\Shared\Context\AuthenticatedContextProvider;
 use App\Shared\Time\Clock;
 use Filament\Facades\Filament;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Livewire\Livewire;
 use Tests\TestCase;
@@ -73,6 +75,7 @@ final class Mvp03BookingAdministrationTest extends TestCase
 
         $this->assertDatabaseHas('service_offerings', ['id' => $offering->getKey(), 'point_price' => '3.1250']);
         $this->assertDatabaseHas('shift_schedules', ['id' => $schedule->getKey(), 'examination_site_id' => $siteId, 'quota' => 5]);
+        $this->assertMatchesRegularExpression('/\AJAD-[A-Z0-9]{8}\z/', (string) $schedule->display_reference);
         $this->assertSame(2, DB::table('audit_events')->whereIn('action', ['member.service-offering.create', 'member.schedule.create'])->count());
         $this->assertTrue(ServiceOfferingResource::canCreate());
         $this->assertTrue(ShiftScheduleResource::canCreate());
@@ -83,6 +86,45 @@ final class Mvp03BookingAdministrationTest extends TestCase
         Livewire::test(ListShiftSchedules::class)
             ->assertActionExists('create')
             ->assertTableActionExists('edit', null, $schedule);
+
+        DB::table('shift_schedules')->where('id', $schedule->getKey())->update(['display_reference' => 'JAD-AAAAAAAA']);
+        Str::createRandomStringsUsingSequence(['AAAAAAAA', 'BBBBBBBB']);
+        try {
+            $collisionRetry = app(Mvp03ScheduleService::class)->create(['examination_site_id' => $siteId, 'service_offering_id' => $offering->getKey(), 'starts_at' => '2040-02-02T10:00:00+07:00', 'ends_at' => '2040-02-02T11:00:00+07:00', 'quota' => 5]);
+        } finally {
+            Str::createRandomStringsNormally();
+        }
+        $this->assertSame('JAD-BBBBBBBB', $collisionRetry->display_reference);
+    }
+
+    public function test_display_reference_migration_backfills_existing_rows(): void
+    {
+        $admin = $this->admin(['member.catalogue.read', 'member.catalogue.manage', 'member.schedule.read', 'member.schedule.manage']);
+        $this->actingAs($admin);
+        $now = now();
+        $organizationId = (string) Str::uuid();
+        $siteId = (string) Str::uuid();
+        DB::table('operator_organization_refs')->insert(['id' => $organizationId, 'operator_organization_id' => 'org-'.$organizationId, 'name' => 'Organisasi Migrasi', 'active' => true, 'created_at' => $now, 'updated_at' => $now]);
+        DB::table('examination_site_refs')->insert(['id' => $siteId, 'operator_site_id' => 'site-'.$siteId, 'operator_organization_ref_id' => $organizationId, 'code' => 'SITE-MIGRATION', 'display_name' => 'Lokasi Migrasi', 'timezone' => 'Asia/Jakarta', 'active' => true, 'created_at' => $now, 'updated_at' => $now]);
+        $offering = app(Mvp03OfferingService::class)->create(['code' => 'RAD-MIGRATION', 'name' => 'Radiografi Migrasi', 'point_price' => '1.0000', 'includes_ai' => false, 'includes_doctor' => false, 'active' => true]);
+        $schedule = app(Mvp03ScheduleService::class)->create(['examination_site_id' => $siteId, 'service_offering_id' => $offering->getKey(), 'starts_at' => '2040-06-01T10:00:00+07:00', 'ends_at' => '2040-06-01T11:00:00+07:00', 'quota' => 5]);
+
+        Schema::table('shift_schedules', function (Blueprint $table): void {
+            $table->dropUnique('shift_schedules_display_reference_unique');
+            $table->dropColumn('display_reference');
+        });
+        Schema::table('image_gateway_studies', function (Blueprint $table): void {
+            $table->dropUnique('image_gateway_studies_display_reference_unique');
+            $table->dropColumn('display_reference');
+        });
+        $migration = require base_path('database/migrations/2026_08_13_000003_add_operator_display_references.php');
+        $migration->up();
+
+        $this->assertMatchesRegularExpression('/\AJAD-[A-Z0-9]{8}\z/', (string) DB::table('shift_schedules')->where('id', $schedule->getKey())->value('display_reference'));
+        $migration->down();
+        $this->assertFalse(Schema::hasColumn('shift_schedules', 'display_reference'));
+        $this->assertFalse(Schema::hasColumn('image_gateway_studies', 'display_reference'));
+        $migration->up();
     }
 
     public function test_filament_create_and_edit_pages_use_services_and_reauthorize_after_mount(): void
@@ -119,6 +161,7 @@ final class Mvp03BookingAdministrationTest extends TestCase
             ->call('save')
             ->assertHasNoErrors();
         $this->assertDatabaseHas('shift_schedules', ['id' => $schedule->id, 'quota' => 6]);
+        $this->assertSame($schedule->display_reference, DB::table('shift_schedules')->where('id', $schedule->id)->value('display_reference'));
 
         $mounted = Livewire::test(CreateServiceOffering::class);
         DB::table('authorization_permission_assignments')
@@ -179,7 +222,7 @@ final class Mvp03BookingAdministrationTest extends TestCase
         DB::table('examination_site_refs')->insert(['id' => $siteId, 'operator_site_id' => 'site-'.$siteId, 'operator_organization_ref_id' => $organizationId, 'code' => 'SITE-AUDIT', 'display_name' => 'Audit Site', 'timezone' => 'Asia/Jakarta', 'active' => true, 'created_at' => $now, 'updated_at' => $now]);
         DB::table('service_offerings')->insert(['id' => $serviceId, 'code' => 'AUDIT-SERVICE', 'name' => 'Audit Service', 'includes_ai' => true, 'includes_doctor' => false, 'point_price' => '1.0000', 'active' => true, 'created_at' => $now, 'updated_at' => $now]);
         DB::table('point_exchange_rates')->insert(['id' => $rateId, 'rupiah_per_point' => 10000, 'status' => 'active', 'effective_at' => $now, 'configured_by_admin_id' => null, 'created_at' => $now, 'updated_at' => $now]);
-        DB::table('shift_schedules')->insert(['id' => $scheduleId, 'examination_site_id' => $siteId, 'service_offering_id' => $serviceId, 'starts_at' => '2040-01-01 03:00:00', 'ends_at' => '2040-01-01 04:00:00', 'quota' => 5, 'status' => 'open', 'eligible_at' => null, 'created_at' => $now, 'updated_at' => $now]);
+        DB::table('shift_schedules')->insert(['id' => $scheduleId, 'display_reference' => 'JAD-'.Str::upper(Str::random(8)), 'examination_site_id' => $siteId, 'service_offering_id' => $serviceId, 'starts_at' => '2040-01-01 03:00:00', 'ends_at' => '2040-01-01 04:00:00', 'quota' => 5, 'status' => 'open', 'eligible_at' => null, 'created_at' => $now, 'updated_at' => $now]);
         DB::table('bookings')->insert(['id' => $bookingId, 'member_id' => $memberId, 'shift_schedule_id' => $scheduleId, 'service_offering_id' => $serviceId, 'examination_site_id_snapshot' => $siteId, 'booking_type' => 'b2c', 'funding_source' => 'personal', 'status' => 'confirmed', 'service_code_snapshot' => 'AUDIT-SERVICE', 'point_cost_snapshot' => '1.0000', 'point_exchange_rate_id' => $rateId, 'includes_ai_snapshot' => true, 'includes_doctor_snapshot' => false, 'site_code_snapshot' => 'SITE-AUDIT', 'site_name_snapshot' => 'Audit Site', 'site_timezone_snapshot' => 'Asia/Jakarta', 'created_at' => $now, 'confirmed_at' => $now, 'updated_at' => $now]);
         $ledgerId = (string) Str::uuid();
         $orderId = (string) Str::uuid();

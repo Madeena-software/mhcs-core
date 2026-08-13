@@ -212,6 +212,13 @@ final class ImageGatewayController extends Controller
         try {
             $portal = $authorization->portal();
             $site = $authorization->portalSite($portal);
+            $metadata = $gateway->study(
+                $authorization->current(ImageGatewayCaptureService::STUDY_PURPOSE),
+                (string) $portal['profile']->getKey(),
+                (string) $site->getKey(),
+                (string) $site->operator_site_id,
+                $study,
+            );
             $bytes = $gateway->dicom(
                 $authorization->current(ImageGatewayCaptureService::STUDY_PURPOSE),
                 (string) $portal['profile']->getKey(),
@@ -222,7 +229,7 @@ final class ImageGatewayController extends Controller
 
             return response($bytes, 200, [
                 'Content-Type' => 'application/dicom',
-                'Content-Disposition' => $disposition.'; filename="capture-'.$study.'.dcm"',
+                'Content-Disposition' => $disposition.'; filename="'.$metadata['filename'].'"',
                 'Cache-Control' => 'no-store, private',
                 'X-Content-Type-Options' => 'nosniff',
             ]);

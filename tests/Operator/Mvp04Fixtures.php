@@ -25,6 +25,7 @@ trait Mvp04Fixtures
         $siteReferenceId = (string) Str::uuid();
         $serviceId = (string) Str::uuid();
         $scheduleId = (string) Str::uuid();
+        $scheduleDisplayReference = 'JAD-'.Str::upper(Str::random(8));
         $bookingId = (string) Str::uuid();
         $profileId = (string) Str::uuid();
         $eligibleId = (string) Str::uuid();
@@ -101,6 +102,7 @@ trait Mvp04Fixtures
         ]);
         DB::table('shift_schedules')->insert([
             'id' => $scheduleId,
+            'display_reference' => $scheduleDisplayReference,
             'examination_site_id' => $siteReferenceId,
             'service_offering_id' => $serviceId,
             'starts_at' => $siteStart,
@@ -204,7 +206,7 @@ trait Mvp04Fixtures
 
         $this->grant($operator, $administrator);
 
-        return compact('operator', 'memberUser', 'memberId', 'siteLocalId', 'siteStableId', 'organizationStableId', 'siteReferenceId', 'serviceId', 'scheduleId', 'bookingId', 'profileId', 'eligibleId');
+        return compact('operator', 'memberUser', 'memberId', 'siteLocalId', 'siteStableId', 'organizationStableId', 'siteReferenceId', 'serviceId', 'scheduleId', 'scheduleDisplayReference', 'bookingId', 'profileId', 'eligibleId');
     }
 
     protected function grant(User $user, bool $administrator = true, array $extraPermissions = []): void

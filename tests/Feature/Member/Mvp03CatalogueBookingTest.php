@@ -132,7 +132,7 @@ final class Mvp03CatalogueBookingTest extends TestCase
         $start = now()->addDays(10)->setTime(3, 0, 0);
         $end = $start->copy()->addHour();
         foreach ([[$scheduleId, $siteId, $serviceId, 'Jadwal Sintetis', 'open'], [$closedScheduleId, $siteId, $serviceId, 'Jadwal tertutup', 'open']] as [$id, $scheduledSiteId, $scheduledServiceId, $label, $status]) {
-            DB::table('shift_schedules')->insert(['id' => $id, 'examination_site_id' => $scheduledSiteId, 'service_offering_id' => $scheduledServiceId, 'starts_at' => $start, 'ends_at' => $end, 'quota' => 5, 'status' => $status, 'eligible_at' => null, 'created_at' => $now, 'updated_at' => $now]);
+            DB::table('shift_schedules')->insert(['id' => $id, 'display_reference' => 'JAD-'.Str::upper(Str::random(8)), 'examination_site_id' => $scheduledSiteId, 'service_offering_id' => $scheduledServiceId, 'starts_at' => $start, 'ends_at' => $end, 'quota' => 5, 'status' => $status, 'eligible_at' => null, 'created_at' => $now, 'updated_at' => $now]);
             if ($label === 'Jadwal tertutup') {
                 DB::table('shift_schedules')->where('id', $id)->update(['status' => 'closed']);
             }

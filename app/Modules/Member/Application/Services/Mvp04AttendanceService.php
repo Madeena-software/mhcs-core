@@ -88,6 +88,7 @@ final readonly class Mvp04AttendanceService implements OperatorAttendanceContrac
             return [
                 'booking_id' => (string) $row->booking_id,
                 'schedule_id' => (string) $row->schedule_id,
+                'schedule_display_reference' => (string) $schedule->display_reference,
                 'member_id' => (string) $row->member_id,
                 'member_name' => (string) $row->member_name,
                 'medical_record_number' => (string) $row->medical_record_number,

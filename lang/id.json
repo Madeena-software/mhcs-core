@@ -208,6 +208,8 @@
     "Select an assigned site": "Pilih lokasi yang ditugaskan",
     "Ordered clinic workflow": "Alur rumah skrining berurutan",
     "Attendance": "Kehadiran",
+    "Schedule reference": "Referensi jadwal",
+    "DICOM study :reference": "Studi DICOM :reference",
     ":count assigned shift(s) available.": ":count shift yang ditugaskan tersedia.",
     "Open assigned-shift attendance": "Buka kehadiran shift yang ditugaskan",
     "Select a site first": "Pilih lokasi terlebih dahulu",

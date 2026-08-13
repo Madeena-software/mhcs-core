@@ -18,6 +18,7 @@ use App\Modules\Operator\Domain\OperatorException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\View\View;
 use Throwable;
@@ -101,11 +102,14 @@ final class PortalController extends Controller
         try {
             $site = $authorization->portalSite($authorization->portal());
 
+            $rows = $attendance->query($schedule, $at);
+
             return view('operator.attendance', [
                 'site' => $site,
                 'scheduleId' => $schedule,
+                'scheduleDisplayReference' => (string) DB::table('shift_schedules')->where('id', $schedule)->value('display_reference'),
                 'at' => $at,
-                'rows' => $attendance->query($schedule, $at),
+                'rows' => $rows,
             ]);
         } catch (Throwable $exception) {
             return redirect()->route('operator.dashboard')->withErrors(['attendance' => $exception instanceof OperatorException ? __($exception->getMessage()) : __('The attendance list is unavailable.')]);

@@ -14,6 +14,7 @@ use App\Shared\Context\AuthenticatedContext;
 use App\Shared\Time\Clock;
 use DateTimeImmutable;
 use DateTimeZone;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -34,31 +35,43 @@ final readonly class Mvp03ScheduleService
         $times = $this->times($attributes['starts_at'] ?? null, $attributes['ends_at'] ?? null);
         $quota = $this->quota($attributes['quota'] ?? null);
 
-        return DB::transaction(function () use ($siteId, $serviceId, $times, $quota, $context): ShiftSchedule {
-            $site = ExaminationSiteReference::query()->whereKey($siteId)->lockForUpdate()->first();
-            $service = ServiceOffering::query()->whereKey($serviceId)->first();
-            if ($site === null || ! $site->active || $service === null || ! $service->active) {
-                throw new Mvp03Exception('The selected site or service is unavailable.');
+        for ($attempt = 0; $attempt < 5; $attempt++) {
+            try {
+                return DB::transaction(function () use ($siteId, $serviceId, $times, $quota, $context): ShiftSchedule {
+                    $site = ExaminationSiteReference::query()->whereKey($siteId)->lockForUpdate()->first();
+                    $service = ServiceOffering::query()->whereKey($serviceId)->first();
+                    if ($site === null || ! $site->active || $service === null || ! $service->active) {
+                        throw new Mvp03Exception('The selected site or service is unavailable.');
+                    }
+                    $this->assertFuture($times['starts_at']);
+                    $this->assertNoOverlap($siteId, $times['starts_at'], $times['ends_at']);
+
+                    $id = (string) Str::uuid();
+                    ShiftSchedule::query()->create([
+                        'id' => $id,
+                        'display_reference' => 'JAD-'.Str::upper(Str::random(8)),
+                        'examination_site_id' => $siteId,
+                        'service_offering_id' => $serviceId,
+                        'starts_at' => $times['starts_at'],
+                        'ends_at' => $times['ends_at'],
+                        'quota' => $quota,
+                        'status' => 'open',
+                        'eligible_at' => null,
+                    ]);
+                    $schedule = ShiftSchedule::query()->findOrFail($id);
+                    $this->audit($context, 'member.schedule.create', $id, ['site_id' => $siteId, 'quota' => $quota]);
+
+                    return $schedule;
+                });
+            } catch (QueryException $exception) {
+                $message = strtolower($exception->getMessage());
+                if ($attempt === 4 || ! str_contains($message, 'display_reference') || (! str_contains($message, 'unique') && ! str_contains($message, 'duplicate'))) {
+                    throw $exception;
+                }
             }
-            $this->assertFuture($times['starts_at']);
-            $this->assertNoOverlap($siteId, $times['starts_at'], $times['ends_at']);
+        }
 
-            $id = (string) Str::uuid();
-            ShiftSchedule::query()->create([
-                'id' => $id,
-                'examination_site_id' => $siteId,
-                'service_offering_id' => $serviceId,
-                'starts_at' => $times['starts_at'],
-                'ends_at' => $times['ends_at'],
-                'quota' => $quota,
-                'status' => 'open',
-                'eligible_at' => null,
-            ]);
-            $schedule = ShiftSchedule::query()->findOrFail($id);
-            $this->audit($context, 'member.schedule.create', $id, ['site_id' => $siteId, 'quota' => $quota]);
-
-            return $schedule;
-        });
+        throw new Mvp03Exception('A schedule display reference could not be assigned.');
     }
 
     /** @param array<string, mixed> $attributes */

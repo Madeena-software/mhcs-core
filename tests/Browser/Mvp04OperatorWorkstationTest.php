@@ -49,12 +49,14 @@ it('lets an operator enter the workstation, select a site, and see the ordered c
         ->click('Open assigned-shift attendance')
         ->wait(1)
         ->assertPathIs('/operator/eligible-shifts')
+        ->assertSee($fixture['scheduleDisplayReference'])
         ->click('Open attendance')
         ->wait(1)
         ->assertPathIs('/operator/attendance/'.$fixture['scheduleId'])
         ->assertSee('Attendance list')
         ->assertSee('Synthetic Arrival Member')
         ->assertSee('1 eligible members')
+        ->assertSee($fixture['scheduleDisplayReference'])
         ->assertSee('Record physical arrival');
 });
 
