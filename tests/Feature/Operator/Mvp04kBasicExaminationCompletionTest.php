@@ -152,7 +152,7 @@ final class Mvp04kBasicExaminationCompletionTest extends TestCase
         $this->assertSame($fixture['profileId'], $questionnaire->operator_profile_id);
         $this->assertSame('V1', $questionnaire->form_version);
         $this->assertSame('image/png', $questionnaire->private_photo_format);
-        $this->assertNotSame($plain, Storage::disk('local')->get($questionnaire->private_photo_object_key));
+        $this->assertSame($plain, Storage::disk('local')->get($questionnaire->private_photo_object_key));
         $this->assertStringNotContainsString((string) $questionnaire->private_photo_object_key, json_encode(DB::table('audit_events')->get(), JSON_THROW_ON_ERROR));
         $this->assertStringNotContainsString($plain, json_encode(DB::table('outbox_messages')->get(), JSON_THROW_ON_ERROR));
     }

@@ -2,8 +2,8 @@
 
 $localLoginDefaults = in_array(env('APP_ENV', 'production'), ['local', 'testing'], true);
 $maxUploadMb = env('MHCS_MAX_UPLOAD_MB', $localLoginDefaults ? 100 : null);
-$maxUploadMb = $maxUploadMb === null ? null : (int) $maxUploadMb;
 $maxUploadBytes = $maxUploadMb === null ? null : (int) $maxUploadMb * 1024 * 1024;
+$maxUploadMb = $maxUploadBytes === null ? null : intdiv($maxUploadBytes, 1024 * 1024);
 $imageFileCount = env('MHCS_IMAGE_FILE_COUNT', $localLoginDefaults ? 2 : null);
 $imagePairBytes = $maxUploadBytes === null ? null : $maxUploadBytes * 2;
 
@@ -87,7 +87,6 @@ return [
 
     'security' => [
         'identifier_key' => env('MHCS_IDENTIFIER_KEY'),
-        'object_key' => env('MHCS_OBJECT_ENCRYPTION_KEY'),
         'grant_key' => env('MHCS_ACCESS_GRANT_KEY'),
         'manifest_key' => env('MHCS_MANIFEST_KEY'),
         'manifest_key_id' => env('MHCS_MANIFEST_KEY_ID'),

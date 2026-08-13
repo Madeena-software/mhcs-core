@@ -27,7 +27,6 @@ final class Mvp14ImageGatewayIntegrationTest extends TestCase
         parent::setUp();
         config([
             'mhcs.private_object_disk' => 'local',
-            'mhcs.security.object_key' => str_repeat('o', 32),
             'mhcs.security.grant_key' => str_repeat('g', 32),
             'mhcs.security.manifest_key' => str_repeat('m', 32),
             'mhcs.security.manifest_key_id' => 'test-key',
@@ -38,12 +37,13 @@ final class Mvp14ImageGatewayIntegrationTest extends TestCase
         Queue::fake();
     }
 
-    public function test_capture_acceptance_is_durable_and_queues_only_after_commit(): void
+    public function test_capture_starts_source_persistence_and_mpips_together(): void
     {
         $fixture = $this->operatorFixture(false);
         $this->actingAs($fixture['operator'])->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
         $admission = $this->insertCalledXrayAdmission($fixture);
         $submissionId = (string) Str::uuid();
+        Http::fake($this->validMpipsResponse());
 
         $response = $this->post(route('operator.xray-capture.store', $admission), [
             'submission_id' => $submissionId,
@@ -55,12 +55,18 @@ final class Mvp14ImageGatewayIntegrationTest extends TestCase
 
         $capture = DB::table('image_gateway_capture_sets')->where('submission_id', $submissionId)->first();
         $this->assertNotNull($capture);
-        $this->assertSame('queued', $capture->processing_status);
+        $this->assertSame('completed', $capture->processing_status);
+        $this->assertSame('success', $capture->radiograph_status);
+        $this->assertSame('success', $capture->gain_status);
+        $this->assertSame('success', $capture->mpips_status);
         $this->assertSame('awaiting_ai', DB::table('operator_queue_admissions')->where('id', $admission)->value('state'));
-        $this->assertSame(0, DB::table('image_gateway_studies')->count());
+        $this->assertSame(1, DB::table('image_gateway_studies')->count());
         $this->assertSame(4, DB::table('image_gateway_capture_objects')->where('capture_set_id', $capture->id)->count());
-        Queue::assertPushedOn('image-gateway', ProcessCaptureSet::class, fn (ProcessCaptureSet $job): bool => $job->captureSetId === $capture->id);
-        Http::assertNothingSent();
+        Queue::assertNothingPushed();
+        Http::assertSentCount(1);
+        $radiograph = DB::table('image_gateway_capture_objects')->where('capture_set_id', $capture->id)->where('object_type', 'radiograph')->first();
+        $this->assertSame(file_get_contents(base_path('resources/fixtures/image-gateway/synthetic-radiograph-01.npz')), Storage::disk('local')->get((string) $radiograph->object_key));
+        $this->assertArrayNotHasKey('encryption', json_decode((string) Storage::disk('local')->get((string) $radiograph->object_key.'.meta.json'), true, 512, JSON_THROW_ON_ERROR));
     }
 
     public function test_job_submits_the_minimal_multipart_contract_and_stores_a_valid_dicom(): void
@@ -105,6 +111,38 @@ final class Mvp14ImageGatewayIntegrationTest extends TestCase
         Http::assertSentCount(1);
     }
 
+    public function test_retrying_a_missing_radiograph_does_not_repeat_gain_or_mpips(): void
+    {
+        $fixture = $this->operatorFixture(false);
+        $this->actingAs($fixture['operator'])->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
+        $admission = $this->insertCalledXrayAdmission($fixture);
+        Http::fake($this->validMpipsResponse());
+        $submissionId = (string) Str::uuid();
+
+        $this->post(route('operator.xray-capture.store', $admission), [
+            'submission_id' => $submissionId,
+            'radiograph_npz' => $this->fixtureUpload('synthetic-radiograph-01.npz'),
+            'gain_npz' => $this->fixtureUpload('synthetic-gain-01.npz'),
+        ])->assertRedirect();
+        $capture = DB::table('image_gateway_capture_sets')->where('submission_id', $submissionId)->first();
+        $gain = DB::table('image_gateway_capture_objects')->where('capture_set_id', $capture->id)->where('object_type', 'gain')->first();
+        $radiograph = DB::table('image_gateway_capture_objects')->where('capture_set_id', $capture->id)->where('object_type', 'radiograph')->first();
+        Storage::disk('local')->delete((string) $radiograph->object_key);
+        Storage::disk('local')->delete((string) $radiograph->object_key.'.meta.json');
+        DB::table('image_gateway_capture_objects')->where('id', $radiograph->id)->delete();
+        DB::table('image_gateway_capture_sets')->where('id', $capture->id)->update(['radiograph_status' => 'failed']);
+
+        $this->post(route('operator.xray-capture.store', $admission), [
+            'submission_id' => $submissionId,
+            'radiograph_npz' => $this->fixtureUpload('synthetic-radiograph-01.npz'),
+        ])->assertRedirect();
+
+        $this->assertSame(1, DB::table('image_gateway_capture_objects')->where('capture_set_id', $capture->id)->where('object_type', 'gain')->count());
+        $this->assertSame((string) $gain->object_key, DB::table('image_gateway_capture_objects')->where('capture_set_id', $capture->id)->where('object_type', 'gain')->value('object_key'));
+        $this->assertSame(1, DB::table('image_gateway_studies')->where('capture_set_id', $capture->id)->count());
+        Http::assertSentCount(1);
+    }
+
     public function test_invalid_upload_has_no_capture_queue_or_private_object_residue(): void
     {
         $fixture = $this->operatorFixture(false);
@@ -133,20 +171,23 @@ final class Mvp14ImageGatewayIntegrationTest extends TestCase
         $fixture = $this->operatorFixture(false);
         $this->actingAs($fixture['operator'])->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
         $admission = $this->insertCalledXrayAdmission($fixture);
-        Http::fakeSequence()->push([], 503)->push([], 500);
+        Http::fakeSequence()->push([], 503)->push(
+            str_repeat("\0", 128).'DICM'.'recovered dicom',
+            200,
+            [
+                'Content-Type' => 'application/dicom',
+                'X-Conversion-Job-ID' => '6ba7b810-9dad-51d1-80b4-00c04fd430c8',
+                'X-Correlation-ID' => '6ba7b810-9dad-41d1-80b4-00c04fd430c8',
+            ],
+        );
 
         $this->postCapture($admission);
         $captureId = (string) DB::table('image_gateway_capture_sets')->value('id');
+        $this->assertSame('retrying', DB::table('image_gateway_capture_sets')->where('id', $captureId)->value('processing_status'));
         $job = new ProcessCaptureSet($captureId);
         app()->call([$job, 'handle']);
-        $this->assertSame('retrying', DB::table('image_gateway_capture_sets')->where('id', $captureId)->value('processing_status'));
-        $this->assertSame(1, DB::table('image_gateway_capture_sets')->where('id', $captureId)->value('attempts'));
-
-        app()->call([$job, 'handle']);
-        $this->assertSame('failed', DB::table('image_gateway_capture_sets')->where('id', $captureId)->value('processing_status'));
-        $this->assertSame('remote_failure', DB::table('image_gateway_capture_sets')->where('id', $captureId)->value('last_error_code'));
-        $this->assertSame(500, DB::table('image_gateway_capture_sets')->where('id', $captureId)->value('last_response_status'));
-        $this->assertSame(0, DB::table('image_gateway_studies')->count());
+        $this->assertSame('completed', DB::table('image_gateway_capture_sets')->where('id', $captureId)->value('processing_status'));
+        $this->assertSame(1, DB::table('image_gateway_studies')->count());
         Http::assertSentCount(2);
     }
 
@@ -169,7 +210,7 @@ final class Mvp14ImageGatewayIntegrationTest extends TestCase
         $this->assertSame('failed', DB::table('image_gateway_capture_sets')->where('id', $captureId)->value('processing_status'));
         $this->assertSame('transport_invalid', DB::table('image_gateway_capture_sets')->where('id', $captureId)->value('last_error_code'));
         $this->assertSame(0, DB::table('image_gateway_studies')->count());
-        Http::assertSentCount(1);
+        Http::assertSentCount(2);
     }
 
     public function test_redelivery_recovers_a_claim_abandoned_after_the_queue_lease(): void
@@ -260,7 +301,7 @@ final class Mvp14ImageGatewayIntegrationTest extends TestCase
 
         $this->assertSame('completed', DB::table('image_gateway_capture_sets')->where('id', $captureId)->value('processing_status'));
         $this->assertSame(1, DB::table('image_gateway_studies')->where('capture_set_id', $captureId)->count());
-        Http::assertSentCount(2);
+        Http::assertSentCount(1);
     }
 
     public function test_same_site_current_shift_operator_can_read_the_returned_dicom_and_other_boundaries_cannot(): void

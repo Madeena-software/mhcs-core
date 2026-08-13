@@ -172,7 +172,6 @@ $app = require $root.'/bootstrap/app.php';
 $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
 $app->make('config')->set([
     'mhcs.security.identifier_key' => str_repeat('i', 32),
-    'mhcs.security.object_key' => str_repeat('o', 32),
     'mhcs.security.grant_key' => str_repeat('g', 32),
 ]);
 $input = json_decode(base64_decode($argv[1]), true, 512, JSON_THROW_ON_ERROR);
@@ -192,7 +191,6 @@ $object = new \App\Shared\Storage\PrivateObject(
     key: \App\Shared\Storage\OpaqueObjectKey::fromString('objects/'.$input['object']),
     checksum: str_repeat($input['checksum'], 64),
     bytes: 1,
-    encryption: 'AES-256-GCM',
     createdAt: new \DateTimeImmutable('2026-08-04T10:00:00+00:00'),
 );
 echo "ready\n";
@@ -512,7 +510,6 @@ $app = require $root.'/bootstrap/app.php';
 $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
 $app->make('config')->set([
     'mhcs.security.identifier_key' => str_repeat('i', 32),
-    'mhcs.security.object_key' => str_repeat('o', 32),
     'mhcs.security.grant_key' => str_repeat('g', 32),
     'mhcs.security.login' => [
         'pair_max_attempts' => 5,
@@ -621,7 +618,6 @@ $app = require $root.'/bootstrap/app.php';
 $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
 $app->make('config')->set([
     'mhcs.security.identifier_key' => str_repeat('i', 32),
-    'mhcs.security.object_key' => str_repeat('o', 32),
     'mhcs.security.grant_key' => str_repeat('g', 32),
 ]);
 $input = json_decode(base64_decode($argv[1]), true, 512, JSON_THROW_ON_ERROR);

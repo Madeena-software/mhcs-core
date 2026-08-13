@@ -59,6 +59,11 @@ final class ProcessCaptureSet implements ShouldQueue
         if ($capture === null || $capture->processing_status === 'completed' || $capture->processing_status === 'failed') {
             return;
         }
+        if (DB::table('image_gateway_studies')->where('capture_set_id', $this->captureSetId)->exists()) {
+            DB::table('image_gateway_capture_sets')->where('id', $this->captureSetId)->update(['processing_status' => 'completed', 'processing_claim_id' => null, 'processing_lease_expires_at' => null, 'completed_at' => $clock->now(), 'updated_at' => $clock->now()]);
+
+            return;
+        }
 
         $claim = DB::transaction(function () use ($clock): ?array {
             $row = DB::table('image_gateway_capture_sets')->where('id', $this->captureSetId)->lockForUpdate()->first();
@@ -115,17 +120,17 @@ final class ProcessCaptureSet implements ShouldQueue
         $objectsByType = DB::table('image_gateway_capture_objects')->where('capture_set_id', $this->captureSetId)->get()->keyBy('object_type');
 
         try {
-            $radiograph = $this->readObject($objects, $objectsByType->get('radiograph'), $workerContext, $clock);
-            $gain = $this->readObject($objects, $objectsByType->get('gain'), $workerContext, $clock);
+            $radiograph = $this->readObjectStream($objects, $objectsByType->get('radiograph'), $workerContext, $clock);
+            $gain = $this->readObjectStream($objects, $objectsByType->get('gain'), $workerContext, $clock);
             $manifest = $this->readObject($objects, $objectsByType->get('manifest'), $workerContext, $clock);
             $signature = $this->readObject($objects, $objectsByType->get('manifest_signature'), $workerContext, $clock);
-            $this->assertStoredBytes($capture, $objectsByType->get('radiograph'), $radiograph);
-            $this->assertStoredBytes($capture, $objectsByType->get('gain'), $gain);
+            $this->assertStoredStream($objectsByType->get('radiograph'), $radiograph);
+            $this->assertStoredStream($objectsByType->get('gain'), $gain);
             $this->assertStoredBytes($capture, $objectsByType->get('manifest'), $manifest, 'manifest_checksum', 'manifest_bytes');
             $this->assertStoredBytes($capture, $objectsByType->get('manifest_signature'), $signature, 'signature_checksum', 'signature_bytes');
 
             $signed = SignedManifest::fromArray(json_decode($signature, true, 512, JSON_THROW_ON_ERROR));
-            $response = $client->convert($radiograph, $gain, $manifest);
+            $response = $client->convertStreams($radiograph, $gain, $manifest)->wait();
 
             if ($this->retryable($response)) {
                 $this->retryOrFail($capture, $attempt, $claimId, $response->status(), $this->responseDetail($response), $clock);
@@ -146,8 +151,8 @@ final class ProcessCaptureSet implements ShouldQueue
                 new ValidationEvidence(
                     valid: true,
                     conversionJobId: $signed->manifest->conversionJobId,
-                    radiographChecksum: hash('sha256', $radiograph),
-                    gainChecksum: hash('sha256', $gain),
+                    radiographChecksum: (string) ($capture->radiograph_checksum ?? $objectsByType->get('radiograph')->checksum),
+                    gainChecksum: (string) ($capture->gain_checksum ?? $objectsByType->get('gain')->checksum),
                     metadataChecksum: hash('sha256', $manifest),
                     manifestSignature: $signed->signature,
                     identifiers: $identifiers,
@@ -160,6 +165,12 @@ final class ProcessCaptureSet implements ShouldQueue
             $this->retryOrFail($capture, $attempt, $claimId, null, 'transport_failure', $clock);
         } catch (Throwable $exception) {
             $this->fail($this->captureSetId, $claimId, null, $this->failureCode($exception), $clock);
+        } finally {
+            foreach ([$radiograph ?? null, $gain ?? null] as $stream) {
+                if (is_resource($stream)) {
+                    fclose($stream);
+                }
+            }
         }
     }
 
@@ -178,12 +189,49 @@ final class ProcessCaptureSet implements ShouldQueue
             OpaqueObjectKey::fromString((string) $row->object_key),
             (string) $row->checksum,
             (int) $row->bytes,
-            'AES-256-GCM',
             new DateTimeImmutable((string) $row->created_at),
         );
         $grant = $objects->grant($object, $context, 'image-worker', ImageGatewayCaptureService::CAPTURE_PURPOSE, $clock->now()->modify('+300 seconds'));
 
         return $objects->get($grant, $context, 'image-worker', ImageGatewayCaptureService::CAPTURE_PURPOSE);
+    }
+
+    private function readObjectStream(PrivateObjectStore $objects, ?object $row, AuthenticatedContext $context, Clock $clock)
+    {
+        if ($row === null) {
+            throw new \RuntimeException('capture_object_missing');
+        }
+        $object = new PrivateObject(
+            OpaqueObjectKey::fromString((string) $row->object_key),
+            (string) $row->checksum,
+            (int) $row->bytes,
+            new DateTimeImmutable((string) $row->created_at),
+        );
+        $grant = $objects->grant($object, $context, 'image-worker', ImageGatewayCaptureService::CAPTURE_PURPOSE, $clock->now()->modify('+300 seconds'));
+
+        return $objects->getStream($grant, $context, 'image-worker', ImageGatewayCaptureService::CAPTURE_PURPOSE);
+    }
+
+    private function assertStoredStream(?object $row, $stream): void
+    {
+        if ($row === null || ! is_resource($stream)) {
+            throw new \RuntimeException('capture_object_integrity_failure');
+        }
+        rewind($stream);
+        $bytes = 0;
+        $hash = hash_init('sha256');
+        while (! feof($stream)) {
+            $chunk = fread($stream, 1024 * 1024);
+            if ($chunk === false) {
+                throw new \RuntimeException('capture_object_integrity_failure');
+            }
+            $bytes += strlen($chunk);
+            hash_update($hash, $chunk);
+        }
+        if (! hash_equals((string) $row->checksum, hash_final($hash)) || (int) $row->bytes !== $bytes) {
+            throw new \RuntimeException('capture_object_integrity_failure');
+        }
+        rewind($stream);
     }
 
     private function assertStoredBytes(object $capture, ?object $row, string $contents, ?string $checksumField = null, ?string $bytesField = null): void

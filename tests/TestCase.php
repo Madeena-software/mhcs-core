@@ -19,7 +19,6 @@ abstract class TestCase extends BaseTestCase
 
         foreach ([
             'mhcs.security.identifier_key' => 'mhcs-test-identifier-key',
-            'mhcs.security.object_key' => 'mhcs-test-object-encryption-key',
             'mhcs.security.grant_key' => 'mhcs-test-access-grant-key',
         ] as $key => $fallback) {
             $value = config($key);

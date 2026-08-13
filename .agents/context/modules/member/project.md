@@ -912,7 +912,8 @@ and occurrence time. A correction creates a new traceable version instead of
 overwriting the signed record. Refusal or missing confirmation blocks ticket
 issue and examination.
 
-Any uploaded scan uses private encrypted storage and purpose-bound access. It
+Any uploaded scan uses private plain-byte object storage, opaque keys,
+integrity metadata, and purpose-bound access. It
 is not exposed through the Operator queue, LCD display, URLs, logs, or general
 administrative browsing. Member Core remains the consent authority and maps an
 applicable record to R5 `Consent` only after the MHCS profile and policy are
@@ -1044,7 +1045,8 @@ date range. The `CapabilityStatement` declares the exact supported parameters.
 - Every external adapter call is authenticated and audit logged; internal
   module calls preserve the authenticated actor and purpose context.
 - Member information is minimized for the operator's task.
-- KTP and profile photographs use private encrypted object storage and
+- KTP and profile photographs use private object storage with opaque keys,
+  integrity metadata, and
   short-lived authorized access; they are never placed in a public bucket.
 - Suspended login access does not erase the member or medical history.
 - Raw NPZ and DICOM never pass through Member Core.

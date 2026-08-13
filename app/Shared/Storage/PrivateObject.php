@@ -12,7 +12,6 @@ final readonly class PrivateObject
         public OpaqueObjectKey $key,
         public string $checksum,
         public int $bytes,
-        public string $encryption,
         public DateTimeImmutable $createdAt,
     ) {}
 }

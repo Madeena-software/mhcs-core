@@ -129,7 +129,8 @@ must never hold a database transaction open.
 
 The Image Gateway module owns:
 
-- durable NPZ and DICOM object storage;
+- durable plain-byte NPZ and DICOM object storage in a private, opaque-keyed
+  store;
 - object keys, checksums, immutable submission manifests, and retention;
 - image-processing jobs, attempt counts, and final-failure status;
 - construction and validation of the DICOM metadata manifest;
@@ -139,12 +140,13 @@ The Image Gateway module owns:
 - AI and doctor routing; and
 - publication and report-version distribution state.
 
-Operator submits a complete capture set through the public `mhcs-core`
-application. The Operator module validates the active examination and invokes
-the Image Gateway module locally. Durable object-storage acceptance completes
-the Operator X-ray stage and releases the ticket to asynchronous AI waiting. No
-application-server-to-application-server file copy or internal network
-submission exists inside `mhcs-core`.
+Operator submits a capture through the public `mhcs-core` application. The
+active request persists the radiograph and gain from temporary upload streams
+while concurrently submitting the same files to private MPIPS. Each successful
+component is immutable; a later same-admission attempt uploads only a missing
+component, and the queue remains the MPIPS recovery path after durable source
+acceptance. No application-server-to-application-server file copy or internal
+network submission exists inside `mhcs-core`.
 
 ## MPIPS black-box contract
 
@@ -166,9 +168,9 @@ publication, or payments.
 Operator module
   -> local complete-submission command
 Image Gateway module
-  -> durable NPZ + manifest storage
-  -> queued conversion job
-  -> private MPIPS conversion: radiograph NPZ + gain NPZ + signed manifest
+  -> capture intent
+  -> concurrent private NPZ persistence + MPIPS conversion
+  -> queued MPIPS-only recovery when needed
 MPIPS
   -> DICOM response
 Image Gateway module

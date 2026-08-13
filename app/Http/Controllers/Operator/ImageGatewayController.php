@@ -47,19 +47,30 @@ final class ImageGatewayController extends Controller
         string $admission,
         OperatorAuthorization $authorization,
         ImageGatewayCaptureService $gateway,
-    ): RedirectResponse {
+    ): Response|RedirectResponse {
+        try {
+            $portal = $authorization->portal();
+            $site = $authorization->portalSite($portal);
+            $form = $gateway->captureForm(
+                $authorization->current(ImageGatewayCaptureService::CAPTURE_PURPOSE),
+                (string) $portal['profile']->getKey(),
+                (string) $site->getKey(),
+                (string) $site->operator_site_id,
+                $admission,
+            );
+        } catch (OperatorException|ImageGatewayException) {
+            abort(403);
+        }
         $validator = Validator::make($request->all(), [
             'submission_id' => ['required', 'uuid'],
-            'radiograph_npz' => ['required', 'file'],
-            'gain_npz' => ['required', 'file'],
+            'radiograph_npz' => [in_array('radiograph', $form['missing'], true) ? 'required' : 'nullable', 'file'],
+            'gain_npz' => [in_array('gain', $form['missing'], true) ? 'required' : 'nullable', 'file'],
         ]);
         if ($validator->fails()) {
             return back()->withErrors($validator)->withInput();
         }
 
         try {
-            $portal = $authorization->portal();
-            $site = $authorization->portalSite($portal);
             /** @var UploadedFile $radiograph */
             $radiograph = $request->file('radiograph_npz');
             /** @var UploadedFile $gain */
@@ -74,6 +85,10 @@ final class ImageGatewayController extends Controller
                 $radiograph,
                 $gain,
             );
+
+            if ($request->expectsJson()) {
+                return response()->json($result);
+            }
 
             return redirect()->route('operator.study.results')->with('status', __('Capture accepted and queued for processing.'));
         } catch (OperatorException|ImageGatewayException $exception) {

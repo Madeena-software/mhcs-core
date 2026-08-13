@@ -39,7 +39,7 @@
                 <p class="muted">{{ __('Choose the date shown on the signed paper form.') }}</p>
                 <label for="scan">{{ __('Required signed-paper photo or scan') }}</label>
                 <input id="scan" name="scan" type="file" accept="image/jpeg,image/png,application/pdf" required>
-                <p class="muted">{{ __('JPEG, PNG, or PDF only, up to 100 MB. The file is encrypted and is not retrievable from this portal.') }}</p>
+                <p class="muted">{{ __('JPEG, PNG, or PDF only, up to 100 MB. The file is stored privately and is not retrievable from this portal.') }}</p>
                 <input type="hidden" name="operation_id" value="{{ Illuminate\Support\Str::uuid() }}">
                 <button type="submit">{{ __('Confirm paper consent') }}</button>
             </form>

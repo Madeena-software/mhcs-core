@@ -47,7 +47,6 @@ final class Wp04IdentityTest extends TestCase
         parent::setUp();
         config([
             'mhcs.security.identifier_key' => str_repeat('i', 32),
-            'mhcs.security.object_key' => str_repeat('o', 32),
             'mhcs.security.grant_key' => str_repeat('g', 32),
             'mhcs.security.login' => [
                 'pair_max_attempts' => 5,
@@ -142,7 +141,7 @@ final class Wp04IdentityTest extends TestCase
         $this->assertSame('synthetic-replacement-profile', $assets->retrieve($grant, 'member-view', 'member.asset.read'));
         $stored = Storage::disk('local')->get($newPhoto->key);
         $this->assertIsString($stored);
-        $this->assertStringNotContainsString('synthetic-replacement-profile', $stored);
+        $this->assertSame('synthetic-replacement-profile', $stored);
         $this->assertNotNull($readContext);
     }
 

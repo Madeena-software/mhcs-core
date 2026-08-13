@@ -40,4 +40,4 @@ research/**/__pycache__/
 research/**/.ipynb_checkpoints/
 research/**/*.npz
 research/kambing-260714/data/output
-research/kambing-260714
+research

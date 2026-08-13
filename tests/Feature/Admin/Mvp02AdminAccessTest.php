@@ -30,7 +30,6 @@ final class Mvp02AdminAccessTest extends TestCase
         parent::setUp();
         config([
             'mhcs.security.identifier_key' => str_repeat('i', 32),
-            'mhcs.security.object_key' => str_repeat('o', 32),
             'mhcs.security.grant_key' => str_repeat('g', 32),
             'mhcs.security.login' => [
                 'pair_max_attempts' => 5,

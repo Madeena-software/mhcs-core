@@ -19,7 +19,6 @@ beforeEach(function (): void {
     config([
         'app.env' => 'testing',
         'mhcs.private_object_disk' => 'local',
-        'mhcs.security.object_key' => str_repeat('o', 32),
         'mhcs.security.grant_key' => str_repeat('g', 32),
         'mhcs.security.manifest_key' => str_repeat('m', 32),
         'mhcs.security.manifest_key_id' => 'test-key',
@@ -68,7 +67,8 @@ it('takes an operator from X-ray capture to an actual Cornerstone viewport and d
         ->wait(1)
         ->navigate('/operator/xray-readiness-worklist/'.$this->admission.'/capture')
         ->wait(1)
-        ->assertSee('NPZ radiografi');
+        ->assertSee('NPZ radiografi')
+        ->assertSee('Biarkan halaman ini tetap terbuka sampai status unggahan selesai.');
 
     Http::fake(Http::response(
         str_repeat("\0", 128).'DICM'.'browser dicom',

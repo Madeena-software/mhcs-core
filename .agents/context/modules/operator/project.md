@@ -635,8 +635,10 @@ After the authenticated browser submits the complete set to `mhcs-core`, the
 Operator module invokes one local, idempotent `AcceptCompleteCaptureSet`
 command on the Image Gateway module.
 
-The command contains one immutable metadata manifest, every confirmed
-radiograph NPZ, and the required matching gain NPZ input. The manifest includes
+The active capture page keeps selected browser `File` objects only while the
+request is active and warns the Operator to keep the page open. The command
+contains one immutable metadata manifest, every confirmed radiograph NPZ, and
+the required matching gain NPZ input. The manifest includes
 file names used only for correlation, byte sizes, radiograph/gain checksums,
 gain identity, capture IDs, projections, protocol and order snapshots, FHIR
 references, site, operator, and occurrence times.
@@ -650,7 +652,9 @@ The Image Gateway module returns one of these semantic outcomes:
   rejected fields or capture IDs without exposing secrets; or
 - a transient service error that is safe to retry with the same ID.
 
-The Operator module completes the X-ray stage only for `durably_accepted`. The
+The Image Gateway persists plain original bytes in private opaque-keyed storage
+and reports component-specific missing state for a same-admission retry. The
+Operator module completes the X-ray stage only for `durably_accepted`. The
 module command and durable storage record commit without a network hop. A
 repeated command with the same ID and payload returns the original submission;
 reusing the ID with different bytes or metadata fails as an idempotency

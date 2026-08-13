@@ -4,7 +4,7 @@ This is one fresh, disposable, non-clinical local integration rehearsal for
 the existing flow:
 
 ```text
-Operator capture → private S3 → database queue → local MPIPS → private DICOM
+Operator capture → concurrent private S3/local MPIPS → private DICOM
 ```
 
 It is not deployment, production, or release evidence. Do not use a real
@@ -18,8 +18,8 @@ proxy, a server database, a new queue mechanism, or a direct MPIPS request.
 Configure these existing local-only variable names without exposing their
 values:
 
-- Application and encryption: `APP_KEY`, `MHCS_IDENTIFIER_KEY`,
-  `MHCS_OBJECT_ENCRYPTION_KEY`, `MHCS_ACCESS_GRANT_KEY`, `MHCS_MANIFEST_KEY`,
+- Application and security: `APP_KEY`, `MHCS_IDENTIFIER_KEY`,
+  `MHCS_ACCESS_GRANT_KEY`, `MHCS_MANIFEST_KEY`,
   `MHCS_MANIFEST_KEY_ID`.
 - Database: `DB_CONNECTION`, `DB_HOST`, `DB_PORT`, `DB_DATABASE`,
   `DB_USERNAME`, `DB_PASSWORD`.
@@ -28,7 +28,8 @@ values:
   `AWS_USE_PATH_STYLE_ENDPOINT`.
 - MPIPS: `MPIPS_BASE_URL` using the documented local default
   `http://127.0.0.1:8014`, `MPIPS_API_KEY`, and `MPIPS_TIMEOUT_SECONDS`.
-- Uploads: `MHCS_MAX_UPLOAD_MB=100`. This is the per-file limit for NPZ,
+- Uploads: `MHCS_IMAGE_PER_FILE_BYTES` and `MHCS_IMAGE_TOTAL_BYTES`, retaining
+  the approved 100 MiB per-file and two-file request envelope for NPZ,
   KTP/KIA, profile photo, informed consent, questionnaire, and other supported
   uploads. The NPZ pair gets a derived 201 MB PHP request limit for multipart
   overhead; each NPZ remains capped at 100 MB.
@@ -82,10 +83,10 @@ secrets to diagnose a visible terminal failure.
    Do not document its path, filename, bytes, metadata, or contents. Submit
    the pair once; do not resubmit it.
 
-7. Wait for the `image-gateway` worker to finish. The Operator surface must
-   show either one accepted DICOM result or a sanitised terminal failure. A
-   failure is terminal for this rehearsal: do not retry by resubmitting and do
-   not inspect logs, S3, MPIPS, object identifiers, or secrets.
+7. Keep the capture page open until the status is terminal. The initial
+   request starts private S3 persistence and MPIPS together. If one NPZ is
+   missing after an interrupted request, the page identifies only that file;
+   retry that component once. MPIPS-only recovery uses the existing worker.
 8. For a successful result, open the DICOM results worklist, open the returned
    study, and confirm the vertical read-only Cornerstone viewer renders with
    automatic VOI and zoom/pan only. Use the normal **Download DICOM**

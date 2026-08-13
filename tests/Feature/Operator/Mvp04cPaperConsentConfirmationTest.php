@@ -48,7 +48,7 @@ final class Mvp04cPaperConsentConfirmationTest extends TestCase
         $this->assertSame(0, DB::table('outbox_messages')->where('event_name', 'member.paper-consent-confirmed')->count());
     }
 
-    public function test_valid_private_upload_is_encrypted_private_and_not_in_shared_evidence(): void
+    public function test_valid_private_upload_is_plain_private_and_not_in_shared_evidence(): void
     {
         $fixture = $this->matchedFixture();
         $plain = "%PDF-1.7\nsynthetic signed paper\n%%EOF";
@@ -63,7 +63,7 @@ final class Mvp04cPaperConsentConfirmationTest extends TestCase
         $this->assertNotNull($consent);
         $this->assertSame('application/pdf', $consent->private_scan_format);
         $this->assertNotNull($consent->private_scan_object_key);
-        $this->assertNotSame($plain, (string) Storage::disk('local')->get($consent->private_scan_object_key));
+        $this->assertSame($plain, (string) Storage::disk('local')->get($consent->private_scan_object_key));
         $this->assertStringNotContainsString((string) $consent->private_scan_object_key, json_encode(DB::table('audit_events')->get(), JSON_THROW_ON_ERROR));
         $this->assertStringNotContainsString($plain, json_encode(DB::table('outbox_messages')->get(), JSON_THROW_ON_ERROR));
         $this->get(route('operator.paper-consent.show', $fixture['caseId']))

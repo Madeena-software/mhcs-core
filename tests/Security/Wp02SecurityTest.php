@@ -32,8 +32,8 @@ use App\Shared\Security\SensitiveDataSanitizer;
 use App\Shared\Security\SensitivePayloadException;
 use App\Shared\Security\TemporaryCredentialIssuer;
 use App\Shared\Storage\AccessGrant;
-use App\Shared\Storage\EncryptedLocalObjectStore;
 use App\Shared\Storage\ObjectAccessException;
+use App\Shared\Storage\PlainLocalObjectStore;
 use App\Shared\Time\FrozenClock;
 use App\Shared\Transactions\TransactionalRowLock;
 use App\Shared\Transactions\TransactionException;
@@ -59,7 +59,6 @@ final class Wp02SecurityTest extends TestCase
         parent::setUp();
         config([
             'mhcs.security.identifier_key' => str_repeat('i', 32),
-            'mhcs.security.object_key' => str_repeat('o', 32),
             'mhcs.security.grant_key' => str_repeat('g', 32),
             'mhcs.security.login' => [
                 'pair_max_attempts' => 5,
@@ -447,12 +446,11 @@ final class Wp02SecurityTest extends TestCase
         $this->assertStringNotContainsString('SYNTHETIC_VALUE_B', json_encode($context));
     }
 
-    public function test_private_objects_are_encrypted_opaque_and_grant_protected(): void
+    public function test_private_objects_are_plain_opaque_and_grant_protected(): void
     {
         Storage::fake('local');
         $clock = new FrozenClock(new DateTimeImmutable('2026-08-04T10:00:00+00:00'));
-        $store = new EncryptedLocalObjectStore(
-            KeyMaterial::from(str_repeat('o', 32)),
+        $store = new PlainLocalObjectStore(
             KeyMaterial::from(str_repeat('g', 32)),
             $clock,
         );
@@ -468,7 +466,8 @@ final class Wp02SecurityTest extends TestCase
 
         $stored = Storage::disk('local')->get((string) $object->key);
         $this->assertIsString($stored);
-        $this->assertStringNotContainsString('private clinical bytes', $stored);
+        $this->assertSame('private clinical bytes', $stored);
+        $this->assertArrayNotHasKey('encryption', json_decode((string) Storage::disk('local')->get((string) $object->key.'.meta.json'), true, 512, JSON_THROW_ON_ERROR));
         $this->assertSame('private clinical bytes', $store->get($grant, $context, 'member-view', 'object.read'));
 
         $otherOperation = new AuthenticatedContext(

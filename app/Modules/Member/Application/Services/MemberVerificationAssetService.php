@@ -122,7 +122,6 @@ final readonly class MemberVerificationAssetService
                 key: OpaqueObjectKey::fromString($asset->private_object_key),
                 checksum: $asset->checksum,
                 bytes: (int) $asset->bytes,
-                encryption: 'AES-256-GCM',
                 createdAt: new DateTimeImmutable((string) $asset->created_at),
             ),
             $context,
@@ -183,7 +182,6 @@ final readonly class MemberVerificationAssetService
                 key: OpaqueObjectKey::fromString($asset->private_object_key),
                 checksum: $asset->checksum,
                 bytes: (int) $asset->bytes,
-                encryption: 'AES-256-GCM',
                 createdAt: new DateTimeImmutable((string) $asset->created_at),
             ),
             $context,
@@ -262,13 +260,12 @@ final readonly class MemberVerificationAssetService
     private function assertPrivateObject(VerificationAssetInput $input): void
     {
         if (
-            $input->object->encryption !== 'AES-256-GCM'
-            || $input->object->bytes < 1
+            $input->object->bytes < 1
             || $input->object->bytes > (int) config('mhcs.upload.max_file_bytes')
             || preg_match('/\A[0-9a-f]{64}\z/i', $input->object->checksum) !== 1
             || ! str_starts_with((string) $input->object->key, 'objects/')
         ) {
-            throw new MemberIdentityException('Verification assets must come from the private encrypted-object boundary.');
+            throw new MemberIdentityException('Verification assets must come from the private object boundary.');
         }
     }
 

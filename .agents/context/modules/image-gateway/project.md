@@ -60,8 +60,10 @@ copying the same clinical file between application servers.
 ## Processing coordination
 
 - Every submitted radiograph NPZ must be processed with its matching gain NPZ.
-- The Image Gateway worker builds a signed DICOM metadata manifest and invokes
-  the private MPIPS conversion once for each capture.
+- The active MHCS capture request persists both source objects from temporary
+  streams while starting the private MPIPS conversion concurrently. The worker
+  remains the recovery path when both source objects are durable but MPIPS was
+  not accepted.
 - Successful capture results are preserved if a sibling capture fails.
 - Only the failed capture is retried.
 - A failed capture receives three total processing attempts.
@@ -78,7 +80,9 @@ The Image Gateway worker supplies the patient-free radiograph and gain inputs
 plus the separately signed manifest, then receives one DICOM result inside an
 asynchronous job.
 
-Image Gateway validates the result against the input checksums and frozen
+Private objects retain their original bytes in private S3 with opaque keys,
+grant authorization, and integrity metadata; MHCS does not add application
+encryption or public download URLs. Image Gateway validates the result against the input checksums and frozen
 manifest before permanent acceptance. It owns retry count and timing, reuses the
 same conversion identity, and rejects a replay whose bytes or manifest differ.
 

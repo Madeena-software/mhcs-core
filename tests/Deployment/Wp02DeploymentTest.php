@@ -55,7 +55,6 @@ final class Wp02DeploymentTest extends TestCase
 
         foreach ([
             'MHCS_IDENTIFIER_KEY',
-            'MHCS_OBJECT_ENCRYPTION_KEY',
             'MHCS_ACCESS_GRANT_KEY',
             'MHCS_MANIFEST_KEY',
             'MHCS_MANIFEST_KEY_ID',

@@ -20,7 +20,7 @@ use App\Shared\Infrastructure\Outbox\DatabaseOutboxStore;
 use App\Shared\Infrastructure\Outbox\OutboxStore;
 use App\Shared\Security\KeyMaterial;
 use App\Shared\Security\ProtectedIdentifierService;
-use App\Shared\Storage\EncryptedLocalObjectStore;
+use App\Shared\Storage\PlainLocalObjectStore;
 use App\Shared\Storage\PrivateObjectStore;
 use App\Shared\Time\Clock;
 use App\Shared\Time\SystemClock;
@@ -49,8 +49,7 @@ class AppServiceProvider extends ServiceProvider
             );
         });
         $this->app->singleton(PrivateObjectStore::class, function ($app): PrivateObjectStore {
-            return new EncryptedLocalObjectStore(
-                KeyMaterial::fromConfig(config('mhcs.security.object_key')),
+            return new PlainLocalObjectStore(
                 KeyMaterial::fromConfig(config('mhcs.security.grant_key')),
                 $app->make(Clock::class),
             );
