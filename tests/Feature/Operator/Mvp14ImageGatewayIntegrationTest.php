@@ -5,6 +5,12 @@ declare(strict_types=1);
 namespace Tests\Feature\Operator;
 
 use App\Modules\ImageGateway\Application\Jobs\ProcessCaptureSet;
+use App\Shared\Storage\OpaqueObjectKey;
+use App\Shared\Storage\PrivateObject;
+use App\Shared\Storage\PrivateObjectStore;
+use DateTimeImmutable;
+use GuzzleHttp\Promise\Promise;
+use GuzzleHttp\Promise\PromiseInterface;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Http\Client\Response;
@@ -14,6 +20,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Mockery;
 use Tests\Operator\Mvp04Fixtures;
 use Tests\TestCase;
 
@@ -67,6 +74,64 @@ final class Mvp14ImageGatewayIntegrationTest extends TestCase
         $radiograph = DB::table('image_gateway_capture_objects')->where('capture_set_id', $capture->id)->where('object_type', 'radiograph')->first();
         $this->assertSame(file_get_contents(base_path('resources/fixtures/image-gateway/synthetic-radiograph-01.npz')), Storage::disk('local')->get((string) $radiograph->object_key));
         $this->assertArrayNotHasKey('encryption', json_decode((string) Storage::disk('local')->get((string) $radiograph->object_key.'.meta.json'), true, 512, JSON_THROW_ON_ERROR));
+    }
+
+    public function test_capture_initiates_both_source_promises_before_waiting_for_mpips(): void
+    {
+        $fixture = $this->operatorFixture(false);
+        $this->actingAs($fixture['operator'])->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
+        $admission = $this->insertCalledXrayAdmission($fixture);
+        $events = [];
+        $pending = [];
+        $createdAt = new DateTimeImmutable('2026-08-13T00:00:00+00:00');
+        $store = Mockery::mock(PrivateObjectStore::class);
+        $store->shouldReceive('put')->twice()->andReturnUsing(
+            static fn (string $contents): PrivateObject => new PrivateObject(
+                OpaqueObjectKey::fromString('objects/manifest-'.hash('sha256', $contents)),
+                hash('sha256', $contents),
+                strlen($contents),
+                $createdAt,
+            ),
+        );
+        $store->shouldReceive('putStreamAsync')->twice()->andReturnUsing(function ($stream, int $bytes, string $checksum, $context, string $purpose, OpaqueObjectKey $key) use (&$events, &$pending, $createdAt): PromiseInterface {
+            $type = basename((string) $key);
+            $events[] = 's3:'.$type;
+            $object = new PrivateObject($key, $checksum, $bytes, $createdAt);
+            $promise = new Promise;
+            $pending[] = [$promise, $object];
+
+            return $promise;
+        });
+        $store->shouldReceive('putStream')->zeroOrMoreTimes()->andReturnUsing(
+            static fn ($stream, int $bytes, string $checksum, $context, string $purpose, OpaqueObjectKey $key): PrivateObject => new PrivateObject($key, $checksum, $bytes, $createdAt),
+        );
+        $this->app->instance(PrivateObjectStore::class, $store);
+        Http::fake(function (Request $request) use (&$events, &$pending) {
+            $this->assertSame(['s3:radiograph', 's3:gain'], $events);
+            $this->assertCount(2, $pending);
+            $events[] = 'mpips';
+            foreach ($pending as [$promise, $object]) {
+                $promise->resolve($object);
+            }
+
+            return Http::response(
+                str_repeat("\0", 128).'DICM'.'valid dicom payload',
+                200,
+                [
+                    'Content-Type' => 'application/dicom',
+                    'X-Conversion-Job-ID' => '6ba7b810-9dad-51d1-80b4-00c04fd430c8',
+                    'X-Correlation-ID' => '6ba7b810-9dad-41d1-80b4-00c04fd430c8',
+                ],
+            );
+        });
+
+        $this->post(route('operator.xray-capture.store', $admission), [
+            'submission_id' => (string) Str::uuid(),
+            'radiograph_npz' => $this->fixtureUpload('synthetic-radiograph-01.npz'),
+            'gain_npz' => $this->fixtureUpload('synthetic-gain-01.npz'),
+        ])->assertRedirect(route('operator.study.results'));
+
+        $this->assertSame(['s3:radiograph', 's3:gain', 'mpips'], $events);
     }
 
     public function test_job_submits_the_minimal_multipart_contract_and_stores_a_valid_dicom(): void
@@ -140,6 +205,44 @@ final class Mvp14ImageGatewayIntegrationTest extends TestCase
         $this->assertSame(1, DB::table('image_gateway_capture_objects')->where('capture_set_id', $capture->id)->where('object_type', 'gain')->count());
         $this->assertSame((string) $gain->object_key, DB::table('image_gateway_capture_objects')->where('capture_set_id', $capture->id)->where('object_type', 'gain')->value('object_key'));
         $this->assertSame(1, DB::table('image_gateway_studies')->where('capture_set_id', $capture->id)->count());
+        Http::assertSentCount(1);
+    }
+
+    public function test_changed_missing_radiograph_is_rejected_before_external_work(): void
+    {
+        $fixture = $this->operatorFixture(false);
+        $this->actingAs($fixture['operator'])->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
+        $admission = $this->insertCalledXrayAdmission($fixture);
+        Http::fake($this->validMpipsResponse());
+        $submissionId = (string) Str::uuid();
+
+        $this->post(route('operator.xray-capture.store', $admission), [
+            'submission_id' => $submissionId,
+            'radiograph_npz' => $this->fixtureUpload('synthetic-radiograph-01.npz'),
+            'gain_npz' => $this->fixtureUpload('synthetic-gain-01.npz'),
+        ])->assertRedirect();
+        $capture = DB::table('image_gateway_capture_sets')->where('submission_id', $submissionId)->first();
+        $radiograph = DB::table('image_gateway_capture_objects')->where('capture_set_id', $capture->id)->where('object_type', 'radiograph')->first();
+        $gain = DB::table('image_gateway_capture_objects')->where('capture_set_id', $capture->id)->where('object_type', 'gain')->first();
+        Storage::disk('local')->delete((string) $radiograph->object_key);
+        Storage::disk('local')->delete((string) $radiograph->object_key.'.meta.json');
+        DB::table('image_gateway_capture_objects')->where('id', $radiograph->id)->delete();
+        DB::table('image_gateway_capture_sets')->where('id', $capture->id)->update(['radiograph_status' => 'failed']);
+
+        $this->from(route('operator.xray-capture.show', $admission))
+            ->post(route('operator.xray-capture.store', $admission), [
+                'submission_id' => $submissionId,
+                'radiograph_npz' => UploadedFile::fake()->createWithContent('changed.npz', "PK\x03\x04changed"),
+            ])
+            ->assertRedirect(route('operator.xray-capture.show', $admission))
+            ->assertSessionHasErrors('capture');
+
+        $after = DB::table('image_gateway_capture_sets')->where('id', $capture->id)->first();
+        $this->assertSame('failed', $after->radiograph_status);
+        $this->assertSame('success', $after->gain_status);
+        $this->assertSame((string) $gain->object_key, DB::table('image_gateway_capture_objects')->where('capture_set_id', $capture->id)->where('object_type', 'gain')->value('object_key'));
+        $this->assertSame(1, DB::table('image_gateway_studies')->where('capture_set_id', $capture->id)->count());
+        $this->assertSame(0, DB::table('image_gateway_capture_objects')->where('capture_set_id', $capture->id)->where('object_type', 'radiograph')->count());
         Http::assertSentCount(1);
     }
 

@@ -28,11 +28,10 @@ values:
   `AWS_USE_PATH_STYLE_ENDPOINT`.
 - MPIPS: `MPIPS_BASE_URL` using the documented local default
   `http://127.0.0.1:8014`, `MPIPS_API_KEY`, and `MPIPS_TIMEOUT_SECONDS`.
-- Uploads: `MHCS_IMAGE_PER_FILE_BYTES` and `MHCS_IMAGE_TOTAL_BYTES`, retaining
-  the approved 100 MiB per-file and two-file request envelope for NPZ,
+- Uploads: `MHCS_MAX_UPLOAD_MB=100` is the individual-file limit for NPZ,
   KTP/KIA, profile photo, informed consent, questionnaire, and other supported
-  uploads. The NPZ pair gets a derived 201 MB PHP request limit for multipart
-  overhead; each NPZ remains capped at 100 MB.
+  uploads. `config/mhcs.php` derives the two-file multipart request envelope
+  from that single setting, including multipart overhead.
 - Database queue: `QUEUE_CONNECTION=database` and `DB_QUEUE_RETRY_AFTER`.
 
 WARNING immediately before the next command: `migrate:fresh` destroys every

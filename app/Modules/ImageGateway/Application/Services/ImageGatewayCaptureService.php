@@ -100,6 +100,7 @@ final readonly class ImageGatewayCaptureService
             'radiograph' => $this->assertUpload($radiograph, $existing?->radiograph_status !== 'success'),
             'gain' => $this->assertUpload($gain, $existing?->gain_status !== 'success'),
         ];
+        $this->assertRetryChecksums($existing, $uploads);
         $captureContext = $context->forPurpose(self::CAPTURE_PURPOSE);
 
         try {
@@ -264,6 +265,25 @@ final readonly class ImageGatewayCaptureService
         }
 
         return ['path' => $path, 'bytes' => $bytes, 'checksum' => $checksum];
+    }
+
+    /** @param array{radiograph: array{checksum: string}|null, gain: array{checksum: string}|null} $uploads */
+    private function assertRetryChecksums(?object $capture, array $uploads): void
+    {
+        if ($capture === null) {
+            return;
+        }
+
+        foreach (['radiograph', 'gain'] as $type) {
+            if ($uploads[$type] === null || (string) $capture->{$type.'_status'} === 'success') {
+                continue;
+            }
+
+            $expected = $capture->{$type.'_checksum'} ?? null;
+            if (! is_string($expected) || ! hash_equals($expected, $uploads[$type]['checksum'])) {
+                throw new ImageGatewayException('capture_invalid', 'The NPZ does not match the original capture.');
+            }
+        }
     }
 
     /** @param array{path: string, bytes: int, checksum: string}|null $radiograph */
