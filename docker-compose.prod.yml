@@ -315,12 +315,7 @@ volumes:
 networks:
   mhcs_core_network:
     driver: overlay
-    driver_opts:
-      com.docker.network.driver.overlay.bind_interface: "0.0.0.0"
-      com.docker.network.driver.overlay.network_interface: "docker0"
-    ipam:
-      config:
-        - subnet: "10.0.13.0/24"
+    attachable: true
   mpips_private:
     name: ${MPIPS_NETWORK_NAME:-madeena-software-network}
     external: true
