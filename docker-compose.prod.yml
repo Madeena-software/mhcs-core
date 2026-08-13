@@ -39,7 +39,7 @@ services:
     volumes:
       - db_data:/var/lib/mysql
     networks:
-      - mhcs_core_network
+      - madeena-software-network
     healthcheck:
       test: ["CMD-SHELL", "mysqladmin status -uroot --password=\"$$MYSQL_ROOT_PASSWORD\" 2>/dev/null | grep -q Uptime"]
       interval: 10s
@@ -93,7 +93,7 @@ services:
     depends_on:
       - db
     networks:
-      - mhcs_core_network
+      - madeena-software-network
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
@@ -145,7 +145,7 @@ services:
     depends_on:
       - app
     networks:
-      - mhcs_core_network
+      - madeena-software-network
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
@@ -197,7 +197,7 @@ services:
     depends_on:
       - app
     networks:
-      - mhcs_core_network
+      - madeena-software-network
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
@@ -253,8 +253,7 @@ services:
     depends_on:
       - app
     networks:
-      - mhcs_core_network
-      - mpips_private
+      - madeena-software-network
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
@@ -299,7 +298,7 @@ services:
     depends_on:
       - app
     networks:
-      - mhcs_core_network
+      - madeena-software-network
 
 volumes:
   db_data:
@@ -313,9 +312,6 @@ volumes:
   app_public:
 
 networks:
-  mhcs_core_network:
-    driver: overlay
-    attachable: true
-  mpips_private:
+  madeena-software-network:
     name: ${MPIPS_NETWORK_NAME:-madeena-software-network}
     external: true

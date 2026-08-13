@@ -480,9 +480,12 @@ jobs:
           ' >/dev/null
           _pass "Application production runtime assertions passed"
 
-          echo "6/7 Public HTTP health endpoint"
+          echo "6/7 Public HTTP health endpoint & domain verification"
           http_code="$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8013/up || true)"
-          if [ "$http_code" = "200" ]; then
+          domain_code="$(curl -s -o /dev/null -w "%{http_code}" -H "Host: ${APP_DOMAIN}" http://127.0.0.1:8013/up || true)"
+          if [ "$http_code" = "200" ] && [ "$domain_code" = "200" ]; then
+            _pass "Public health endpoint /up returned HTTP 200 on port 8013 (Host: ${APP_DOMAIN})"
+          elif [ "$http_code" = "200" ]; then
             _pass "Public health endpoint /up returned HTTP 200 on port 8013"
           else
             _fail "Public health endpoint /up returned HTTP $http_code (expected 200)"
