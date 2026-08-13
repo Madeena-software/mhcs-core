@@ -18,7 +18,7 @@ it('lets a managing administrator create and edit offerings and schedules from n
 
     $page = adminLogin($fixture['manage_admin']);
     $page->assertPathIs('/admin/service-offerings')
-        ->assertSeeLink('New Layanan');
+        ->assertSeeLink('Buat Layanan');
     $page->click('a[href$="/admin/service-offerings/create"]')->wait(1);
     $page->fill('[id="form.code"]', 'BROWSER-CREATED')
         ->fill('[id="form.name"]', 'Layanan Browser')
@@ -51,13 +51,13 @@ it('lets a managing administrator create and edit offerings and schedules from n
         ->refresh()
         ->wait(1)
         ->assertPathIs('/admin/shift-schedules')
-        ->assertSeeLink('New Jadwal')
+        ->assertSeeLink('Buat Jadwal')
         ->assertSee($fixture['schedule_display_reference'])
         ->click('a[href$="/admin/shift-schedules/create"]')
         ->wait(1)
         ->assertPathIs('/admin/shift-schedules/create')
-        ->assertSee('Create Jadwal')
-        ->click('Cancel')
+        ->assertSee('Buat Jadwal')
+        ->click('Batal')
         ->wait(1)
         ->assertPathIs('/admin/shift-schedules');
 
@@ -73,11 +73,11 @@ it('keeps read-only administrators without create or edit actions', function ():
     $page = adminLogin($this->fixture['read_admin']);
 
     $page->assertPathIs('/admin/service-offerings')
-        ->assertDontSee('New Layanan')
+        ->assertDontSee('Buat Layanan')
         ->assertCount('a[href$="/edit"]', 0)
         ->click('a[href$="/admin/shift-schedules"]')
         ->assertPathIs('/admin/shift-schedules')
-        ->assertDontSee('New Jadwal')
+        ->assertDontSee('Buat Jadwal')
         ->assertCount('a[href$="/edit"]', 0)
         ->assertNoSmoke();
 });
