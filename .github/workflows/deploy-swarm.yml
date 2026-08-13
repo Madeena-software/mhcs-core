@@ -63,6 +63,8 @@ jobs:
         run: |
           set -euo pipefail
           echo "===> Validating docker-compose.prod.yml..."
+          touch /tmp/mhcs-validate.env
+          MHCS_ENV_FILE=/tmp/mhcs-validate.env \
           APP_STORAGE_HOST_PATH=/tmp/storage \
           APP_LOGS_HOST_PATH=/tmp/logs \
           MYSQL_DATA_HOST_PATH=/tmp/mysql \
@@ -71,6 +73,7 @@ jobs:
           DB_USERNAME=dummy \
           DB_PASSWORD=dummy \
           docker compose -f docker-compose.prod.yml config >/dev/null
+          rm -f /tmp/mhcs-validate.env
           echo "✅ docker-compose.prod.yml syntax is valid."
 
   deploy:
