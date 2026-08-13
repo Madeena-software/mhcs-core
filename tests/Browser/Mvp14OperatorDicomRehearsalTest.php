@@ -68,19 +68,24 @@ it('takes an operator from X-ray capture to an actual Cornerstone viewport and d
         ->navigate('/operator/xray-readiness-worklist/'.$this->admission.'/capture')
         ->wait(1)
         ->assertSee('NPZ radiografi')
-        ->assertSee('Biarkan halaman ini tetap terbuka sampai status unggahan selesai.');
+        ->assertSee('Jangan berpindah halaman selama unggahan berlangsung. Setelah pengambilan gambar diterima, pemrosesan tetap berjalan dengan aman.');
 
     expect($page->attribute('#capture-progress', 'aria-label'))->toBe(__('Capture upload progress'));
     expect($page->script('document.querySelector("#capture-form").dataset.statusUrl'))->toContain('/capture/status');
     expect($page->script('document.body.innerHTML.includes("XMLHttpRequest")'))->toBeTrue();
     $page->script(<<<'JS'
+        window.__mvpXhrs = [];
+        window.setTimeout = () => 0;
         window.XMLHttpRequest = class {
             constructor() {
                 this.upload = { addEventListener: (_, callback) => { this.progress = callback; } };
+                window.__mvpXhrs.push(this);
             }
-            open() {}
+            open(method) { this.method = method; }
             setRequestHeader() {}
-            send() { this.progress({ lengthComputable: true, loaded: 512, total: 1024 }); }
+            send() {
+                if (this.method === 'POST') this.progress({ lengthComputable: true, loaded: 512, total: 1024 });
+            }
             abort() {}
         };
         document.querySelector('#capture-form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
@@ -91,6 +96,41 @@ it('takes an operator from X-ray capture to an actual Cornerstone viewport and d
         ->assertButtonDisabled('#capture-form button')
         ->assertVisible('#capture-progress')
         ->assertSee('50%');
+    expect($page->script(<<<'JS'
+        (() => {
+            const event = new Event('beforeunload', { cancelable: true });
+            window.dispatchEvent(event);
+            return event.defaultPrevented;
+        })()
+    JS))->toBeTrue();
+
+    $page->script(<<<'JS'
+        const upload = window.__mvpXhrs[0];
+        upload.status = 200;
+        upload.onload();
+    JS);
+    expect($page->script(<<<'JS'
+        (() => {
+            const event = new Event('beforeunload', { cancelable: true });
+            window.dispatchEvent(event);
+            return event.defaultPrevented;
+        })()
+    JS))->toBeTrue();
+
+    $page->script(<<<'JS'
+        const status = window.__mvpXhrs[1];
+        status.status = 200;
+        status.responseText = JSON.stringify({ processing_state: 'queued', missing_components: [] });
+        status.onload();
+    JS);
+    expect($page->script(<<<'JS'
+        (() => {
+            const event = new Event('beforeunload', { cancelable: true });
+            window.dispatchEvent(event);
+            return event.defaultPrevented;
+        })()
+    JS))->toBeFalse();
+    $page->assertDisabled('#radiograph_npz')->assertDisabled('#gain_npz');
 
     Http::fake(Http::response(
         str_repeat("\0", 128).'DICM'.'browser dicom',

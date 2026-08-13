@@ -1,27 +1,32 @@
 # MVP evidence: queued capture status and worklist synchronisation
 
 Date: 2026-08-13
-Scope: `TARGET="."`, local fake-backed verification only.
+Target: `TARGET="."`
+Governing task: `.agents/tasks/operator-async-capture-status-and-worklist-sync.md @ 8afd3dedc9f7e4920d59beb9e94d2e480bd6bc9f`
+Remediation baseline: `91304d969daa54fbcf42eb28f97d2f77d78d8265`
+Execution base revision: `8afd3dedc9f7e4920d59beb9e94d2e480bd6bc9f` (remediation changes remain uncommitted; commit was not authorised)
+Terminal state: `REVIEW REQUIRED`
 
-## Observed verification
+## Observed remediation verification
 
-- `TARGET="." vendor/bin/phpunit tests/Feature/Operator/Mvp14ImageGatewayIntegrationTest.php --colors=never` — 13 passed, 119 assertions.
-- `TARGET="." vendor/bin/pest tests/Browser/Mvp14OperatorDicomRehearsalTest.php --colors=never` — 2 passed, 34 assertions.
-- Operator, localization, and Image Gateway regression group — 141 tests, 140 passed, 1 skipped, 1,528 assertions.
-- `TARGET="." vendor/bin/phpunit --colors=never` — 294 tests, 287 passed, 7 skipped, 4,392 assertions.
-- `TARGET="." npm run build` — passed.
-- `TARGET="." vendor/bin/pint --test` — passed.
-- `php -r 'json_decode(file_get_contents("lang/id.json"), true, 512, JSON_THROW_ON_ERROR);'` and `git diff --check` — passed.
+- Browser regression red check on the reviewed implementation: **FAIL as
+  expected** because `queued` still prevented `beforeunload`.
+- `TARGET="." vendor/bin/phpunit tests/Feature/Operator/Mvp14ImageGatewayIntegrationTest.php --colors=never` — **PASS**, 13 tests, 119 assertions.
+- `TARGET="." vendor/bin/phpunit tests/Feature/Operator --colors=never` — **PASS**, 134 passed, 1 skipped, 1,366 assertions.
+- Localization/shared checks — **PASS**, 11 tests, 180 assertions.
+- `TARGET="." vendor/bin/pest tests/Browser/Mvp14OperatorDicomRehearsalTest.php --colors=never` — **PASS**, 2 tests, 39 assertions.
+- `TARGET="." vendor/bin/phpunit --colors=never` — **PASS**, 287 passed, 7 skipped, 4,392 assertions.
+- `TARGET="." npm run build` — **PASS**; existing optional-font, browser-externalization, and chunk-size warnings remain.
+- `TARGET="." vendor/bin/pint --test` — **PASS**.
+- Indonesian JSON parse and `TARGET="." git diff --check` — **PASS**.
 
-The tests observe source persistence without a web-request MPIPS call, one queued
-worker dispatch after durable acceptance, worker-only fake MPIPS conversion,
-component retry/checksum protection, safe status authorization, native browser
-progress/disable/poll behavior, Indonesian copy, and four non-mutating worklist
-refresh markers. No secrets, patient data, object keys, checksums, NPZ/DICOM
-contents, live MPIPS/S3 calls, deployment, service start, or data reset were
-used.
+The browser coverage proves that native unload protection remains active while
+the NPZ upload and until safe status is known, then releases immediately for
+`queued` while polling remains possible and file controls remain disabled. The
+changed warning copy states the upload/navigation boundary and safe continued
+processing after acceptance.
 
-## Terminal state
-
-`REVIEW REQUIRED`. This evidence does not claim local deployment, live
-MPIPS/S3 conversion, release, or acceptance.
+All checks used local/fake-backed application behavior. No secrets, patient
+data, object keys, checksums, NPZ/DICOM contents, live MPIPS/S3 calls,
+deployment, service start, or data reset were used. This evidence does not
+claim release or final implementation acceptance.

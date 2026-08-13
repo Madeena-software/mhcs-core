@@ -286,7 +286,7 @@
     "Radiograph NPZ": "NPZ radiografi",
     "Matching gain NPZ": "NPZ gain yang sesuai",
     "Submit capture set": "Kirim set pengambilan gambar",
-    "Keep this page open until the upload status is complete.": "Biarkan halaman ini tetap terbuka sampai status unggahan selesai.",
+    "Do not navigate away during upload. Processing continues safely after capture acceptance.": "Jangan berpindah halaman selama unggahan berlangsung. Setelah pengambilan gambar diterima, pemrosesan tetap berjalan dengan aman.",
     "Capture upload started.": "Unggahan pengambilan gambar dimulai.",
     "Capture upload progress": "Kemajuan unggahan pengambilan gambar",
     "Uploading capture: :percent% (:loaded of :total bytes).": "Mengunggah pengambilan gambar: :percent% (:loaded dari :total byte).",

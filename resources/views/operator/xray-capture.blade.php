@@ -6,7 +6,7 @@
 <section aria-labelledby="xray-capture-title">
     <h1 id="xray-capture-title">{{ __('Submit radiograph capture') }}</h1>
     <p class="muted">{{ __('Radiography admission') }} <code>{{ $admissionId }}</code>; {{ __('Upload one radiograph NPZ and its matching gain NPZ.') }}</p>
-    <p class="warning" role="alert">{{ __('Keep this page open until the upload status is complete.') }}</p>
+    <p class="warning" role="alert">{{ __('Do not navigate away during upload. Processing continues safely after capture acceptance.') }}</p>
     <p id="capture-status" role="status" aria-live="polite" data-start="{{ __('Capture upload started.') }}" data-progress="{{ __('Uploading capture: :percent% (:loaded of :total bytes).') }}" data-processing="{{ __('Capture accepted. Waiting for DICOM processing.') }}" data-missing="{{ __('Capture sources are incomplete. Choose only the missing file.') }}" data-ready="{{ __('DICOM study ready. Opening results.') }}" data-failed="{{ __('Processing failed. No DICOM study is available. Retry the missing source or check status.') }}" data-error="{{ __('The capture status could not be checked. Retrying.') }}"></p>
     <progress id="capture-progress" max="100" value="0" hidden aria-label="{{ __('Capture upload progress') }}"></progress>
     @if ($form['missing'] !== [])
@@ -39,7 +39,7 @@
         const inputs = [...form.querySelectorAll('input[type="file"]')];
         const button = form.querySelector('button[type="submit"]');
         let active = false;
-        let terminal = false;
+        let uploading = false;
         let pollTimer = null;
         let request = null;
 
@@ -61,7 +61,7 @@
             if (result.processing_state === 'ready') {
                 stopPolling();
                 active = false;
-                terminal = true;
+                uploading = false;
                 setStatus(status.dataset.ready);
                 window.location.assign(result.ready_results_url);
                 return true;
@@ -69,7 +69,7 @@
             if (result.processing_state === 'failed') {
                 stopPolling();
                 active = false;
-                terminal = true;
+                uploading = false;
                 setControls(false, missing);
                 setStatus(status.dataset.failed);
                 return true;
@@ -77,13 +77,13 @@
             if (result.processing_state === 'awaiting_sources') {
                 stopPolling();
                 active = false;
-                terminal = true;
+                uploading = false;
                 setControls(false, missing);
                 setStatus(status.dataset.missing);
                 return true;
             }
             active = true;
-            terminal = false;
+            uploading = false;
             setControls(true, missing);
             setStatus(status.dataset.processing);
             return false;
@@ -115,7 +115,7 @@
             xhr.send();
         };
         window.addEventListener('beforeunload', (event) => {
-            if (active && !terminal) {
+            if (uploading) {
                 event.preventDefault();
                 event.returnValue = '';
             }
@@ -126,9 +126,9 @@
         }, { once: true });
         form.addEventListener('submit', (event) => {
             event.preventDefault();
-            if (active && !terminal) return;
+            if (active) return;
             active = true;
-            terminal = false;
+            uploading = true;
             setControls(true);
             progress.hidden = false;
             progress.value = 0;
@@ -155,6 +155,7 @@
         });
         if (form.dataset.hasCapture === '1') {
             active = true;
+            uploading = false;
             setControls(true);
             poll();
         } else {
