@@ -2,14 +2,14 @@
 title: Add Operator Capture Metadata to the MPIPS Manifest
 document_id: MHCS-TASK-OPERATOR-CAPTURE-METADATA-001
 version: 1.0
-status: draft
+status: validated
 language: en-US
 last_updated: 2026-08-13
 scope:
   - operator capture-metadata form
   - immutable metadata persistence for an NPZ capture set
   - MPIPS minimal-manifest enrichment
-authority_note: This task is executable only after this exact content is committed and its immutable task revision is supplied to the Executor.
+authority_note: This validated task is executable only when its exact immutable commit revision is supplied to the Executor.
 ---
 
 # Executable Task
@@ -23,7 +23,7 @@ authority_note: This task is executable only after this exact content is committ
 `.agents/tasks/operator-capture-manifest-metadata.md`
 
 **Task contract state:**
-`Draft — validated/published only when this exact content is committed and its commit SHA is supplied.`
+`Validated/Published — the governing immutable task revision is supplied in the Planner publication handoff after this exact content is committed.`
 
 **Delivery objective / Work Package / MVP:**
 `Pre-deployment local MVP — enable an Operator to supply the clinical capture metadata used in each new MPIPS DICOM conversion.`
@@ -43,7 +43,7 @@ The Operator enters metadata once for a new capture set. It is durably frozen be
 `f96d5151419b55bf41e9acc44844c300bdcd6e0a` — accepted implementation of `.agents/tasks/operator-awaiting-ai-release-and-safe-navigation.md @ d76086c6bb04007c53fd06886e48cd5e2e95b7f3`.
 
 **Task revision:**
-`resolved when published`
+`Provided by the Planner publication handoff after this exact validated content is committed.`
 
 ## Objective
 
