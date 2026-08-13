@@ -296,10 +296,15 @@ jobs:
           echo "===> Ensuring madeena-software-network is a Swarm attachable overlay network..."
           SCOPE="$(docker network inspect madeena-software-network --format '{{.Scope}}' 2>/dev/null || echo "missing")"
           if [ "$SCOPE" = "local" ]; then
-            echo "Found local-scoped madeena-software-network. Converting to Swarm attachable overlay network..."
+            echo "Found local-scoped madeena-software-network. Disconnecting active endpoints..."
+            for endpoint in $(docker network inspect madeena-software-network --format '{{range $id, $c := .Containers}}{{$id}} {{end}}' 2>/dev/null); do
+              echo "Disconnecting endpoint $endpoint..."
+              docker network disconnect -f madeena-software-network "$endpoint" || true
+            done
             docker network rm madeena-software-network || true
             docker network create --driver overlay --attachable madeena-software-network
             for c in $(docker ps -q --filter "name=mpips"); do
+              echo "Reconnecting $c to overlay madeena-software-network..."
               docker network connect madeena-software-network "$c" || true
             done
           elif [ "$SCOPE" = "missing" ]; then
