@@ -18,6 +18,7 @@ use App\Shared\Infrastructure\Idempotency\IdempotencyConflict;
 use App\Shared\Infrastructure\Idempotency\IdempotencyStore;
 use App\Shared\Infrastructure\Outbox\OutboxStore;
 use App\Shared\Storage\AccessGrant;
+use App\Shared\Storage\ObjectAccessException;
 use App\Shared\Storage\OpaqueObjectKey;
 use App\Shared\Storage\PrivateObject;
 use App\Shared\Storage\PrivateObjectStore;
@@ -299,7 +300,11 @@ final readonly class ImageGatewayCaptureService implements OperatorStudyQuery
             $this->clock->now()->modify('+'.(int) config('mhcs.security.asset_grants.max_ttl_seconds', 300).' seconds'),
         );
 
-        return $this->objects->get($grant, $studyContext, self::AUDIENCE, self::STUDY_PURPOSE);
+        try {
+            return $this->objects->get($grant, $studyContext, self::AUDIENCE, self::STUDY_PURPOSE);
+        } catch (ObjectAccessException $exception) {
+            throw new ImageGatewayException('study_unavailable', 'The DICOM study is unavailable.', $exception);
+        }
     }
 
     private function assertContext(AuthenticatedContext $context, string $purpose): void

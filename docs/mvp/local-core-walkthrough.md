@@ -36,9 +36,11 @@ only and never copy its contents.
    and reopen the page; confirm durable polling and retry only a reported
    unsuccessful component.
 3. When ready, confirm the results list uses a short `DCM-…` reference. Open
-   the study in the current tab and verify a centred portrait-suitable,
-   read-only viewer with automatic VOI and zoom/pan only. Use **Unduh DICOM**
-   for the normal authenticated attachment download.
+   the study in the current tab and verify the workstation-style read-only
+   viewer: compact top bar, study context panel, dominant centred vertical
+   stage, viewer-tools/workflow panel, and bottom actions. At portrait width,
+   the panels stack below the stage. Confirm automatic VOI and zoom/pan only.
+   Use **Unduh DICOM** for the normal authenticated attachment download.
 4. If the viewer cannot load, confirm it leaves “Memuat DICOM…” for the safe
    Indonesian error state with download and return actions. Do not manufacture
    a failure by changing code, data, or configuration.

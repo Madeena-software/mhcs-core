@@ -14,6 +14,7 @@ use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Filesystem\AwsS3V3Adapter;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Throwable;
 
 final readonly class PlainLocalObjectStore implements PrivateObjectStore
 {
@@ -146,8 +147,12 @@ final readonly class PlainLocalObjectStore implements PrivateObjectStore
         $key = OpaqueObjectKey::fromString(substr($target, strlen('private-object:')));
         $grant->verify($context, $audience, $purpose, $target, $this->clock->now(), $this->grantKey);
         $disk = $this->disk();
-        $metadata = json_decode((string) $disk->get((string) $key.'.meta.json'), true, 512, JSON_THROW_ON_ERROR);
-        $stream = $disk->readStream((string) $key);
+        try {
+            $metadata = json_decode((string) $disk->get((string) $key.'.meta.json'), true, 512, JSON_THROW_ON_ERROR);
+            $stream = $disk->readStream((string) $key);
+        } catch (Throwable $exception) {
+            throw new ObjectAccessException('Private object does not exist.', previous: $exception);
+        }
         if (! is_resource($stream) || ! is_array($metadata)) {
             throw new ObjectAccessException('Private object does not exist.');
         }

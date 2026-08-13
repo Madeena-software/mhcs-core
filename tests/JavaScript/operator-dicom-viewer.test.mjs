@@ -11,6 +11,7 @@ const { withViewerTimeout } = await import('../../resources/js/operator-viewer-t
 
 function viewerRoot() {
     const status = { textContent: '' };
+    const secondaryStatus = { textContent: '' };
     const error = { hidden: true, textContent: '' };
 
     return {
@@ -19,12 +20,16 @@ function viewerRoot() {
             displayErrorMessage: 'Studi DICOM tidak dapat ditampilkan.',
         },
         status,
+        secondaryStatus,
         error,
         querySelector(selector) {
             return {
                 '#dicom-viewer-status': status,
                 '#dicom-viewer-error': error,
             }[selector] ?? null;
+        },
+        querySelectorAll(selector) {
+            return selector === '[data-viewer-status]' ? [status, secondaryStatus] : [];
         },
     };
 }
@@ -39,6 +44,7 @@ test('moves the study to the safe Indonesian error state when viewer bootstrap f
 
     assert.equal(root.dataset.viewerState, 'error');
     assert.equal(root.status.textContent, root.dataset.unavailableMessage);
+    assert.equal(root.secondaryStatus.textContent, root.dataset.unavailableMessage);
     assert.equal(root.error.hidden, false);
     assert.equal(root.error.textContent, root.dataset.displayErrorMessage);
     assert.equal(root.error.textContent.includes('bundle'), false);
@@ -58,6 +64,7 @@ test('renders a safe Indonesian error state instead of a loader diagnostic', () 
 
     assert.equal(root.dataset.viewerState, 'error');
     assert.equal(root.status.textContent, 'Studi DICOM tidak tersedia.');
+    assert.equal(root.secondaryStatus.textContent, 'Studi DICOM tidak tersedia.');
     assert.equal(root.error.hidden, false);
     assert.equal(root.error.textContent, 'Studi DICOM tidak dapat ditampilkan.');
     assert.equal(root.error.textContent.includes('secret'), false);

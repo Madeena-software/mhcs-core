@@ -56,9 +56,16 @@ final class OperatorPortraitDicomViewerTest extends TestCase
             ->assertSee('data-image-url="'.route('operator.study.dicom', $studyId).'"', false)
             ->assertSee('Unduh DICOM')
             ->assertSee(route('operator.study.download', $studyId), false)
+            ->assertDontSee('<a download href="'.route('operator.study.download', $studyId).'"', false)
             ->assertSee('download', false)
             ->assertSee('Kembali ke hasil DICOM')
             ->assertSee(route('operator.study.results'), false)
+            ->assertSee('dicom-workstation', false)
+            ->assertSee('booth-left', false)
+            ->assertSee('center-viewer', false)
+            ->assertSee('right-sidebar', false)
+            ->assertSee('viewer-stage', false)
+            ->assertSee('bottom-bar', false)
             ->assertSee('data-testid="dicom-viewport"', false)
             ->assertDontSee('Study mode badges')
             ->assertDontSee('Window/Level')
@@ -78,6 +85,8 @@ final class OperatorPortraitDicomViewerTest extends TestCase
 
         $this->assertStringNotContainsString('error.message', $viewerSource);
         $this->assertStringContainsString('root.dataset.displayErrorMessage', $viewerSource);
+        $this->assertStringContainsString('viewport.setStack([imageId], 0)', $viewerSource);
+        $this->assertStringNotContainsString('dicomImageLoader.wadouri.loadImage', $viewerSource);
         $this->assertStringContainsString("import('./operator-dicom-viewer.js')", $appSource);
         $this->assertStringContainsString('withViewerTimeout', $appSource);
     }
@@ -121,6 +130,20 @@ final class OperatorPortraitDicomViewerTest extends TestCase
             ->assertOk()
             ->assertHeader('Content-Type', 'application/dicom')
             ->assertHeader('Cache-Control', 'no-store, private');
+    }
+
+    public function test_missing_private_dicom_is_denied_without_bubbling_a_storage_500(): void
+    {
+        $fixture = $this->operatorFixture(false);
+        $this->actingAs($fixture['operator'])->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
+        $admission = $this->insertCalledXrayAdmission($fixture);
+        $studyId = $this->createAcceptedStudy($fixture, $admission);
+
+        DB::table('image_gateway_studies')->where('id', $studyId)->update([
+            'object_key' => 'objects/'.Str::uuid(),
+        ]);
+
+        $this->get(route('operator.study.dicom', $studyId))->assertForbidden();
     }
 
     private function insertCalledXrayAdmission(array $fixture): string

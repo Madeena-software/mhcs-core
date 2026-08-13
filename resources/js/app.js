@@ -9,10 +9,19 @@ function viewerTimeout(root) {
 export function setViewerUnavailable(root) {
     root.dataset.viewerState = 'error';
 
-    const status = root.querySelector('#dicom-viewer-status');
     const error = root.querySelector('#dicom-viewer-error');
-    if (status) {
-        status.textContent = root.dataset.unavailableMessage;
+    const statuses = typeof root.querySelectorAll === 'function'
+        ? [...root.querySelectorAll('[data-viewer-status]')]
+        : [];
+    if (statuses.length > 0) {
+        for (const status of statuses) {
+            status.textContent = root.dataset.unavailableMessage;
+        }
+    } else {
+        const status = root.querySelector('#dicom-viewer-status');
+        if (status) {
+            status.textContent = root.dataset.unavailableMessage;
+        }
     }
     if (error) {
         error.hidden = false;

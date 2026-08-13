@@ -3,9 +3,7 @@ import {
     RenderingEngine,
     init as cornerstoneInit,
 } from '@cornerstonejs/core';
-import dicomImageLoader, {
-    init as dicomImageLoaderInit,
-} from '@cornerstonejs/dicom-image-loader';
+import { init as dicomImageLoaderInit } from '@cornerstonejs/dicom-image-loader';
 import dicomParser from 'dicom-parser';
 import { VIEWER_TIMEOUT_MS, withViewerTimeout } from './operator-viewer-timeout.js';
 
@@ -14,11 +12,23 @@ const ENGINE_ID = 'mhcs-dicom-engine';
 
 export const VIEWER_INTERACTIONS = Object.freeze(['zoom', 'pan']);
 
-export function setViewerState(root, state, message = '') {
+function viewerStatusNodes(root) {
+    if (typeof root.querySelectorAll === 'function') {
+        const nodes = [...root.querySelectorAll('[data-viewer-status]')];
+        if (nodes.length > 0) {
+            return nodes;
+        }
+    }
+
     const status = root.querySelector('#dicom-viewer-status');
+
+    return status ? [status] : [];
+}
+
+export function setViewerState(root, state, message = '') {
     const errorNode = root.querySelector('#dicom-viewer-error');
     root.dataset.viewerState = state;
-    if (status) {
+    for (const status of viewerStatusNodes(root)) {
         status.textContent = state === 'error' ? root.dataset.unavailableMessage : message;
     }
     if (errorNode) {
@@ -104,11 +114,6 @@ export async function renderStudy(root) {
 
         const viewport = renderingEngine.getViewport(VIEWPORT_ID);
         const imageId = 'wadouri:' + root.dataset.imageUrl;
-        const image = dicomImageLoader.wadouri.loadImage(imageId);
-        if (!image?.promise) {
-            throw new Error(root.dataset.parserUnavailableMessage);
-        }
-        await withViewerTimeout(image.promise, timeoutMs);
         await withViewerTimeout(viewport.setStack([imageId], 0), timeoutMs);
 
         const center = Number(root.dataset.windowCenter);

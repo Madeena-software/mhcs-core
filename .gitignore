@@ -34,6 +34,7 @@ _ide_helper.php
 Homestead.json
 Homestead.yaml
 Thumbs.db
+*.env
 
 # Research-generated caches and local outputs
 research/**/__pycache__/

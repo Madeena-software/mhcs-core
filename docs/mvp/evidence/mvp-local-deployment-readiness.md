@@ -90,3 +90,38 @@ was changed under this readiness task.
 
 These findings contain no credentials, private-object data, NPZ/DICOM content,
 external responses, or raw identifiers.
+
+## Current-tab viewer remediation evidence — 2026-08-14
+
+The published task .agents/tasks/operator-current-tab-dicom-viewer.md is
+being executed in the existing study view and viewer module. The viewer now
+uses Cornerstone’s protected stack-loading path once, so the viewport does not
+perform a separate uncached loader request. Loading, ready, and safe error
+copy update every visible status location. The study surface now follows the
+approved Operator workstation direction: compact top bar, study context panel,
+dominant vertical stage, read-only tool/workflow panel, responsive portrait
+stacking, and persistent DICOM download/return actions. The existing protected
+routes and authorization boundaries are unchanged.
+
+Observed verification:
+
+- Focused JavaScript, focused Operator/Image Gateway/localization PHPUnit,
+  full PHPUnit (312 tests; 305 passed; 7 skipped), production build/static
+  bundle check, formatter, and diff check: **PASS**.
+- timeout 60s env TARGET=. vendor/bin/pest tests/Browser/Mvp14OperatorDicomRehearsalTest.php --browser chrome --colors=never:
+  **NOT PASS** — exited with status 124 after the timeout and produced no
+  test output. No browser-rendering success is claimed from this run.
+- The authorised user-led current-tab checklist remains required for final
+  product confirmation.
+
+## Current protected DICOM failure remediation — 2026-08-14
+
+The authorised browser report exposed a second, server-side failure after the
+viewer bundle began requesting the protected DICOM route. A missing private
+object metadata read raised an uncaught JSON syntax exception and returned
+HTTP 500. The private-object boundary now normalizes storage-read failures and
+the Image Gateway returns its existing safe denial path; no private bytes,
+storage credentials, or external object-store calls were used. A synthetic
+missing-object feature regression passes. The actual local study still needs
+the configured database and local private-object tree to be reset/re-uploaded
+together before a real 200 DICOM response can be confirmed.
