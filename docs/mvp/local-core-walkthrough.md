@@ -58,13 +58,14 @@ and serve pages, consent/questionnaire uploads, and NPZ uploads. Start those
 four workers plus the one Image Gateway queue worker in separate terminals:
 
 ```bash
-PHP_CLI_SERVER_WORKERS=4 TARGET="." php artisan serve --host=127.0.0.1 --port=8013
+PHP_CLI_SERVER_WORKERS=4 TARGET="." php artisan serve --no-reload --host=127.0.0.1 --port=8013
 TARGET="." php artisan queue:work database --queue=image-gateway --timeout=390
 ```
 
-The worker consumes only the existing `image-gateway` queue and uses the
-configured 390-second worker timeout. Do not inspect logs, object storage, or
-secrets to diagnose a visible terminal failure.
+The `--no-reload` flag is required for Laravel to create all four native PHP
+HTTP workers. The worker consumes only the existing `image-gateway` queue and
+uses the configured 390-second worker timeout. Do not inspect logs, object
+storage, or secrets to diagnose a visible terminal failure.
 
 ## Primary Operator journey
 
@@ -88,10 +89,13 @@ secrets to diagnose a visible terminal failure.
    the pair once; do not resubmit it.
 
 7. Submit the pair once. The request durably stores the NPZ pair, manifest, and
-   signature, then accepts the capture and queues MPIPS. The page polls safe
-   status until DICOM is ready; after an interruption it identifies only a
-   missing source component and permits only that original component to retry.
-   The existing Image Gateway worker is the only MPIPS caller.
+   signature, then accepts the capture and queues MPIPS. During the XHR, keep
+   the controls and native unload protection active and observe byte-level
+   upload progress. Once safe status is `queued` or `processing`, the page
+   may be closed; reopening resumes safe polling until DICOM is ready. After
+   an interruption it identifies only a missing source component and permits
+   only that original component to retry. The existing Image Gateway worker
+   is the only MPIPS caller.
 8. For a successful result, open the DICOM results worklist, open the returned
    study, and confirm the vertical read-only Cornerstone viewer renders with
    automatic VOI and zoom/pan only. Use the normal **Download DICOM**

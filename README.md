@@ -14,10 +14,10 @@ owning module.
 ## Local Operator-to-MPIPS rehearsal
 
 The supported local rehearsal uses the existing native Laravel web process,
-database queue worker, private S3 disk, and loopback MPIPS service. It is a
-disposable, non-clinical integration rehearsal only; it is not deployment,
-production, or release evidence. Do not use Docker, Compose, a reverse proxy,
-a server database, real patients, or real credentials.
+database queue worker, configured private filesystem disk, and loopback MPIPS
+service. It is a disposable, non-clinical integration rehearsal only; it is
+not deployment or release evidence. Do not use Docker, Compose, a reverse
+proxy, a server database, real patients, or real credentials.
 
 ### First-time setup
 
@@ -40,9 +40,11 @@ value. The required application and encryption variable names are:
 - `MHCS_MANIFEST_KEY`
 - `MHCS_MANIFEST_KEY_ID`
 
-Use the configured private S3 disk and AWS variables:
-`MHCS_PRIVATE_OBJECT_DISK`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`,
-`AWS_DEFAULT_REGION`, `AWS_BUCKET`, and `AWS_USE_PATH_STYLE_ENDPOINT`.
+Use the configured private filesystem disk for this local rehearsal:
+`MHCS_PRIVATE_OBJECT_DISK=local`. The local runtime does not call AWS/S3.
+Production retains the existing private S3 disk and AWS variables:
+`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION`,
+`AWS_BUCKET`, and `AWS_USE_PATH_STYLE_ENDPOINT`.
 Configure MPIPS with `MPIPS_BASE_URL` (the documented local default is
 `http://127.0.0.1:8014`), `MPIPS_API_KEY`, and `MPIPS_TIMEOUT_SECONDS`.
 Set `MHCS_MAX_UPLOAD_MB=100` for the maximum size of every individual upload
@@ -78,13 +80,16 @@ mode `0600`; obtain them locally and never print or copy their contents.
 Run the following in separate local terminals using the same environment:
 
 ```bash
-TARGET="." php artisan serve --host=127.0.0.1 --port=8013
+PHP_CLI_SERVER_WORKERS=4 TARGET="." php artisan serve --no-reload --host=127.0.0.1 --port=8013
 TARGET="." php artisan queue:work database --queue=image-gateway --timeout=390
 ```
 
 The worker consumes only the existing `image-gateway` queue and uses the
-configured 390-second Image Gateway worker timeout. Do not add a queue, retry
-policy, Artisan command, process manager, or infrastructure.
+configured 390-second Image Gateway worker timeout. Source acceptance stores
+the complete source set durably and queues MPIPS. Once safe status is
+`queued` or `processing`, the Operator may close the page; reopening resumes
+safe polling. Do not add a queue, retry policy, Artisan command, process
+manager, or infrastructure.
 
 Open `http://127.0.0.1:8013/operator/login` and follow the ordered
 [local Operator-to-MPIPS walkthrough](docs/mvp/local-core-walkthrough.md).
@@ -118,8 +123,8 @@ TARGET="." vendor/bin/pint --test
 TARGET="." git diff --check
 ```
 
-The manual rehearsal and its redacted results are recorded in
-`docs/mvp/evidence/mvp-local-mpips-operator-rehearsal.md`. No NPZ path or
+The manual rehearsal and its redacted readiness results are recorded in
+`docs/mvp/evidence/mvp-local-deployment-readiness.md`. No NPZ path or
 filename, patient data, private-object identifier, secret, or DICOM bytes may
 appear in that report.
 
