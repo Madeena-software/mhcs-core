@@ -293,3 +293,32 @@ dependency installation, or raw clinical-file handling.
 `REVIEW REQUIRED` — return one immutable implementation revision with concise,
 redacted verification evidence. The Planner/Reviewer determines acceptance
 before creating the separate DICOM-viewer task or moving to local rehearsal.
+
+## Remediation
+
+**Review basis:** `1f9763d` — implementation review after the published task
+revision `91982bb43f591e818299df37c011de5e9490570c`.
+
+### Required corrections
+
+- Enforce `ShiftSchedule.display_reference` immutability at the existing Member
+  model boundary, using the same established immutable-field pattern that
+  protects `Member.medical_record_number`. A direct Eloquent update that
+  changes an existing schedule reference must fail before persistence; normal
+  schedule edits must retain the reference.
+- Apply the same bounded database-unique collision retry to every non-test
+  runtime schedule-construction path, including `MvpBookingSeeder`. A local
+  dummy-data collision must not make the seeder create an invalid schedule or
+  fail merely because `JAD-XXXXXXXX` was already assigned. Keep this local to
+  the existing seeder/service paths; do not introduce a generic identifier
+  framework, a counter, or a new runtime service.
+- Add focused tests proving the direct schedule-model mutation is rejected and
+  proving the local booking seed path stores a valid unique MRN-style schedule
+  reference. Preserve every accepted behavior from the original task.
+
+### Additional verification
+
+- Run the changed focused tests, `vendor/bin/phpunit`, `npm run build`,
+  `vendor/bin/pint --test`, and `git diff --check`.
+- Report the immutable remediation implementation revision, exact commands and
+  observed output, tests added/changed, and any deviation or blocker.
