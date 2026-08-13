@@ -56,11 +56,53 @@ function bindZoomAndPan(element, viewport) {
     element.addEventListener('pointerleave', stopPan);
 }
 
+export function bindMonitorWindow(root) {
+    if (window.name === 'mhcs-dicom-monitor') {
+        document.body.classList.add('is-monitor-popup');
+        root.dataset.isMonitorPopup = 'true';
+    }
+
+    const button = root.querySelector('[data-open-monitor]');
+    if (!button) {
+        return;
+    }
+    button.addEventListener('click', () => {
+        const targetUrl = button.dataset.monitorUrl || window.location.href;
+        const popupStatus = root.querySelector('#dicom-popup-status');
+        try {
+            const popup = window.open(
+                targetUrl,
+                'mhcs-dicom-monitor',
+                'width=640,height=960,resizable=yes,scrollbars=yes'
+            );
+            if (popup && !popup.closed) {
+                popup.focus();
+                if (popupStatus) {
+                    popupStatus.hidden = true;
+                    popupStatus.textContent = '';
+                }
+            } else {
+                if (popupStatus) {
+                    popupStatus.hidden = false;
+                    popupStatus.textContent = root.dataset.popupBlockedMessage || 'Browser memblokir jendela pop-up. Lanjutkan pada tab ini atau izinkan pop-up.';
+                }
+            }
+        } catch (e) {
+            if (popupStatus) {
+                popupStatus.hidden = false;
+                popupStatus.textContent = root.dataset.popupBlockedMessage || 'Browser memblokir jendela pop-up. Lanjutkan pada tab ini atau izinkan pop-up.';
+            }
+        }
+    });
+}
+
 async function renderStudy(root) {
     const element = root.querySelector('[data-testid="dicom-viewport"]');
     if (!element) {
         return;
     }
+
+    bindMonitorWindow(root);
 
     try {
         if (typeof dicomParser.parseDicom !== 'function') {
@@ -74,6 +116,17 @@ async function renderStudy(root) {
             element,
             type: Enums.ViewportType.STACK,
         });
+
+        window.addEventListener('resize', () => {
+            if (renderingEngine) {
+                try {
+                    renderingEngine.resize(true, true);
+                } catch (e) {
+                    // ignore if unmounted
+                }
+            }
+        });
+
         const viewport = renderingEngine.getViewport(VIEWPORT_ID);
         const imageId = 'wadouri:' + root.dataset.imageUrl;
         await dicomImageLoader.wadouri.loadImage(imageId).promise;
