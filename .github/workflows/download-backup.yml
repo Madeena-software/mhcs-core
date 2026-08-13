@@ -1,0 +1,144 @@
+name: Download Database Backup
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "What do you want to do?"
+        required: true
+        type: choice
+        options:
+          - "Download Latest"
+          - "Download Specific"
+          - "List Available Backups"
+        default: "Download Latest"
+      backup_name:
+        description: "Filename (Only required if using 'Download Specific')"
+        required: false
+        type: string
+
+concurrency:
+  group: "mhcs_core-download-backup"
+  cancel-in-progress: false
+
+jobs:
+  download-backup:
+    name: Retrieve Backup
+    runs-on: self-hosted
+    outputs:
+      artifact_id: ${{ steps.upload_artifact.outputs.artifact-id }}
+
+    steps:
+      - name: Process Backups
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_BUCKET: ${{ secrets.AWS_BUCKET }}
+          AWS_ENDPOINT: ${{ secrets.AWS_ENDPOINT }}
+          APP_DOMAIN: ${{ secrets.APP_DOMAIN }}
+          APP_SLUG: "mhcs_core"
+        run: |
+          set -euo pipefail
+
+          rm -f *.sql.gz
+
+          ACTION="${{ github.event.inputs.action }}"
+          BACKUP_INPUT="${{ github.event.inputs.backup_name }}"
+
+          if [ "$ACTION" = "List Available Backups" ]; then
+            echo "=== Available backups in S3 ==="
+            docker run --rm \
+              --entrypoint sh \
+              -e AWS_ACCESS_KEY_ID \
+              -e AWS_SECRET_ACCESS_KEY \
+              -e AWS_ENDPOINT \
+              minio/mc:latest -c "
+                mc alias set s3 \"\$AWS_ENDPOINT\" \"\$AWS_ACCESS_KEY_ID\" \"\$AWS_SECRET_ACCESS_KEY\" --api S3v4 >/dev/null && \
+                mc ls \"s3/$AWS_BUCKET/${APP_SLUG}-backups/\"
+              " | grep '\.sql\.gz$' || echo "No backups found yet."
+            echo "==============================="
+            exit 0
+          fi
+
+          if [ "$ACTION" = "Download Specific" ]; then
+            if [ -z "$BACKUP_INPUT" ]; then
+              echo "ERROR: You selected 'Download Specific' but did not provide a filename."
+              exit 1
+            fi
+            TARGET_FILE="$BACKUP_INPUT"
+          else
+            echo "Finding the latest backup..."
+            TARGET_FILE=$(docker run --rm \
+              --entrypoint sh \
+              -e AWS_ACCESS_KEY_ID \
+              -e AWS_SECRET_ACCESS_KEY \
+              -e AWS_ENDPOINT \
+              minio/mc:latest -c "
+                mc alias set s3 \"\$AWS_ENDPOINT\" \"\$AWS_ACCESS_KEY_ID\" \"\$AWS_SECRET_ACCESS_KEY\" --api S3v4 >/dev/null && \
+                mc ls \"s3/$AWS_BUCKET/${APP_SLUG}-backups/\"
+              " | grep '\.sql\.gz$' | tail -n 1 | awk '{print $NF}')
+          fi
+
+          if [ -z "$TARGET_FILE" ]; then
+            echo "No backups found!"
+            exit 1
+          fi
+
+          echo "Downloading $TARGET_FILE from S3 to runner..."
+
+          docker run --rm \
+            --entrypoint sh \
+            -e AWS_ACCESS_KEY_ID \
+            -e AWS_SECRET_ACCESS_KEY \
+            -e AWS_ENDPOINT \
+            -v "$PWD:/workspace" \
+            minio/mc:latest -c "
+              mc alias set s3 \"\$AWS_ENDPOINT\" \"\$AWS_ACCESS_KEY_ID\" \"\$AWS_SECRET_ACCESS_KEY\" --api S3v4 >/dev/null && \
+              mc cp \"s3/$AWS_BUCKET/${APP_SLUG}-backups/$TARGET_FILE\" \"/workspace/$TARGET_FILE\"
+            "
+
+          echo "TARGET_FILE=$TARGET_FILE" >> $GITHUB_ENV
+
+          echo "✅ Backup successfully downloaded to runner!"
+
+          echo "### 📦 Database Backup Ready" >> $GITHUB_STEP_SUMMARY
+          echo "The database backup **$TARGET_FILE** has been successfully fetched." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "It is securely attached to this workflow run as an **Artifact**. Scroll to the bottom of this page to download it." >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload Backup Artifact
+        id: upload_artifact
+        if: env.TARGET_FILE != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: database-backup
+          path: ${{ env.TARGET_FILE }}
+          retention-days: 1
+
+  cleanup_artifact:
+    name: Auto-Delete Backup Artifact
+    needs: download-backup
+    if: needs.download-backup.outputs.artifact_id != ''
+    runs-on: self-hosted
+    permissions:
+      actions: write
+    steps:
+      - name: Wait 1 min then delete artifact
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ARTIFACT_ID: ${{ needs.download-backup.outputs.artifact_id }}
+          REPO: ${{ github.repository }}
+        run: |
+          echo "⏳ Backup artifact [${ARTIFACT_ID}] will be auto-deleted in 1 minute..."
+          echo "   Please download the artifact before that time."
+          sleep 60
+          echo "🗑️  Deleting artifact ${ARTIFACT_ID}..."
+          if curl -s -f -X DELETE \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${REPO}/actions/artifacts/${ARTIFACT_ID}" 2>&1; then
+            echo "✅ Backup artifact deleted successfully."
+          else
+            echo "⚠️  Artifact failed to delete."
+          fi

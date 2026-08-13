@@ -1,0 +1,209 @@
+name: Server — Database Setup & Automated Backup
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MHCS Core — Database Setup & Automated Backup
+#
+# Configures MySQL user grants and installs the automated S3 daily backup cron.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+on:
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  BACKUP_SCRIPT: /etc/madeena-mhcs_core-db-backup.sh
+  BACKUP_ENV_FILE: /etc/madeena-mhcs_core-db-backup.env
+  APP_SLUG: mhcs_core
+
+jobs:
+  db-setup:
+    name: Database Grants & S3 Backup Automation
+    runs-on: self-hosted
+    permissions:
+      contents: read
+
+    steps:
+      - name: Locate DB container
+        env:
+          SUDO_PASSWORD: ${{ secrets.SUDO_PASSWORD }}
+          APP_KEY: ${{ secrets.APP_KEY }}
+          DB_DATABASE: ${{ secrets.DB_DATABASE }}
+          DB_USERNAME: ${{ secrets.DB_USERNAME }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_ROOT_PASSWORD: ${{ secrets.DB_ROOT_PASSWORD }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_BUCKET: ${{ secrets.AWS_BUCKET }}
+          AWS_ENDPOINT: ${{ secrets.AWS_ENDPOINT }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+        run: |
+          set -euo pipefail
+
+          DB_CONTAINER="$(docker ps -q --filter "label=com.docker.swarm.service.name=${APP_SLUG}_db" | head -n 1)"
+          if [ -z "$DB_CONTAINER" ]; then
+            DB_CONTAINER="$(docker ps -q --filter "name=${APP_SLUG}_db" | head -n 1)"
+          fi
+
+          if [ -z "$DB_CONTAINER" ]; then
+            echo "FATAL: ${APP_SLUG}_db container is not running."
+            docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}'
+            exit 1
+          fi
+
+          echo "DB_CONTAINER=$DB_CONTAINER" >> "$GITHUB_ENV"
+          echo "db container: $DB_CONTAINER"
+
+      - name: Fix app user grants
+        run: |
+          set -euo pipefail
+
+          db_exec() {
+            docker exec "$DB_CONTAINER" \
+              mysql -u root -p"${DB_ROOT_PASSWORD}" \
+              -e "$1"
+          }
+
+          echo "Granting app user privileges on ${DB_DATABASE}..."
+          db_exec "GRANT ALL PRIVILEGES ON \`${DB_DATABASE}\`.* TO '${DB_USERNAME}'@'%';"
+          db_exec "FLUSH PRIVILEGES;"
+
+          echo "Verifying app user access..."
+          docker exec "$DB_CONTAINER" \
+            mysql -u "${DB_USERNAME}" -p"${DB_PASSWORD}" \
+            --batch --silent --skip-column-names \
+            -e "USE \`${DB_DATABASE}\`; SHOW TABLES;" >/dev/null
+
+      - name: Install S3 backup script and cron job
+        run: |
+          set -euo pipefail
+
+          _sudo() {
+            echo "$SUDO_PASSWORD" | sudo -S -p '' "$@" 2>/dev/null
+          }
+
+          TMP_ENV="$(mktemp)"
+          {
+            printf 'APP_ENV=%q\n' production
+            printf 'APP_DEBUG=%q\n' false
+            printf 'APP_KEY=%q\n' "$APP_KEY"
+            printf 'APP_SLUG=%q\n' "$APP_SLUG"
+            printf 'DB_DATABASE=%q\n' "$DB_DATABASE"
+            printf 'DB_ROOT_PASSWORD=%q\n' "$DB_ROOT_PASSWORD"
+            printf 'AWS_ACCESS_KEY_ID=%q\n' "$AWS_ACCESS_KEY_ID"
+            printf 'AWS_SECRET_ACCESS_KEY=%q\n' "$AWS_SECRET_ACCESS_KEY"
+            printf 'AWS_DEFAULT_REGION=%q\n' "${AWS_DEFAULT_REGION:-id}"
+            printf 'AWS_BUCKET=%q\n' "$AWS_BUCKET"
+            printf 'AWS_ENDPOINT=%q\n' "$AWS_ENDPOINT"
+            printf 'AWS_USE_PATH_STYLE_ENDPOINT=%q\n' true
+          } > "$TMP_ENV"
+          _sudo cp "$TMP_ENV" "$BACKUP_ENV_FILE"
+          _sudo chmod 600 "$BACKUP_ENV_FILE"
+          rm -f "$TMP_ENV"
+
+          TMP_SCRIPT="$(mktemp)"
+          cat > "$TMP_SCRIPT" <<'BACKUP_EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          ENV_FILE="${MHCS_CORE_BACKUP_ENV_FILE:-/etc/madeena-mhcs_core-db-backup.env}"
+          if [ -f "$ENV_FILE" ]; then
+            set -a
+            . "$ENV_FILE"
+            set +a
+          fi
+
+          APP_SLUG="${APP_SLUG:-mhcs_core}"
+          RETENTION_DAYS="${RETENTION_DAYS:-14}"
+          DB_NAME="${DB_DATABASE:-}"
+          DB_ROOT_PASS="${DB_ROOT_PASSWORD:-}"
+
+          if [ -z "$DB_NAME" ] || [ -z "$DB_ROOT_PASS" ] || \
+             [ -z "${AWS_ACCESS_KEY_ID:-}" ] || \
+             [ -z "${AWS_SECRET_ACCESS_KEY:-}" ] || \
+             [ -z "${AWS_BUCKET:-}" ] || \
+             [ -z "${AWS_ENDPOINT:-}" ]; then
+            echo "[$(date -u)] ERROR: DB or S3/MinIO environment variables are missing." >&2
+            exit 1
+          fi
+
+          DB_CONTAINER="$(docker ps -q --filter "label=com.docker.swarm.service.name=${APP_SLUG}_db" | head -n 1)"
+          if [ -z "$DB_CONTAINER" ]; then
+            DB_CONTAINER="$(docker ps -q --filter "name=${APP_SLUG}_db" | head -n 1)"
+          fi
+          if [ -z "$DB_CONTAINER" ]; then
+            echo "[$(date -u)] ERROR: could not find ${APP_SLUG}_db container." >&2
+            exit 1
+          fi
+
+          TMPDIR="$(mktemp -d)"
+          cleanup() {
+            rm -rf "$TMPDIR"
+          }
+          trap cleanup EXIT
+
+          TIMESTAMP="$(date -u +'%Y%m%d-%H%M%S')"
+          BACKUP_NAME="${APP_SLUG}-${DB_NAME}-${TIMESTAMP}.sql.gz"
+          BACKUP_FILE="${TMPDIR}/${BACKUP_NAME}"
+
+          echo "[$(date -u)] Starting backup of '${DB_NAME}'..."
+          docker exec "$DB_CONTAINER" \
+            mysqldump -u root -p"${DB_ROOT_PASS}" \
+            --single-transaction \
+            --routines \
+            --triggers \
+            --events \
+            --add-drop-table \
+            "$DB_NAME" \
+            2>/dev/null | gzip > "$BACKUP_FILE"
+
+          if [ ! -s "$BACKUP_FILE" ]; then
+            echo "[$(date -u)] ERROR: backup file is empty." >&2
+            exit 1
+          fi
+
+          gzip -t "$BACKUP_FILE"
+          TABLE_COUNT="$(gzip -dc "$BACKUP_FILE" 2>/dev/null | grep -c '^CREATE TABLE' || true)"
+          if [ "${TABLE_COUNT:-0}" -le 0 ]; then
+            echo "[$(date -u)] ERROR: backup has no CREATE TABLE statements." >&2
+            exit 1
+          fi
+
+          echo "[$(date -u)] Local backup verified: ${BACKUP_NAME} (${TABLE_COUNT} tables)."
+          docker run --rm \
+            --network host \
+            --entrypoint sh \
+            -e AWS_ACCESS_KEY_ID \
+            -e AWS_SECRET_ACCESS_KEY \
+            -e AWS_DEFAULT_REGION \
+            -e AWS_BUCKET \
+            -e AWS_ENDPOINT \
+            -v "${TMPDIR}:/backup:ro" \
+            minio/mc:latest -c " \
+              mc alias set s3 \"\$AWS_ENDPOINT\" \"\$AWS_ACCESS_KEY_ID\" \"\$AWS_SECRET_ACCESS_KEY\" --api S3v4 >/dev/null && \
+              mc cp \"/backup/${BACKUP_NAME}\" \"s3/\$AWS_BUCKET/${APP_SLUG}-backups/${BACKUP_NAME}\" && \
+              mc rm --recursive --force --older-than \"${RETENTION_DAYS}d\" \"s3/\$AWS_BUCKET/${APP_SLUG}-backups/\" \
+            "
+          BACKUP_EOF
+
+          _sudo cp "$TMP_SCRIPT" "$BACKUP_SCRIPT"
+          _sudo chmod 700 "$BACKUP_SCRIPT"
+          rm -f "$TMP_SCRIPT"
+
+          CURRENT_CRON="$(_sudo crontab -l 2>/dev/null || true)"
+          TMP_CRON="$(mktemp)"
+          printf '%s\n' "$CURRENT_CRON" | awk '
+            /# madeena-mhcs_core-db-backup-start/ {skip=1; next}
+            /# madeena-mhcs_core-db-backup-end/ {skip=0; next}
+            skip == 0 {print}
+          ' > "$TMP_CRON"
+          {
+            echo "# madeena-mhcs_core-db-backup-start"
+            echo "CRON_TZ=Asia/Jakarta"
+            echo "0 2 * * * $BACKUP_SCRIPT >> /var/log/madeena-mhcs_core-db-backup.log 2>&1 # madeena-mhcs_core-db-backup"
+            echo "# madeena-mhcs_core-db-backup-end"
+          } >> "$TMP_CRON"
+          _sudo crontab "$TMP_CRON"
+          rm -f "$TMP_CRON"
+
+          echo "Backup script installed: $BACKUP_SCRIPT"
+          echo "Backup env file installed: $BACKUP_ENV_FILE"

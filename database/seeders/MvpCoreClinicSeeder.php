@@ -26,7 +26,7 @@ final class MvpCoreClinicSeeder extends Seeder
 {
     public function run(): void
     {
-        if (! app()->environment(['local', 'testing'])) {
+        if (! app()->environment(['local', 'testing']) && ! (bool) env('MHCS_ALLOW_PRODUCTION_MVP_SEED', false)) {
             throw new RuntimeException('MvpCoreClinicSeeder is limited to local and testing environments.');
         }
 

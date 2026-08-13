@@ -27,7 +27,7 @@ final class MvpBookingSeeder extends Seeder
 
     public function run(): void
     {
-        if (! app()->environment(['local', 'testing'])) {
+        if (! app()->environment(['local', 'testing']) && ! (bool) env('MHCS_ALLOW_PRODUCTION_MVP_SEED', false)) {
             throw new Mvp03Exception('MvpBookingSeeder is limited to local and testing environments.');
         }
 

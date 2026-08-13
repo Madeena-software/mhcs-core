@@ -73,7 +73,7 @@ final readonly class Mvp03PointService
 
     public function creditPersonalForLocalTesting(string $memberId, string $amount, string $sourceReference): string
     {
-        if (! app()->environment(['local', 'testing'])) {
+        if (! app()->environment(['local', 'testing']) && ! (bool) env('MHCS_ALLOW_PRODUCTION_MVP_SEED', false)) {
             throw new Mvp03Exception('Synthetic point funding is limited to local and testing environments.');
         }
         $amount = PointAmount::fromString($amount);

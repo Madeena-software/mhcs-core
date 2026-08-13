@@ -1,0 +1,106 @@
+name: Server Setup — Deploy Permissions
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MHCS Core — Server Setup
+#
+# One-time workflow to configure passwordless sudo for deployment commands.
+# After running this, the deploy workflow can manage the deploy root and
+# storage directories without needing SUDO_PASSWORD every time.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+on:
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  setup:
+    name: Configure Deploy Permissions
+    runs-on: self-hosted
+    permissions:
+      contents: read
+
+    steps:
+      - name: Setup passwordless sudo for deploy commands
+        env:
+          SUDO_PASSWORD: ${{ secrets.SUDO_PASSWORD }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          REMOTE_PATH: ${{ secrets.REMOTE_PATH }}
+        run: |
+          set -euo pipefail
+
+          echo "===> Setting up passwordless sudo for deploy commands..."
+
+          echo "$SUDO_PASSWORD" | sudo -S -v -p '' 2>/dev/null || {
+            echo "❌ FATAL: SUDO_PASSWORD is incorrect or the user cannot use sudo."
+            exit 1
+          }
+
+          SUDOERS_FILE="/etc/sudoers.d/madeena-deploy-mhcs_core"
+
+          TMP_SUDOERS="$(mktemp)"
+          {
+            printf '%s\n' '# Madeena CI/CD - "mhcs_core" passwordless sudo for deploy directory management'
+            printf '%s\n' '# Installed by: server-setup-deploy.yml'
+            printf '%s ALL=(ALL) NOPASSWD: /usr/bin/mkdir, /usr/bin/chown, /usr/bin/chmod\n' "$SSH_USER"
+          } > "$TMP_SUDOERS"
+          echo "$SUDO_PASSWORD" | sudo -S -p '' cp "$TMP_SUDOERS" "$SUDOERS_FILE"
+          rm -f "$TMP_SUDOERS"
+
+          echo "$SUDO_PASSWORD" | sudo -S -p '' chmod 0440 "$SUDOERS_FILE"
+          echo "$SUDO_PASSWORD" | sudo -S -p '' visudo -c || {
+            echo "❌ FATAL: sudoers syntax check failed!"
+            echo "$SUDO_PASSWORD" | sudo -S -p '' rm -f "$SUDOERS_FILE"
+            exit 1
+          }
+
+          echo "✅ Sudoers configured: $SUDOERS_FILE"
+
+          echo "===> Verifying passwordless sudo..."
+          sudo -n mkdir --help >/dev/null 2>&1 || {
+            echo "❌ mkdir passwordless sudo failed"
+            exit 1
+          }
+          sudo -n chown --help >/dev/null 2>&1 || {
+            echo "❌ chown passwordless sudo failed"
+            exit 1
+          }
+          sudo -n chmod --help >/dev/null 2>&1 || {
+            echo "❌ chmod passwordless sudo failed"
+            exit 1
+          }
+
+          echo "===> Pre-creating deployment root..."
+          if [ -z "${REMOTE_PATH:-}" ]; then
+            echo "❌ FATAL: REMOTE_PATH secret is missing or empty"
+            exit 1
+          fi
+
+          if [ "$REMOTE_PATH" = "/var/www" ] || [ "$REMOTE_PATH" = "/srv" ] || [ "$REMOTE_PATH" = "/opt" ] || [ "$REMOTE_PATH" = "/var" ]; then
+            echo "❌ FATAL: REMOTE_PATH must be a dedicated app directory, not a shared root."
+            exit 1
+          fi
+
+          sudo mkdir -p "$REMOTE_PATH"
+          sudo chown -R "$SSH_USER":"$SSH_USER" "$REMOTE_PATH"
+          sudo chmod -R u+rwX,go+rX "$REMOTE_PATH"
+          echo "  ✅ $REMOTE_PATH (owner: $SSH_USER)"
+
+          echo "===> Pre-creating deployment directories..."
+          # MySQL
+          sudo mkdir -p /var/lib/mhcs_core/mysql
+          sudo chown -R 999:999 /var/lib/mhcs_core/mysql
+          sudo chmod 750 /var/lib/mhcs_core/mysql
+
+          # App private storage
+          sudo mkdir -p /var/lib/mhcs_core/storage/app/private/bootstrap
+          sudo chown -R www-data:www-data /var/lib/mhcs_core/storage
+          sudo chmod -R 775 /var/lib/mhcs_core/storage
+
+          # Logs
+          sudo mkdir -p /var/lib/mhcs_core/logs
+          sudo chown -R www-data:www-data /var/lib/mhcs_core/logs
+          sudo chmod -R 775 /var/lib/mhcs_core/logs
+
+          echo "✅ Directories created successfully."
