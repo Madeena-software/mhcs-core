@@ -84,11 +84,22 @@ final class ImageGatewayController extends Controller
         } catch (OperatorException|ImageGatewayException) {
             abort(403);
         }
-        $validator = Validator::make($request->all(), [
+        $input = $request->all();
+        if ($form['metadata_editable']
+            && is_array($input['metadata'] ?? null)
+            && is_array($input['metadata']['examination'] ?? null)
+            && is_string($input['metadata']['examination']['study_description'] ?? null)) {
+            $input['metadata']['examination']['study_description'] = trim($input['metadata']['examination']['study_description']);
+        }
+        $rules = [
             'submission_id' => ['required', 'uuid'],
             'radiograph_npz' => [in_array('radiograph', $form['missing'], true) ? 'required' : 'nullable', 'file'],
             'gain_npz' => [in_array('gain', $form['missing'], true) ? 'required' : 'nullable', 'file'],
-        ]);
+        ];
+        if ($form['metadata_editable']) {
+            $rules += ImageGatewayCaptureService::metadataRules();
+        }
+        $validator = Validator::make($input, $rules, ImageGatewayCaptureService::metadataMessages());
         if ($validator->fails()) {
             return back()->withErrors($validator)->withInput();
         }
@@ -105,6 +116,7 @@ final class ImageGatewayController extends Controller
                 (string) $site->operator_site_id,
                 $admission,
                 (string) $validator->validated()['submission_id'],
+                $form['metadata_editable'] ? ($validator->validated()['metadata'] ?? null) : null,
                 $radiograph,
                 $gain,
             );

@@ -54,6 +54,7 @@ final class Mvp14ImageGatewayIntegrationTest extends TestCase
 
         $response = $this->post(route('operator.xray-capture.store', $admission), [
             'submission_id' => $submissionId,
+            ...$this->metadataPayload(),
             'radiograph_npz' => $this->fixtureUpload('synthetic-radiograph-01.npz'),
             'gain_npz' => $this->fixtureUpload('synthetic-gain-01.npz'),
         ]);
@@ -69,6 +70,17 @@ final class Mvp14ImageGatewayIntegrationTest extends TestCase
         $this->assertSame('awaiting_ai', DB::table('operator_queue_admissions')->where('id', $admission)->value('state'));
         $this->assertNull(DB::table('operator_queue_admissions')->where('id', $admission)->value('operator_profile_id'));
         $this->assertSame($fixture['profileId'], $capture->operator_profile_id);
+        $this->assertSame([
+            'examination' => ['study_description' => 'CHEST RADIOGRAPH'],
+            'capture' => ['detector_type' => 'BED', 'body_part_examined' => 'CHEST', 'laterality' => 'U', 'projection' => 'PA'],
+        ], json_decode((string) $capture->capture_metadata, true, 512, JSON_THROW_ON_ERROR));
+        $manifestObject = DB::table('image_gateway_capture_objects')->where('capture_set_id', $capture->id)->where('object_type', 'manifest')->first();
+        $manifest = json_decode((string) Storage::disk('local')->get((string) $manifestObject->object_key), true, 512, JSON_THROW_ON_ERROR);
+        $this->assertSame('CHEST RADIOGRAPH', $manifest['examination']['study_description']);
+        $this->assertSame('BED', $manifest['capture']['detector_type']);
+        $this->assertSame('CHEST', $manifest['capture']['body_part_examined']);
+        $this->assertSame('U', $manifest['capture']['laterality']);
+        $this->assertSame('PA', $manifest['capture']['projection']);
         $this->assertSame(1, DB::table('operator_queue_admission_history')->where('operator_queue_admission_id', $admission)->where('event_type', 'capture_accepted')->count());
         $this->assertSame(0, DB::table('image_gateway_studies')->count());
         $this->assertSame(4, DB::table('image_gateway_capture_objects')->where('capture_set_id', $capture->id)->count());
@@ -123,6 +135,7 @@ final class Mvp14ImageGatewayIntegrationTest extends TestCase
 
         $this->post(route('operator.xray-capture.store', $admission), [
             'submission_id' => (string) Str::uuid(),
+            ...$this->metadataPayload(),
             'radiograph_npz' => $this->fixtureUpload('synthetic-radiograph-01.npz'),
             'gain_npz' => $this->fixtureUpload('synthetic-gain-01.npz'),
         ])->assertRedirect(route('operator.study.results'));
@@ -145,7 +158,7 @@ final class Mvp14ImageGatewayIntegrationTest extends TestCase
                 $this->assertStringContainsString('name="'.$field.'"', $body);
             }
             $this->assertStringContainsString('"member_id":"'.$fixture['memberId'].'"', $body);
-            foreach (['detector_type', 'gain_id', 'image_spacing', 'conversion_job_id', 'study_instance_uid'] as $omitted) {
+            foreach (['gain_id', 'image_spacing', 'conversion_job_id', 'study_instance_uid'] as $omitted) {
                 $this->assertStringNotContainsString($omitted, $body);
             }
 
@@ -162,6 +175,7 @@ final class Mvp14ImageGatewayIntegrationTest extends TestCase
 
         $this->post(route('operator.xray-capture.store', $admission), [
             'submission_id' => (string) Str::uuid(),
+            ...$this->metadataPayload(),
             'radiograph_npz' => $this->fixtureUpload('synthetic-radiograph-01.npz'),
             'gain_npz' => $this->fixtureUpload('synthetic-gain-01.npz'),
         ])->assertRedirect(route('operator.study.results'));
@@ -184,6 +198,7 @@ final class Mvp14ImageGatewayIntegrationTest extends TestCase
 
         $this->post(route('operator.xray-capture.store', $admission), [
             'submission_id' => $submissionId,
+            ...$this->metadataPayload(),
             'radiograph_npz' => $this->fixtureUpload('synthetic-radiograph-01.npz'),
             'gain_npz' => $this->fixtureUpload('synthetic-gain-01.npz'),
         ])->assertRedirect();
@@ -206,6 +221,79 @@ final class Mvp14ImageGatewayIntegrationTest extends TestCase
         Http::assertNothingSent();
     }
 
+    public function test_capture_form_has_the_required_indonesian_metadata_controls_and_defaults(): void
+    {
+        $fixture = $this->operatorFixture(false);
+        $this->actingAs($fixture['operator'])->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
+        $admission = $this->insertCalledXrayAdmission($fixture);
+
+        $this->get(route('operator.xray-capture.show', $admission))
+            ->assertOk()
+            ->assertSee('name="metadata[examination][study_description]"', false)
+            ->assertSee('value="CHEST RADIOGRAPH"', false)
+            ->assertSee('name="metadata[capture][detector_type]"', false)
+            ->assertSee('value="BED"', false)
+            ->assertSee('value="TRX"', false)
+            ->assertSee('name="metadata[capture][body_part_examined]"', false)
+            ->assertSee('value="CHEST"', false)
+            ->assertSee('name="metadata[capture][laterality]"', false)
+            ->assertSee('value="U"', false)
+            ->assertSee('name="metadata[capture][projection]"', false)
+            ->assertSee('value="PA"', false)
+            ->assertDontSee('THORAX');
+    }
+
+    public function test_capture_metadata_boundaries_are_rejected_before_capture_creation(): void
+    {
+        $fixture = $this->operatorFixture(false);
+        $this->actingAs($fixture['operator'])->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
+        $admission = $this->insertCalledXrayAdmission($fixture);
+        $cases = [
+            [],
+            ['metadata' => ['examination' => ['study_description' => str_repeat('X', 65)], 'capture' => ['detector_type' => 'THORAX', 'body_part_examined' => 'INVALID', 'laterality' => 'X', 'projection' => 'INVALID']]],
+        ];
+
+        foreach ($cases as $metadata) {
+            $response = $this->from(route('operator.xray-capture.show', $admission))
+                ->post(route('operator.xray-capture.store', $admission), array_merge([
+                    'submission_id' => (string) Str::uuid(),
+                    'radiograph_npz' => $this->fixtureUpload('synthetic-radiograph-01.npz'),
+                    'gain_npz' => $this->fixtureUpload('synthetic-gain-01.npz'),
+                ], $metadata));
+
+            $response->assertRedirect(route('operator.xray-capture.show', $admission))->assertSessionHasErrors();
+            $this->assertSame(0, DB::table('image_gateway_capture_sets')->where('admission_id', $admission)->count());
+        }
+    }
+
+    public function test_legacy_null_metadata_is_not_backfilled_or_manifest_rewritten_on_retry(): void
+    {
+        $fixture = $this->operatorFixture(false);
+        $this->actingAs($fixture['operator'])->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
+        $admission = $this->insertCalledXrayAdmission($fixture);
+        Http::fake($this->validMpipsResponse());
+        $this->postCapture($admission);
+
+        $capture = DB::table('image_gateway_capture_sets')->where('admission_id', $admission)->first();
+        $manifestChecksum = (string) $capture->manifest_checksum;
+        $manifestCount = DB::table('image_gateway_capture_objects')->where('capture_set_id', $capture->id)->where('object_type', 'manifest')->count();
+        DB::table('image_gateway_capture_sets')->where('id', $capture->id)->update(['capture_metadata' => null, 'radiograph_status' => 'failed']);
+        $radiograph = DB::table('image_gateway_capture_objects')->where('capture_set_id', $capture->id)->where('object_type', 'radiograph')->first();
+        Storage::disk('local')->delete((string) $radiograph->object_key);
+        Storage::disk('local')->delete((string) $radiograph->object_key.'.meta.json');
+        DB::table('image_gateway_capture_objects')->where('id', $radiograph->id)->delete();
+
+        $this->post(route('operator.xray-capture.store', $admission), [
+            'submission_id' => $capture->submission_id,
+            'radiograph_npz' => $this->fixtureUpload('synthetic-radiograph-01.npz'),
+        ])->assertRedirect();
+
+        $after = DB::table('image_gateway_capture_sets')->where('id', $capture->id)->first();
+        $this->assertNull($after->capture_metadata);
+        $this->assertSame($manifestChecksum, $after->manifest_checksum);
+        $this->assertSame($manifestCount, DB::table('image_gateway_capture_objects')->where('capture_set_id', $capture->id)->where('object_type', 'manifest')->count());
+    }
+
     public function test_changed_missing_radiograph_is_rejected_before_external_work(): void
     {
         $fixture = $this->operatorFixture(false);
@@ -216,6 +304,7 @@ final class Mvp14ImageGatewayIntegrationTest extends TestCase
 
         $this->post(route('operator.xray-capture.store', $admission), [
             'submission_id' => $submissionId,
+            ...$this->metadataPayload(),
             'radiograph_npz' => $this->fixtureUpload('synthetic-radiograph-01.npz'),
             'gain_npz' => $this->fixtureUpload('synthetic-gain-01.npz'),
         ])->assertRedirect();
@@ -230,6 +319,10 @@ final class Mvp14ImageGatewayIntegrationTest extends TestCase
         $this->from(route('operator.xray-capture.show', $admission))
             ->post(route('operator.xray-capture.store', $admission), [
                 'submission_id' => $submissionId,
+                'metadata' => [
+                    'examination' => ['study_description' => 'CHANGED'],
+                    'capture' => ['detector_type' => 'TRX', 'body_part_examined' => 'HAND', 'laterality' => 'L', 'projection' => 'AP'],
+                ],
                 'radiograph_npz' => UploadedFile::fake()->createWithContent('changed.npz', "PK\x03\x04changed"),
             ])
             ->assertRedirect(route('operator.xray-capture.show', $admission))
@@ -238,6 +331,8 @@ final class Mvp14ImageGatewayIntegrationTest extends TestCase
         $after = DB::table('image_gateway_capture_sets')->where('id', $capture->id)->first();
         $this->assertSame('failed', $after->radiograph_status);
         $this->assertSame('success', $after->gain_status);
+        $this->assertSame('CHEST RADIOGRAPH', json_decode((string) $after->capture_metadata, true, 512, JSON_THROW_ON_ERROR)['examination']['study_description']);
+        $this->assertSame('BED', json_decode((string) $after->capture_metadata, true, 512, JSON_THROW_ON_ERROR)['capture']['detector_type']);
         $this->assertSame((string) $gain->object_key, DB::table('image_gateway_capture_objects')->where('capture_set_id', $capture->id)->where('object_type', 'gain')->value('object_key'));
         $this->assertSame(0, DB::table('image_gateway_studies')->where('capture_set_id', $capture->id)->count());
         $this->assertSame(0, DB::table('image_gateway_capture_objects')->where('capture_set_id', $capture->id)->where('object_type', 'radiograph')->count());
@@ -253,6 +348,7 @@ final class Mvp14ImageGatewayIntegrationTest extends TestCase
         $this->from(route('operator.xray-capture.show', $admission))
             ->post(route('operator.xray-capture.store', $admission), [
                 'submission_id' => (string) Str::uuid(),
+                ...$this->metadataPayload(),
                 'radiograph_npz' => UploadedFile::fake()->createWithContent('not-an-npz.npz', 'not a zip'),
                 'gain_npz' => $this->fixtureUpload('synthetic-gain-01.npz'),
             ])
@@ -527,9 +623,21 @@ final class Mvp14ImageGatewayIntegrationTest extends TestCase
     {
         $this->post(route('operator.xray-capture.store', $admission), [
             'submission_id' => (string) Str::uuid(),
+            ...$this->metadataPayload(),
             'radiograph_npz' => $this->fixtureUpload('synthetic-radiograph-01.npz'),
             'gain_npz' => $this->fixtureUpload('synthetic-gain-01.npz'),
         ])->assertRedirect(route('operator.study.results'));
+    }
+
+    /** @return array<string, mixed> */
+    private function metadataPayload(): array
+    {
+        return [
+            'metadata' => [
+                'examination' => ['study_description' => 'CHEST RADIOGRAPH'],
+                'capture' => ['detector_type' => 'BED', 'body_part_examined' => 'CHEST', 'laterality' => 'U', 'projection' => 'PA'],
+            ],
+        ];
     }
 
     private function fixtureUpload(string $name): UploadedFile

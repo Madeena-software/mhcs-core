@@ -164,6 +164,10 @@ it('takes an operator from X-ray capture to an actual Cornerstone viewport and d
         ->withSession(['operator.active_site_id' => $fixture['siteLocalId']])
         ->post(route('operator.xray-capture.store', $this->admission), [
             'submission_id' => (string) Str::uuid(),
+            'metadata' => [
+                'examination' => ['study_description' => 'CHEST RADIOGRAPH'],
+                'capture' => ['detector_type' => 'BED', 'body_part_examined' => 'CHEST', 'laterality' => 'U', 'projection' => 'PA'],
+            ],
             'radiograph_npz' => mvp14BrowserFixtureUpload('synthetic-radiograph-01.npz'),
             'gain_npz' => mvp14BrowserFixtureUpload('synthetic-gain-01.npz'),
         ])
@@ -213,6 +217,10 @@ it('lets a second current-shift operator discover and download the accepted stud
         ->withSession(['operator.active_site_id' => $fixture['siteLocalId']])
         ->post(route('operator.xray-capture.store', $this->admission), [
             'submission_id' => (string) Str::uuid(),
+            'metadata' => [
+                'examination' => ['study_description' => 'CHEST RADIOGRAPH'],
+                'capture' => ['detector_type' => 'BED', 'body_part_examined' => 'CHEST', 'laterality' => 'U', 'projection' => 'PA'],
+            ],
             'radiograph_npz' => mvp14BrowserFixtureUpload('synthetic-radiograph-01.npz'),
             'gain_npz' => mvp14BrowserFixtureUpload('synthetic-gain-01.npz'),
         ])

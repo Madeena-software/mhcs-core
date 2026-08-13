@@ -38,6 +38,14 @@ final readonly class ImageGatewayCaptureService implements OperatorStudyQuery
 
     private const AUDIENCE = 'operator-study';
 
+    public const DETECTOR_TYPES = ['BED', 'TRX'];
+
+    public const BODY_PARTS = ['ABDOMEN', 'ANKLE', 'CHEST', 'CLAVICLE', 'CSPINE', 'CTSPINE', 'ELBOW', 'FEMUR', 'FOOT', 'HAND', 'HIP', 'HUMERUS', 'KNEE', 'LSPINE', 'PELVIS', 'RIB', 'SCAPULA', 'SHOULDER', 'SKULL', 'TSPINE', 'WRIST'];
+
+    public const LATERALITIES = ['R', 'L', 'U', 'B'];
+
+    public const PROJECTIONS = ['AP', 'PA', 'LL', 'RL', 'RLD', 'LLD', 'RLO', 'LLO'];
+
     public function __construct(
         private PrivateObjectStore $objects,
         private IdempotencyStore $idempotency,
@@ -64,11 +72,52 @@ final readonly class ImageGatewayCaptureService implements OperatorStudyQuery
             $capture->gain_status === 'success' ? null : 'gain',
         ]));
 
+        $metadata = $capture === null ? [
+            'examination' => ['study_description' => 'CHEST RADIOGRAPH'],
+            'capture' => ['detector_type' => null, 'body_part_examined' => 'CHEST', 'laterality' => 'U', 'projection' => 'PA'],
+        ] : $this->storedMetadata($capture);
+
         return [
             'capture_id' => $capture === null ? null : (string) $capture->id,
             'submission_id' => (string) ($capture->submission_id ?? Str::uuid()),
             'missing' => $missing,
             'status' => (string) ($capture->status ?? 'capturing'),
+            'metadata' => $metadata,
+            'metadata_editable' => $capture === null,
+        ];
+    }
+
+    /** @return array<string, array<int, string>> */
+    public static function metadataRules(): array
+    {
+        return [
+            'metadata.examination.study_description' => ['required', 'string', 'max:64'],
+            'metadata.capture.detector_type' => ['required', 'string', 'in:'.implode(',', self::DETECTOR_TYPES)],
+            'metadata.capture.body_part_examined' => ['required', 'string', 'in:'.implode(',', self::BODY_PARTS)],
+            'metadata.capture.laterality' => ['required', 'string', 'in:'.implode(',', self::LATERALITIES)],
+            'metadata.capture.projection' => ['required', 'string', 'in:'.implode(',', self::PROJECTIONS)],
+        ];
+    }
+
+    /** @return array<string, string> */
+    public static function metadataMessages(): array
+    {
+        return [
+            'metadata.examination.study_description.required' => __('Study description is required.'),
+            'metadata.examination.study_description.string' => __('Study description must be text.'),
+            'metadata.examination.study_description.max' => __('Study description may not exceed 64 characters.'),
+            'metadata.capture.detector_type.required' => __('Detector type is required.'),
+            'metadata.capture.detector_type.string' => __('Detector type is invalid.'),
+            'metadata.capture.detector_type.in' => __('Detector type is invalid.'),
+            'metadata.capture.body_part_examined.required' => __('Body part examined is required.'),
+            'metadata.capture.body_part_examined.string' => __('Body part examined is invalid.'),
+            'metadata.capture.body_part_examined.in' => __('Body part examined is invalid.'),
+            'metadata.capture.laterality.required' => __('Laterality is required.'),
+            'metadata.capture.laterality.string' => __('Laterality is invalid.'),
+            'metadata.capture.laterality.in' => __('Laterality is invalid.'),
+            'metadata.capture.projection.required' => __('Projection is required.'),
+            'metadata.capture.projection.string' => __('Projection is invalid.'),
+            'metadata.capture.projection.in' => __('Projection is invalid.'),
         ];
     }
 
@@ -80,6 +129,7 @@ final readonly class ImageGatewayCaptureService implements OperatorStudyQuery
         string $operatorSiteId,
         string $admissionId,
         string $submissionId,
+        ?array $metadata,
         ?UploadedFile $radiograph,
         ?UploadedFile $gain,
     ): array {
@@ -91,6 +141,7 @@ final readonly class ImageGatewayCaptureService implements OperatorStudyQuery
 
         $admission = $this->admission($profileId, $siteId, $operatorSiteId, $admissionId, false, true);
         $existing = DB::table('image_gateway_capture_sets')->where('submission_id', $submissionId)->first();
+        $metadata = $existing === null ? $this->normaliseMetadata($metadata, true) : null;
         $uploads = [
             'radiograph' => $this->assertUpload($radiograph, $existing?->radiograph_status !== 'success'),
             'gain' => $this->assertUpload($gain, $existing?->gain_status !== 'success'),
@@ -103,7 +154,7 @@ final readonly class ImageGatewayCaptureService implements OperatorStudyQuery
                 $submissionId,
                 self::CAPTURE_PURPOSE,
                 ['admission_id' => $admissionId, 'operator_profile_id' => $profileId, 'site_id' => $siteId, 'operator_site_id' => $operatorSiteId],
-                function () use ($admission, $profileId, $siteId, $submissionId, $admissionId, $uploads): array {
+                function () use ($admission, $profileId, $siteId, $submissionId, $admissionId, $uploads, $metadata): array {
                     $existing = DB::table('image_gateway_capture_sets')->where('submission_id', $submissionId)->first();
                     if ($existing !== null) {
                         if ((string) $existing->admission_id !== $admissionId) {
@@ -133,6 +184,7 @@ final readonly class ImageGatewayCaptureService implements OperatorStudyQuery
                         'gain_checksum' => $uploads['gain']['checksum'],
                         'radiograph_status' => 'pending',
                         'gain_status' => 'pending',
+                        'capture_metadata' => json_encode($metadata, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR),
                         'mpips_status' => 'pending',
                         'dicom_status' => 'pending',
                         'accepted_at' => null,
@@ -376,7 +428,7 @@ final readonly class ImageGatewayCaptureService implements OperatorStudyQuery
             ];
         }
         $now = $this->clock->now();
-        $bytes = $this->manifest($admission, $profileId, $siteId, $now);
+        $bytes = $this->manifest($admission, $profileId, $siteId, $now, $this->storedMetadata($capture));
         $signed = $this->signer->sign(new ConversionManifest(
             conversionJobId: (string) $capture->id,
             radiographChecksum: (string) $capture->radiograph_checksum,
@@ -535,7 +587,7 @@ final readonly class ImageGatewayCaptureService implements OperatorStudyQuery
         return $admission;
     }
 
-    private function manifest(object $admission, string $profileId, string $siteId, DateTimeImmutable $now): string
+    private function manifest(object $admission, string $profileId, string $siteId, DateTimeImmutable $now, ?array $captureMetadata): string
     {
         $source = DB::table('bookings')
             ->join('members', 'members.id', '=', 'bookings.member_id')
@@ -561,9 +613,14 @@ final readonly class ImageGatewayCaptureService implements OperatorStudyQuery
             throw new ImageGatewayException('capture_failure', 'Authoritative capture metadata is unavailable.');
         }
 
+        $studyDescription = $captureMetadata['examination']['study_description'] ?? (string) ($source->study_description ?? $source->service_code_snapshot);
+        $capture = ['captured_at' => $now->format(DATE_ATOM)];
+        if ($captureMetadata !== null) {
+            $capture += $captureMetadata['capture'];
+        }
         $manifest = [
             'examination' => [
-                'study_description' => (string) ($source->study_description ?? $source->service_code_snapshot),
+                'study_description' => $studyDescription,
                 'performed_at' => $now->format(DATE_ATOM),
                 'service_request_id' => (string) $admission->booking_id,
                 'encounter_id' => (string) $admission->booking_id,
@@ -583,7 +640,7 @@ final readonly class ImageGatewayCaptureService implements OperatorStudyQuery
                 'site_id' => (string) $site->operator_site_id,
                 'institution_name' => (string) $site->display_name,
             ],
-            'capture' => ['captured_at' => $now->format(DATE_ATOM)],
+            'capture' => $capture,
         ];
         $sex = match (strtolower((string) $source->administrative_gender)) {
             'male', 'm' => 'male',
@@ -596,6 +653,57 @@ final readonly class ImageGatewayCaptureService implements OperatorStudyQuery
         }
 
         return json_encode($this->sortKeys($manifest), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+    }
+
+    /** @return array<string, mixed>|null */
+    private function storedMetadata(object $capture): ?array
+    {
+        if (! is_string($capture->capture_metadata ?? null)) {
+            return null;
+        }
+        $metadata = json_decode($capture->capture_metadata, true);
+
+        return is_array($metadata)
+            && isset($metadata['examination']['study_description'], $metadata['capture'])
+            && is_array($metadata['capture'])
+            ? $metadata
+            : null;
+    }
+
+    /** @return array{examination: array{study_description: string}, capture: array{detector_type: string, body_part_examined: string, laterality: string, projection: string}}|null */
+    private function normaliseMetadata(?array $metadata, bool $required): ?array
+    {
+        if (! $required && $metadata === null) {
+            return null;
+        }
+        if (! is_array($metadata)) {
+            throw new ImageGatewayException('capture_invalid', 'Capture metadata is required.');
+        }
+
+        $examination = $metadata['examination'] ?? null;
+        $capture = $metadata['capture'] ?? null;
+        $studyDescription = is_array($examination) ? ($examination['study_description'] ?? null) : null;
+        $detectorType = is_array($capture) ? ($capture['detector_type'] ?? null) : null;
+        $bodyPart = is_array($capture) ? ($capture['body_part_examined'] ?? null) : null;
+        $laterality = is_array($capture) ? ($capture['laterality'] ?? null) : null;
+        $projection = is_array($capture) ? ($capture['projection'] ?? null) : null;
+        if (! is_string($studyDescription) || ($studyDescription = trim($studyDescription)) === '' || mb_strlen($studyDescription) > 64
+            || ! is_string($detectorType) || ! in_array($detectorType, self::DETECTOR_TYPES, true)
+            || ! is_string($bodyPart) || ! in_array($bodyPart, self::BODY_PARTS, true)
+            || ! is_string($laterality) || ! in_array($laterality, self::LATERALITIES, true)
+            || ! is_string($projection) || ! in_array($projection, self::PROJECTIONS, true)) {
+            throw new ImageGatewayException('capture_invalid', 'Capture metadata is invalid.');
+        }
+
+        return [
+            'examination' => ['study_description' => $studyDescription],
+            'capture' => [
+                'detector_type' => $detectorType,
+                'body_part_examined' => $bodyPart,
+                'laterality' => $laterality,
+                'projection' => $projection,
+            ],
+        ];
     }
 
     /** @param array<string, mixed> $value */

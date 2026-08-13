@@ -16,6 +16,53 @@
     @endif
     <form method="POST" action="{{ route('operator.xray-capture.store', $admissionId) }}" enctype="multipart/form-data" id="capture-form" data-status-url="{{ route('operator.xray-capture.status', $admissionId) }}" data-missing="{{ implode(',', $form['missing']) }}" data-has-capture="{{ $form['capture_id'] === null ? '0' : '1' }}">
         @csrf
+        @if ($form['metadata'] !== null)
+            @php($metadata = $form['metadata'])
+            @if ($form['metadata_editable'])
+                <fieldset>
+                    <legend>{{ __('Capture metadata') }}</legend>
+                    <label for="study_description">{{ __('Study description') }}</label>
+                    <input id="study_description" name="metadata[examination][study_description]" type="text" maxlength="64" value="{{ old('metadata.examination.study_description', $metadata['examination']['study_description']) }}" required>
+                    <label for="detector_type">{{ __('Detector type') }}</label>
+                    <select id="detector_type" name="metadata[capture][detector_type]" required>
+                        <option value="" disabled {{ old('metadata.capture.detector_type', $metadata['capture']['detector_type']) === null ? 'selected' : '' }}>{{ __('Select detector type') }}</option>
+                        @foreach (\App\Modules\ImageGateway\Application\Services\ImageGatewayCaptureService::DETECTOR_TYPES as $option)
+                            <option value="{{ $option }}" @selected(old('metadata.capture.detector_type', $metadata['capture']['detector_type']) === $option)>{{ __($option) }}</option>
+                        @endforeach
+                    </select>
+                    <label for="body_part_examined">{{ __('Body part examined') }}</label>
+                    <input id="body_part_examined" name="metadata[capture][body_part_examined]" type="text" list="body-part-options" value="{{ old('metadata.capture.body_part_examined', $metadata['capture']['body_part_examined']) }}" required>
+                    <datalist id="body-part-options">
+                        @foreach (\App\Modules\ImageGateway\Application\Services\ImageGatewayCaptureService::BODY_PARTS as $option)
+                            <option value="{{ $option }}">{{ __($option) }}</option>
+                        @endforeach
+                    </datalist>
+                    <label for="laterality">{{ __('Laterality') }}</label>
+                    <input id="laterality" name="metadata[capture][laterality]" type="text" list="laterality-options" value="{{ old('metadata.capture.laterality', $metadata['capture']['laterality']) }}" required>
+                    <datalist id="laterality-options">
+                        @foreach (\App\Modules\ImageGateway\Application\Services\ImageGatewayCaptureService::LATERALITIES as $option)
+                            <option value="{{ $option }}">{{ __($option) }}</option>
+                        @endforeach
+                    </datalist>
+                    <label for="projection">{{ __('Projection') }}</label>
+                    <input id="projection" name="metadata[capture][projection]" type="text" list="projection-options" value="{{ old('metadata.capture.projection', $metadata['capture']['projection']) }}" required>
+                    <datalist id="projection-options">
+                        @foreach (\App\Modules\ImageGateway\Application\Services\ImageGatewayCaptureService::PROJECTIONS as $option)
+                            <option value="{{ $option }}">{{ __($option) }}</option>
+                        @endforeach
+                    </datalist>
+                </fieldset>
+            @else
+                <fieldset disabled>
+                    <legend>{{ __('Capture metadata (frozen)') }}</legend>
+                    <p>{{ __('Study description') }}: <code>{{ $metadata['examination']['study_description'] }}</code></p>
+                    <p>{{ __('Detector type') }}: <code>{{ __($metadata['capture']['detector_type']) }}</code></p>
+                    <p>{{ __('Body part examined') }}: <code>{{ __($metadata['capture']['body_part_examined']) }}</code></p>
+                    <p>{{ __('Laterality') }}: <code>{{ __($metadata['capture']['laterality']) }}</code></p>
+                    <p>{{ __('Projection') }}: <code>{{ __($metadata['capture']['projection']) }}</code></p>
+                </fieldset>
+            @endif
+        @endif
         @if (in_array('radiograph', $form['missing'], true))
             <label for="radiograph_npz">{{ __('Radiograph NPZ') }}</label>
             <input id="radiograph_npz" name="radiograph_npz" type="file" accept=".npz,application/octet-stream" required>
