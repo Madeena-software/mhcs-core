@@ -1,7 +1,7 @@
 ---
 title: Plain Private Objects and Concurrent Capture Transport
 document_id: MHCS-TASK-PRIVATE-OBJECT-CONCURRENT-CAPTURE-001
-version: 1.0
+version: 1.1
 status: validated-published
 language: en-US
 last_updated: 2026-08-13
@@ -268,3 +268,82 @@ delivery, secret disclosure, or non-reversible external writes.
 `REVIEW REQUIRED` — return one immutable implementation revision with redacted
 verification and local-rehearsal evidence.  The Reviewer decides acceptance
 before the separate local deployment/readiness task may proceed.
+
+## Remediation required
+
+### Review basis and verdict
+
+`REMEDIATION REQUIRED` — reviewed against this governing task at
+`5748a88ff349cc1695d172379acbe1d2cd02566e`, accepted predecessor
+`0f6f6e3552a4ace5a057e6415eac8057cd03dcee`, and implementation revision
+`ecb107c8995704921a992ca0e25adb31c40e26d7`.
+
+The implementation removes the unapproved encrypted wrapper and probe scripts,
+uses private opaque S3 keys, retains grant and integrity enforcement, and adds
+an Operator warning/partial-file UI.  Its reported automated checks are useful
+but do not establish the required local rehearsal.
+
+Two defects prevent acceptance:
+
+1. A capture intent freezes the radiograph and gain checksums in the signed
+   manifest, but a later missing-component retry accepts any NPZ bytes.  This
+   can make the durable source object differ from the immutable manifest and,
+   when an earlier concurrent MPIPS conversion succeeded, from the returned
+   DICOM.  The retry must reject a changed component before any S3 or MPIPS
+   operation.
+2. `docs/mvp/local-core-walkthrough.md` names
+   `MHCS_IMAGE_PER_FILE_BYTES` and `MHCS_IMAGE_TOTAL_BYTES`, which are not
+   configured by the application.  The approved one-source upload setting is
+   `MHCS_MAX_UPLOAD_MB=100`; the two-file request envelope is derived by
+   `config/mhcs.php`.  The inaccurate guide cannot prepare a truthful local
+   run.
+
+### Required corrections
+
+- Preserve each checksum recorded when a capture intent is created.  Before a
+  missing radiograph or gain is streamed to S3 or MPIPS on a later request,
+  compare its checksum with that capture component's recorded checksum.  If it
+  differs, reject the request with a sanitised validation result, leave every
+  existing component/state/DICOM unchanged, and do not issue any new S3 or
+  MPIPS request.  A retry with the original bytes remains allowed.
+- Add focused fake-backed coverage for: (a) a missing-component retry with
+  original bytes preserves the existing gain and DICOM and sends no second
+  MPIPS request; and (b) a changed retry component is rejected before external
+  work and creates no additional object, capture, DICOM, or MPIPS request.
+- Correct `docs/mvp/local-core-walkthrough.md` to name only
+  `MHCS_MAX_UPLOAD_MB=100`, explain that it is the individual-file limit, and
+  state that the application derives the two-file multipart request envelope.
+  Do not introduce, document, or depend on replacement upload-limit variables.
+- Add a focused non-network test with the already locked AWS SDK/Guzzle
+  primitives demonstrating that both S3 source operations and the MPIPS
+  multipart operation are initiated before the capture waits for their
+  outcomes.  A local filesystem fake that completes each write inline is not
+  evidence of concurrent S3 initiation.  Do not add a dependency, a storage
+  abstraction, or a live S3/MPIPS probe for this test.
+- Perform the one authorised disposable local rehearsal after all automated
+  checks pass.  The approved non-clinical input files are, for this execution
+  only, radiograph
+  `research/kambing-260714/kambing/BED_1783222264263.npz` and matching gain
+  `research/kambing-260714/gain/BED_1783219207291.npz`.  Use the existing
+  files directly.  Do not copy, rename, parse, inspect, commit, log, or
+  disclose their paths, filenames, bytes, metadata, or contents outside this
+  task's execution instruction.  The report must record only redacted pass or
+  fail, component-only retry outcome, first/second authorised Operator
+  viewer/download observations, and disposable database/private-object cleanup.
+
+### Remediation acceptance criteria
+
+- [ ] A changed missing-component retry is rejected before external work; an
+  original-byte retry alone is accepted and preserves all completed components
+  and DICOM without a second MPIPS conversion.
+- [ ] A non-network focused test demonstrates actual concurrent initiation of
+  both S3 source uploads and MPIPS submission, rather than merely a successful
+  final state under synchronous local fakes.
+- [ ] The local walkthrough exposes the single supported 100 MiB upload setting
+  and the derived pair envelope accurately.
+- [ ] The fresh local rehearsal uses the approved pair under the existing
+  side-effect boundary and records redacted normal submission, component-only
+  retry, same-site/current-shift viewer/download, and cleanup evidence; or an
+  existing stop condition is observed and reported truthfully.
+- [ ] All original task verification remains passing, including full PHPUnit,
+  browser, build, formatter, and diff checks.
