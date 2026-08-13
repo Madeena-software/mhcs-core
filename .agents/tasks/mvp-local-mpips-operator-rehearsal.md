@@ -1,7 +1,7 @@
 ---
 title: Local Operator-to-MPIPS DICOM Rehearsal
 document_id: MHCS-TASK-LOCAL-MPIPS-REHEARSAL-001
-version: 1.1
+version: 1.2
 status: validated-published
 language: en-US
 last_updated: 2026-08-13
@@ -330,6 +330,12 @@ configuration templates; it remains subject to the regression evidence below.
   fail-closed validation, encrypted-private-object, and upload-purpose checks;
   do not introduce an additional limit setting, remove an existing validation,
   broaden the file types, or alter deployment infrastructure.
+- The approved local non-clinical pair is available for this execution only at
+  `research/kambing-260714/kambing/BED_1783222264263.npz` (radiograph) and
+  `research/kambing-260714/gain/BED_1783219207291.npz` (gain).  Use those exact
+  existing files directly; do not copy, rename, parse, inspect, commit, or
+  document their bytes or metadata.  These paths are execution instructions,
+  not content permitted in README, walkthrough, evidence, logs, or handoff.
 - Preserve only the runbook/evidence changes that truthfully describe the
   accepted asynchronous MHCS → private S3 → database queue → local MPIPS →
   private DICOM flow.  Correct the evidence to name its immutable implementation
@@ -378,6 +384,8 @@ configuration templates; it remains subject to the regression evidence below.
 - [ ] A bounded generated capture-sized private-object probe either proves
   write/read/delete cleanup or returns a sanitised terminal failure without
   infrastructure, secret, or clinical-data exposure.
+- [ ] The two specified existing local files are used as the radiograph and
+  gain input without repository mutation or disclosure in user-facing material.
 - [ ] If and only if that probe passes, the approved local Grabber-pair
   rehearsal reaches one DICOM and both authorised Operator view/download
   journeys with confirmed cleanup; otherwise the Executor stops truthfully.

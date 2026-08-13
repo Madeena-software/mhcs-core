@@ -1,86 +1,75 @@
 # Local Operator-to-MPIPS DICOM rehearsal evidence
 
-**Date:** 2026-08-13  
-**Target:** `.`  
-**Governing task:** `.agents/tasks/mvp-local-mpips-operator-rehearsal.md @ 3f9ee9de9ffd9715db947a328cacf03341b96621`  
-**Implementation baseline:** `0f6f6e3552a4ace5a057e6415eac8057cd03dcee`  
-**Implementation revision:** uncommitted working tree based on `3f9ee9d`; an immutable implementation revision is unavailable because the task forbids Git commits.  
-**Terminal state:** `REVIEW REQUIRED` — local rehearsal stopped at the authorized S3 boundary; Planner/Reviewer follow-up is required.
+**Date:** 2026-08-13
+**Target:** `.`
+**Governing task:** `.agents/tasks/mvp-local-mpips-operator-rehearsal.md @ 71f78d79addcee302b66a1b59aa75431dc389ae8`
+**Implementation baseline:** `d09d33e1990cffe6a446bfa0408ed3a427134554`
+**Observed implementation revision:** `71f78d79addcee302b66a1b59aa75431dc389ae8` before this evidence update; no implementation files changed in this execution.
+**Immutable implementation revision:** unavailable for this execution because the task forbids Git commits.
+**Terminal state:** `REVIEW REQUIRED` — the authorized live rehearsal did not start because the approved local Grabber radiograph/gain pair was unavailable; Planner/Reviewer follow-up is required.
 
-## Changed files
+## Changed and verified files
 
-- `README.md` — replaced the stale synthetic-bridge walkthrough with the
-  existing private S3 → database queue → loopback MPIPS → DICOM flow.
-- `docs/mvp/local-core-walkthrough.md` — added the bounded local setup,
-  primary/second-Operator steps, queue outcome handling, and cleanup rules.
-- `.env.example`, `config/mhcs.php`, and `app/Console/Commands/Serve.php` —
-  replaced separate upload-size overrides with `MHCS_MAX_UPLOAD_MB`, applying
-  100 MB per individual file and a derived 201 MB two-file request envelope.
-- `app/Http/Controllers/Operator/PortalController.php` and the Member/Image
-  Gateway upload services — applied the shared limit to questionnaire,
-  informed-consent, KTP/KIA, profile-photo, and NPZ inputs.
-- `tests/Unit/UploadLimitConfigurationTest.php` and focused existing tests —
-  covered the shared configuration and updated the 100 MB questionnaire
-  boundary.
-- `docs/mvp/evidence/mvp-local-mpips-operator-rehearsal.md` — this redacted
-  evidence report.
+Changed in this execution:
+
+- `docs/mvp/evidence/mvp-local-mpips-operator-rehearsal.md` — updated with
+  current revisions, observed checks, the blocked probe preflight, and the
+  redacted terminal outcome.
+
+Verified from the implementation baseline without modification:
+
+- `README.md` — describes the existing native web, private S3, database queue,
+  loopback MPIPS, asynchronous DICOM flow, and non-production boundary.
+- `docs/mvp/local-core-walkthrough.md` — describes the bounded setup, dummy
+  seed, `image-gateway` worker, approved local pair requirement, Operator
+  checks, sanitised failure handling, and cleanup boundary.
 
 ## Verification commands and observed results
 
 | Check | Result |
 |---|---|
-| `TARGET="." vendor/bin/phpunit` with the seeded Operator, named core flow, Image Gateway integration, Member conformance, upload-limit, and deployment tests | **PASS** — 126 tests reported; 120 passed and 6 skipped; 1,271 assertions. |
+| `TARGET="." vendor/bin/phpunit` with the seeded Operator, named core flow, Image Gateway integration, and Member conformance tests | **PASS** — 123 tests reported; 117 passed and 6 skipped; 1,198 assertions. |
 | `TARGET="." vendor/bin/pest tests/Browser/Mvp14OperatorDicomRehearsalTest.php --browser chrome` | **PASS** — 2 tests, 24 assertions; fake MPIPS responses only. |
-| Upload configuration preflight | **PASS** — `MHCS_MAX_UPLOAD_MB` resolved to 100 MB per file, 104,857,600 bytes per file, and 210,763,776 bytes (201 MB) for the two-file request envelope. |
 | `TARGET="." npm run build` | **PASS** — existing optional-font, browser-externalization, and chunk-size warnings only. |
 | `TARGET="." vendor/bin/pint --test` | **PASS**. |
-| `TARGET="." git diff --check` | **PASS**. |
-| Local configuration preflight | **PASS** — disposable local MySQL, private S3 disk, loopback MPIPS default, database queue, and configured 390-second worker timeout; values were not printed. |
-| Local pair availability preflight | **PASS** — two local NPZ inputs were present; names, path, bytes, metadata, and contents were not inspected or recorded. |
-| Fresh `migrate:fresh --force` and `MvpCoreClinicSeeder` seed | **PASS** on the clean rerun with `memory_limit=512M`; dummy seed completed. |
-| Final disposable database cleanup | **PASS** — schema reset and zero capture/object/queue residue observed. |
+| `TARGET="." git diff --check` before this evidence update | **PASS**. |
+| Local configuration preflight | **PASS** — required application/encryption, private-storage, loopback-MPIPS, disposable-local-database, and database-queue settings were present; values were not printed. |
+| Approved local Grabber-pair availability preflight | **STOPPED** — the approved two-file non-clinical pair was unavailable in the local workspace; repository fixtures were not substituted. |
+| Bounded generated capture-sized `PrivateObjectStore` probe | **NOT RUN** — the task requires the approved pair to be available before proceeding; no S3/MPIPS operation was attempted. |
+| Fresh disposable MySQL migration/seed | **NOT RUN** — stopped before destructive setup under the task stop condition. |
+| Native web server and `image-gateway` worker | **NOT STARTED**. |
+| Local S3 → queue → loopback MPIPS rehearsal | **NOT RUN**. |
 
-The destructive `migrate:fresh` command was preceded by the required warning
-and was run only against the explicitly disposable local MySQL target.
+No command read, printed, or recorded environment values, credentials, bucket
+or object identifiers, NPZ content, DICOM bytes, or patient data.
 
 ## Authorized local rehearsal
 
-Native processes were started with the Laravel web server and the existing
-database worker consuming only `image-gateway` with the configured 390-second
-timeout. The temporary harness selected the two existing local, non-clinical
-Grabber inputs without exposing their names or contents and attempted one
-capture submission through the existing Image Gateway service.
+The rehearsal stopped before database reset, seed, capture submission, or
+private-object persistence because the approved local Grabber radiograph/gain
+pair was unavailable. The repository-owned synthetic fixtures were not used as
+a substitute, and no direct MPIPS request, queue job, capture row, private
+object, DICOM result, first-Operator viewer/download action, or second-Operator
+worklist/viewer/download action occurred.
 
-Observed outcome:
+Cleanup is **NOT APPLICABLE** for this execution: no disposable database,
+native process, S3 object, queue job, or application capture was created.
 
-- Seed: **PASS**.
-- Capture acceptance: **STOPPED** at private S3 object persistence. The PHP
-  process remained in the S3 network operation for more than six minutes and
-  was stopped after observing no capture rows, object rows, or queue jobs.
-- MPIPS: **NOT REACHED**; no MPIPS request was made by the blocked attempt.
-- Queue completion: **NOT REACHED**.
-- Persisted returned DICOM: **NOT REACHED**.
-- First Operator vertical read-only viewer and normal attachment download:
-  **NOT REACHED**.
-- Second authorized same-site/current-shift Operator results worklist,
-  viewer, and normal attachment download: **NOT REACHED**.
-- Cleanup: **PASS** for the disposable database; no database-tracked capture,
-  object, or queue residue remained. Private-object cleanup cannot be
-  independently confirmed for the interrupted pre-persistence network call,
-  so the task stop condition remains active and no success is claimed.
+The local rehearsal remains separate from automated fake-based tests and is not
+deployment, production, or release evidence.
 
-The local rehearsal is therefore not deployment, production, or release
-evidence. The affected boundary is the configured local private S3 upload of
-the approved pair; no retry, alternate target, infrastructure change, or
-secret access was attempted.
+## Known gaps and required follow-up
 
-## Known gaps
-
-- The live S3 → queue → MPIPS → DICOM path did not reach queue processing.
-- The live first- and second-Operator viewer/download observations remain
-  unverified; the required automated fake-based browser coverage remains green.
-- An immutable implementation revision still requires an authorized commit;
-  this task did not authorize committing, pushing, or creating a pull request.
+- The approved non-clinical local Grabber pair must be made available through
+  the existing local location without copying, renaming, inspecting, or
+  committing it.
+- The bounded generated same-size private-object probe remains pending.
+- The fresh disposable seed, native web/queue processes, queue completion,
+  returned DICOM, and both authorized Operator view/download journeys remain
+  unverified.
+- An authorized commit is required before an immutable implementation revision
+  can be returned; this task does not authorize committing, pushing, or creating
+  a pull request.
 
 ## Redaction and disclosure confirmation
 
