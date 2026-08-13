@@ -8,6 +8,7 @@ public/build/
 .env.*
 !.env.example
 tests/
+!tests/JavaScript/
 .github/
 docs/
 storage/logs/*.log

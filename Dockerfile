@@ -21,6 +21,7 @@ FROM node:24-alpine AS node-builder
 WORKDIR /app
 COPY package.json package-lock.json vite.config.js ./
 COPY resources/ ./resources/
+COPY tests/JavaScript/ ./tests/JavaScript/
 RUN npm ci --no-audit --no-fund && npm run build
 
 FROM php:8.4-fpm AS app
