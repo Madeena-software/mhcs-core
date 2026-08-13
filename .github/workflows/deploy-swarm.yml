@@ -329,14 +329,18 @@ jobs:
             echo "Database service not yet initialized. First deployment."
           fi
 
+          echo "===> Pre-pulling base infrastructure images..."
+          docker pull mysql:8.4 || true
+          docker pull nginx:1.27-alpine || true
+
           echo "===> Deploying stack mhcs_core..."
           docker stack deploy -c docker-compose.prod.yml --with-registry-auth --prune mhcs_core
 
           echo "===> Waiting for database service to become healthy..."
           _WAIT_DB=0
           until [ "$(docker service ls --format '{{.Replicas}}' --filter "name=mhcs_core_db" 2>/dev/null | head -n 1)" = "1/1" ]; do
-            if [ "$_WAIT_DB" -ge 120 ]; then
-              echo "FATAL: mhcs_core_db failed to reach 1/1 replicas in 120s."
+            if [ "$_WAIT_DB" -ge 300 ]; then
+              echo "FATAL: mhcs_core_db failed to reach 1/1 replicas in 300s."
               docker service ps mhcs_core_db --no-trunc || true
               docker service logs mhcs_core_db --tail=100 || true
               exit 1
@@ -348,8 +352,8 @@ jobs:
           echo "===> Waiting for app service..."
           _WAIT_APP=0
           until [ "$(docker service ls --format '{{.Replicas}}' --filter "name=mhcs_core_app" 2>/dev/null | head -n 1)" = "1/1" ]; do
-            if [ "$_WAIT_APP" -ge 120 ]; then
-              echo "FATAL: mhcs_core_app failed to reach 1/1 replicas in 120s."
+            if [ "$_WAIT_APP" -ge 300 ]; then
+              echo "FATAL: mhcs_core_app failed to reach 1/1 replicas in 300s."
               docker service ps mhcs_core_app --no-trunc || true
               docker service logs mhcs_core_app --tail=100 || true
               exit 1
