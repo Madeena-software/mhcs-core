@@ -83,11 +83,20 @@ it('takes an operator from X-ray capture to an actual Cornerstone viewport and d
             }
             open(method) { this.method = method; }
             setRequestHeader() {}
-            send() {
+            send(body) {
+                this.body = body;
                 if (this.method === 'POST') this.progress({ lengthComputable: true, loaded: 512, total: 1024 });
             }
             abort() {}
         };
+        const setSyntheticFile = (selector, name) => {
+            const input = document.querySelector(selector);
+            const files = new DataTransfer();
+            files.items.add(new File([], name, { type: 'application/octet-stream' }));
+            input.files = files.files;
+        };
+        setSyntheticFile('#radiograph_npz', 'synthetic-radiograph.npz');
+        setSyntheticFile('#gain_npz', 'synthetic-gain.npz');
         document.querySelector('#capture-form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
     JS);
     $page
@@ -96,6 +105,16 @@ it('takes an operator from X-ray capture to an actual Cornerstone viewport and d
         ->assertButtonDisabled('#capture-form button')
         ->assertVisible('#capture-progress')
         ->assertSee('50%');
+    expect($page->script(<<<'JS'
+        (() => {
+            const body = window.__mvpXhrs[0].body;
+            return body instanceof FormData
+                && body.get('radiograph_npz') instanceof File
+                && body.get('gain_npz') instanceof File
+                && body.get('_token') !== null
+                && body.get('submission_id') !== null;
+        })()
+    JS))->toBeTrue();
     expect($page->script(<<<'JS'
         (() => {
             const event = new Event('beforeunload', { cancelable: true });

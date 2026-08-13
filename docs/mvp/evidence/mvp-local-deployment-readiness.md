@@ -9,6 +9,9 @@
 **Terminal state:** `STOPPED FOR PLANNING` — local preparation passed; the
 user-led capture journey exposed a separate application defect before source
 acceptance.
+**Remediation status:** `REVIEW REQUIRED` — the published FormData snapshot
+remediation is fake-backed verified; user-led local MPIPS/DICOM re-test remains
+required.
 
 ## Redacted readiness evidence
 
@@ -102,6 +105,27 @@ returned-DICOM rendering, authenticated download, and second-Operator
 visibility remain manual verification. They were not claimed as Executor-side
 automated proof. Historical pre-queued-capture observations are not repeated
 here and are not treated as defects in the accepted queued implementation.
+
+## FormData snapshot remediation
+
+The reported browser multipart defect is remediated in the bounded working tree
+for `.agents/tasks/operator-capture-formdata-snapshot-remediation.md @
+a1ba265e0abf6294daa521835529c7f2b19633c8`. The existing fake-backed browser
+test now assigns two synthetic `File` objects, captures the actual body passed
+to the mocked XHR, and verifies a native `FormData` containing both file fields,
+the CSRF field, and `submission_id` after the inputs are disabled.
+
+- Baseline regression assertion: **FAIL**, `false is true` at the captured-body
+  assertion before the view correction.
+- Corrected browser coverage: **PASS**, 2 tests and 40 assertions.
+- The only application change snapshots `new FormData(form)` before the
+  existing control lock and sends that same snapshot. No server, queue, source,
+  storage, or external-adapter behavior changed.
+
+This fake-backed result does not claim that live NPZ submission, MPIPS,
+DICOM viewing or download, S3, deployment, release, or the second-Operator
+journey passed. The next action after review is the user-led manual re-test
+listed above.
 
 ## Manual feedback received after handoff
 

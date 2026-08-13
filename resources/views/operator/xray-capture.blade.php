@@ -129,6 +129,7 @@
             if (active) return;
             active = true;
             uploading = true;
+            const body = new FormData(form);
             setControls(true);
             progress.hidden = false;
             progress.value = 0;
@@ -151,7 +152,7 @@
                 setStatus(status.dataset.error);
                 poll();
             };
-            request.send(new FormData(form));
+            request.send(body);
         });
         if (form.dataset.hasCapture === '1') {
             active = true;
