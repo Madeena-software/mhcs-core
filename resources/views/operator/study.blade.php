@@ -4,7 +4,7 @@
 
 @section('content')
 <style>
-    .dicom-study-shell { display: flex; flex-direction: column; gap: 16px; max-width: 1000px; margin: 0 auto; }
+    .dicom-study-shell { display: flex; flex-direction: column; gap: 16px; max-width: 1000px; margin: 0 auto; min-height: calc(100vh - 120px); }
     .dicom-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; padding-bottom: 12px; border-bottom: 1px solid #344651; }
     .dicom-title-wrap { display: flex; flex-direction: column; gap: 6px; }
     .dicom-title-wrap h1 { margin: 0; font-size: 24px; line-height: 1.2; color: #f4f7fb; }
@@ -19,19 +19,23 @@
 
     /* Compact dedicated vertical monitor layout */
     body.is-monitor-popup .nav { display: none !important; }
-    body.is-monitor-popup .shell { max-width: 100%; padding: 12px 14px 24px; }
+    body.is-monitor-popup { overflow: hidden; }
+    body.is-monitor-popup .shell { max-width: 100%; min-height: 100vh; box-sizing: border-box; padding: 12px 14px 24px; }
     body.is-monitor-popup .dicom-study-shell { max-width: 100%; height: calc(100vh - 36px); gap: 10px; }
     body.is-monitor-popup [data-open-monitor] { display: none !important; }
     body.is-monitor-popup .dicom-stage-frame { flex: 1; height: calc(100vh - 150px); min-height: 380px; }
+    .dicom-guidance { margin: 0; }
 </style>
 <div class="dicom-study-shell">
     <section aria-labelledby="dicom-study-title" id="dicom-study" data-dicom-viewer
              data-image-url="{{ route('operator.study.dicom', $study_id) }}"
              data-unavailable-message="{{ __('DICOM study unavailable.') }}"
              data-parser-unavailable-message="{{ __('The DICOM viewer is unavailable.') }}"
+             data-loading-message="{{ __('Loading DICOM…') }}"
              data-ready-message="{{ __('DICOM study ready. Automatic VOI is applied.') }}"
              data-display-error-message="{{ __('The DICOM study could not be displayed.') }}"
              data-popup-blocked-message="{{ __('Browser blocked the popup window. Continue in this tab or allow popups for monitor viewing.') }}"
+             data-viewer-state="loading"
              @if ($window_center !== null) data-window-center="{{ $window_center }}" @endif
              @if ($window_width !== null) data-window-width="{{ $window_width }}" @endif>
         <div class="dicom-header">
@@ -50,10 +54,13 @@
         </div>
 
         <div style="margin-top: 8px;">
-            <p id="dicom-viewer-status" role="status">{{ __('Loading DICOM…') }}</p>
+            <p id="dicom-viewer-status" role="status" aria-live="polite">{{ __('Loading DICOM…') }}</p>
             <p id="dicom-popup-status" class="dicom-notice" role="status" hidden></p>
             <p id="dicom-viewer-error" class="error" role="alert" hidden></p>
+            <p class="muted dicom-guidance">{{ __('Pointer drag pans the image. Use the mouse wheel to zoom.') }}</p>
         </div>
+
+        <noscript><p class="dicom-notice" role="status">{{ __('JavaScript is unavailable. Continue in this tab; enable JavaScript for monitor viewing.') }}</p></noscript>
 
         <div class="dicom-stage-frame">
             <div class="dicom-viewport-stack" aria-label="{{ __('DICOM viewport stack') }}">

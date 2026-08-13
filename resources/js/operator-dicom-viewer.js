@@ -13,15 +13,27 @@ const ENGINE_ID = 'mhcs-dicom-engine';
 
 export const VIEWER_INTERACTIONS = Object.freeze(['zoom', 'pan']);
 
-function setStatus(root, message, error = false) {
+export function setViewerState(root, state, message = '') {
     const status = root.querySelector('#dicom-viewer-status');
     const errorNode = root.querySelector('#dicom-viewer-error');
+    root.dataset.viewerState = state;
     if (status) {
-        status.textContent = error ? root.dataset.unavailableMessage : message;
+        status.textContent = state === 'error' ? root.dataset.unavailableMessage : message;
     }
     if (errorNode) {
-        errorNode.hidden = !error;
-        errorNode.textContent = error ? message : '';
+        errorNode.hidden = state !== 'error';
+        errorNode.textContent = state === 'error' ? root.dataset.displayErrorMessage : '';
+    }
+}
+
+export function resizeRenderingEngine(renderingEngine) {
+    if (!renderingEngine) {
+        return;
+    }
+    try {
+        renderingEngine.resize(true, true);
+    } catch {
+        // The engine may already be unmounted while the window is resizing.
     }
 }
 
@@ -56,6 +68,42 @@ function bindZoomAndPan(element, viewport) {
     element.addEventListener('pointerleave', stopPan);
 }
 
+function showPopupFallback(root) {
+    const popupStatus = root.querySelector('#dicom-popup-status');
+    if (!popupStatus) {
+        return;
+    }
+    popupStatus.hidden = false;
+    popupStatus.textContent = root.dataset.popupBlockedMessage;
+}
+
+export function openMonitorWindow(root) {
+    const button = root.querySelector('[data-open-monitor]');
+    if (!button) {
+        return;
+    }
+
+    try {
+        const popup = window.open(
+            button.getAttribute('data-monitor-url') || window.location.href,
+            'mhcs-dicom-monitor',
+            'width=640,height=960,resizable=yes,scrollbars=yes'
+        );
+        if (!popup || popup.closed) {
+            showPopupFallback(root);
+            return;
+        }
+        popup.focus();
+        const popupStatus = root.querySelector('#dicom-popup-status');
+        if (popupStatus) {
+            popupStatus.hidden = true;
+            popupStatus.textContent = '';
+        }
+    } catch {
+        showPopupFallback(root);
+    }
+}
+
 export function bindMonitorWindow(root) {
     if (window.name === 'mhcs-dicom-monitor') {
         document.body.classList.add('is-monitor-popup');
@@ -66,43 +114,18 @@ export function bindMonitorWindow(root) {
     if (!button) {
         return;
     }
-    button.addEventListener('click', () => {
-        const targetUrl = button.dataset.monitorUrl || window.location.href;
-        const popupStatus = root.querySelector('#dicom-popup-status');
-        try {
-            const popup = window.open(
-                targetUrl,
-                'mhcs-dicom-monitor',
-                'width=640,height=960,resizable=yes,scrollbars=yes'
-            );
-            if (popup && !popup.closed) {
-                popup.focus();
-                if (popupStatus) {
-                    popupStatus.hidden = true;
-                    popupStatus.textContent = '';
-                }
-            } else {
-                if (popupStatus) {
-                    popupStatus.hidden = false;
-                    popupStatus.textContent = root.dataset.popupBlockedMessage || 'Browser memblokir jendela pop-up. Lanjutkan pada tab ini atau izinkan pop-up.';
-                }
-            }
-        } catch (e) {
-            if (popupStatus) {
-                popupStatus.hidden = false;
-                popupStatus.textContent = root.dataset.popupBlockedMessage || 'Browser memblokir jendela pop-up. Lanjutkan pada tab ini atau izinkan pop-up.';
-            }
-        }
-    });
+    button.addEventListener('click', () => openMonitorWindow(root));
 }
 
-async function renderStudy(root) {
+export async function renderStudy(root) {
     const element = root.querySelector('[data-testid="dicom-viewport"]');
     if (!element) {
         return;
     }
 
     bindMonitorWindow(root);
+    setViewerState(root, 'loading', root.dataset.loadingMessage);
+    window.__mhcsDicomViewerReady = false;
 
     try {
         if (typeof dicomParser.parseDicom !== 'function') {
@@ -118,13 +141,7 @@ async function renderStudy(root) {
         });
 
         window.addEventListener('resize', () => {
-            if (renderingEngine) {
-                try {
-                    renderingEngine.resize(true, true);
-                } catch (e) {
-                    // ignore if unmounted
-                }
-            }
+            resizeRenderingEngine(renderingEngine);
         });
 
         const viewport = renderingEngine.getViewport(VIEWPORT_ID);
@@ -145,16 +162,16 @@ async function renderStudy(root) {
         viewport.resetCamera();
         viewport.render();
         bindZoomAndPan(element, viewport);
-        root.dataset.viewerState = 'ready';
         window.__mhcsDicomViewerReady = true;
-        setStatus(root, root.dataset.readyMessage);
-    } catch (error) {
-        root.dataset.viewerState = 'error';
-        setStatus(root, error instanceof Error ? error.message : root.dataset.displayErrorMessage, true);
+        setViewerState(root, 'ready', root.dataset.readyMessage);
+    } catch {
+        setViewerState(root, 'error');
     }
 }
 
-const root = document.querySelector('[data-dicom-viewer]');
-if (root) {
-    renderStudy(root);
+if (typeof document !== 'undefined') {
+    const root = document.querySelector('[data-dicom-viewer]');
+    if (root) {
+        renderStudy(root);
+    }
 }

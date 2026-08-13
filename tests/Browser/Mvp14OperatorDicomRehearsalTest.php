@@ -198,6 +198,10 @@ it('takes an operator from X-ray capture to an actual Cornerstone viewport and d
 
     $page->page()->waitForFunction('window.__mhcsDicomViewerReady === true');
     $page->assertVisible('[data-testid="dicom-viewport"]');
+    $page->page()->setViewportSize(540, 960);
+    $page->script('window.dispatchEvent(new Event("resize"));');
+    $page->page()->waitForFunction('document.querySelector("[data-dicom-viewer]").dataset.viewerState === "ready"');
+
     $page->click('Unduh DICOM')->wait(1);
     expect($page->attribute('a[download]', 'download'))->toBe('');
 });
