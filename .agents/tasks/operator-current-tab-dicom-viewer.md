@@ -2,14 +2,14 @@
 title: Operator Current-Tab DICOM Viewer Reliability
 document_id: MHCS-TASK-OPERATOR-CURRENT-TAB-DICOM-VIEWER-001
 version: 1.0
-status: draft
+status: validated-on-publication
 language: en-US
 last_updated: 2026-08-13
 scope:
   - browser-safe Cornerstone bundle bootstrap
   - reliable current-tab read-only DICOM study screen
   - removal of the monitor-popup product flow
-authority_note: Draft task. It becomes executable only after this exact content is committed unchanged, published as validated, and its immutable SHA is supplied to the Executor.
+authority_note: This task is validated/published only when this exact content is committed unchanged and its immutable SHA is supplied in the Executor handoff. It does not authorise dependency changes, private-object inspection, external calls, deployment, or release.
 ---
 
 # Executable Task
@@ -20,7 +20,7 @@ authority_note: Draft task. It becomes executable only after this exact content 
 
 **Task path:** `.agents/tasks/operator-current-tab-dicom-viewer.md`
 
-**Task contract state:** `Draft`
+**Task contract state:** `Validated/Published upon immutable publication of this exact content`
 
 **Delivery objective / Work Package / MVP:** `Local MVP Operator-to-DICOM completion`
 
@@ -45,7 +45,7 @@ action.
 
 **Superseded task:** `.agents/tasks/archive/operator-portrait-dicom-viewer.md @ b0b4597250137655ce38e03c93a45fb1104a41b4`; its popup-specific objective is superseded only here.
 
-**Task revision:** `resolved when published`
+**Task revision:** `The full SHA of the commit containing this exact validated task content, supplied by the Planner after publication.`
 
 ## Objective
 
