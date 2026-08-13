@@ -2,14 +2,14 @@
 title: Operator Portrait DICOM Viewer and Monitor Popup
 document_id: MHCS-TASK-OPERATOR-PORTRAIT-DICOM-VIEWER-001
 version: 1.0
-status: validated-on-publication
+status: draft
 language: en-US
 last_updated: 2026-08-13
 scope:
   - polished read-only Operator DICOM study screen
   - portrait-oriented named browser monitor popup
   - existing protected DICOM delivery and normal attachment download
-authority_note: This task becomes executable only when this exact content is committed unchanged and its immutable commit SHA is supplied in the Executor handoff. It does not authorize public image access, clinical image editing, deployment, or external calls.
+authority_note: This remediation revision becomes executable only when this exact content is committed unchanged and its immutable commit SHA is supplied in the Executor handoff. It does not authorize public image access, clinical image editing, deployment, or external calls.
 ---
 
 # Executable Task
@@ -23,7 +23,7 @@ authority_note: This task becomes executable only when this exact content is com
 `.agents/tasks/operator-portrait-dicom-viewer.md`
 
 **Task contract state:**
-`Validated/Published upon immutable publication of this exact content; the governing SHA is supplied externally in the Executor handoff.`
+`Draft — remediation must be republished with a new immutable governing SHA before execution.`
 
 **Delivery objective / Work Package / MVP:**
 `Pre-deployment local MVP — resolve the final product-facing DICOM viewer feedback item`
@@ -50,9 +50,10 @@ image mutation is permitted.
 ## Baseline and task revision
 
 **Implementation baseline:**
-`720fb297c329d20aed516ca3418c0ad8f016b511` — accepted readable display
-references and Indonesian UI/browser-test correction. Its known local browser
-runner hang remains a verification limitation, not a product failure.
+`f725784c38067e11e1b17626c1aac13fc77fc435` — reviewed but not accepted
+portrait-viewer implementation. It is the constrained starting state for this
+remediation. The last accepted implementation remains
+`720fb297c329d20aed516ca3418c0ad8f016b511`.
 
 **Related accepted predecessors:**
 
@@ -60,7 +61,7 @@ runner hang remains a verification limitation, not a product failure.
 - `.agents/tasks/operator-awaiting-ai-release-and-safe-navigation.md @ d76086c6bb04007c53fd06886e48cd5e2e95b7f3`.
 
 **Task revision:**
-`The full SHA of the commit containing this exact task content, supplied by the Planner after publication.`
+`Resolved when this Draft remediation is committed unchanged; the Planner supplies that full SHA before Executor handoff.`
 
 ## Objective
 
@@ -360,3 +361,51 @@ installation, credential access/disclosure, or real clinical-file handling.
 redacted verification evidence. The Planner/Reviewer determines acceptance and
 whether the local-deploy/manual-test task can resume; acceptance is not deploy
 or release authorization.
+
+## Remediation
+
+**Review basis:** `f725784c38067e11e1b17626c1aac13fc77fc435` — implementation
+review after published task revision
+`6505f7afa3aa6208c9f9c219f8b3d116a6522c2f`.
+
+### Required corrections
+
+- Add the missing `Study mode badges` translation to `lang/id.json`, and make
+  the focused localization/Feature coverage prove that every new visible or
+  accessible viewer label resolves to Indonesian. Do not exempt accessibility
+  labels from MVP-DEC-037.
+- Remove the hard-coded Indonesian fallback from
+  `resources/js/operator-dicom-viewer.js`. The Blade root already supplies the
+  registered `data-popup-blocked-message`; use that registry-backed value only.
+  Do not add a second JavaScript copy registry or an English fallback.
+- On every viewer parse, loader, fetch, render, or viewport-initialisation
+  failure, display only the existing safe Indonesian
+  `data-display-error-message` (or another registered safe copy explicitly
+  rendered as a data attribute). Never render `Error.message`, network/library
+  diagnostics, HTTP bodies, internal identifiers, storage keys, credentials,
+  or DICOM content. The status/error UI must leave the ordinary download and
+  return actions operable.
+- Add actual behavioural coverage for the popup and viewer state. It must
+  prove: the user gesture requests the exact existing protected study URL in
+  the stable `mhcs-dicom-monitor` window; successful opening focuses it;
+  blocked/throwing popup displays the Indonesian fallback while current-tab
+  controls remain; `window.name === 'mhcs-dicom-monitor'` enters compact
+  monitor mode; and a simulated viewer failure changes loading to the safe
+  Indonesian error state. Add resize coverage when it can be exercised through
+  the same focused test without a new test framework.
+- The existing new Feature test may remain for markup and authorization, but it
+  is not a substitute for the required JavaScript or browser behavioural test.
+  Keep all existing raw-DICOM download and denial coverage unchanged.
+
+### Additional verification
+
+- Run the changed focused Feature/localization and JavaScript/browser tests,
+  then `vendor/bin/phpunit`, `npm run build`, `vendor/bin/pint --test`, and
+  `git diff --check`.
+- Attempt the focused DICOM browser rehearsal only if the existing runner can
+  execute. If its known hang recurs, do not change runner configuration; report
+  the exact command/output/process limitation and supply the task's prescribed
+  synthetic/local manual popup, resize, error, and normal-download evidence.
+- Return one immutable remediation implementation revision and the exact
+  observed evidence. Do not claim the new UI is production/deployment or
+  real-clinical evidence.
