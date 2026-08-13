@@ -1,7 +1,7 @@
 ---
 title: Uniform Queued Capture Processing and Operator Status Synchronisation
 document_id: MHCS-TASK-OPERATOR-ASYNC-CAPTURE-001
-version: 1.1
+version: 1.2
 status: validated-published
 language: en-US
 last_updated: 2026-08-13
@@ -73,6 +73,12 @@ evidence, with the active-request conversion behavior still present.
 
 **Task revision:**
 `resolved when published`
+
+**Remediation execution baseline:**
+`91304d969daa54fbcf42eb28f97d2f77d78d8265` — reviewed implementation to
+amend in place for the remediation below. The original implementation baseline
+remains the accepted predecessor; the Executor must not reconstruct or discard
+the reviewed queued-capture changes.
 
 ## Authoritative inputs
 
