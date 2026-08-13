@@ -1,13 +1,13 @@
 ---
-title: Local MHCS Deployment Readiness
+title: Local MHCS Deployment and Manual Operator Testing Readiness
 document_id: MHCS-TASK-LOCAL-DEPLOYMENT-READINESS-001
-version: 1.0
+version: 1.1
 status: validated-published
 language: en-US
 last_updated: 2026-08-13
 scope:
-  - start the existing MHCS application locally with dummy data and Operator access
-  - hand off a safe, observable local testing environment to the user
+  - prepare the existing MHCS application locally with dummy data
+  - hand off the complete Operator-to-DICOM journey for user-led manual testing
 authority_note: This task is executable only after this exact content is committed and its immutable task revision is supplied to the Executor.
 ---
 
@@ -16,7 +16,7 @@ authority_note: This task is executable only after this exact content is committ
 ## Task identity
 
 **Task title:**
-`Local MHCS Deployment Readiness`
+`Local MHCS Deployment and Manual Operator Testing Readiness`
 
 **Task path:**
 `.agents/tasks/mvp-local-deployment-readiness.md`
@@ -25,217 +25,152 @@ authority_note: This task is executable only after this exact content is committ
 `Validated/Published when this exact content is committed and its commit SHA is supplied.`
 
 **Delivery objective / Work Package / MVP:**
-`Local deployment readiness before user-led Operator testing`
+`Pre-deployment local MVP: user-led Operator and Image Gateway verification`
 
 **Owner / designated planning authority:**
 `Faliq Adlan, CTO`
 
 ## Delivery context
 
-The accepted Image Gateway integration provides the normal Operator upload →
-private S3 → database queue → local MPIPS → DICOM path.  The local rehearsal
-has a valid stopped result because the CTO-approved local Grabber NPZ pair is
-currently absent; no substitute is allowed.  The application can still be
-deployed locally now with existing dummy data so the user can test login,
-Operator queue workflow, uploads other than the unavailable NPZ pair, and UI
-behavior.
+The reviewed implementation revision
+`6f91c7b0c830c6bbbdc358ccfafe2ee25a16a47a` is accepted as the functional
+baseline for the approved plain-private-object and concurrent-capture design.
+Its fake-backed tests, full PHPUnit suite, browser checks, build, formatter,
+and diff check passed.  The automated live rehearsal stopped in the seeded
+identity/consent browser journey before capture, so it did not reach configured
+S3, MPIPS, the DICOM viewer, or normal download.
 
-This task starts the existing native local application and its Image Gateway
-worker with a disposable dummy-data database, verifies readiness, and provides
-a redacted handoff.  It does not claim that the missing-pair DICOM journey was
-tested, and it does not pre-authorise future unspecified user-feedback fixes.
+MVP-DEC-039 explicitly makes this remaining interactive verification
+user-led.  This task prepares a disposable local runtime and hands the user a
+safe, exact manual checklist.  It does not require the Executor to force a
+browser automation workaround, run a capture, or contact S3/MPIPS.
 
 ## Baseline and task revision
 
 **Implementation baseline:**
-`71f78d79addcee302b66a1b59aa75431dc389ae8` — local-rehearsal task revision
-with CTO-approved upload-limit behavior and the stopped-pair evidence.
+`6f91c7b0c830c6bbbdc358ccfafe2ee25a16a47a` — accepted for local manual
+testing, with the live external journey pending user observation.
 
-**Accepted functional baseline:**
-`0f6f6e3552a4ace5a057e6415eac8057cd03dcee` — MPIPS + AWS Image Gateway
-integration accepted for local integration evidence.
-
-**Related stopped execution:**
-`.agents/tasks/mvp-local-mpips-operator-rehearsal.md @
-71f78d79addcee302b66a1b59aa75431dc389ae8` — approved local Grabber pair
-unavailable; no capture, queue, MPIPS, or DICOM live rehearsal result exists.
+**Governing predecessor:**
+`.agents/tasks/private-object-concurrent-capture-transport.md @
+10ac3604fd57e647b6d500801f74387521033237`
 
 **Task revision:**
 `resolved when published`
 
-## Objective
-
-**Objective:**
-Make the existing MHCS application available on local loopback with synthetic
-dummy accounts and the existing `image-gateway` worker, then hand it to the
-user for local UI/workflow testing without deployment or external-data claims.
-
 ## Authoritative inputs
 
-### Governing authority
+- `docs/mvp/decision-log.md` — MVP-DEC-033, MVP-DEC-035, MVP-DEC-036,
+  MVP-DEC-038, and MVP-DEC-039.
+- `.agents/context/project.md`, `.agents/context/modules/operator/project.md`,
+  and `.agents/context/modules/image-gateway/project.md`.
+- `README.md` and `docs/mvp/local-core-walkthrough.md`.
+- `docs/mvp/evidence/mvp-local-mpips-operator-rehearsal.md` — automated checks
+  passed; the live external path remains user-led manual verification.
 
-- `.agents/context/project.md` — single local application, private Image
-  Gateway/MPIPS boundary, database queue, and private storage ownership.
-- `.agents/context/modules/operator/project.md` — Operator account, active-site
-  and current-shift workflow authority.
-- `README.md` and `docs/mvp/local-core-walkthrough.md` — current local setup
-  and user journey instructions.
-- `docs/mvp/evidence/mpips-aws-image-gateway-integration.md` — accepted local
-  integration evidence, not deployment approval.
-- `docs/mvp/evidence/mvp-local-mpips-operator-rehearsal.md` — current stopped
-  result for the unavailable approved Grabber pair.
-- CTO decisions in this conversation: use local dummy Members; configured S3
-  and local MPIPS are used when the approved pair exists; local deployment and
-  later user testing are desired; any user feedback must return through
-  Planner/Reviewer tasking before implementation.
+## Objective
 
-### Requirement traceability
+Prepare the existing application, database queue worker, dummy accounts, and
+local test guide so the user can manually test the full Operator workflow from
+login through two NPZ uploads, configured local MPIPS, vertical read-only
+Cornerstone viewer, and a normal authenticated DICOM download.
 
-- `OPR-031..OPR-046` → locally available Operator queue workflow.
-- `MVP-DEC-033` → private upload objects remain protected.
-- `MVP-DEC-035/036` → DICOM access policy is preserved, without claiming an
-  unperformed live DICOM conversion.
+## In scope
 
-## Scope
+- Confirm by names only—not values—that local configuration supplies the
+  existing application/security keys, disposable MySQL database, database
+  queue, private S3 disk, AWS configuration, and local MPIPS configuration
+  named by the walkthrough.  Do not read, print, copy, change, or commit a
+  value or secret.
+- Confirm the selected MySQL database is expressly local and disposable.  Warn
+  immediately before `migrate:fresh`; then run existing migrations and
+  `Database\Seeders\MvpCoreClinicSeeder`.
+- Build existing frontend assets where needed and start only the native
+  loopback web server at `127.0.0.1:8013` plus the existing database queue
+  worker restricted to `image-gateway`, using its configured 390-second
+  timeout.  Leave both running for the user after successful handoff.
+- Verify loopback reachability of the Operator login, public LCD, and the
+  initial Operator portal route.  Confirm ignored local `credential.txt`
+  exists with restrictive permissions without opening, printing, or copying it.
+- Update only the local readiness evidence/report and existing walkthrough if
+  a command/path/operational step is inaccurate.  Do not alter application
+  behavior to make browser automation pass.
+- Provide an exact manual checklist which directs the user to: log in with a
+  seeded Operator account; select the seeded active site; complete the
+  existing arrival, identity, paper-consent, ticket, basic-examination, paper
+  questionnaire, and X-ray steps; keep the capture page open; upload the
+  approved local radiograph/gain pair; use a component-only retry if shown;
+  open the result as a second authorised same-site/current-shift Operator;
+  verify vertical read-only viewing; and download the raw DICOM as a normal
+  browser file.  Do not place the NPZ pair path/name/bytes/metadata in a
+  committed guide or evidence.
+- Create `docs/mvp/evidence/mvp-local-deployment-readiness.md` with task and
+  implementation revisions, redacted migration/seed/build/process/readiness
+  results, manual checklist, process stop instructions, known limitations, and
+  explicit non-disclosure/non-production confirmation.
 
-### In scope
+## Out of scope
 
-- Verify, without printing values, that the local `.env` has the existing
-  application/encryption keys, disposable MySQL connection, database queue,
-  configured private S3 disk, and local MPIPS configuration required by the
-  current runbook.  Do not read, copy, display, or alter values or secrets.
-- Confirm that the selected MySQL database is expressly local and disposable;
-  warn before `migrate:fresh`, then run the existing migrations and
-  `Database\\Seeders\\MvpCoreClinicSeeder`.
-- Build existing frontend assets if required and start only the existing native
-  loopback web server on `127.0.0.1:8013` and the existing database worker
-  restricted to the `image-gateway` queue with its configured 390-second
-  timeout.  Record redacted process/readiness status and leave the local
-  processes available for the user after successful handoff.
-- Verify local reachability of the Operator login, the seeded attendance path,
-  and the public LCD path without exposing credentials, synthetic NIK, booking
-  IDs, or other protected data.  Confirm `credential.txt` exists locally with
-  restrictive permissions; do not print, open, or copy it.
-- Create `docs/mvp/evidence/mvp-local-deployment-readiness.md` with exact task
-  and implementation revisions; migration/seed/build/process/readiness results;
-  known limitations; handoff URL category (without secrets); and explicit
-  non-disclosure and non-deployment confirmation.
-- Hand off the updated README/walkthrough as the user test guide.  Explicitly
-  state that the user can test all locally available UI flows, but the two-NPZ
-  live DICOM conversion awaits restoration of the approved local Grabber pair.
+- Production/server deployment, 37-member import, bucket/IAM/provider/region
+  changes, reverse proxy, Docker/Compose, CI/CD, release, or a real-data run.
+- Executor-driven capture, direct S3/MPIPS probe, NPZ inspection/copy/rename,
+  DICOM parsing/editing, or any attempt to force the browser journey.
+- Implementing manual-test feedback not yet supplied by the user.  A reported
+  defect returns to Planner/Reviewer for a bounded task.
 
-### Out of scope
+## Preserved behavior
 
-- Any production/server deployment, reverse proxy, Docker/Compose, process
-  manager, CI/CD, database import of 37 Members, bucket/IAM change, or release.
-- Any capture substitute, NPZ fixture creation/copy/rename/inspection,
-  direct MPIPS request, S3 probe, DICOM conversion attempt, or change to the
-  accepted Image Gateway implementation.
-- Implementing user feedback that has not yet been supplied and reviewed as a
-  bounded task; changing application behavior, schema, dependencies, queue
-  policy, storage policy, or authorization.
-
-### Preserved behavior
-
-- Existing authenticated Operator, dummy seed, active-site/current-shift,
-  private-object, Indonesian UI, Image Gateway queue, and DICOM access behavior
-  remain unchanged.
-- Raw NPZ remains unavailable to browsers.  No fake DICOM, synchronous MPIPS
-  call, or static-result replacement is introduced.
-- All local work remains non-clinical and must not be represented as production,
-  deployment, release, or complete live-DICOM evidence.
-
-## Dependencies and assumptions
-
-### Dependencies
-
-- Existing local PHP, MySQL, Node, and browser runtime are available.
-- The user has already supplied necessary local `.env` values; the Executor has
-  no authority to request, regenerate, disclose, or modify them.
-
-### Approved assumptions
-
-- The existing five synthetic Members and three seeded Operators are sufficient
-  for local UI testing; no 37-member server seed is needed.
-- The approved local Grabber pair remains unavailable for this task; its later
-  return is a prerequisite for a live conversion rehearsal, not for local app
-  availability.
-
-### Remaining approval requirements
-
-- User feedback must be supplied after testing and reviewed by the Planner;
-  only then can a new bounded remediation task authorise a fix.
-- Deployment, real data, server import, and release require separate approval.
-
-## Required capabilities
-
-- Repository read/write, local PHP/Laravel/MySQL/npm process execution, and
-  loopback HTTP/browser readiness checks.
-
-## Execution constraints
-
-- Use existing Laravel commands and configuration.  Do not write a launch
-  script, create a Docker file, add a dependency, or modify `.env`.
-- Do not run `migrate:fresh` until the target is confirmed disposable; stop if
-  it is unclear.  Do not run a capture, S3, or MPIPS probe.
-- Keep all server/worker output redacted.  Never expose environment values,
-  credentials, token-like strings, bucket/object identifiers, synthetic
-  personal data, NPZ contents, or DICOM bytes.
-- The handoff must include a clear process stop instruction for the local web
-  server and queue worker, without modifying deployment/runtime configuration.
+- Private plain-byte S3 objects remain opaque-keyed, grant-authorised,
+  integrity-checked, and non-public.  Raw NPZ remains unavailable to browsers.
+- The 100 MiB individual file setting is `MHCS_MAX_UPLOAD_MB=100`; the
+  application derives the two-file multipart envelope.
+- MPIPS remains an MHCS-to-private-service call only.  The Indonesian UI,
+  active-site/current-shift authorization, read-only vertical Cornerstone
+  viewer, and ordinary authenticated DICOM attachment download remain intact.
 
 ## Acceptance criteria
 
-- [ ] The native web process and `image-gateway` worker are running locally and
-  the Operator login, seeded attendance, and public LCD routes are reachable.
-- [ ] The local database was freshly migrated and seeded only after confirming
-  it was disposable; local credentials remain unexposed and protected.
-- [ ] The evidence report truthfully records readiness and the unavailable-pair
-  limitation, with no secret, clinical, binary, or infrastructure disclosure.
-- [ ] The user receives a clear local test handoff and understands that later
-  feedback is routed to a separate Planner-created remediation task.
+- [ ] A disposable local database is freshly migrated and seeded with existing
+  dummy data, and the native web/queue processes are reachable on loopback.
+- [ ] The evidence report gives the user a redacted, accurate manual checklist
+  and process-stop instructions, without a secret, credential, object ID,
+  patient/binary data, or production/release claim.
+- [ ] The user can begin manual testing without an Executor-side S3/MPIPS call
+  or an automation workaround.  The live DICOM journey is labelled manual
+  verification, not claimed as automatically proven.
 
 ## Verification requirements
 
-### Required checks
-
-- Run `npm run build`, `vendor/bin/pint --test`, and `git diff --check`.
-- Run the focused existing seed/Operator/Image Gateway browser verification
-  needed to establish the local UI still starts; do not run tests that call
-  AWS or MPIPS.
-- Record redacted database migration/seed and local process/readiness results.
-
-### Required evidence
-
-The Executor must report exact task/implementation revisions, commands and
-observed results, process readiness, changed files, known limitations, stop
-instructions, and explicit no-disclosure/non-production confirmation.
+- Run `npm run build`, `vendor/bin/pint --test`, `git diff --check`, and the
+  focused existing dummy-seed/Operator-startup browser checks that do not call
+  S3 or MPIPS.
+- Record redacted migration/seed, web process, queue process, loopback, and
+  credential-file permission outcomes.
 
 ## Stop conditions
 
-- Stop if the database is not demonstrably disposable, local secrets/config are
-  missing, the app cannot start, or a change outside documentation/evidence is
-  needed.
-- Stop if local deployment would need the unavailable NPZ pair, an S3/MPIPS
-  call, server/infrastructure mutation, a secret disclosure, or user feedback
-  not yet supplied as a bounded requirement.
+- Stop if the database is not demonstrably disposable, local configuration is
+  incomplete, the application/worker cannot start, or readiness needs an
+  application/infrastructure change outside this task.
+- Stop if completing handoff would reveal a secret, credential, bucket/object
+  identifier, patient data, NPZ/DICOM content, or require an Executor S3/MPIPS
+  request.
 
 ## Side-effect authorization
 
-### Explicitly authorized side effects
+### Explicitly authorised side effects
 
-- Disposable local MySQL reset/migration/seed; local build/test work; starting
-  and stopping the existing local loopback web and `image-gateway` worker
-  processes.
-- Repository changes limited to a local-deployment readiness evidence report
-  and necessary documentation corrections.
+- Disposable local MySQL reset/migration/seed, local build/test work, and
+  starting the existing loopback web process plus `image-gateway` worker.
+- Repository changes limited to readiness evidence and necessary local-guide
+  corrections.
 
-Not authorized: Git commit, push, pull request, deployment, release,
-production/server mutation, S3/MPIPS external call, bucket/IAM change, secret
-disclosure, real-member import, or implementing future user feedback.
+Not authorised: Git commit, push, pull request, production/server mutation,
+release, S3/MPIPS calls, bucket/IAM changes, secret disclosure, real-member
+import, or unreviewed feedback fixes.
 
 ## Expected terminal outcome
 
-`USER TESTING READY` — return an immutable implementation revision and redacted
-local handoff evidence.  Subsequent user feedback returns to Planner/Reviewer
-for a separate bounded remediation task.
+`USER TESTING READY` — return an immutable implementation revision and
+redacted local handoff evidence.  User-reported findings return to
+Planner/Reviewer for a separate bounded remediation task.
