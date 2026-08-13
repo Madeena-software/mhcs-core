@@ -1,16 +1,12 @@
 # Local MHCS deployment and manual testing readiness
 
-**Date:** 2026-08-13  
-**Target:** `.`  
-**Governing task:** `.agents/tasks/mvp-local-deployment-readiness.md`  
+**Date:** 2026-08-13
+**Target:** `.`
+**Governing task:** `.agents/tasks/mvp-local-deployment-readiness.md`
 **Task revision:** `12e585fad0dfd5db5d9bbd103fb1a882a4b394fa`
 **Implementation baseline:** `19ae9e16c6cae1ec0bfadf29afcf1c5fd6b2abfd`
-**Execution repository revision:** `6c7b6675cd77dec72ed456494fe7c3f55f3dfc49`
-**Terminal state:** `STOPPED FOR PLANNING` — local preparation passed; the
-user-led capture journey exposed a separate application defect before source
-acceptance.
-**Remediation status:** `ACCEPTED` — the FormData snapshot remediation is
-fake-backed verified; user-led local MPIPS/DICOM re-test remains required.
+**Execution repository revision:** `195b1e10020697e0899913a691ab20725c73e8e5`
+**Terminal state:** `USER TESTING READY`
 
 ## Redacted readiness evidence
 
@@ -22,8 +18,8 @@ fake-backed verified; user-led local MPIPS/DICOM re-test remains required.
 - Local variable-name assertion: **PASS**. Existing MPIPS, upload-limit, and
   required local runtime variable names were present. Values were not opened,
   printed, copied, changed in committed files, or recorded.
-- Port and process boundary: **PASS**. Port `8013` was free before the local
-  start; no unknown listener was terminated.
+- Port and process boundary: **PASS**. Port `8013` was already owned by the
+  Executor-started local Laravel server; no unknown listener was terminated.
 - Private-object reset: **PASS**. Only the repository-local private-object
   subtree was reset and recreated with mode `0700`; its parent was confirmed
   to be a real directory and the target was not a symlink. The shell rejected
@@ -34,7 +30,7 @@ fake-backed verified; user-led local MPIPS/DICOM re-test remains required.
   synthetic local data. Generated identifiers and credentials were not
   recorded.
 - Focused PHPUnit: **PASS**. 14 tests, 147 assertions.
-- Browser rehearsal check: **PASS**. 2 tests, 39 assertions; no live external
+- Browser rehearsal check: **PASS**. 2 tests, 40 assertions; no live external
   conversion request was made.
 - Frontend build: **PASS**. Existing optional-font, browser-externalization,
   and chunk-size warnings remain non-fatal.
@@ -102,70 +98,60 @@ credential file. Never paste or record credential values.
 The live user-led NPZ-to-MPIPS-to-DICOM journey, durable page-close behavior,
 returned-DICOM rendering, authenticated download, and second-Operator
 visibility remain manual verification. They were not claimed as Executor-side
-automated proof. Historical pre-queued-capture observations are not repeated
-here and are not treated as defects in the accepted queued implementation.
-
-## FormData snapshot remediation
-
-The reported browser multipart defect is remediated in the bounded working tree
-for `.agents/tasks/operator-capture-formdata-snapshot-remediation.md @
-a1ba265e0abf6294daa521835529c7f2b19633c8`. The existing fake-backed browser
-test now assigns two synthetic `File` objects, captures the actual body passed
-to the mocked XHR, and verifies a native `FormData` containing both file fields,
-the CSRF field, and `submission_id` after the inputs are disabled.
-
-- Baseline regression assertion: **FAIL**, `false is true` at the captured-body
-  assertion before the view correction.
-- Corrected browser coverage: **PASS**, 2 tests and 40 assertions.
-- The only application change snapshots `new FormData(form)` before the
-  existing control lock and sends that same snapshot. No server, queue, source,
-  storage, or external-adapter behavior changed.
-
-This fake-backed result does not claim that live NPZ submission, MPIPS,
-DICOM viewing or download, S3, deployment, release, or the second-Operator
-journey passed. The next action after review is the user-led manual re-test
-listed above.
-
-## Manual feedback received after handoff
-
-**Disposition:** `REVIEW REQUIRED` — bounded application remediation task
-required before the capture journey can continue.
-
-- The Operator selected both local NPZ inputs and clicked **Submit capture
-  set**.
-- The browser sent the capture POST with the CSRF token and submission
-  identity, but no multipart file parts. The POST returned HTTP `302`; the
-  following capture page returned HTTP `200`, and status polling returned HTTP
-  `200` with both source components still missing.
-- The database contained no capture row after the request. No object, NPZ,
-  DICOM, credential, or external-service content was inspected or recorded.
-- Root cause identified in the current capture-page JavaScript: the submit
-  handler disables the file inputs before constructing `new FormData(form)`.
-  Disabled file controls are excluded from the submitted form data.
-- The required bounded remediation is to construct the `FormData` snapshot
-  while the file inputs are enabled, then disable the controls before sending.
-  No remediation was applied during this readiness execution because the
-  published task excludes application behavior changes.
+automated proof. The earlier multipart submission observation is superseded by
+the accepted FormData snapshot remediation at the current execution revision;
+the live journey still requires user re-test.
 
 This record contains no secret, credential, database name, object identifier,
 patient data, NPZ content or metadata, DICOM content or bytes, or external
 service response.
 
-## Planner/Reviewer disposition
+## Planner/Reviewer feedback handoff
 
-**Date:** 2026-08-13
-**Verdict:** `VALID STOP RESULT / PLANNING REQUIRED`
-**Reviewed execution revision:** `552759acc3c81e8eb6136a2c33c48df91852b796`
+The following user-led findings are recorded for planning and review only.
+They are outside this local-readiness task, were not implemented here, and
+must not be treated as accepted product behavior.
 
-The local preparation portion of the governing task passed: it used the local
-private filesystem, synthetic data, four native HTTP workers, one
-`image-gateway` worker, and no Executor-side S3/AWS/MPIPS request. The manual
-capture observation is corroborated by the current capture-page source: it
-locks file inputs before calling `new FormData(form)`, so native FormData omits
-them. The task correctly excluded application behavior changes, so the
-Executor stopped instead of broadening scope.
+1. **Attendance-to-DICOM next action.** When a member's examination already
+   has a returned DICOM study, the attendance page still offers **Open basic
+   examination worklist** instead of the next appropriate DICOM/result action.
+2. **Readable public references.** User-visible schedule and study references
+   should use short, human-readable, unique display references. Internal
+   UUIDs and authorization identifiers must remain unchanged and must not be
+   exposed as the primary user-facing label.
+3. **Basic-examination claim conflict.** Claiming a later ticket while an
+   earlier ticket already has DICOM produced an HTTP 500/Conflict instead of a
+   safe, user-facing operational response. The supplied trace points to
+   `PortalController::claimBasicExamination`.
+4. **DICOM-processing interaction lock.** After capture acceptance, the
+   current capture page should prevent unsafe competing actions while waiting
+   for DICOM, with behavior consistent with the existing NPZ upload lock.
+5. **DICOM viewer.** The current viewer remains visually inadequate for the
+   product-facing result screen, does not meet the requested portrait-monitor
+   presentation, and may remain on **Loading DICOM** without a useful failure
+   state. Requested direction: a polished read-only viewer in a browser popup,
+   optimized for a vertical display, using the existing design references in
+   `docs/operator/reference/claude-design/` and the `/var/www/mhcs-operator-core`
+   repository. The viewer may open in a separate browser window because it is
+   intended for a dedicated vertically oriented monitor.
+6. **No active site: eligible shifts.** `/operator/eligible-shifts` raises an
+   internal `OperatorException` instead of presenting a safe site-selection
+   state. The supplied trace identifies `OperatorAuthorization.php:137`.
+7. **No active site: basic worklist.**
+   `/operator/basic-examination-worklist` returns HTTP 403 before a site is
+   selected; it should provide the intended site-selection flow.
+8. **No active site: X-ray readiness worklist.**
+   `/operator/xray-readiness-worklist` returns HTTP 403 before a site is
+   selected; it should provide the intended site-selection flow.
+9. **No active site: DICOM studies.** `/operator/studies` returns HTTP 403
+   before a site is selected; it should provide the intended site-selection
+   flow.
 
-`552759acc3c81e8eb6136a2c33c48df91852b796` is not a new accepted application
-baseline. The separate remediation contract is
-`.agents/tasks/operator-capture-formdata-snapshot-remediation.md`; the user
-must retry the live local journey only after that task is reviewed and accepted.
+### Planning boundary
+
+These findings require a new validated task or bounded remediation issued by
+Planner/Reviewer. No application code, migration, authorization policy,
+viewer implementation, or product behavior was changed during this local
+readiness execution. The attached user error reports were used only to
+capture sanitized route and failure-class evidence; request cookies,
+credentials, identifiers, and payload values are intentionally omitted.
