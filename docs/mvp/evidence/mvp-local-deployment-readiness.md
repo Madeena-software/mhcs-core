@@ -9,9 +9,8 @@
 **Terminal state:** `STOPPED FOR PLANNING` — local preparation passed; the
 user-led capture journey exposed a separate application defect before source
 acceptance.
-**Remediation status:** `REVIEW REQUIRED` — the published FormData snapshot
-remediation is fake-backed verified; user-led local MPIPS/DICOM re-test remains
-required.
+**Remediation status:** `ACCEPTED` — the FormData snapshot remediation is
+fake-backed verified; user-led local MPIPS/DICOM re-test remains required.
 
 ## Redacted readiness evidence
 
