@@ -355,29 +355,18 @@ jobs:
 
           if [ "$EXISTING_NET_DRIVER" = "overlay" ] && [ "$EXISTING_NET_INTERNAL" = "false" ] && [ -n "$EXISTING_NET_SUBNET" ]; then
             echo "✅ Network ${MHCS_APPLICATION_NETWORK_NAME} exists and is valid overlay (subnet: ${EXISTING_NET_SUBNET})"
-          else
-            if [ "$EXISTING_NET_DRIVER" != "missing" ]; then
-              echo "Recreating ${MHCS_APPLICATION_NETWORK_NAME} without --internal to enable host port gateway routing..."
-              docker service rm mhcs_core_nginx mhcs_core_app mhcs_core_db mhcs_core_queue mhcs_core_scheduler mhcs_core_image-worker 2>/dev/null || true
-              sleep 5
-              docker network rm "${MHCS_APPLICATION_NETWORK_NAME}" 2>/dev/null || true
-              _WAIT_NET=0
-              while [ "$_WAIT_NET" -lt 30 ]; do
-                if [ "$(docker network inspect "${MHCS_APPLICATION_NETWORK_NAME}" --format '{{.Id}}' 2>/dev/null || echo "missing")" = "missing" ]; then
-                  break
-                fi
-                docker network rm "${MHCS_APPLICATION_NETWORK_NAME}" 2>/dev/null || true
-                sleep 2
-                _WAIT_NET=$((_WAIT_NET + 2))
-              done
-            fi
-            echo "Creating ${MHCS_APPLICATION_NETWORK_NAME} (driver: overlay, subnet: ${SAFE_SUBNET})..."
+          elif [ "$EXISTING_NET_DRIVER" = "missing" ]; then
+            echo "Creating missing approved ${MHCS_APPLICATION_NETWORK_NAME} (driver: overlay, subnet: ${SAFE_SUBNET})..."
             docker network create \
               --driver overlay \
               --subnet "${SAFE_SUBNET}" \
               --attachable=false \
               "${MHCS_APPLICATION_NETWORK_NAME}"
             echo "✅ Created overlay network ${MHCS_APPLICATION_NETWORK_NAME} with subnet ${SAFE_SUBNET}"
+          else
+            echo "FATAL: Existing network ${MHCS_APPLICATION_NETWORK_NAME} has invalid configuration (driver: ${EXISTING_NET_DRIVER}, internal: ${EXISTING_NET_INTERNAL}, subnet: ${EXISTING_NET_SUBNET})."
+            echo "Failing closed to prevent destructive operations. Manual network migration required."
+            exit 1
           fi
 
           echo "===> Pre-pulling base infrastructure images..."

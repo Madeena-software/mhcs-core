@@ -1,9 +1,10 @@
 <?php
 
-$maxUploadMb = env('MHCS_MAX_UPLOAD_MB', 100);
+$localEnvironment = in_array(env('APP_ENV', 'production'), ['local', 'testing'], true);
+$maxUploadMb = env('MHCS_MAX_UPLOAD_MB', $localEnvironment ? 100 : null);
 $maxUploadBytes = $maxUploadMb === null ? null : (int) $maxUploadMb * 1024 * 1024;
 $maxUploadMb = $maxUploadBytes === null ? null : intdiv($maxUploadBytes, 1024 * 1024);
-$imageFileCount = env('MHCS_IMAGE_FILE_COUNT', 2);
+$imageFileCount = env('MHCS_IMAGE_FILE_COUNT', $localEnvironment ? 2 : null);
 $imagePairBytes = $maxUploadBytes === null ? null : $maxUploadBytes * 2;
 
 return [
@@ -90,18 +91,18 @@ return [
         'manifest_key' => env('MHCS_MANIFEST_KEY'),
         'manifest_key_id' => env('MHCS_MANIFEST_KEY_ID'),
         'asset_grants' => [
-            'max_ttl_seconds' => env('MHCS_ASSET_GRANT_MAX_TTL_SECONDS', 300),
+            'max_ttl_seconds' => env('MHCS_ASSET_GRANT_MAX_TTL_SECONDS', $localEnvironment ? 300 : null),
             'audiences' => array_values(array_filter(array_map(
                 'trim',
-                explode(',', (string) env('MHCS_ASSET_GRANT_AUDIENCES', 'member-view,operator-identity')),
+                explode(',', (string) env('MHCS_ASSET_GRANT_AUDIENCES', $localEnvironment ? 'member-view,operator-identity' : '')),
             ), static fn (string $audience): bool => $audience !== '')),
         ],
         'login' => [
-            // Safe fallback defaults; production values can be injected and configured.
-            'pair_max_attempts' => env('MHCS_LOGIN_PAIR_MAX_ATTEMPTS', 5),
-            'origin_max_attempts' => env('MHCS_LOGIN_ORIGIN_MAX_ATTEMPTS', 10),
-            'identifier_max_attempts' => env('MHCS_LOGIN_IDENTIFIER_MAX_ATTEMPTS', 20),
-            'decay_seconds' => env('MHCS_LOGIN_DECAY_SECONDS', 60),
+            // Safe local/test defaults; production values are explicitly injected by deployment workflow.
+            'pair_max_attempts' => env('MHCS_LOGIN_PAIR_MAX_ATTEMPTS', $localEnvironment ? 5 : null),
+            'origin_max_attempts' => env('MHCS_LOGIN_ORIGIN_MAX_ATTEMPTS', $localEnvironment ? 10 : null),
+            'identifier_max_attempts' => env('MHCS_LOGIN_IDENTIFIER_MAX_ATTEMPTS', $localEnvironment ? 20 : null),
+            'decay_seconds' => env('MHCS_LOGIN_DECAY_SECONDS', $localEnvironment ? 60 : null),
         ],
     ],
 
@@ -109,17 +110,17 @@ return [
         'file_count' => $imageFileCount,
         'per_file_bytes' => $maxUploadBytes,
         'total_bytes' => $imagePairBytes,
-        'decompressed_bytes' => env('MHCS_IMAGE_DECOMPRESSED_BYTES', 4194304),
-        'max_width' => env('MHCS_IMAGE_MAX_WIDTH', 4096),
-        'max_height' => env('MHCS_IMAGE_MAX_HEIGHT', 4096),
-        'field_count' => env('MHCS_IMAGE_FIELD_COUNT', 32),
-        'cpu_seconds' => env('MHCS_IMAGE_CPU_SECONDS', 5),
-        'memory_bytes' => env('MHCS_IMAGE_MEMORY_BYTES', 134217728),
-        'execution_seconds' => env('MHCS_IMAGE_EXECUTION_SECONDS', 30),
-        'process_count' => env('MHCS_IMAGE_PROCESS_COUNT', 1),
-        'temporary_storage_bytes' => env('MHCS_IMAGE_TEMPORARY_STORAGE_BYTES', 8388608),
-        'accepted_forms' => env('MHCS_IMAGE_ACCEPTED_FORMS', 'zip-npz'),
-        'recovery_window_seconds' => env('MHCS_IMAGE_RECOVERY_WINDOW_SECONDS', 300),
-        'max_attempts' => env('MHCS_IMAGE_MAX_ATTEMPTS', 1),
+        'decompressed_bytes' => env('MHCS_IMAGE_DECOMPRESSED_BYTES', $localEnvironment ? 4194304 : null),
+        'max_width' => env('MHCS_IMAGE_MAX_WIDTH', $localEnvironment ? 4096 : null),
+        'max_height' => env('MHCS_IMAGE_MAX_HEIGHT', $localEnvironment ? 4096 : null),
+        'field_count' => env('MHCS_IMAGE_FIELD_COUNT', $localEnvironment ? 32 : null),
+        'cpu_seconds' => env('MHCS_IMAGE_CPU_SECONDS', $localEnvironment ? 5 : null),
+        'memory_bytes' => env('MHCS_IMAGE_MEMORY_BYTES', $localEnvironment ? 134217728 : null),
+        'execution_seconds' => env('MHCS_IMAGE_EXECUTION_SECONDS', $localEnvironment ? 30 : null),
+        'process_count' => env('MHCS_IMAGE_PROCESS_COUNT', $localEnvironment ? 1 : null),
+        'temporary_storage_bytes' => env('MHCS_IMAGE_TEMPORARY_STORAGE_BYTES', $localEnvironment ? 8388608 : null),
+        'accepted_forms' => env('MHCS_IMAGE_ACCEPTED_FORMS', $localEnvironment ? 'zip-npz' : null),
+        'recovery_window_seconds' => env('MHCS_IMAGE_RECOVERY_WINDOW_SECONDS', $localEnvironment ? 300 : null),
+        'max_attempts' => env('MHCS_IMAGE_MAX_ATTEMPTS', $localEnvironment ? 1 : null),
     ],
 ];
