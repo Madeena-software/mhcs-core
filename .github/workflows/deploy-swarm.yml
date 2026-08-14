@@ -223,6 +223,10 @@ jobs:
             'CACHE_STORE=database' \
             'SESSION_DRIVER=database' \
             'SESSION_LIFETIME=120' \
+            'SESSION_SECURE_COOKIE=true' \
+            'SESSION_HTTP_ONLY=true' \
+            'SESSION_SAME_SITE=lax' \
+            'TRUSTED_PROXIES="127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"' \
             '' \
             "APP_STORAGE_HOST_PATH=${APP_STORAGE_HOST_PATH}" \
             "APP_LOGS_HOST_PATH=${APP_LOGS_HOST_PATH}" \
@@ -641,6 +645,9 @@ jobs:
             $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
             assert(config("app.env") === "production", "APP_ENV must be production");
             assert(config("app.debug") === false, "APP_DEBUG must be false");
+            assert(config("session.secure") === true, "Session cookie must be secure");
+            assert(config("session.http_only") === true, "Session cookie must be http_only");
+            assert(config("session.same_site") === "lax", "Session cookie same_site must be lax");
             assert(config("mhcs.private_object_disk") === "s3", "Private object disk must be s3");
             assert(config("queue.default") === "database", "Queue connection must be database");
             assert(config("mhcs.mpips.worker_timeout_seconds") < (int) env("DB_QUEUE_RETRY_AFTER", 420), "Queue retry-after must exceed worker timeout");
