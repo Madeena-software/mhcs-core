@@ -346,8 +346,8 @@ jobs:
           EXISTING_NET_INTERNAL="$(docker network inspect "${MHCS_APPLICATION_NETWORK_NAME}" --format '{{.Internal}}' 2>/dev/null || echo "false")"
           EXISTING_NET_SUBNET="$(docker network inspect "${MHCS_APPLICATION_NETWORK_NAME}" --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}' 2>/dev/null || echo "")"
 
-          if [ "$EXISTING_NET_DRIVER" = "overlay" ] && [ "$EXISTING_NET_INTERNAL" = "true" ] && [ -n "$EXISTING_NET_SUBNET" ]; then
-            echo "✅ Network ${MHCS_APPLICATION_NETWORK_NAME} exists and is valid overlay (subnet: ${EXISTING_NET_SUBNET}, internal: true)"
+          if [ "$EXISTING_NET_DRIVER" = "overlay" ] && [ -n "$EXISTING_NET_SUBNET" ]; then
+            echo "✅ Network ${MHCS_APPLICATION_NETWORK_NAME} exists and is valid overlay (subnet: ${EXISTING_NET_SUBNET}, driver: ${EXISTING_NET_DRIVER})"
           else
             if [ "$EXISTING_NET_DRIVER" != "missing" ]; then
               echo "Recreating ${MHCS_APPLICATION_NETWORK_NAME} with verified configuration..."
