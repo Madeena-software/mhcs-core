@@ -302,6 +302,27 @@ jobs:
           fi
           echo "✅ External network ${MPIPS_NETWORK_NAME:-madeena-software-network} found (scope: $MPIPS_SCOPE)"
 
+          echo "===> Diagnosing Docker/Swarm network address allocation..."
+          echo "Docker daemon default address pools:"
+          docker info --format '{{.Swarm.DefaultAddrPool}}' 2>/dev/null || echo "  (unable to retrieve)"
+          
+          echo ""
+          echo "Existing overlay networks and IPAM configuration:"
+          docker network ls --filter driver=overlay -q 2>/dev/null | while read net; do
+            name=$(docker network inspect "$net" --format '{{.Name}}' 2>/dev/null || echo "unknown")
+            scope=$(docker network inspect "$net" --format '{{.Scope}}' 2>/dev/null || echo "unknown")
+            ipam=$(docker network inspect "$net" --format '{{json .IPAM.Config}}' 2>/dev/null || echo "[]")
+            echo "  - $name (ID: ${net:0:10}..., Scope: $scope)"
+            if [ "$ipam" != "[]" ]; then
+              echo "    IPAM: $ipam"
+            fi
+          done
+          
+          echo ""
+          echo "All Docker networks summary:"
+          docker network ls --format 'table {{.Name}}\t{{.Driver}}\t{{.Scope}}' 2>/dev/null || echo "  (unable to retrieve)"
+
+          echo ""
           echo "===> Pre-deploy database backup check..."
           DB_CONTAINER="$(docker ps -q --filter "name=mhcs_core_db" | head -n 1)"
           if [ -n "$DB_CONTAINER" ]; then
