@@ -331,60 +331,58 @@ jobs:
 
           echo "===> Determining safe, non-overlapping subnet for ${MHCS_APPLICATION_NETWORK_NAME}..."
           SAFE_SUBNET="$(python3 -c '
-            import subprocess, json, ipaddress, sys
+import subprocess, json, ipaddress, sys
 
-            used = []
-            # 1. Docker network subnets
+used = []
+# 1. Docker network subnets
+try:
+    net_ids = subprocess.check_output(["docker", "network", "ls", "-q"], text=True).split()
+    for nid in net_ids:
+        try:
+            inspect_out = subprocess.check_output(["docker", "network", "inspect", nid], text=True)
+            data = json.loads(inspect_out)
+            for item in data:
+                for c in item.get("IPAM", {}).get("Config", []) or []:
+                    sub = c.get("Subnet")
+                    if sub:
+                        used.append(ipaddress.ip_network(sub, strict=False))
+        except Exception:
+            pass
+except Exception as e:
+    print(f"Error inspecting docker networks: {e}", file=sys.stderr)
+
+# 2. Host route subnets
+try:
+    routes_out = subprocess.check_output(["ip", "-4", "route"], text=True)
+    for line in routes_out.splitlines():
+        parts = line.split()
+        if parts and "/" in parts[0]:
             try:
-                net_ids = subprocess.check_output(["docker", "network", "ls", "-q"], text=True).split()
-                for nid in net_ids:
-                    try:
-                        inspect_out = subprocess.check_output(["docker", "network", "inspect", nid], text=True)
-                        data = json.loads(inspect_out)
-                        for item in data:
-                            for c in item.get("IPAM", {}).get("Config", []) or []:
-                                sub = c.get("Subnet")
-                                if sub:
-                                    used.append(ipaddress.ip_network(sub, strict=False))
-                    except Exception:
-                        pass
-            except Exception as e:
-                print(f"Error inspecting docker networks: {e}", file=sys.stderr)
+                used.append(ipaddress.ip_network(parts[0], strict=False))
+            except Exception:
+                pass
+except Exception as e:
+    print(f"Error reading ip routes: {e}", file=sys.stderr)
 
-            # 2. Host route subnets
-            try:
-                routes_out = subprocess.check_output(["ip", "-4", "route"], text=True)
-                for line in routes_out.splitlines():
-                    parts = line.split()
-                    if parts and "/" in parts[0]:
-                        try:
-                            used.append(ipaddress.ip_network(parts[0], strict=False))
-                        except Exception:
-                            pass
-            except Exception as e:
-                print(f"Error reading ip routes: {e}", file=sys.stderr)
+# 3. Candidate subnets in RFC1918 private range
+candidates = (
+    [ipaddress.ip_network(f"10.250.{i}.0/24") for i in range(1, 30)] +
+    [ipaddress.ip_network(f"172.28.{i}.0/24") for i in range(10, 50)] +
+    [ipaddress.ip_network(f"192.168.{i}.0/24") for i in range(210, 240)]
+)
 
-            print(f"Discovered {len(used)} active subnets: {[str(u) for u in used]}", file=sys.stderr)
+chosen = None
+for cand in candidates:
+    if not any(cand.overlaps(u) for u in used):
+        chosen = str(cand)
+        break
 
-            # 3. Candidate subnets in RFC1918 private range
-            candidates = (
-                [ipaddress.ip_network(f"10.250.{i}.0/24") for i in range(1, 30)] +
-                [ipaddress.ip_network(f"172.28.{i}.0/24") for i in range(10, 50)] +
-                [ipaddress.ip_network(f"192.168.{i}.0/24") for i in range(210, 240)]
-            )
+if not chosen:
+    print("FATAL: Could not find non-overlapping RFC1918 /24 subnet", file=sys.stderr)
+    sys.exit(1)
 
-            chosen = None
-            for cand in candidates:
-                if not any(cand.overlaps(u) for u in used):
-                    chosen = str(cand)
-                    break
-
-            if not chosen:
-                print("FATAL: Could not find non-overlapping RFC1918 /24 subnet", file=sys.stderr)
-                sys.exit(1)
-
-            print(chosen)
-          ')"
+print(chosen)
+')"
 
           echo "Selected verified safe subnet: ${SAFE_SUBNET}"
 
