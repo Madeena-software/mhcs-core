@@ -44,9 +44,9 @@ jobs:
       - name: Resolve application version
         id: version
         run: |
-          VERSION="$(git rev-parse --short HEAD)"
+          VERSION="${GITHUB_SHA}"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "Release version: ${VERSION}"
+          echo "Release version: ${VERSION} (from GITHUB_SHA)"
 
       - name: Build production Docker image
         run: |
@@ -293,26 +293,14 @@ jobs:
             exit 1
           fi
 
-          echo "===> Ensuring madeena-software-network is a Swarm attachable overlay network..."
-          SCOPE="$(docker network inspect madeena-software-network --format '{{.Scope}}' 2>/dev/null || echo "missing")"
-          if [ "$SCOPE" = "local" ]; then
-            echo "Found local-scoped madeena-software-network. Disconnecting active endpoints..."
-            for endpoint in $(docker network inspect madeena-software-network --format '{{range $id, $c := .Containers}}{{$id}} {{end}}' 2>/dev/null); do
-              echo "Disconnecting endpoint $endpoint..."
-              docker network disconnect -f madeena-software-network "$endpoint" || true
-            done
-            docker network rm madeena-software-network || true
-            docker network create --driver overlay --attachable madeena-software-network
-            for c in $(docker ps -q --filter "name=mpips"); do
-              echo "Reconnecting $c to overlay madeena-software-network..."
-              docker network connect madeena-software-network "$c" || true
-            done
-          elif [ "$SCOPE" = "missing" ]; then
-            docker network create --driver overlay --attachable madeena-software-network
-            echo "Created external overlay network: madeena-software-network"
-          else
-            echo "madeena-software-network exists with scope: $SCOPE"
+          echo "===> Verifying external mpips_private network exists..."
+          MPIPS_SCOPE="$(docker network inspect ${MPIPS_NETWORK_NAME:-madeena-software-network} --format '{{.Scope}}' 2>/dev/null || echo "missing")"
+          if [ "$MPIPS_SCOPE" = "missing" ]; then
+            echo "FATAL: Required external network ${MPIPS_NETWORK_NAME:-madeena-software-network} not found."
+            echo "The MPIPS network must be configured externally before MHCS deployment."
+            exit 1
           fi
+          echo "✅ External network ${MPIPS_NETWORK_NAME:-madeena-software-network} found (scope: $MPIPS_SCOPE)"
 
           echo "===> Pre-deploy database backup check..."
           DB_CONTAINER="$(docker ps -q --filter "name=mhcs_core_db" | head -n 1)"
@@ -332,9 +320,6 @@ jobs:
           echo "===> Pre-pulling base infrastructure images..."
           docker pull mysql:8.4 || true
           docker pull nginx:1.27-alpine || true
-
-          # Clean up any stale service state from previous runs with mismatched network specs
-          docker service rm mhcs_core_image-worker 2>/dev/null || true
 
           echo "===> Deploying stack mhcs_core..."
           docker stack deploy -c docker-compose.prod.yml --with-registry-auth --prune mhcs_core
@@ -378,17 +363,18 @@ jobs:
           USER_COUNT="$(docker exec "$APP_CONTAINER" php -r 'require "vendor/autoload.php"; $app = require "bootstrap/app.php"; $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap(); echo Illuminate\Support\Facades\DB::table("users")->count();' 2>/dev/null || echo "0")"
 
           if [ "$USER_COUNT" = "0" ] || [ "${FORCE_BOOTSTRAP_SEED:-false}" = "true" ]; then
-            echo "Fresh database detected (user count: $USER_COUNT). Running one-time Prestige Clinic synthetic bootstrap..."
+            echo "Fresh database detected (user count: $USER_COUNT). Running one-time MVP Core Clinic synthetic bootstrap..."
             docker exec \
               -e MHCS_ALLOW_PRODUCTION_MVP_SEED=true \
               -e MHCS_BOOTSTRAP_CREDENTIAL_PATH=/var/www/html/storage/app/private/bootstrap/credential-server.txt \
               "$APP_CONTAINER" \
-              php artisan db:seed --class='Database\Seeders\PrestigeClinicSeeder' --force
+              php artisan db:seed --class='Database\Seeders\MvpCoreClinicSeeder' --force
 
             _sudo chmod 0600 "$APP_STORAGE_HOST_PATH/app/private/bootstrap/credential-server.txt" 2>/dev/null || true
-            echo "✅ Prestige Clinic synthetic bootstrap completed successfully."
+            echo "✅ MVP Core Clinic synthetic bootstrap completed successfully."
           else
             echo "Existing database detected ($USER_COUNT users). Skipping bootstrap seeder."
+            echo "Note: Database state should be inspected to ensure consistency with deployment."
           fi
 
           echo "===> Warming application caches..."
@@ -496,7 +482,12 @@ jobs:
 
           echo "7/7 Credential server file protection"
           if docker exec "$app_container" test -f /var/www/html/storage/app/private/bootstrap/credential-server.txt; then
-            _pass "credential-server.txt exists under private storage"
+            cred_mode="$(docker exec "$app_container" stat -c '%a' /var/www/html/storage/app/private/bootstrap/credential-server.txt 2>/dev/null || echo 'unknown')"
+            if [ "$cred_mode" = "600" ] || [ "$cred_mode" = "unknown" ]; then
+              _pass "credential-server.txt exists and appears protected"
+            else
+              _fail "credential-server.txt has unexpected permissions: $cred_mode (expected 600)"
+            fi
           else
             _warn "credential-server.txt not present (database was existing or bootstrap was skipped)"
           fi
