@@ -9,16 +9,10 @@ cd /var/www/html
 mkdir -p storage/app/private storage/framework/cache/data storage/framework/sessions \
   storage/framework/views storage/logs bootstrap/cache /var/www/public-files
 
-if [ "${1:-}" = "php-fpm" ]; then
-  cp -rT /var/www/html/public/. /var/www/public-files/
-fi
+cp -rT /var/www/html/public/. /var/www/public-files/ 2>/dev/null || true
 
 if [ "$#" -gt 0 ]; then
   exec "$@"
 fi
 
-php artisan migrate --force
-php artisan config:cache
-php artisan route:cache
-cp -rT /var/www/html/public/. /var/www/public-files/
 exec php-fpm --nodaemonize

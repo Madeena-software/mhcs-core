@@ -54,3 +54,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
   CMD php -r '$s=@fsockopen("127.0.0.1",9000);exit($s===false?1:0);'
 
 ENTRYPOINT ["/usr/local/bin/mhcs-entrypoint"]
+CMD ["php-fpm", "--nodaemonize"]
