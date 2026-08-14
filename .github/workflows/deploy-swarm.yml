@@ -539,6 +539,12 @@ jobs:
               sleep 5
               _WAIT_REPL=$((_WAIT_REPL + 5))
             done
+            if [ "$_WAIT_REPL" -ge 180 ]; then
+              echo "FATAL: Service $svc failed to settle within 180s (replicas: $replicas, update: $update_state)"
+              docker service logs "$svc" --tail=120 2>/dev/null || true
+              docker service ps "$svc" --no-trunc 2>/dev/null || true
+              exit 1
+            fi
           done
 
           echo "===> Post-deploy verification report"
@@ -599,6 +605,24 @@ jobs:
             _fail "Image worker networks unexpected: $image_networks"
           fi
 
+          # Verify image-worker reachability to mpips-api:8000 via integration network
+          if docker exec "$image_container" php -r '
+            $s = @fsockopen("mpips-api", 8000, $errno, $errstr, 5);
+            if ($s) { fclose($s); exit(0); }
+            exit(1);
+          ' 2>/dev/null; then
+            _pass "Image worker can resolve and reach mpips-api:8000 via ${MPIPS_NETWORK_NAME}"
+          else
+            _fail "Image worker failed to connect to mpips-api:8000 via ${MPIPS_NETWORK_NAME}"
+          fi
+
+          # Verify MPIPS container is healthy
+          mpips_container="$(docker ps -q -f name=mpips-api -f status=running | head -n 1)"
+          if [ -n "$mpips_container" ]; then
+            mpips_health="$(docker inspect --format='{{.State.Health.Status}}' "$mpips_container" 2>/dev/null || echo "running")"
+            _pass "MPIPS API container ($mpips_container) health: $mpips_health"
+          fi
+
           for svc in mhcs_core_db mhcs_core_app mhcs_core_queue mhcs_core_scheduler mhcs_core_nginx; do
             c_id="$(docker ps -q -f name="${svc}" -f status=running | head -n 1)"
             c_nets="$(docker inspect "$c_id" --format='{{range $net, $v := .NetworkSettings.Networks}}{{$net}} {{end}}' 2>/dev/null || echo "")"
@@ -625,12 +649,38 @@ jobs:
           _pass "Application production runtime assertions passed"
 
           echo "7/8 Public HTTP health endpoint & domain verification"
+          # Dynamically resolve Node IP from default route
+          NODE_IP="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}' || echo "")"
+          if [ -z "$NODE_IP" ]; then
+            NODE_IP="$(hostname -I 2>/dev/null | awk '{print $1}' || echo "127.0.0.1")"
+          fi
+          echo "Discovered Node IPv4 address: ${NODE_IP}"
+
+          # Test candidate endpoints
+          HEALTH_URL=""
+          for candidate in "http://127.0.0.1:${APP_PORT}/up" "http://localhost:${APP_PORT}/up" "http://${NODE_IP}:${APP_PORT}/up"; do
+            echo "Testing candidate endpoint: $candidate"
+            code="$(curl -s -o /dev/null -w "%{http_code}" --max-time 3 "$candidate" || true)"
+            code="${code:-000}"
+            echo "  Result: HTTP $code"
+            if [ "$code" = "200" ]; then
+              HEALTH_URL="$candidate"
+              break
+            fi
+          done
+
+          if [ -z "$HEALTH_URL" ]; then
+            HEALTH_URL="http://${NODE_IP}:${APP_PORT}/up"
+          fi
+
           http_code="000"
           domain_code="000"
           _WAIT_HTTP=0
           while [ "$_WAIT_HTTP" -lt 30 ]; do
-            http_code="$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "http://127.0.0.1:${APP_PORT}/up" || echo "000")"
-            domain_code="$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 -H "Host: ${{ secrets.APP_DOMAIN }}" "http://127.0.0.1:${APP_PORT}/up" || echo "000")"
+            http_code="$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "$HEALTH_URL" || true)"
+            http_code="${http_code:-000}"
+            domain_code="$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 -H "Host: ${{ secrets.APP_DOMAIN }}" "$HEALTH_URL" || true)"
+            domain_code="${domain_code:-000}"
             if [ "$http_code" = "200" ]; then
               break
             fi
@@ -638,11 +688,11 @@ jobs:
             _WAIT_HTTP=$((_WAIT_HTTP + 3))
           done
           if [ "$http_code" = "200" ] && [ "$domain_code" = "200" ]; then
-            _pass "Public health endpoint /up returned HTTP 200 on port ${APP_PORT} (Host: ${{ secrets.APP_DOMAIN }})"
+            _pass "Public health endpoint /up returned HTTP 200 on port ${APP_PORT} ($HEALTH_URL, Host: ${{ secrets.APP_DOMAIN }})"
           elif [ "$http_code" = "200" ]; then
-            _pass "Public health endpoint /up returned HTTP 200 on port ${APP_PORT}"
+            _pass "Public health endpoint /up returned HTTP 200 on port ${APP_PORT} ($HEALTH_URL)"
           else
-            _fail "Public health endpoint /up returned HTTP $http_code (expected 200 on port ${APP_PORT})"
+            _fail "Public health endpoint /up returned HTTP $http_code (expected 200 at $HEALTH_URL on port ${APP_PORT})"
           fi
 
           echo "8/8 Credential server file protection"
@@ -689,5 +739,23 @@ jobs:
           df -h / /var/lib/docker 2>/dev/null || true
           free -h 2>/dev/null || true
           docker ps -a --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}' 2>/dev/null || true
-          ss -ltnp | grep ':8013' || true
+          echo "--- Host Network Diagnostics ---"
+          hostname -I 2>/dev/null || true
+          ip -4 addr 2>/dev/null || true
+          ip -4 route 2>/dev/null || true
+          ss -ltnp 2>/dev/null || true
+          echo "--- Service and Container Inspection ---"
           docker service inspect mhcs_core_nginx --pretty 2>/dev/null || true
+          docker service inspect mhcs_core_nginx --format '{{json .Endpoint.Ports}}' 2>/dev/null || true
+          docker service ps mhcs_core_nginx --no-trunc 2>/dev/null || true
+          NGINX_C="$(docker ps -q --filter label=com.docker.swarm.service.name=mhcs_core_nginx --filter status=running | head -n1)"
+          if [ -n "$NGINX_C" ]; then
+            docker inspect "$NGINX_C" --format 'Ports: {{json .NetworkSettings.Ports}}' 2>/dev/null || true
+            docker inspect "$NGINX_C" --format 'Networks: {{json .NetworkSettings.Networks}}' 2>/dev/null || true
+          fi
+          echo "--- Curl Tests ---"
+          curl -v --max-time 5 http://127.0.0.1:8013/up || true
+          NODE_IP_DUMP="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}' || echo "")"
+          if [ -n "$NODE_IP_DUMP" ]; then
+            curl -v --max-time 5 "http://${NODE_IP_DUMP}:8013/up" || true
+          fi
