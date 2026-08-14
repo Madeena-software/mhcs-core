@@ -330,59 +330,7 @@ jobs:
           done
 
           echo "===> Determining safe, non-overlapping subnet for ${MHCS_APPLICATION_NETWORK_NAME}..."
-          SAFE_SUBNET="$(python3 -c '
-import subprocess, json, ipaddress, sys
-
-used = []
-# 1. Docker network subnets
-try:
-    net_ids = subprocess.check_output(["docker", "network", "ls", "-q"], text=True).split()
-    for nid in net_ids:
-        try:
-            inspect_out = subprocess.check_output(["docker", "network", "inspect", nid], text=True)
-            data = json.loads(inspect_out)
-            for item in data:
-                for c in item.get("IPAM", {}).get("Config", []) or []:
-                    sub = c.get("Subnet")
-                    if sub:
-                        used.append(ipaddress.ip_network(sub, strict=False))
-        except Exception:
-            pass
-except Exception as e:
-    print(f"Error inspecting docker networks: {e}", file=sys.stderr)
-
-# 2. Host route subnets
-try:
-    routes_out = subprocess.check_output(["ip", "-4", "route"], text=True)
-    for line in routes_out.splitlines():
-        parts = line.split()
-        if parts and "/" in parts[0]:
-            try:
-                used.append(ipaddress.ip_network(parts[0], strict=False))
-            except Exception:
-                pass
-except Exception as e:
-    print(f"Error reading ip routes: {e}", file=sys.stderr)
-
-# 3. Candidate subnets in RFC1918 private range
-candidates = (
-    [ipaddress.ip_network(f"10.250.{i}.0/24") for i in range(1, 30)] +
-    [ipaddress.ip_network(f"172.28.{i}.0/24") for i in range(10, 50)] +
-    [ipaddress.ip_network(f"192.168.{i}.0/24") for i in range(210, 240)]
-)
-
-chosen = None
-for cand in candidates:
-    if not any(cand.overlaps(u) for u in used):
-        chosen = str(cand)
-        break
-
-if not chosen:
-    print("FATAL: Could not find non-overlapping RFC1918 /24 subnet", file=sys.stderr)
-    sys.exit(1)
-
-print(chosen)
-')"
+          SAFE_SUBNET="$(python3 -c 'import subprocess, json, ipaddress, sys; used = [ipaddress.ip_network(c["Subnet"], strict=False) for nid in subprocess.check_output(["docker", "network", "ls", "-q"], text=True).split() for item in json.loads(subprocess.check_output(["docker", "network", "inspect", nid], text=True)) for c in (item.get("IPAM", {}).get("Config", []) or []) if c.get("Subnet")] + [ipaddress.ip_network(p[0], strict=False) for p in [line.split() for line in subprocess.check_output(["ip", "-4", "route"], text=True).splitlines()] if p and "/" in p[0]]; candidates = [ipaddress.ip_network(f"10.250.{i}.0/24") for i in range(1, 30)] + [ipaddress.ip_network(f"172.28.{i}.0/24") for i in range(10, 50)] + [ipaddress.ip_network(f"192.168.{i}.0/24") for i in range(210, 240)]; chosen = next((str(cand) for cand in candidates if not any(cand.overlaps(u) for u in used)), None); sys.exit("FATAL: No free RFC1918 /24") if not chosen else print(chosen)')"
 
           echo "Selected verified safe subnet: ${SAFE_SUBNET}"
 
