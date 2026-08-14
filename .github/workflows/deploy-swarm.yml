@@ -348,8 +348,17 @@ jobs:
             if [ "$EXISTING_NET_DRIVER" != "missing" ]; then
               echo "Recreating ${MHCS_APPLICATION_NETWORK_NAME} without --internal to enable host port gateway routing..."
               docker service rm mhcs_core_nginx mhcs_core_app mhcs_core_db mhcs_core_queue mhcs_core_scheduler mhcs_core_image-worker 2>/dev/null || true
-              sleep 2
+              sleep 5
               docker network rm "${MHCS_APPLICATION_NETWORK_NAME}" 2>/dev/null || true
+              _WAIT_NET=0
+              while [ "$_WAIT_NET" -lt 30 ]; do
+                if [ "$(docker network inspect "${MHCS_APPLICATION_NETWORK_NAME}" --format '{{.Id}}' 2>/dev/null || echo "missing")" = "missing" ]; then
+                  break
+                fi
+                docker network rm "${MHCS_APPLICATION_NETWORK_NAME}" 2>/dev/null || true
+                sleep 2
+                _WAIT_NET=$((_WAIT_NET + 2))
+              done
             fi
             echo "Creating ${MHCS_APPLICATION_NETWORK_NAME} (driver: overlay, subnet: ${SAFE_SUBNET})..."
             docker network create \
