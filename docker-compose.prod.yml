@@ -285,6 +285,8 @@ services:
           memory: 128M
         reservations:
           memory: 32M
+    environment:
+      MHCS_RELEASE_VERSION: "${APP_VERSION:-latest}"
     ports:
       - target: 80
         published: ${APP_PORT:-8013}

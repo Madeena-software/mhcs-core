@@ -62,6 +62,8 @@ jobs:
           MHCS_IMAGE=mhcs_core:${{ steps.version.outputs.version }} \
           MHCS_APPLICATION_NETWORK_NAME=mhcs-core-application-network \
           MPIPS_NETWORK_NAME=mhcs-mpips-integration-v1 \
+          APP_VERSION=${{ steps.version.outputs.version }} \
+          APP_PORT=8013 \
           MHCS_ENV_FILE=/tmp/mhcs-validate.env \
           APP_STORAGE_HOST_PATH=/tmp/storage \
           APP_LOGS_HOST_PATH=/tmp/logs \
@@ -383,6 +385,7 @@ jobs:
           export MHCS_APPLICATION_NETWORK_NAME
           export MPIPS_NETWORK_NAME
           export APP_PORT
+          export APP_VERSION="${LIVE_VERSION}"
           docker stack deploy -c docker-compose.prod.yml --with-registry-auth --prune mhcs_core
 
           echo "===> Waiting for database service to become healthy..."
