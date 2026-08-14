@@ -314,8 +314,8 @@ volumes:
 
 networks:
   application:
-    driver: overlay
-    internal: true
+    name: ${MHCS_APPLICATION_NETWORK_NAME:-mhcs-core-application-network}
+    external: true
   mpips_private:
     name: ${MPIPS_NETWORK_NAME:-madeena-software-network}
     external: true

@@ -5,7 +5,7 @@ name: Deploy to Production (Swarm Mode)
 #
 # Builds and validates the production Docker image locally on the runner,
 # ensures database safety and automated pre-deploy backup, deploys via Docker Swarm,
-# runs forward migrations, runs initial Prestige Clinic bootstrap if fresh,
+# runs forward migrations, executes safe one-time MVP bootstrap only on fresh DB,
 # and executes post-deploy health verification.
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -14,11 +14,6 @@ on:
     branches:
       - main
   workflow_dispatch:
-    inputs:
-      force_bootstrap_seed:
-        description: 'Force run Prestige Clinic bootstrap seeder (only if database is fresh or explicitly needed)'
-        type: boolean
-        default: false
 
 concurrency:
   group: production-deployment-mhcs_core
@@ -64,6 +59,9 @@ jobs:
           set -euo pipefail
           echo "===> Validating docker-compose.prod.yml..."
           touch /tmp/mhcs-validate.env
+          MHCS_IMAGE=mhcs_core:${{ steps.version.outputs.version }} \
+          MHCS_APPLICATION_NETWORK_NAME=mhcs-core-application-network \
+          MPIPS_NETWORK_NAME=madeena-software-network \
           MHCS_ENV_FILE=/tmp/mhcs-validate.env \
           APP_STORAGE_HOST_PATH=/tmp/storage \
           APP_LOGS_HOST_PATH=/tmp/logs \
@@ -115,7 +113,6 @@ jobs:
           MHCS_MANIFEST_KEY: ${{ secrets.MHCS_MANIFEST_KEY }}
           MHCS_MANIFEST_KEY_ID: ${{ secrets.MHCS_MANIFEST_KEY_ID }}
           APP_VERSION: ${{ needs.build.outputs.app_version }}
-          FORCE_BOOTSTRAP_SEED: ${{ inputs.force_bootstrap_seed }}
         run: |
           set -euo pipefail
 
@@ -151,6 +148,9 @@ jobs:
           }
 
           export LIVE_VERSION="${APP_VERSION:-unknown}"
+          export MHCS_IMAGE="mhcs_core:${LIVE_VERSION}"
+          export MHCS_APPLICATION_NETWORK_NAME="mhcs-core-application-network"
+          export MPIPS_NETWORK_NAME="${MPIPS_NETWORK_NAME:-madeena-software-network}"
           export APP_STORAGE_HOST_PATH="/var/lib/mhcs_core/storage"
           export APP_LOGS_HOST_PATH="/var/lib/mhcs_core/logs"
           export MYSQL_DATA_HOST_PATH="/var/lib/mhcs_core/mysql"
@@ -165,6 +165,10 @@ jobs:
             "$MYSQL_DATA_HOST_PATH"
           _sudo chown -R www-data:www-data "$APP_STORAGE_HOST_PATH" "$APP_LOGS_HOST_PATH" 2>/dev/null || true
           _sudo chmod -R 775 "$APP_STORAGE_HOST_PATH" "$APP_LOGS_HOST_PATH" 2>/dev/null || true
+          _sudo chmod 0700 "$APP_STORAGE_HOST_PATH/app/private/bootstrap" 2>/dev/null || true
+          if [ -f "$APP_STORAGE_HOST_PATH/app/private/bootstrap/credential-server.txt" ]; then
+            _sudo chmod 0600 "$APP_STORAGE_HOST_PATH/app/private/bootstrap/credential-server.txt" 2>/dev/null || true
+          fi
           _sudo chown 999:999 "$MYSQL_DATA_HOST_PATH" 2>/dev/null || true
           _sudo chmod 750 "$MYSQL_DATA_HOST_PATH" 2>/dev/null || true
 
@@ -279,6 +283,9 @@ jobs:
             printf 'MHCS_ACCESS_GRANT_KEY=%s\n' "${MHCS_ACCESS_GRANT_KEY:-}"
             printf 'MHCS_MANIFEST_KEY=%s\n' "${MHCS_MANIFEST_KEY:-}"
             printf 'MHCS_MANIFEST_KEY_ID=%s\n' "${MHCS_MANIFEST_KEY_ID:-}"
+            printf 'MHCS_IMAGE=%s\n' "$MHCS_IMAGE"
+            printf 'MHCS_APPLICATION_NETWORK_NAME=%s\n' "$MHCS_APPLICATION_NETWORK_NAME"
+            printf 'MPIPS_NETWORK_NAME=%s\n' "$MPIPS_NETWORK_NAME"
             printf 'APP_VERSION=%s\n' "$LIVE_VERSION"
           } >> .env
 
@@ -294,35 +301,119 @@ jobs:
           fi
 
           echo "===> Verifying external mpips_private network exists..."
-          MPIPS_SCOPE="$(docker network inspect ${MPIPS_NETWORK_NAME:-madeena-software-network} --format '{{.Scope}}' 2>/dev/null || echo "missing")"
+          MPIPS_SCOPE="$(docker network inspect ${MPIPS_NETWORK_NAME} --format '{{.Scope}}' 2>/dev/null || echo "missing")"
           if [ "$MPIPS_SCOPE" = "missing" ]; then
-            echo "FATAL: Required external network ${MPIPS_NETWORK_NAME:-madeena-software-network} not found."
+            echo "FATAL: Required external network ${MPIPS_NETWORK_NAME} not found."
             echo "The MPIPS network must be configured externally before MHCS deployment."
             exit 1
           fi
-          echo "✅ External network ${MPIPS_NETWORK_NAME:-madeena-software-network} found (scope: $MPIPS_SCOPE)"
+          echo "✅ External network ${MPIPS_NETWORK_NAME} found (scope: $MPIPS_SCOPE)"
 
-          echo "===> Diagnosing Docker/Swarm network address allocation..."
-          echo "Docker daemon default address pools:"
-          docker info --format '{{.Swarm.DefaultAddrPool}}' 2>/dev/null || echo "  (unable to retrieve)"
-          
+          echo "===> Diagnosing Docker/Swarm network address allocation and host routing..."
+          echo "Host IPv4 routes (ip -4 route):"
+          ip -4 route || true
           echo ""
-          echo "Existing overlay networks and IPAM configuration:"
-          docker network ls --filter driver=overlay -q 2>/dev/null | while read net; do
-            name=$(docker network inspect "$net" --format '{{.Name}}' 2>/dev/null || echo "unknown")
-            scope=$(docker network inspect "$net" --format '{{.Scope}}' 2>/dev/null || echo "unknown")
-            ipam=$(docker network inspect "$net" --format '{{json .IPAM.Config}}' 2>/dev/null || echo "[]")
-            echo "  - $name (ID: ${net:0:10}..., Scope: $scope)"
-            if [ "$ipam" != "[]" ]; then
-              echo "    IPAM: $ipam"
-            fi
-          done
-          
+          echo "Host IPv4 addresses (ip -4 addr):"
+          ip -4 addr || true
           echo ""
           echo "All Docker networks summary:"
           docker network ls --format 'table {{.Name}}\t{{.Driver}}\t{{.Scope}}' 2>/dev/null || echo "  (unable to retrieve)"
-
           echo ""
+          echo "All Docker networks detailed IPAM configurations:"
+          docker network ls -q | while read net_id; do
+            n_name="$(docker network inspect "$net_id" --format '{{.Name}}' 2>/dev/null || echo "unknown")"
+            n_driver="$(docker network inspect "$net_id" --format '{{.Driver}}' 2>/dev/null || echo "unknown")"
+            n_scope="$(docker network inspect "$net_id" --format '{{.Scope}}' 2>/dev/null || echo "unknown")"
+            n_internal="$(docker network inspect "$net_id" --format '{{.Internal}}' 2>/dev/null || echo "unknown")"
+            n_ipam="$(docker network inspect "$net_id" --format '{{json .IPAM.Config}}' 2>/dev/null || echo "[]")"
+            echo "  - ${n_name} [${n_driver}/${n_scope}] internal=${n_internal} IPAM: ${n_ipam}"
+          done
+
+          echo "===> Determining safe, non-overlapping subnet for ${MHCS_APPLICATION_NETWORK_NAME}..."
+          SAFE_SUBNET="$(python3 -c '
+            import subprocess, json, ipaddress, sys
+
+            used = []
+            # 1. Docker network subnets
+            try:
+                net_ids = subprocess.check_output(["docker", "network", "ls", "-q"], text=True).split()
+                for nid in net_ids:
+                    try:
+                        inspect_out = subprocess.check_output(["docker", "network", "inspect", nid], text=True)
+                        data = json.loads(inspect_out)
+                        for item in data:
+                            for c in item.get("IPAM", {}).get("Config", []) or []:
+                                sub = c.get("Subnet")
+                                if sub:
+                                    used.append(ipaddress.ip_network(sub, strict=False))
+                    except Exception:
+                        pass
+            except Exception as e:
+                print(f"Error inspecting docker networks: {e}", file=sys.stderr)
+
+            # 2. Host route subnets
+            try:
+                routes_out = subprocess.check_output(["ip", "-4", "route"], text=True)
+                for line in routes_out.splitlines():
+                    parts = line.split()
+                    if parts and "/" in parts[0]:
+                        try:
+                            used.append(ipaddress.ip_network(parts[0], strict=False))
+                        except Exception:
+                            pass
+            except Exception as e:
+                print(f"Error reading ip routes: {e}", file=sys.stderr)
+
+            print(f"Discovered {len(used)} active subnets: {[str(u) for u in used]}", file=sys.stderr)
+
+            # 3. Candidate subnets in RFC1918 private range
+            candidates = (
+                [ipaddress.ip_network(f"10.250.{i}.0/24") for i in range(1, 30)] +
+                [ipaddress.ip_network(f"172.28.{i}.0/24") for i in range(10, 50)] +
+                [ipaddress.ip_network(f"192.168.{i}.0/24") for i in range(210, 240)]
+            )
+
+            chosen = None
+            for cand in candidates:
+                if not any(cand.overlaps(u) for u in used):
+                    chosen = str(cand)
+                    break
+
+            if not chosen:
+                print("FATAL: Could not find non-overlapping RFC1918 /24 subnet", file=sys.stderr)
+                sys.exit(1)
+
+            print(chosen)
+          ')"
+
+          echo "Selected verified safe subnet: ${SAFE_SUBNET}"
+
+          echo "===> Ensuring dedicated overlay network ${MHCS_APPLICATION_NETWORK_NAME}..."
+          EXISTING_NET_DRIVER="$(docker network inspect "${MHCS_APPLICATION_NETWORK_NAME}" --format '{{.Driver}}' 2>/dev/null || echo "missing")"
+          EXISTING_NET_INTERNAL="$(docker network inspect "${MHCS_APPLICATION_NETWORK_NAME}" --format '{{.Internal}}' 2>/dev/null || echo "false")"
+          EXISTING_NET_SUBNET="$(docker network inspect "${MHCS_APPLICATION_NETWORK_NAME}" --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}' 2>/dev/null || echo "")"
+
+          if [ "$EXISTING_NET_DRIVER" = "overlay" ] && [ "$EXISTING_NET_INTERNAL" = "true" ] && [ -n "$EXISTING_NET_SUBNET" ]; then
+            echo "✅ Network ${MHCS_APPLICATION_NETWORK_NAME} exists and is valid overlay (subnet: ${EXISTING_NET_SUBNET}, internal: true)"
+          else
+            if [ "$EXISTING_NET_DRIVER" != "missing" ]; then
+              echo "Recreating ${MHCS_APPLICATION_NETWORK_NAME} with verified configuration..."
+              docker network rm "${MHCS_APPLICATION_NETWORK_NAME}" 2>/dev/null || true
+            fi
+            echo "Creating ${MHCS_APPLICATION_NETWORK_NAME} (driver: overlay, internal: true, subnet: ${SAFE_SUBNET})..."
+            docker network create \
+              --driver overlay \
+              --internal \
+              --subnet "${SAFE_SUBNET}" \
+              --attachable=false \
+              "${MHCS_APPLICATION_NETWORK_NAME}"
+            echo "✅ Created overlay network ${MHCS_APPLICATION_NETWORK_NAME} with subnet ${SAFE_SUBNET}"
+          fi
+
+          echo "===> Pre-pulling base infrastructure images..."
+          docker pull mysql:8.4 || true
+          docker pull nginx:alpine || true
+
           echo "===> Pre-deploy database backup check..."
           DB_CONTAINER="$(docker ps -q --filter "name=mhcs_core_db" | head -n 1)"
           if [ -n "$DB_CONTAINER" ]; then
@@ -330,19 +421,20 @@ jobs:
             docker exec "$DB_CONTAINER" \
               mysqldump -u root -p"${DB_ROOT_PASSWORD}" \
               --single-transaction --routines --triggers --events \
-              "${DB_DATABASE}" > "/tmp/pre-deploy-${DB_DATABASE}-${LIVE_VERSION}.sql" 2>/dev/null || true
-            if [ -s "/tmp/pre-deploy-${DB_DATABASE}-${LIVE_VERSION}.sql" ]; then
-              echo "✅ Pre-deploy backup created: /tmp/pre-deploy-${DB_DATABASE}-${LIVE_VERSION}.sql"
+              "${DB_DATABASE}" > "/tmp/pre-deploy-${DB_DATABASE}-${LIVE_VERSION}.sql"
+            if [ ! -s "/tmp/pre-deploy-${DB_DATABASE}-${LIVE_VERSION}.sql" ]; then
+              echo "FATAL: Pre-deploy backup failed or produced empty file."
+              exit 1
             fi
+            echo "✅ Pre-deploy backup created: /tmp/pre-deploy-${DB_DATABASE}-${LIVE_VERSION}.sql"
           else
             echo "Database service not yet initialized. First deployment."
           fi
 
-          echo "===> Pre-pulling base infrastructure images..."
-          docker pull mysql:8.4 || true
-          docker pull nginx:1.27-alpine || true
-
-          echo "===> Deploying stack mhcs_core..."
+          echo "===> Deploying stack mhcs_core with immutable image ${MHCS_IMAGE}..."
+          export MHCS_IMAGE
+          export MHCS_APPLICATION_NETWORK_NAME
+          export MPIPS_NETWORK_NAME
           docker stack deploy -c docker-compose.prod.yml --with-registry-auth --prune mhcs_core
 
           echo "===> Waiting for database service to become healthy..."
@@ -358,33 +450,96 @@ jobs:
             _WAIT_DB=$((_WAIT_DB + 5))
           done
 
-          echo "===> Waiting for app service..."
+          echo "===> Verifying current-release app service readiness and immutable image propagation..."
           _WAIT_APP=0
-          until [ "$(docker service ls --format '{{.Replicas}}' --filter "name=mhcs_core_app" 2>/dev/null | head -n 1)" = "1/1" ]; do
-            if [ "$_WAIT_APP" -ge 300 ]; then
-              echo "FATAL: mhcs_core_app failed to reach 1/1 replicas in 300s."
-              docker service ps mhcs_core_app --no-trunc || true
-              docker service logs mhcs_core_app --tail=100 || true
-              exit 1
+          APP_CONTAINER=""
+          while [ "$_WAIT_APP" -lt 300 ]; do
+            # 1. Check service spec references the immutable release image
+            svc_img="$(docker service inspect mhcs_core_app --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 2>/dev/null || echo "")"
+            if [ "$svc_img" != "${MHCS_IMAGE}" ] && [[ "$svc_img" != *"${LIVE_VERSION}"* ]]; then
+              echo "[wait-app] Service spec image is '$svc_img' (waiting for '${MHCS_IMAGE}')..."
+              sleep 5
+              _WAIT_APP=$((_WAIT_APP + 5))
+              continue
             fi
+
+            # 2. Check current desired task is running
+            task_id="$(docker service ps mhcs_core_app --filter "desired-state=running" --format '{{.ID}}' 2>/dev/null | head -n 1)"
+            if [ -z "$task_id" ]; then
+              echo "[wait-app] Waiting for running task to be scheduled..."
+              sleep 5
+              _WAIT_APP=$((_WAIT_APP + 5))
+              continue
+            fi
+
+            task_state="$(docker service ps mhcs_core_app --filter "id=${task_id}" --format '{{.CurrentState}}' 2>/dev/null || echo "")"
+            if ! echo "$task_state" | grep -iq "running"; then
+              echo "[wait-app] Task $task_id state is '$task_state' (waiting for Running)..."
+              sleep 5
+              _WAIT_APP=$((_WAIT_APP + 5))
+              continue
+            fi
+
+            # 3. Locate the container corresponding to this task
+            c_candidate="$(docker ps -q --filter "name=mhcs_core_app" | while read c; do
+              c_task="$(docker inspect "$c" --format '{{index .Config.Labels "com.docker.swarm.task.id"}}' 2>/dev/null || echo "")"
+              if [ "$c_task" = "$task_id" ]; then
+                echo "$c"
+                break
+              fi
+            done)"
+
+            if [ -n "$c_candidate" ]; then
+              c_img="$(docker inspect "$c_candidate" --format '{{.Config.Image}}' 2>/dev/null || echo "")"
+              c_health="$(docker inspect "$c_candidate" --format '{{.State.Health.Status}}' 2>/dev/null || echo "none")"
+
+              if [[ "$c_img" == *"${LIVE_VERSION}"* ]] && [ "$c_health" = "healthy" ]; then
+                echo "✅ mhcs_core_app task $task_id (container $c_candidate, image $c_img) is running and healthy!"
+                APP_CONTAINER="$c_candidate"
+                break
+              else
+                echo "[wait-app] Container $c_candidate (img: $c_img, health: $c_health) initializing..."
+              fi
+            fi
+
             sleep 5
             _WAIT_APP=$((_WAIT_APP + 5))
           done
 
-          APP_CONTAINER="$(docker ps -q -f name=mhcs_core_app -f status=running | head -n 1)"
           if [ -z "$APP_CONTAINER" ]; then
-            echo "FATAL: Could not locate running mhcs_core_app container."
+            echo "FATAL: mhcs_core_app failed to stabilize with immutable image ${MHCS_IMAGE} in 300s."
+            docker service ps mhcs_core_app --no-trunc || true
+            docker service logs mhcs_core_app --tail=100 || true
             exit 1
           fi
 
-          echo "===> Running database migrations..."
+          echo "===> Verifying App container database connectivity..."
+          docker exec "$APP_CONTAINER" php -r '
+            require "vendor/autoload.php";
+            $app = require "bootstrap/app.php";
+            $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+            try {
+              \Illuminate\Support\Facades\DB::connection()->getPdo();
+              echo "DB_CONNECTION_SUCCESS\n";
+            } catch (\Throwable $e) {
+              echo "DB_CONNECTION_FAILED: " . $e->getMessage() . "\n";
+              exit(1);
+            }
+          '
+
+          echo "===> Running database migrations through current app container..."
           docker exec "$APP_CONTAINER" php artisan migrate --force
 
-          echo "===> Checking database bootstrap state..."
-          USER_COUNT="$(docker exec "$APP_CONTAINER" php -r 'require "vendor/autoload.php"; $app = require "bootstrap/app.php"; $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap(); echo Illuminate\Support\Facades\DB::table("users")->count();' 2>/dev/null || echo "0")"
+          echo "===> Checking database bootstrap state (safe & non-destructive)..."
+          USER_COUNT="$(docker exec "$APP_CONTAINER" php -r '
+            require "vendor/autoload.php";
+            $app = require "bootstrap/app.php";
+            $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+            echo \Illuminate\Support\Facades\DB::table("users")->count();
+          ' 2>/dev/null || echo "0")"
 
-          if [ "$USER_COUNT" = "0" ] || [ "${FORCE_BOOTSTRAP_SEED:-false}" = "true" ]; then
-            echo "Fresh database detected (user count: $USER_COUNT). Running one-time MVP Core Clinic synthetic bootstrap..."
+          if [ "$USER_COUNT" = "0" ]; then
+            echo "Fresh database detected (0 users). Running authorized one-time MVP Core Clinic synthetic bootstrap..."
             docker exec \
               -e MHCS_ALLOW_PRODUCTION_MVP_SEED=true \
               -e MHCS_BOOTSTRAP_CREDENTIAL_PATH=/var/www/html/storage/app/private/bootstrap/credential-server.txt \
@@ -395,7 +550,7 @@ jobs:
             echo "✅ MVP Core Clinic synthetic bootstrap completed successfully."
           else
             echo "Existing database detected ($USER_COUNT users). Skipping bootstrap seeder."
-            echo "Note: Database state should be inspected to ensure consistency with deployment."
+            echo "Non-destructive verification: Database contains existing records; bootstrap preserved without data mutation."
           fi
 
           echo "===> Warming application caches..."
@@ -414,6 +569,9 @@ jobs:
           _fail() { FAIL=$((FAIL + 1)); echo "  FAIL: $1"; }
           _warn() { WARN=$((WARN + 1)); echo "  WARN: $1"; }
 
+          LIVE_VERSION="${{ needs.build.outputs.app_version }}"
+          EXPECTED_IMAGE="mhcs_core:${LIVE_VERSION}"
+
           echo "===> Waiting for all Swarm services to settle..."
           for svc in mhcs_core_db mhcs_core_app mhcs_core_queue mhcs_core_scheduler mhcs_core_image-worker mhcs_core_nginx; do
             _WAIT_REPL=0
@@ -430,17 +588,27 @@ jobs:
 
           echo "===> Post-deploy verification report"
 
-          echo "1/7 Service replicas"
+          echo "1/8 Service replicas"
           for svc in mhcs_core_db mhcs_core_app mhcs_core_queue mhcs_core_scheduler mhcs_core_image-worker mhcs_core_nginx; do
             replicas="$(docker service ls --format '{{.Replicas}}' --filter "name=${svc}" 2>/dev/null || echo "")"
             if [ "$replicas" = "1/1" ]; then
-              _pass "$svc: $replicas"
+              _pass "$svc replicas: $replicas"
             else
-              _fail "$svc: $replicas"
+              _fail "$svc replicas: $replicas (expected 1/1)"
             fi
           done
 
-          echo "2/7 Health checks"
+          echo "2/8 Immutable release image propagation"
+          for svc in mhcs_core_app mhcs_core_queue mhcs_core_scheduler mhcs_core_image-worker; do
+            svc_image="$(docker service inspect "$svc" --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 2>/dev/null || echo "")"
+            if [ "$svc_image" = "$EXPECTED_IMAGE" ] || [[ "$svc_image" == *"${LIVE_VERSION}"* ]]; then
+              _pass "$svc uses immutable release image: $svc_image"
+            else
+              _fail "$svc uses unexpected image: $svc_image (expected $EXPECTED_IMAGE)"
+            fi
+          done
+
+          echo "3/8 Health checks"
           for svc in mhcs_core_app mhcs_core_db mhcs_core_nginx; do
             container="$(docker ps -q -f name="${svc}" -f status=running | head -n 1)"
             health="$(docker inspect --format='{{.State.Health.Status}}' "$container" 2>/dev/null || echo none)"
@@ -451,7 +619,7 @@ jobs:
             fi
           done
 
-          echo "3/7 Queue worker command & queue binding"
+          echo "4/8 Queue worker command & queue binding"
           queue_cmd="$(docker service inspect mhcs_core_queue --format='{{join .Spec.TaskTemplate.ContainerSpec.Command " "}}' 2>/dev/null || echo "")"
           if echo "$queue_cmd" | grep -q "queue:work"; then
             _pass "Default queue worker configured"
@@ -466,16 +634,27 @@ jobs:
             _fail "Image Gateway worker command is missing --queue=image-gateway"
           fi
 
-          echo "4/7 Network isolation"
+          echo "5/8 Network topology & isolation"
           image_container="$(docker ps -q -f name=mhcs_core_image-worker -f status=running | head -n 1)"
-          networks="$(docker inspect "$image_container" --format='{{range $net, $v := .NetworkSettings.Networks}}{{$net}} {{end}}' 2>/dev/null || echo "")"
-          if echo "$networks" | grep -q "madeena-software-network"; then
-            _pass "Image worker is attached to madeena-software-network"
+          image_networks="$(docker inspect "$image_container" --format='{{range $net, $v := .NetworkSettings.Networks}}{{$net}} {{end}}' 2>/dev/null || echo "")"
+          
+          if echo "$image_networks" | grep -q "madeena-software-network" && echo "$image_networks" | grep -q "mhcs-core-application-network"; then
+            _pass "Image worker is attached to both mhcs-core-application-network and madeena-software-network"
           else
-            _fail "Image worker is NOT attached to madeena-software-network"
+            _fail "Image worker networks unexpected: $image_networks"
           fi
 
-          echo "5/7 Application runtime configuration assertions"
+          for svc in mhcs_core_db mhcs_core_app mhcs_core_queue mhcs_core_scheduler mhcs_core_nginx; do
+            c_id="$(docker ps -q -f name="${svc}" -f status=running | head -n 1)"
+            c_nets="$(docker inspect "$c_id" --format='{{range $net, $v := .NetworkSettings.Networks}}{{$net}} {{end}}' 2>/dev/null || echo "")"
+            if echo "$c_nets" | grep -q "madeena-software-network"; then
+              _fail "$svc is attached to madeena-software-network (must be isolated)"
+            else
+              _pass "$svc is isolated from MPIPS network (attached to: $c_nets)"
+            fi
+          done
+
+          echo "6/8 Application runtime configuration assertions"
           app_container="$(docker ps -q -f name=mhcs_core_app -f status=running | head -n 1)"
           docker exec "$app_container" php -r '
             require "vendor/autoload.php";
@@ -490,22 +669,22 @@ jobs:
           ' >/dev/null
           _pass "Application production runtime assertions passed"
 
-          echo "6/7 Public HTTP health endpoint & domain verification"
+          echo "7/8 Public HTTP health endpoint & domain verification"
           http_code="$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8013/up || true)"
-          domain_code="$(curl -s -o /dev/null -w "%{http_code}" -H "Host: ${APP_DOMAIN}" http://127.0.0.1:8013/up || true)"
+          domain_code="$(curl -s -o /dev/null -w "%{http_code}" -H "Host: ${{ secrets.APP_DOMAIN }}" http://127.0.0.1:8013/up || true)"
           if [ "$http_code" = "200" ] && [ "$domain_code" = "200" ]; then
-            _pass "Public health endpoint /up returned HTTP 200 on port 8013 (Host: ${APP_DOMAIN})"
+            _pass "Public health endpoint /up returned HTTP 200 on port 8013 (Host: ${{ secrets.APP_DOMAIN }})"
           elif [ "$http_code" = "200" ]; then
             _pass "Public health endpoint /up returned HTTP 200 on port 8013"
           else
             _fail "Public health endpoint /up returned HTTP $http_code (expected 200)"
           fi
 
-          echo "7/7 Credential server file protection"
+          echo "8/8 Credential server file protection"
           if docker exec "$app_container" test -f /var/www/html/storage/app/private/bootstrap/credential-server.txt; then
             cred_mode="$(docker exec "$app_container" stat -c '%a' /var/www/html/storage/app/private/bootstrap/credential-server.txt 2>/dev/null || echo 'unknown')"
             if [ "$cred_mode" = "600" ] || [ "$cred_mode" = "unknown" ]; then
-              _pass "credential-server.txt exists and appears protected"
+              _pass "credential-server.txt exists and appears protected (mode: $cred_mode)"
             else
               _fail "credential-server.txt has unexpected permissions: $cred_mode (expected 600)"
             fi
