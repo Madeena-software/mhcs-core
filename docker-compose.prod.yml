@@ -3,7 +3,7 @@
 # Source: Madeena-software/deploy-templates/templates/prod/standard-docker-compose.prod.yml
 # @ 569a30d4a089b0ee404ed6e963fdd2dfd96d3787
 # MHCS specialization: web, queue, scheduler, and image-worker roles.
-# The Image Gateway worker attaches to MPIPS_NETWORK_NAME (madeena-software-network).
+# The Image Gateway worker attaches to MPIPS_NETWORK_NAME (mhcs-mpips-integration-v1).
 # -----------------------------------------------------------------------------
 services:
 
@@ -317,5 +317,5 @@ networks:
     name: ${MHCS_APPLICATION_NETWORK_NAME:-mhcs-core-application-network}
     external: true
   mpips_private:
-    name: ${MPIPS_NETWORK_NAME:-madeena-software-network}
+    name: ${MPIPS_NETWORK_NAME:-mhcs-mpips-integration-v1}
     external: true

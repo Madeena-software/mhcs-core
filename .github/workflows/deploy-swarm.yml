@@ -61,7 +61,7 @@ jobs:
           touch /tmp/mhcs-validate.env
           MHCS_IMAGE=mhcs_core:${{ steps.version.outputs.version }} \
           MHCS_APPLICATION_NETWORK_NAME=mhcs-core-application-network \
-          MPIPS_NETWORK_NAME=madeena-software-network \
+          MPIPS_NETWORK_NAME=mhcs-mpips-integration-v1 \
           MHCS_ENV_FILE=/tmp/mhcs-validate.env \
           APP_STORAGE_HOST_PATH=/tmp/storage \
           APP_LOGS_HOST_PATH=/tmp/logs \
@@ -150,13 +150,10 @@ jobs:
           export LIVE_VERSION="${APP_VERSION:-unknown}"
           export MHCS_IMAGE="mhcs_core:${LIVE_VERSION}"
           export MHCS_APPLICATION_NETWORK_NAME="mhcs-core-application-network"
-          export MPIPS_NETWORK_NAME="${MPIPS_NETWORK_NAME:-madeena-software-network}"
+          export MPIPS_NETWORK_NAME="${MPIPS_NETWORK_NAME:-mhcs-mpips-integration-v1}"
           export APP_STORAGE_HOST_PATH="/var/lib/mhcs_core/storage"
           export APP_LOGS_HOST_PATH="/var/lib/mhcs_core/logs"
           export MYSQL_DATA_HOST_PATH="/var/lib/mhcs_core/mysql"
-
-          echo "===> Clearing exited containers from previous runs..."
-          docker container prune -f || true
 
           echo "===> Preparing persistent host paths..."
           _sudo mkdir -p \
@@ -584,8 +581,8 @@ jobs:
           image_container="$(docker ps -q -f name=mhcs_core_image-worker -f status=running | head -n 1)"
           image_networks="$(docker inspect "$image_container" --format='{{range $net, $v := .NetworkSettings.Networks}}{{$net}} {{end}}' 2>/dev/null || echo "")"
           
-          if echo "$image_networks" | grep -q "madeena-software-network" && echo "$image_networks" | grep -q "mhcs-core-application-network"; then
-            _pass "Image worker is attached to both mhcs-core-application-network and madeena-software-network"
+          if echo "$image_networks" | grep -q "${MPIPS_NETWORK_NAME}" && echo "$image_networks" | grep -q "mhcs-core-application-network"; then
+            _pass "Image worker is attached to both mhcs-core-application-network and ${MPIPS_NETWORK_NAME}"
           else
             _fail "Image worker networks unexpected: $image_networks"
           fi
@@ -593,8 +590,8 @@ jobs:
           for svc in mhcs_core_db mhcs_core_app mhcs_core_queue mhcs_core_scheduler mhcs_core_nginx; do
             c_id="$(docker ps -q -f name="${svc}" -f status=running | head -n 1)"
             c_nets="$(docker inspect "$c_id" --format='{{range $net, $v := .NetworkSettings.Networks}}{{$net}} {{end}}' 2>/dev/null || echo "")"
-            if echo "$c_nets" | grep -q "madeena-software-network"; then
-              _fail "$svc is attached to madeena-software-network (must be isolated)"
+            if echo "$c_nets" | grep -q "${MPIPS_NETWORK_NAME}"; then
+              _fail "$svc is attached to ${MPIPS_NETWORK_NAME} (must be isolated)"
             else
               _pass "$svc is isolated from MPIPS network (attached to: $c_nets)"
             fi
