@@ -530,11 +530,11 @@ jobs:
           echo "===> Waiting for all Swarm services to settle..."
           for svc in mhcs_core_db mhcs_core_app mhcs_core_queue mhcs_core_scheduler mhcs_core_image-worker mhcs_core_nginx; do
             _WAIT_REPL=0
-            until [ "$(docker service ls --format '{{.Replicas}}' --filter "name=${svc}" 2>/dev/null | head -n 1)" = "1/1" ]; do
-              if [ "$_WAIT_REPL" -ge 180 ]; then
-                docker service logs "$svc" --tail=120 2>/dev/null || true
-                docker service ps "$svc" --no-trunc 2>/dev/null || true
-                exit 1
+            while [ "$_WAIT_REPL" -lt 180 ]; do
+              replicas="$(docker service ls --format '{{.Replicas}}' --filter "name=${svc}" 2>/dev/null | head -n 1)"
+              update_state="$(docker service inspect "$svc" --format '{{.UpdateStatus.State}}' 2>/dev/null || echo "completed")"
+              if [ "$replicas" = "1/1" ] && [ "$update_state" != "updating" ]; then
+                break
               fi
               sleep 5
               _WAIT_REPL=$((_WAIT_REPL + 5))
@@ -625,8 +625,18 @@ jobs:
           _pass "Application production runtime assertions passed"
 
           echo "7/8 Public HTTP health endpoint & domain verification"
-          http_code="$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:${APP_PORT}/up" || true)"
-          domain_code="$(curl -s -o /dev/null -w "%{http_code}" -H "Host: ${{ secrets.APP_DOMAIN }}" "http://127.0.0.1:${APP_PORT}/up" || true)"
+          http_code="000"
+          domain_code="000"
+          _WAIT_HTTP=0
+          while [ "$_WAIT_HTTP" -lt 30 ]; do
+            http_code="$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "http://127.0.0.1:${APP_PORT}/up" || echo "000")"
+            domain_code="$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 -H "Host: ${{ secrets.APP_DOMAIN }}" "http://127.0.0.1:${APP_PORT}/up" || echo "000")"
+            if [ "$http_code" = "200" ]; then
+              break
+            fi
+            sleep 3
+            _WAIT_HTTP=$((_WAIT_HTTP + 3))
+          done
           if [ "$http_code" = "200" ] && [ "$domain_code" = "200" ]; then
             _pass "Public health endpoint /up returned HTTP 200 on port ${APP_PORT} (Host: ${{ secrets.APP_DOMAIN }})"
           elif [ "$http_code" = "200" ]; then
