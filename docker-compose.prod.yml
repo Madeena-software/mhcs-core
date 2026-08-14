@@ -268,13 +268,13 @@ services:
       update_config:
         parallelism: 1
         delay: 5s
-        order: start-first
+        order: stop-first
         failure_action: rollback
         monitor: 10s
         max_failure_ratio: 0
       rollback_config:
         parallelism: 1
-        order: start-first
+        order: stop-first
       restart_policy:
         condition: any
         delay: 5s

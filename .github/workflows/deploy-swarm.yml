@@ -80,6 +80,9 @@ jobs:
     needs: build
     permissions:
       contents: read
+    env:
+      MPIPS_NETWORK_NAME: "mhcs-mpips-integration-v1"
+      APP_PORT: "8013"
 
     steps:
       - name: Checkout code
@@ -151,6 +154,7 @@ jobs:
           export MHCS_IMAGE="mhcs_core:${LIVE_VERSION}"
           export MHCS_APPLICATION_NETWORK_NAME="mhcs-core-application-network"
           export MPIPS_NETWORK_NAME="${MPIPS_NETWORK_NAME:-mhcs-mpips-integration-v1}"
+          export APP_PORT="${APP_PORT:-8013}"
           export APP_STORAGE_HOST_PATH="/var/lib/mhcs_core/storage"
           export APP_LOGS_HOST_PATH="/var/lib/mhcs_core/logs"
           export MYSQL_DATA_HOST_PATH="/var/lib/mhcs_core/mysql"
@@ -160,11 +164,11 @@ jobs:
             "$APP_STORAGE_HOST_PATH/app/private/bootstrap" \
             "$APP_LOGS_HOST_PATH" \
             "$MYSQL_DATA_HOST_PATH"
-          _sudo chown -R www-data:www-data "$APP_STORAGE_HOST_PATH" "$APP_LOGS_HOST_PATH" 2>/dev/null || true
-          _sudo chmod -R 775 "$APP_STORAGE_HOST_PATH" "$APP_LOGS_HOST_PATH" 2>/dev/null || true
-          _sudo chmod 0700 "$APP_STORAGE_HOST_PATH/app/private/bootstrap" 2>/dev/null || true
-          if [ -f "$APP_STORAGE_HOST_PATH/app/private/bootstrap/credential-server.txt" ]; then
-            _sudo chmod 0600 "$APP_STORAGE_HOST_PATH/app/private/bootstrap/credential-server.txt" 2>/dev/null || true
+          _sudo chown -R www-data:www-data "$APP_STORAGE_HOST_PATH" "$APP_LOGS_HOST_PATH"
+          _sudo chmod -R 775 "$APP_STORAGE_HOST_PATH" "$APP_LOGS_HOST_PATH"
+          _sudo chmod 0700 "$APP_STORAGE_HOST_PATH/app/private/bootstrap"
+          if _sudo test -f "$APP_STORAGE_HOST_PATH/app/private/bootstrap/credential-server.txt"; then
+            _sudo chmod 0600 "$APP_STORAGE_HOST_PATH/app/private/bootstrap/credential-server.txt"
           fi
           _sudo chown 999:999 "$MYSQL_DATA_HOST_PATH" 2>/dev/null || true
           _sudo chmod 750 "$MYSQL_DATA_HOST_PATH" 2>/dev/null || true
@@ -378,6 +382,7 @@ jobs:
           export MHCS_IMAGE
           export MHCS_APPLICATION_NETWORK_NAME
           export MPIPS_NETWORK_NAME
+          export APP_PORT
           docker stack deploy -c docker-compose.prod.yml --with-registry-auth --prune mhcs_core
 
           echo "===> Waiting for database service to become healthy..."
@@ -489,7 +494,9 @@ jobs:
               "$APP_CONTAINER" \
               php artisan db:seed --class='Database\Seeders\MvpCoreClinicSeeder' --force
 
-            _sudo chmod 0600 "$APP_STORAGE_HOST_PATH/app/private/bootstrap/credential-server.txt" 2>/dev/null || true
+            if _sudo test -f "$APP_STORAGE_HOST_PATH/app/private/bootstrap/credential-server.txt"; then
+              _sudo chmod 0600 "$APP_STORAGE_HOST_PATH/app/private/bootstrap/credential-server.txt"
+            fi
             echo "✅ MVP Core Clinic synthetic bootstrap completed successfully."
           else
             echo "Existing database detected ($USER_COUNT users). Skipping bootstrap seeder."
@@ -514,6 +521,8 @@ jobs:
 
           LIVE_VERSION="${{ needs.build.outputs.app_version }}"
           EXPECTED_IMAGE="mhcs_core:${LIVE_VERSION}"
+          MPIPS_NETWORK_NAME="${MPIPS_NETWORK_NAME:-mhcs-mpips-integration-v1}"
+          APP_PORT="${APP_PORT:-8013}"
 
           echo "===> Waiting for all Swarm services to settle..."
           for svc in mhcs_core_db mhcs_core_app mhcs_core_queue mhcs_core_scheduler mhcs_core_image-worker mhcs_core_nginx; do
@@ -563,18 +572,18 @@ jobs:
           done
 
           echo "4/8 Queue worker command & queue binding"
-          queue_cmd="$(docker service inspect mhcs_core_queue --format='{{join .Spec.TaskTemplate.ContainerSpec.Command " "}}' 2>/dev/null || echo "")"
+          queue_cmd="$(docker service inspect mhcs_core_queue --format='{{join .Spec.TaskTemplate.ContainerSpec.Command " "}} {{join .Spec.TaskTemplate.ContainerSpec.Args " "}}' 2>/dev/null || echo "")"
           if echo "$queue_cmd" | grep -q "queue:work"; then
             _pass "Default queue worker configured"
           else
-            _fail "Default queue worker command missing"
+            _fail "Default queue worker command missing (inspected: $queue_cmd)"
           fi
 
-          image_cmd="$(docker service inspect mhcs_core_image-worker --format='{{join .Spec.TaskTemplate.ContainerSpec.Command " "}}' 2>/dev/null || echo "")"
+          image_cmd="$(docker service inspect mhcs_core_image-worker --format='{{join .Spec.TaskTemplate.ContainerSpec.Command " "}} {{join .Spec.TaskTemplate.ContainerSpec.Args " "}}' 2>/dev/null || echo "")"
           if echo "$image_cmd" | grep -q "queue:work.*--queue=image-gateway"; then
             _pass "Image Gateway worker consumes exact queue: image-gateway"
           else
-            _fail "Image Gateway worker command is missing --queue=image-gateway"
+            _fail "Image Gateway worker command is missing --queue=image-gateway (inspected: $image_cmd)"
           fi
 
           echo "5/8 Network topology & isolation"
@@ -613,23 +622,26 @@ jobs:
           _pass "Application production runtime assertions passed"
 
           echo "7/8 Public HTTP health endpoint & domain verification"
-          http_code="$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8013/up || true)"
-          domain_code="$(curl -s -o /dev/null -w "%{http_code}" -H "Host: ${{ secrets.APP_DOMAIN }}" http://127.0.0.1:8013/up || true)"
+          http_code="$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:${APP_PORT}/up" || true)"
+          domain_code="$(curl -s -o /dev/null -w "%{http_code}" -H "Host: ${{ secrets.APP_DOMAIN }}" "http://127.0.0.1:${APP_PORT}/up" || true)"
           if [ "$http_code" = "200" ] && [ "$domain_code" = "200" ]; then
-            _pass "Public health endpoint /up returned HTTP 200 on port 8013 (Host: ${{ secrets.APP_DOMAIN }})"
+            _pass "Public health endpoint /up returned HTTP 200 on port ${APP_PORT} (Host: ${{ secrets.APP_DOMAIN }})"
           elif [ "$http_code" = "200" ]; then
-            _pass "Public health endpoint /up returned HTTP 200 on port 8013"
+            _pass "Public health endpoint /up returned HTTP 200 on port ${APP_PORT}"
           else
-            _fail "Public health endpoint /up returned HTTP $http_code (expected 200)"
+            _fail "Public health endpoint /up returned HTTP $http_code (expected 200 on port ${APP_PORT})"
           fi
 
           echo "8/8 Credential server file protection"
           if docker exec "$app_container" test -f /var/www/html/storage/app/private/bootstrap/credential-server.txt; then
+            dir_mode="$(docker exec "$app_container" stat -c '%a' /var/www/html/storage/app/private/bootstrap 2>/dev/null || echo 'unknown')"
             cred_mode="$(docker exec "$app_container" stat -c '%a' /var/www/html/storage/app/private/bootstrap/credential-server.txt 2>/dev/null || echo 'unknown')"
-            if [ "$cred_mode" = "600" ] || [ "$cred_mode" = "unknown" ]; then
-              _pass "credential-server.txt exists and appears protected (mode: $cred_mode)"
+            if [ "$dir_mode" = "700" ] && [ "$cred_mode" = "600" ]; then
+              _pass "credential-server.txt and bootstrap directory are protected (dir: 0$dir_mode, file: 0$cred_mode)"
+            elif [ "$cred_mode" = "600" ]; then
+              _pass "credential-server.txt is protected (mode: 0$cred_mode)"
             else
-              _fail "credential-server.txt has unexpected permissions: $cred_mode (expected 600)"
+              _fail "credential-server.txt has unexpected permissions: dir=$dir_mode, file=$cred_mode (expected 0700/0600)"
             fi
           else
             _warn "credential-server.txt not present (database was existing or bootstrap was skipped)"
@@ -664,3 +676,5 @@ jobs:
           df -h / /var/lib/docker 2>/dev/null || true
           free -h 2>/dev/null || true
           docker ps -a --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}' 2>/dev/null || true
+          ss -ltnp | grep ':8013' || true
+          docker service inspect mhcs_core_nginx --pretty 2>/dev/null || true
