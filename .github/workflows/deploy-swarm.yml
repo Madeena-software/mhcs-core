@@ -247,6 +247,13 @@ jobs:
             'MHCS_IMAGE_RECOVERY_WINDOW_SECONDS=300' \
             'MHCS_IMAGE_MAX_ATTEMPTS=1' \
             '' \
+            'MHCS_LOGIN_PAIR_MAX_ATTEMPTS=5' \
+            'MHCS_LOGIN_ORIGIN_MAX_ATTEMPTS=10' \
+            'MHCS_LOGIN_IDENTIFIER_MAX_ATTEMPTS=20' \
+            'MHCS_LOGIN_DECAY_SECONDS=60' \
+            'MHCS_ASSET_GRANT_MAX_TTL_SECONDS=300' \
+            'MHCS_ASSET_GRANT_AUDIENCES=member-view,operator-identity' \
+            '' \
             'MHCS_IMAGE_WORKER_CPU_LIMIT=1.0' \
             'MHCS_IMAGE_WORKER_MEMORY_LIMIT=1G' \
             'MHCS_IMAGE_WORKER_PIDS_LIMIT=256' \
