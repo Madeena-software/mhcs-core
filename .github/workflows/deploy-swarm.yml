@@ -342,17 +342,18 @@ jobs:
           EXISTING_NET_INTERNAL="$(docker network inspect "${MHCS_APPLICATION_NETWORK_NAME}" --format '{{.Internal}}' 2>/dev/null || echo "false")"
           EXISTING_NET_SUBNET="$(docker network inspect "${MHCS_APPLICATION_NETWORK_NAME}" --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}' 2>/dev/null || echo "")"
 
-          if [ "$EXISTING_NET_DRIVER" = "overlay" ] && [ "$EXISTING_NET_INTERNAL" = "true" ] && [ -n "$EXISTING_NET_SUBNET" ]; then
-            echo "✅ Network ${MHCS_APPLICATION_NETWORK_NAME} exists and is valid overlay (subnet: ${EXISTING_NET_SUBNET}, internal: true)"
+          if [ "$EXISTING_NET_DRIVER" = "overlay" ] && [ "$EXISTING_NET_INTERNAL" = "false" ] && [ -n "$EXISTING_NET_SUBNET" ]; then
+            echo "✅ Network ${MHCS_APPLICATION_NETWORK_NAME} exists and is valid overlay (subnet: ${EXISTING_NET_SUBNET})"
           else
             if [ "$EXISTING_NET_DRIVER" != "missing" ]; then
-              echo "Recreating ${MHCS_APPLICATION_NETWORK_NAME} with verified configuration..."
+              echo "Recreating ${MHCS_APPLICATION_NETWORK_NAME} without --internal to enable host port gateway routing..."
+              docker service rm mhcs_core_nginx mhcs_core_app mhcs_core_db mhcs_core_queue mhcs_core_scheduler mhcs_core_image-worker 2>/dev/null || true
+              sleep 2
               docker network rm "${MHCS_APPLICATION_NETWORK_NAME}" 2>/dev/null || true
             fi
-            echo "Creating ${MHCS_APPLICATION_NETWORK_NAME} (driver: overlay, internal: true, subnet: ${SAFE_SUBNET})..."
+            echo "Creating ${MHCS_APPLICATION_NETWORK_NAME} (driver: overlay, subnet: ${SAFE_SUBNET})..."
             docker network create \
               --driver overlay \
-              --internal \
               --subnet "${SAFE_SUBNET}" \
               --attachable=false \
               "${MHCS_APPLICATION_NETWORK_NAME}"
