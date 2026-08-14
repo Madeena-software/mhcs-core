@@ -300,31 +300,14 @@ jobs:
             exit 1
           fi
 
-          echo "===> Checking and ensuring external ${MPIPS_NETWORK_NAME}..."
-          MPIPS_SCOPE="$(docker network inspect "${MPIPS_NETWORK_NAME}" --format '{{.Scope}}' 2>/dev/null || echo "missing")"
-          MPIPS_SUBNET="$(docker network inspect "${MPIPS_NETWORK_NAME}" --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}' 2>/dev/null || echo "")"
-          MPIPS_VALID="$(python3 -c 'import subprocess, json, ipaddress, sys; name = sys.argv[1]; data = json.loads(subprocess.check_output(["docker", "network", "inspect", name], text=True))[0] if subprocess.run(["docker", "network", "inspect", name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0 else {}; ts = [ipaddress.ip_network(c["Subnet"], strict=False) for c in (data.get("IPAM", {}).get("Config", []) or []) if c.get("Subnet")]; other_subs = [ipaddress.ip_network(c["Subnet"], strict=False) for nid in subprocess.check_output(["docker", "network", "ls", "-q"], text=True).split() if nid != data.get("Id") for item in json.loads(subprocess.check_output(["docker", "network", "inspect", nid], text=True)) if item.get("Name") != name for c in (item.get("IPAM", {}).get("Config", []) or []) if c.get("Subnet")] + [ipaddress.ip_network(p[0], strict=False) for p in [line.split() for line in subprocess.check_output(["ip", "-4", "route"], text=True).splitlines()] if p and "/" in p[0]]; has_overlap = not ts or any(t.overlaps(u) for t in ts for u in other_subs); sys.exit("overlap") if has_overlap else print("valid")' "${MPIPS_NETWORK_NAME}" 2>/dev/null || echo "invalid")"
-
-          if [ "$MPIPS_SCOPE" != "swarm" ] || [ "$MPIPS_VALID" != "valid" ]; then
-            echo "MPIPS network ${MPIPS_NETWORK_NAME} (scope: $MPIPS_SCOPE, subnet: $MPIPS_SUBNET) requires safe non-overlapping configuration."
-            MPIPS_SAFE_SUBNET="$(python3 -c 'import subprocess, json, ipaddress, sys; used = [ipaddress.ip_network(c["Subnet"], strict=False) for nid in subprocess.check_output(["docker", "network", "ls", "-q"], text=True).split() for item in json.loads(subprocess.check_output(["docker", "network", "inspect", nid], text=True)) if item.get("Name") != sys.argv[1] for c in (item.get("IPAM", {}).get("Config", []) or []) if c.get("Subnet")] + [ipaddress.ip_network(p[0], strict=False) for p in [line.split() for line in subprocess.check_output(["ip", "-4", "route"], text=True).splitlines()] if p and "/" in p[0]]; candidates = [ipaddress.ip_network(f"10.250.{i}.0/24") for i in range(1, 30)] + [ipaddress.ip_network(f"172.28.{i}.0/24") for i in range(10, 50)] + [ipaddress.ip_network(f"192.168.{i}.0/24") for i in range(210, 240)]; chosen = next((str(cand) for cand in candidates if not any(cand.overlaps(u) for u in used)), None); sys.exit("FATAL: No free RFC1918 /24") if not chosen else print(chosen)' "${MPIPS_NETWORK_NAME}")"
-            echo "Configuring ${MPIPS_NETWORK_NAME} with verified safe subnet ${MPIPS_SAFE_SUBNET}..."
-            for endpoint in $(docker network inspect "${MPIPS_NETWORK_NAME}" --format '{{range $id, $c := .Containers}}{{$id}} {{end}}' 2>/dev/null || true); do
-              docker network disconnect -f "${MPIPS_NETWORK_NAME}" "$endpoint" 2>/dev/null || true
-            done
-            docker network rm "${MPIPS_NETWORK_NAME}" 2>/dev/null || true
-            docker network create \
-              --driver overlay \
-              --attachable \
-              --subnet "${MPIPS_SAFE_SUBNET}" \
-              "${MPIPS_NETWORK_NAME}"
-            echo "✅ Configured ${MPIPS_NETWORK_NAME} (driver: overlay, attachable: true, subnet: ${MPIPS_SAFE_SUBNET})"
-            for c in $(docker ps -q --filter "name=mpips" 2>/dev/null || true); do
-              docker network connect "${MPIPS_NETWORK_NAME}" "$c" 2>/dev/null || true
-            done
-          else
-            echo "✅ External network ${MPIPS_NETWORK_NAME} found and verified non-overlapping (scope: $MPIPS_SCOPE, subnet: $MPIPS_SUBNET)"
+          echo "===> Verifying external mpips_private network exists..."
+          MPIPS_SCOPE="$(docker network inspect ${MPIPS_NETWORK_NAME} --format '{{.Scope}}' 2>/dev/null || echo "missing")"
+          if [ "$MPIPS_SCOPE" = "missing" ]; then
+            echo "FATAL: Required external network ${MPIPS_NETWORK_NAME} not found."
+            echo "The MPIPS network must be configured externally before MHCS deployment."
+            exit 1
           fi
+          echo "✅ External network ${MPIPS_NETWORK_NAME} found (scope: $MPIPS_SCOPE)"
 
           echo "===> Diagnosing Docker/Swarm network address allocation and host routing..."
           echo "Host IPv4 routes (ip -4 route):"
