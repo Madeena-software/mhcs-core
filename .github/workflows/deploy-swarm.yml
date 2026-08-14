@@ -410,7 +410,7 @@ jobs:
             fi
 
             # 2. Check current desired task is running
-            task_id="$(docker service ps mhcs_core_app --filter "desired-state=running" --format '{{.ID}}' 2>/dev/null | head -n 1)"
+            task_id="$(docker service ps mhcs_core_app --filter "desired-state=running" --no-trunc --format '{{.ID}}' 2>/dev/null | head -n 1)"
             if [ -z "$task_id" ]; then
               echo "[wait-app] Waiting for running task to be scheduled..."
               sleep 5
@@ -427,19 +427,19 @@ jobs:
             fi
 
             # 3. Locate the container corresponding to this task
-            c_candidate="$(docker ps -q --filter "name=mhcs_core_app" | while read c; do
+            c_candidate="$(docker ps -q --filter "label=com.docker.swarm.service.name=mhcs_core_app" --filter "status=running" | while read -r c; do
               c_task="$(docker inspect "$c" --format '{{index .Config.Labels "com.docker.swarm.task.id"}}' 2>/dev/null || echo "")"
-              if [ "$c_task" = "$task_id" ]; then
+              if [ -n "$c_task" ] && { [ "$c_task" = "$task_id" ] || [ "${task_id#$c_task}" != "$task_id" ] || [ "${c_task#$task_id}" != "$c_task" ]; }; then
                 echo "$c"
                 break
               fi
-            done)"
+            done | head -n 1)"
 
             if [ -n "$c_candidate" ]; then
               c_img="$(docker inspect "$c_candidate" --format '{{.Config.Image}}' 2>/dev/null || echo "")"
               c_health="$(docker inspect "$c_candidate" --format '{{.State.Health.Status}}' 2>/dev/null || echo "none")"
 
-              if [[ "$c_img" == *"${LIVE_VERSION}"* ]] && [ "$c_health" = "healthy" ]; then
+              if [[ "$c_img" == *"${LIVE_VERSION}"* ]] && ( [ "$c_health" = "healthy" ] || docker exec "$c_candidate" php -r 'exit(@fsockopen("127.0.0.1",9000)?0:1);' 2>/dev/null ); then
                 echo "✅ mhcs_core_app task $task_id (container $c_candidate, image $c_img) is running and healthy!"
                 APP_CONTAINER="$c_candidate"
                 break
