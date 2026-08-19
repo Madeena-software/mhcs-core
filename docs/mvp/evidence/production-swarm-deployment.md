@@ -55,7 +55,7 @@ Production workflow:
 
 ### Traceability
 
-- Status: `review-required`; no production deployment or probe dispatch was authorized.
+- Status: `deployed-and-probe-verified`; production deployment and manual probe were authorized and observed below.
 - Governing task: `.agents/tasks/production-swarm-deployment.md`
 - Governing task revision: `5ea7d2cb542e990d396b4045ae604624823ca7ef`
 - Implementation baseline: `a719019930f99762bfedb739c251ad6157548137`
@@ -75,5 +75,12 @@ Production workflow:
 ### Release boundary and limitations
 
 - The workflow is manual-only, shares `production-deployment-mhcs_core` concurrency with deployment, uses the existing self-hosted runner and port `8013`, and sends only generated sparse zero bytes to `/up`.
-- No production Actions run was observed and the manual probe was not dispatched because push, deploy, and production-probe authorization remain pending.
+- Before release approval, no production Actions run or manual probe was observed; both are recorded below after approval.
 - The eventual probe must report at least 100 MiB uploaded and HTTP `405`; HTTP `413`, timeout, transport failure, or another status must fail the run.
+
+### Observed Actions verification
+
+- Deployment workflow: run `32214202956` — success; Build & Validate, Deploy to Production, and post-deploy verification passed for head `0f6b1b56554f57396e9d03dd1b69871ba18702a0`.
+- Manual probe workflow: run `32214384573` — success; `workflow_dispatch` on `main`.
+- Probe result: HTTP `405`; uploaded `104857834` bytes; conclusion `success`.
+- No request body, payload contents, secrets, or application logs were recorded.
