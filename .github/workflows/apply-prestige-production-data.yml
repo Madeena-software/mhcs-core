@@ -45,6 +45,7 @@ jobs:
         env:
           SUDO_PASSWORD: ${{ secrets.SUDO_PASSWORD }}
           PRESTIGE_EMPLOYEE_CSV: ${{ secrets.PRESTIGE_EMPLOYEE_CSV }}
+          PRESTIGE_OPERATOR_CREDENTIALS: ${{ secrets.PRESTIGE_OPERATOR_CREDENTIALS }}
         shell: bash
         run: |
           set -euo pipefail
@@ -52,9 +53,14 @@ jobs:
 
           EXPECTED_REVISION="4488f37787bc521869a2bb6113507387c5a983c8"
           CONTAINER_CSV="/tmp/mhcs-prestige-employee.csv"
+          CONTAINER_OPERATOR_CREDENTIALS="/var/www/html/research/prestige/operator.txt"
+          BOOTSTRAP_CREDENTIAL_PATH="/tmp/mhcs-prestige-bootstrap-credentials.txt"
           APP_CONTAINER=""
           HOST_CSV=""
+          HOST_OPERATOR_CREDENTIALS=""
           BACKUP_LOG=""
+          CONTAINER_OPERATOR_STAGED=0
+          BOOTSTRAP_CREDENTIAL_EXPECTED=0
 
           _sudo() {
             printf '%s\n' "$SUDO_PASSWORD" | sudo -S -p '' "$@"
@@ -63,13 +69,23 @@ jobs:
           cleanup() {
             if [ -n "${APP_CONTAINER:-}" ]; then
               docker exec -u 0 "$APP_CONTAINER" rm -f -- "$CONTAINER_CSV" >/dev/null 2>&1 || true
+              if [ "${CONTAINER_OPERATOR_STAGED:-0}" = "1" ]; then
+                docker exec -u 0 "$APP_CONTAINER" rm -f -- "$CONTAINER_OPERATOR_CREDENTIALS" >/dev/null 2>&1 || true
+              fi
+              if [ "${BOOTSTRAP_CREDENTIAL_EXPECTED:-0}" = "1" ]; then
+                docker exec -u 0 "$APP_CONTAINER" rm -f -- "$BOOTSTRAP_CREDENTIAL_PATH" >/dev/null 2>&1 || true
+              fi
             fi
             if [ -n "${HOST_CSV:-}" ]; then
-              rm -f -- "$HOST_CSV"
+              rm -f -- "$HOST_CSV" >/dev/null 2>&1 || true
+            fi
+            if [ -n "${HOST_OPERATOR_CREDENTIALS:-}" ]; then
+              rm -f -- "$HOST_OPERATOR_CREDENTIALS" >/dev/null 2>&1 || true
             fi
             if [ -n "${BACKUP_LOG:-}" ]; then
-              rm -f -- "$BACKUP_LOG"
+              rm -f -- "$BACKUP_LOG" >/dev/null 2>&1 || true
             fi
+            true
           }
           trap cleanup EXIT
 
@@ -193,6 +209,128 @@ jobs:
             exit 1
           fi
 
+          echo "===> Stage protected Prestige Operator credentials privately"
+          if [ -z "${PRESTIGE_OPERATOR_CREDENTIALS:-}" ]; then
+            echo "FATAL: protected Prestige Operator credentials are unavailable."
+            exit 1
+          fi
+
+          HOST_OPERATOR_CREDENTIALS="$(mktemp /tmp/mhcs-prestige-operator.XXXXXX)"
+          chmod 600 "$HOST_OPERATOR_CREDENTIALS"
+          if ! printf '%s' "$PRESTIGE_OPERATOR_CREDENTIALS" >"$HOST_OPERATOR_CREDENTIALS"; then
+            echo "FATAL: protected Prestige Operator credentials could not be staged privately."
+            exit 1
+          fi
+          unset PRESTIGE_OPERATOR_CREDENTIALS
+
+          if [ ! -f "$HOST_OPERATOR_CREDENTIALS" ] || [ -L "$HOST_OPERATOR_CREDENTIALS" ]; then
+            echo "FATAL: staged Prestige Operator credentials are not a regular file."
+            exit 1
+          fi
+          HOST_OPERATOR_MODE="$(stat -c '%a' "$HOST_OPERATOR_CREDENTIALS" 2>/dev/null || true)"
+          if [ "$HOST_OPERATOR_MODE" != "600" ]; then
+            echo "FATAL: staged Prestige Operator credential permissions are unsafe."
+            exit 1
+          fi
+          HOST_OPERATOR_SIZE="$(stat -c '%s' "$HOST_OPERATOR_CREDENTIALS" 2>/dev/null || true)"
+          if [ -z "$HOST_OPERATOR_SIZE" ] || [ "$HOST_OPERATOR_SIZE" -le 0 ]; then
+            echo "FATAL: staged Prestige Operator credentials are empty."
+            exit 1
+          fi
+
+          if ! docker exec -i "$APP_CONTAINER" php -r '
+            $hasEmail = false;
+            $hasPassword = false;
+            while (($line = fgets(STDIN)) !== false) {
+                $line = trim($line);
+                if ($line === "") {
+                    continue;
+                }
+                if (str_starts_with($line, "password:")) {
+                    if (trim(substr($line, strlen("password:"))) !== "") {
+                        $hasPassword = true;
+                    }
+                } elseif (filter_var($line, FILTER_VALIDATE_EMAIL) !== false) {
+                    $hasEmail = true;
+                }
+            }
+            exit($hasEmail && $hasPassword ? 0 : 1);
+          ' < "$HOST_OPERATOR_CREDENTIALS" 2>/dev/null; then
+            echo "FATAL: protected Prestige Operator credential structure validation failed."
+            exit 1
+          fi
+
+          echo "===> Check required production administrator credentials"
+          if ! docker exec "$APP_CONTAINER" php -r '
+            $email = getenv("SUPER_ADMIN_EMAIL");
+            $password = getenv("SUPER_ADMIN_PASSWORD");
+            exit(
+                is_string($email) && trim($email) !== ""
+                && is_string($password) && trim($password) !== ""
+                    ? 0
+                    : 1
+            );
+          ' >/dev/null 2>&1; then
+            echo "FATAL: required production administrator credentials are unavailable."
+            exit 1
+          fi
+
+          echo "===> Stage protected Operator credentials in the application container"
+          OPERATOR_PATH_STATE="$(docker exec -u 0 "$APP_CONTAINER" sh -c '
+            if [ -L "$1" ]; then
+              printf symlink
+            elif [ -e "$1" ]; then
+              printf existing
+            else
+              printf absent
+            fi
+          ' sh "$CONTAINER_OPERATOR_CREDENTIALS" 2>/dev/null || true)"
+          if [ "$OPERATOR_PATH_STATE" != "absent" ]; then
+            echo "FATAL: unexpected existing Prestige Operator credential file."
+            exit 1
+          fi
+
+          OPERATOR_DIRECTORY="$(dirname -- "$CONTAINER_OPERATOR_CREDENTIALS")"
+          if ! docker exec "$APP_CONTAINER" test -d "$OPERATOR_DIRECTORY"; then
+            docker exec -u 0 "$APP_CONTAINER" mkdir -p -- "$OPERATOR_DIRECTORY"
+          fi
+          docker cp "$HOST_OPERATOR_CREDENTIALS" "$APP_CONTAINER:$CONTAINER_OPERATOR_CREDENTIALS"
+          CONTAINER_OPERATOR_STAGED=1
+          docker exec -u 0 "$APP_CONTAINER" \
+            chown www-data:www-data "$CONTAINER_OPERATOR_CREDENTIALS"
+          docker exec -u 0 "$APP_CONTAINER" \
+            chmod 600 "$CONTAINER_OPERATOR_CREDENTIALS"
+          if ! docker exec -u 0 "$APP_CONTAINER" test -f "$CONTAINER_OPERATOR_CREDENTIALS" \
+            || docker exec -u 0 "$APP_CONTAINER" test -L "$CONTAINER_OPERATOR_CREDENTIALS"; then
+            echo "FATAL: staged Prestige Operator credential file is unsafe."
+            exit 1
+          fi
+          CONTAINER_OPERATOR_OWNER="$(docker exec "$APP_CONTAINER" stat -c '%U' "$CONTAINER_OPERATOR_CREDENTIALS" 2>/dev/null || true)"
+          CONTAINER_OPERATOR_GROUP="$(docker exec "$APP_CONTAINER" stat -c '%G' "$CONTAINER_OPERATOR_CREDENTIALS" 2>/dev/null || true)"
+          if [ "$CONTAINER_OPERATOR_OWNER" != "www-data" ] || [ "$CONTAINER_OPERATOR_GROUP" != "www-data" ]; then
+            echo "FATAL: container Prestige Operator credential ownership is unsafe."
+            exit 1
+          fi
+          CONTAINER_OPERATOR_MODE="$(docker exec "$APP_CONTAINER" stat -c '%a' "$CONTAINER_OPERATOR_CREDENTIALS" 2>/dev/null || true)"
+          if [ "$CONTAINER_OPERATOR_MODE" != "600" ]; then
+            echo "FATAL: container Prestige Operator credential permissions are unsafe."
+            exit 1
+          fi
+
+          BOOTSTRAP_PATH_STATE="$(docker exec -u 0 "$APP_CONTAINER" sh -c '
+            if [ -L "$1" ]; then
+              printf symlink
+            elif [ -e "$1" ]; then
+              printf existing
+            else
+              printf absent
+            fi
+          ' sh "$BOOTSTRAP_CREDENTIAL_PATH" 2>/dev/null || true)"
+          if [ "$BOOTSTRAP_PATH_STATE" != "absent" ]; then
+            echo "FATAL: unexpected existing bootstrap credential output file."
+            exit 1
+          fi
+
           echo "===> Run established verified production database backup"
           if [ -z "${SUDO_PASSWORD:-}" ]; then
             echo "FATAL: existing production backup access credential is unavailable."
@@ -219,11 +357,36 @@ jobs:
           echo "BACKUP_VERIFIED reference=${BACKUP_REFERENCE}"
 
           echo "===> Run exact PrestigeClinicSeeder with process-scoped production authorization"
+          BOOTSTRAP_CREDENTIAL_EXPECTED=1
           docker exec \
             -e MHCS_ALLOW_PRODUCTION_MVP_SEED=true \
             -e PRESTIGE_EMPLOYEE_CSV=/tmp/mhcs-prestige-employee.csv \
+            -e MHCS_BOOTSTRAP_CREDENTIAL_PATH=/tmp/mhcs-prestige-bootstrap-credentials.txt \
             "$APP_CONTAINER" \
             php artisan db:seed --class='Database\Seeders\PrestigeClinicSeeder' --force
+
+          echo "===> Verify temporary bootstrap credential output"
+          if ! docker exec -u 0 "$APP_CONTAINER" test -f "$BOOTSTRAP_CREDENTIAL_PATH" \
+            || docker exec -u 0 "$APP_CONTAINER" test -L "$BOOTSTRAP_CREDENTIAL_PATH"; then
+            echo "FATAL: bootstrap credential output is unavailable or unsafe."
+            exit 1
+          fi
+          BOOTSTRAP_OWNER="$(docker exec -u 0 "$APP_CONTAINER" stat -c '%U' "$BOOTSTRAP_CREDENTIAL_PATH" 2>/dev/null || true)"
+          if [ "$BOOTSTRAP_OWNER" != "www-data" ]; then
+            echo "FATAL: bootstrap credential output ownership is unsafe."
+            exit 1
+          fi
+          BOOTSTRAP_MODE="$(docker exec -u 0 "$APP_CONTAINER" stat -c '%a' "$BOOTSTRAP_CREDENTIAL_PATH" 2>/dev/null || true)"
+          if [ "$BOOTSTRAP_MODE" != "600" ]; then
+            echo "FATAL: bootstrap credential output permissions are unsafe."
+            exit 1
+          fi
+          BOOTSTRAP_SIZE="$(docker exec -u 0 "$APP_CONTAINER" stat -c '%s' "$BOOTSTRAP_CREDENTIAL_PATH" 2>/dev/null || true)"
+          if [ -z "$BOOTSTRAP_SIZE" ] || [ "$BOOTSTRAP_SIZE" -le 0 ]; then
+            echo "FATAL: bootstrap credential output is empty."
+            exit 1
+          fi
+          echo "BOOTSTRAP_CREDENTIAL_OUTPUT_VERIFIED"
           echo "SEED_STATUS=success"
 
           echo "===> Run sanitized read-only Prestige verification"
