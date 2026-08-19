@@ -10,9 +10,6 @@ name: Deploy to Production (Swarm Mode)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
 
 concurrency:
