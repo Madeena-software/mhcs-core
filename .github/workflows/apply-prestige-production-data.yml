@@ -37,19 +37,20 @@ jobs:
   apply:
     name: Backup, seed, and verify Prestige data
     needs: confirm
+    environment: production
     runs-on: self-hosted
     timeout-minutes: 30
     steps:
       - name: Apply guarded Prestige production data operation
         env:
           SUDO_PASSWORD: ${{ secrets.SUDO_PASSWORD }}
+          PRESTIGE_EMPLOYEE_CSV: ${{ secrets.PRESTIGE_EMPLOYEE_CSV }}
         shell: bash
         run: |
           set -euo pipefail
           umask 077
 
           EXPECTED_REVISION="4488f37787bc521869a2bb6113507387c5a983c8"
-          PRESTIGE_SOURCE="/etc/madeena-mhcs_core-prestige-employee.csv"
           CONTAINER_CSV="/tmp/mhcs-prestige-employee.csv"
           APP_CONTAINER=""
           HOST_CSV=""
@@ -140,29 +141,32 @@ jobs:
 
           echo "PRODUCTION_REVISION_VERIFIED revision=${EXPECTED_REVISION} health=healthy version_file=match"
 
-          echo "===> Validate protected runner-host CSV transport"
-          if [ -z "${SUDO_PASSWORD:-}" ]; then
-            echo "FATAL: existing protected-file access credential is unavailable."
+          echo "===> Stage protected Environment CSV privately"
+          if [ -z "${PRESTIGE_EMPLOYEE_CSV:-}" ]; then
+            echo "FATAL: protected Prestige CSV Environment secret is unavailable."
             exit 1
           fi
-          if ! _sudo test -f "$PRESTIGE_SOURCE" || ! _sudo test -r "$PRESTIGE_SOURCE" || _sudo test -L "$PRESTIGE_SOURCE"; then
-            echo "FATAL: protected Prestige CSV source is unavailable."
-            exit 1
-          fi
-
-          SOURCE_MODE="$(_sudo stat -c '%a' "$PRESTIGE_SOURCE" 2>/dev/null || true)"
-          case "$SOURCE_MODE" in
-            400|600) ;;
-            *)
-              echo "FATAL: protected Prestige CSV source permissions are unsafe."
-              exit 1
-              ;;
-          esac
 
           HOST_CSV="$(mktemp /tmp/mhcs-prestige-csv.XXXXXX)"
           chmod 600 "$HOST_CSV"
-          if ! _sudo cat "$PRESTIGE_SOURCE" >"$HOST_CSV"; then
+          if ! printf '%s' "$PRESTIGE_EMPLOYEE_CSV" >"$HOST_CSV"; then
             echo "FATAL: protected Prestige CSV could not be staged privately."
+            exit 1
+          fi
+          unset PRESTIGE_EMPLOYEE_CSV
+
+          if [ ! -f "$HOST_CSV" ] || [ -L "$HOST_CSV" ]; then
+            echo "FATAL: staged Prestige CSV is not a regular file."
+            exit 1
+          fi
+          HOST_CSV_MODE="$(stat -c '%a' "$HOST_CSV" 2>/dev/null || true)"
+          if [ "$HOST_CSV_MODE" != "600" ]; then
+            echo "FATAL: staged Prestige CSV permissions are unsafe."
+            exit 1
+          fi
+          HOST_CSV_SIZE="$(stat -c '%s' "$HOST_CSV" 2>/dev/null || true)"
+          if [ -z "$HOST_CSV_SIZE" ] || [ "$HOST_CSV_SIZE" -le 0 ]; then
+            echo "FATAL: staged Prestige CSV is empty."
             exit 1
           fi
 
@@ -190,6 +194,10 @@ jobs:
           fi
 
           echo "===> Run established verified production database backup"
+          if [ -z "${SUDO_PASSWORD:-}" ]; then
+            echo "FATAL: existing production backup access credential is unavailable."
+            exit 1
+          fi
           BACKUP_SCRIPT="/etc/madeena-mhcs_core-db-backup.sh"
           if ! _sudo test -x "$BACKUP_SCRIPT"; then
             echo "FATAL: established production database backup script is unavailable."

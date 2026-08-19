@@ -27,14 +27,19 @@ final class PrestigeProductionWorkflowTest extends TestCase
         $this->assertStringContainsString('production-deployment-mhcs_core', $workflow);
         $this->assertStringContainsString('cancel-in-progress: false', $workflow);
         $this->assertStringContainsString('needs: confirm', $workflow);
+        $this->assertSame(1, substr_count($workflow, 'environment: production'));
+        $this->assertStringContainsString('PRESTIGE_EMPLOYEE_CSV: ${{ secrets.PRESTIGE_EMPLOYEE_CSV }}', $workflow);
 
         $revisionGate = strpos($workflow, 'Verify exact production revision');
+        $csvStage = strpos($workflow, 'Stage protected Environment CSV privately');
         $backupGate = strpos($workflow, 'Run established verified production database backup');
         $seedCommand = strpos($workflow, "php artisan db:seed --class='Database\\Seeders\\PrestigeClinicSeeder' --force");
 
         $this->assertNotFalse($revisionGate);
+        $this->assertNotFalse($csvStage);
         $this->assertNotFalse($backupGate);
         $this->assertNotFalse($seedCommand);
+        $this->assertLessThan($csvStage, $revisionGate);
         $this->assertLessThan($backupGate, $revisionGate);
         $this->assertLessThan($seedCommand, $backupGate);
         $this->assertSame(1, substr_count($workflow, "--class='Database\\Seeders\\PrestigeClinicSeeder'"));
@@ -47,10 +52,29 @@ final class PrestigeProductionWorkflowTest extends TestCase
         $this->assertStringContainsString('VERSION-CURRENT', $workflow);
         $this->assertStringContainsString('healthy', $workflow);
 
-        $this->assertStringContainsString('/etc/madeena-mhcs_core-prestige-employee.csv', $workflow);
+        $this->assertStringNotContainsString('/etc/madeena-mhcs_core-prestige-employee.csv', $workflow);
+        $this->assertStringNotContainsString('PRESTIGE_SOURCE', $workflow);
+        $this->assertStringNotContainsString('protected runner-host CSV transport', $workflow);
+        $this->assertStringNotContainsString('_sudo cat', $workflow);
         $this->assertStringContainsString('umask 077', $workflow);
         $this->assertStringContainsString('chmod 600', $workflow);
         $this->assertStringContainsString('PRESTIGE_EMPLOYEE_CSV=/tmp/mhcs-prestige-employee.csv', $workflow);
+        $this->assertStringContainsString('if [ -z "${PRESTIGE_EMPLOYEE_CSV:-}" ]; then', $workflow);
+        $this->assertStringContainsString('HOST_CSV="$(mktemp /tmp/mhcs-prestige-csv.XXXXXX)"', $workflow);
+        $this->assertStringContainsString('printf \'%s\' "$PRESTIGE_EMPLOYEE_CSV" >"$HOST_CSV"', $workflow);
+        $this->assertStringContainsString('unset PRESTIGE_EMPLOYEE_CSV', $workflow);
+        $this->assertStringContainsString('[ ! -f "$HOST_CSV" ] || [ -L "$HOST_CSV" ]', $workflow);
+        $this->assertStringContainsString('HOST_CSV_MODE="$(stat -c \'%a\' "$HOST_CSV"', $workflow);
+        $this->assertStringContainsString('[ "$HOST_CSV_MODE" != "600" ]', $workflow);
+        $this->assertStringContainsString('HOST_CSV_SIZE="$(stat -c \'%s\' "$HOST_CSV"', $workflow);
+        $this->assertStringContainsString('[ -z "$HOST_CSV_SIZE" ] || [ "$HOST_CSV_SIZE" -le 0 ]', $workflow);
+        $this->assertStringNotContainsString('echo "$PRESTIGE_EMPLOYEE_CSV"', $workflow);
+        $this->assertStringNotContainsString('cat "$PRESTIGE_EMPLOYEE_CSV"', $workflow);
+        $secretWrite = strpos($workflow, 'printf \'%s\' "$PRESTIGE_EMPLOYEE_CSV" >"$HOST_CSV"');
+        $secretUnset = strpos($workflow, 'unset PRESTIGE_EMPLOYEE_CSV');
+        $this->assertNotFalse($secretWrite);
+        $this->assertNotFalse($secretUnset);
+        $this->assertLessThan($secretUnset, $secretWrite);
         $this->assertStringContainsString('docker cp', $workflow);
         $this->assertStringContainsString('docker exec -u 0 "$APP_CONTAINER" \\ chown www-data:www-data "$CONTAINER_CSV"', $normalizedWorkflow);
         $this->assertStringContainsString('docker exec -u 0 "$APP_CONTAINER" \\ chmod 600 "$CONTAINER_CSV"', $normalizedWorkflow);
@@ -59,6 +83,7 @@ final class PrestigeProductionWorkflowTest extends TestCase
         $this->assertStringContainsString('CONTAINER_CSV_MODE="$(docker exec "$APP_CONTAINER" stat -c \'%a\' "$CONTAINER_CSV"', $workflow);
         $this->assertStringContainsString('[ "$CONTAINER_CSV_MODE" != "600" ]', $workflow);
         $this->assertStringContainsString('trap cleanup EXIT', $workflow);
+        $this->assertStringContainsString('rm -f -- "$HOST_CSV"', $workflow);
         $this->assertStringContainsString('docker exec -u 0 "$APP_CONTAINER" rm -f -- "$CONTAINER_CSV"', $workflow);
         $this->assertStringNotContainsString('$GITHUB_WORKSPACE', $workflow);
 
