@@ -18,6 +18,11 @@ on:
         required: false
         default: false
         type: boolean
+      verify_prestige_members:
+        description: Run sanitized read-only Prestige Member-account checks.
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: production-deployment-mhcs_core
@@ -39,6 +44,7 @@ jobs:
           EXPECTED_REVISION: ${{ inputs.expected_revision }}
           RUN_LARGE_UPLOAD_PROBE: ${{ inputs.run_large_upload_probe }}
           VERIFY_PRESTIGE: ${{ inputs.verify_prestige }}
+          VERIFY_PRESTIGE_MEMBERS: ${{ inputs.verify_prestige_members }}
         shell: bash
         run: |
           set -euo pipefail
@@ -338,6 +344,71 @@ jobs:
             echo "PASS: completed at least 100 MiB multipart transfer and received HTTP 405."
           else
             echo "UPLOAD_PROBE=skipped"
+          fi
+
+          if [ "$VERIFY_PRESTIGE_MEMBERS" = "true" ]; then
+            echo "===> Run sanitized read-only Prestige Member-account verification"
+            if [ -z "$APP_CONTAINER" ]; then
+              echo "PRESTIGE_MEMBER_VERIFICATION=failed"
+              FAIL=1
+            else
+              member_output=""
+              if member_output="$(docker exec "$APP_CONTAINER" php -r '
+                require "vendor/autoload.php";
+                $app = require "bootstrap/app.php";
+                $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+                $db = Illuminate\Support\Facades\DB::class;
+                $prestigeEmailSuffix = "@prestige.madeena-xray.com";
+
+                $candidateUsers = $db::table("users")
+                    ->where("email", "like", "%".$prestigeEmailSuffix)
+                    ->get(["id", "account_status", "login_enabled"]);
+                $candidateUserIds = $candidateUsers->pluck("id")->all();
+                $linkedMembers = $candidateUserIds === []
+                    ? collect()
+                    : $db::table("members")
+                        ->whereIn("user_id", $candidateUserIds)
+                        ->get(["user_id"]);
+
+                $candidateUserCount = $candidateUsers->count();
+                $linkedMemberCount = $linkedMembers->count();
+                $distinctLinkedUserCount = $linkedMembers->pluck("user_id")->unique()->count();
+                $activeAccountCount = $candidateUsers->where("account_status", "active")->count();
+                $loginEnabledAccountCount = $candidateUsers->where("login_enabled", true)->count();
+                $candidateUsersHaveExactlyOneMember = $candidateUsers->every(
+                    static fn (object $user): bool => $linkedMembers->where("user_id", $user->id)->count() === 1,
+                );
+                $linkageExact = $candidateUsersHaveExactlyOneMember
+                    && $linkedMemberCount === $distinctLinkedUserCount
+                    && $distinctLinkedUserCount === $candidateUserCount;
+                $passed = $candidateUserCount === 37
+                    && $linkedMemberCount === 37
+                    && $distinctLinkedUserCount === 37
+                    && $activeAccountCount === 37
+                    && $loginEnabledAccountCount === 37
+                    && $linkageExact;
+
+                echo "prestige_user_accounts=".$candidateUserCount.PHP_EOL;
+                echo "prestige_linked_members=".$linkedMemberCount.PHP_EOL;
+                echo "prestige_active_accounts=".$activeAccountCount.PHP_EOL;
+                echo "prestige_login_enabled_accounts=".$loginEnabledAccountCount.PHP_EOL;
+                echo "prestige_member_linkage_exact=".($linkageExact ? "true" : "false").PHP_EOL;
+                exit($passed ? 0 : 1);
+              ' 2>/dev/null)"; then
+                printf '%s\n' "$member_output"
+                echo "PRESTIGE_MEMBER_VERIFICATION=pass"
+              else
+                member_status=$?
+                if [ -n "$member_output" ]; then
+                  printf '%s\n' "$member_output"
+                fi
+                echo "PRESTIGE_MEMBER_VERIFICATION=failed"
+                echo "PRESTIGE_MEMBER_VERIFICATION_EXIT=$member_status"
+                FAIL=1
+              fi
+            fi
+          else
+            echo "PRESTIGE_MEMBER_VERIFICATION=skipped"
           fi
 
           if [ "$VERIFY_PRESTIGE" = "true" ]; then

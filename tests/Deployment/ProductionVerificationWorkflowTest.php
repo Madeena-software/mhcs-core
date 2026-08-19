@@ -30,6 +30,7 @@ final class ProductionVerificationWorkflowTest extends TestCase
             'expected_revision:',
             'run_large_upload_probe:',
             'verify_prestige:',
+            'verify_prestige_members:',
         ] as $input) {
             $this->assertStringContainsString($input, $workflow);
         }
@@ -38,6 +39,18 @@ final class ProductionVerificationWorkflowTest extends TestCase
         $this->assertStringContainsString('default: false', $workflow);
         $this->assertStringContainsString('type: string', $workflow);
         $this->assertStringContainsString('type: boolean', $workflow);
+        $this->assertStringContainsString(
+            "      verify_prestige_members:\n        description: Run sanitized read-only Prestige Member-account checks.\n        required: false\n        default: false\n        type: boolean",
+            $workflow,
+        );
+        $this->assertStringContainsString(
+            "      run_large_upload_probe:\n        description: Run the generated 100 MiB local ingress probe.\n        required: false\n        default: false\n        type: boolean",
+            $workflow,
+        );
+        $this->assertStringContainsString(
+            "      verify_prestige:\n        description: Run sanitized read-only Prestige invariant checks.\n        required: false\n        default: false\n        type: boolean",
+            $workflow,
+        );
         $this->assertStringContainsString('runs-on: self-hosted', $workflow);
         $this->assertStringContainsString('group: production-deployment-mhcs_core', $workflow);
         $this->assertStringContainsString('cancel-in-progress: false', $workflow);
@@ -109,6 +122,82 @@ final class ProductionVerificationWorkflowTest extends TestCase
         ] as $prestigeCheck) {
             $this->assertStringContainsString($prestigeCheck, $workflow);
         }
+
+        $this->assertStringContainsString(
+            'VERIFY_PRESTIGE_MEMBERS: ${{ inputs.verify_prestige_members }}',
+            $workflow,
+        );
+        $memberVerificationStart = strpos($workflow, '          if [ "$VERIFY_PRESTIGE_MEMBERS" = "true" ]; then');
+        $prestigeVerificationStart = strpos($workflow, '          if [ "$VERIFY_PRESTIGE" = "true" ]; then');
+        $this->assertNotFalse($memberVerificationStart);
+        $this->assertNotFalse($prestigeVerificationStart);
+        $this->assertLessThan($prestigeVerificationStart, $memberVerificationStart);
+        $memberVerificationBlock = substr($workflow, $memberVerificationStart, $prestigeVerificationStart - $memberVerificationStart);
+
+        foreach ([
+            '$db::table("users")',
+            'where("email", "like", "%".$prestigeEmailSuffix)',
+            '@prestige.madeena-xray.com',
+            'get(["id", "account_status", "login_enabled"])',
+            '$db::table("members")',
+            'whereIn("user_id", $candidateUserIds)',
+            'get(["user_id"])',
+            '$linkedMembers->pluck("user_id")->unique()->count()',
+            '$candidateUsers->every(',
+            'where("account_status", "active")',
+            'where("login_enabled", true)',
+            '$linkageExact =',
+            '$candidateUserCount === 37',
+            '$linkedMemberCount === 37',
+            '$distinctLinkedUserCount === 37',
+            '$activeAccountCount === 37',
+            '$loginEnabledAccountCount === 37',
+            'prestige_user_accounts=',
+            'prestige_linked_members=',
+            'prestige_active_accounts=',
+            'prestige_login_enabled_accounts=',
+            'prestige_member_linkage_exact=',
+            'PRESTIGE_MEMBER_VERIFICATION=pass',
+            'PRESTIGE_MEMBER_VERIFICATION=failed',
+        ] as $memberCheck) {
+            $this->assertStringContainsString($memberCheck, $memberVerificationBlock);
+        }
+
+        $this->assertStringContainsString(
+            "          else\n            echo \"PRESTIGE_MEMBER_VERIFICATION=skipped\"\n          fi",
+            $memberVerificationBlock,
+        );
+        $this->assertSame(1, substr_count($memberVerificationBlock, 'PRESTIGE_MEMBER_VERIFICATION=skipped'));
+        $this->assertStringNotContainsString('bookings', strtolower($memberVerificationBlock));
+
+        foreach ([
+            'insert(',
+            'update(',
+            'delete(',
+            'upsert(',
+            'create(',
+            'seed',
+            'migrate',
+            'lockForUpdate',
+            'ProtectedIdentifierService',
+            'decrypt',
+            'nik',
+            'password',
+            'hash',
+        ] as $forbiddenMemberOperation) {
+            $this->assertStringNotContainsString($forbiddenMemberOperation, strtolower($memberVerificationBlock));
+        }
+
+        $memberOutputStart = strpos($memberVerificationBlock, 'echo "prestige_user_accounts=');
+        $this->assertNotFalse($memberOutputStart);
+        $memberOutput = substr($memberVerificationBlock, $memberOutputStart);
+        foreach (['nik', 'email', 'local-part', 'member_id', 'user_id', 'password', 'hash'] as $forbiddenOutput) {
+            $this->assertStringNotContainsString($forbiddenOutput, strtolower($memberOutput));
+        }
+
+        $this->assertStringNotContainsString('member_id" =>', $memberVerificationBlock);
+        $this->assertStringContainsString('if [ "$VERIFY_PRESTIGE" = "true" ]; then', $workflow);
+        $this->assertStringContainsString('DATABASE_READ_ONLY_QUERY=pass', $workflow);
 
         $lowerWorkflow = strtolower($workflow);
         foreach ([
