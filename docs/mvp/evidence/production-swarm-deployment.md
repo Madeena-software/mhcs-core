@@ -50,3 +50,30 @@ Production workflow:
 - A full local `php artisan test`, full Pint check, and host `npm run build` also exposed pre-existing unrelated baseline failures. The focused test, production Docker build, Compose validation, and the deployment workflow passed. The Docker build's own frontend stage and DICOM bundle check passed.
 - Composer audit reported no security advisories. A formal connector-backed security diff report was unavailable; the bounded manual review found no additional in-scope findings.
 - No upstream-proxy 413 was observed after active Nginx/PHP verification; no upstream change was attempted.
+
+## Immediate manual production-ingress probe
+
+### Traceability
+
+- Status: `review-required`; no production deployment or probe dispatch was authorized.
+- Governing task: `.agents/tasks/production-swarm-deployment.md`
+- Governing task revision: `5ea7d2cb542e990d396b4045ae604624823ca7ef`
+- Implementation baseline: `a719019930f99762bfedb739c251ad6157548137`
+- Implementation revision: `a079b29` (`ci: add manual production upload ingress probe`)
+- Owner feedback: none; this is the task's immediate 100 MiB probe objective.
+- Changed file: `.github/workflows/verify-production-upload.yml`
+
+### Observed local verification
+
+- `vendor/bin/phpunit tests/Unit/UploadLimitConfigurationTest.php` — passed, 3 tests, 16 assertions.
+- `git diff --check` — passed.
+- Extracted workflow shell — `bash -n` passed.
+- Workflow YAML — parsed successfully with the available Ruby YAML parser.
+- `docker compose -f docker-compose.prod.yml config` with secret-safe dummy validation inputs — passed.
+- `docker build --target app --tag mhcs_core:verify-production-upload .` — passed.
+
+### Release boundary and limitations
+
+- The workflow is manual-only, shares `production-deployment-mhcs_core` concurrency with deployment, uses the existing self-hosted runner and port `8013`, and sends only generated sparse zero bytes to `/up`.
+- No production Actions run was observed and the manual probe was not dispatched because push, deploy, and production-probe authorization remain pending.
+- The eventual probe must report at least 100 MiB uploaded and HTTP `405`; HTTP `413`, timeout, transport failure, or another status must fail the run.
