@@ -1,7 +1,7 @@
 ---
 title: Controlled Prestige Production Data Application
 document_id: MHCS-TASK-PRESTIGE-PRODUCTION-DATA-APPLICATION-001
-version: 1.1
+version: 1.2
 status: validated-on-publication
 language: en-US
 last_updated: 2026-08-20
@@ -29,13 +29,13 @@ authority_note: This task authorizes implementation and publication of a dedicat
 
 ## Delivery context
 
-The accepted Prestige rehearsal implementation is complete at the immutable
-baseline `4488f37787bc521869a2bb6113507387c5a983c8`. Production application of
-that approved dataset was intentionally outside the previous readiness task.
-This new task creates one narrowly dedicated, manually triggered GitHub Actions
-workflow for applying the already-approved Prestige fixture to the live MHCS
-environment with fail-closed production, backup, private-source, and
-post-seed verification controls.
+The accepted Prestige rehearsal must run at the immutable production
+application revision `4488f37787bc521869a2bb6113507387c5a983c8`. Production
+application of that approved dataset was intentionally outside the previous
+readiness task. This task creates one narrowly dedicated, manually triggered
+GitHub Actions workflow for applying the already-approved Prestige fixture to
+the live MHCS environment with fail-closed production, backup, private-source,
+and post-seed verification controls.
 
 The workflow is an operational data-application mechanism, not a general
 seeder runner, deployment replacement, or production release authorization.
@@ -49,14 +49,16 @@ and staged safely. The existing seeder and application code remain unchanged.
 
 ## Baseline and task revision
 
-**Implementation baseline:** `4488f37787bc521869a2bb6113507387c5a983c8`
+**Implementation baseline:** `ffbbaced4ebda7fcc01ab710c4ace5d055d917e5`
 
 **Task revision:** `The full SHA of the commit containing this exact validated task content, supplied by the Planner after publication.`
 
-The expected production application revision for the first execution is the
-same exact immutable baseline above. A later production revision MUST NOT be
-accepted by this workflow merely because it is newer; changing the expected
-revision is a separate planning/review decision.
+The expected production application/runtime revision for the first execution
+is the exact immutable revision
+`4488f37787bc521869a2bb6113507387c5a983c8`. It is intentionally distinct
+from the implementation baseline above. A later production revision MUST NOT
+be accepted by this workflow merely because it is newer; changing the expected
+runtime revision is a separate planning/review decision.
 
 ## Approved credential-safety remediation
 
@@ -417,8 +419,9 @@ the human authority above:
 ### Dependencies
 
 - A clean checkout at implementation baseline
-  `4488f37787bc521869a2bb6113507387c5a983c8` and the exact published task
-  revision.
+  `ffbbaced4ebda7fcc01ab710c4ace5d055d917e5` and the exact published task
+  revision. The live runtime gate remains the separate exact revision
+  `4488f37787bc521869a2bb6113507387c5a983c8`.
 - The existing self-hosted production runner has Docker access and is a Swarm
   manager for `mhcs_core`; the app and database services are reachable through
   the established deployment paths.
