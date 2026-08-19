@@ -71,6 +71,9 @@ final class PrestigeProductionWorkflowTest extends TestCase
         $this->assertLessThan($operatorValidation, $csvValidation);
         $this->assertLessThan($adminPrecheck, $operatorStage);
         $this->assertLessThan($containerOperatorStage, $adminPrecheck);
+        $this->assertLessThan($operatorDestinationCheck, $operatorValidation);
+        $this->assertLessThan($operatorDestinationCheck, $adminPrecheck);
+        $this->assertLessThan($employeeContainerCopy, $operatorDestinationCheck);
         $this->assertLessThan($employeeContainerCopy, $adminPrecheck);
         $this->assertLessThan($operatorContainerCopy, $adminPrecheck);
         $this->assertLessThan($backupGate, $employeeContainerCopy);

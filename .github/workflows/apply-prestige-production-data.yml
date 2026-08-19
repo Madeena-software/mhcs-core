@@ -259,6 +259,21 @@ jobs:
             exit 1
           fi
 
+          echo "===> Stage protected Operator credentials in the application container"
+          OPERATOR_PATH_STATE="$(docker exec -u 0 "$APP_CONTAINER" sh -c '
+            if [ -L "$1" ]; then
+              printf symlink
+            elif [ -e "$1" ]; then
+              printf existing
+            else
+              printf absent
+            fi
+          ' sh "$CONTAINER_OPERATOR_CREDENTIALS" 2>/dev/null || true)"
+          if [ "$OPERATOR_PATH_STATE" != "absent" ]; then
+            echo "FATAL: unexpected existing Prestige Operator credential file."
+            exit 1
+          fi
+
           docker cp "$HOST_CSV" "$APP_CONTAINER:$CONTAINER_CSV"
           docker exec -u 0 "$APP_CONTAINER" \
             chown www-data:www-data "$CONTAINER_CSV"
@@ -272,21 +287,6 @@ jobs:
           CONTAINER_CSV_MODE="$(docker exec "$APP_CONTAINER" stat -c '%a' "$CONTAINER_CSV" 2>/dev/null || true)"
           if [ "$CONTAINER_CSV_MODE" != "600" ]; then
             echo "FATAL: container Prestige CSV copy permissions are unsafe."
-            exit 1
-          fi
-
-          echo "===> Stage protected Operator credentials in the application container"
-          OPERATOR_PATH_STATE="$(docker exec -u 0 "$APP_CONTAINER" sh -c '
-            if [ -L "$1" ]; then
-              printf symlink
-            elif [ -e "$1" ]; then
-              printf existing
-            else
-              printf absent
-            fi
-          ' sh "$CONTAINER_OPERATOR_CREDENTIALS" 2>/dev/null || true)"
-          if [ "$OPERATOR_PATH_STATE" != "absent" ]; then
-            echo "FATAL: unexpected existing Prestige Operator credential file."
             exit 1
           fi
 
