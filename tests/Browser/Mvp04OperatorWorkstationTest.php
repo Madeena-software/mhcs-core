@@ -11,9 +11,15 @@ uses(Mvp04Fixtures::class)->in(__FILE__);
 beforeEach(function (): void {
     mvpOperatorBrowserPrepareDatabase($this);
     $this->fixture = $this->operatorFixture(false);
+    $startsAt = now()->subHour()->format('Y-m-d H:i:s');
+    $endsAt = now()->addHour()->format('Y-m-d H:i:s');
     DB::table('shift_schedules')->where('id', $this->fixture['scheduleId'])->update([
-        'starts_at' => now()->subHour()->format('Y-m-d H:i:s'),
-        'ends_at' => now()->addHour()->format('Y-m-d H:i:s'),
+        'starts_at' => $startsAt,
+        'ends_at' => $endsAt,
+    ]);
+    DB::table('operator_eligible_shifts')->where('member_schedule_id', $this->fixture['scheduleId'])->update([
+        'schedule_starts_at' => $startsAt,
+        'schedule_ends_at' => $endsAt,
     ]);
 });
 

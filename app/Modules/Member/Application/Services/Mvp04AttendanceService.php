@@ -36,6 +36,12 @@ final readonly class Mvp04AttendanceService implements OperatorAttendanceContrac
         private Clock $clock,
     ) {}
 
+    /** @return list<string> */
+    public function participatingBookingStatuses(): array
+    {
+        return Mvp03BookingService::participatingStatuses();
+    }
+
     /** @return list<array<string, mixed>> */
     public function query(AuthenticatedContext $context, string $operatorSiteId, string $scheduleId, string $at): array
     {
@@ -50,13 +56,7 @@ final readonly class Mvp04AttendanceService implements OperatorAttendanceContrac
             throw new Mvp03Exception('Attendance time is outside the schedule window.');
         }
 
-        $rows = $this->eligibleBookingQuery($site, [
-            BookingStatus::Confirmed->value,
-            BookingStatus::Arrived->value,
-            BookingStatus::CheckedIn->value,
-            BookingStatus::InProgress->value,
-            BookingStatus::Completed->value,
-        ])
+        $rows = $this->eligibleBookingQuery($site, $this->participatingBookingStatuses())
             ->join('members', 'members.id', '=', 'bookings.member_id')
             ->join('service_offerings', 'service_offerings.id', '=', 'bookings.service_offering_id')
             ->where('bookings.shift_schedule_id', $scheduleId)

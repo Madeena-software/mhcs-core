@@ -72,7 +72,6 @@ it('takes an operator from X-ray capture to an actual Cornerstone viewport and d
 
     expect($page->attribute('#capture-progress', 'aria-label'))->toBe(__('Capture upload progress'));
     expect($page->script('document.querySelector("#capture-form").dataset.statusUrl'))->toContain('/capture/status');
-    expect($page->script('document.body.innerHTML.includes("XMLHttpRequest")'))->toBeTrue();
     $page->script(<<<'JS'
         window.__mvpXhrs = [];
         window.setTimeout = () => 0;
@@ -128,6 +127,7 @@ it('takes an operator from X-ray capture to an actual Cornerstone viewport and d
         upload.status = 200;
         upload.onload();
     JS);
+    expect($page->script('window.__mvpXhrs.length >= 2'))->toBeTrue();
     expect($page->script(<<<'JS'
         (() => {
             const event = new Event('beforeunload', { cancelable: true });

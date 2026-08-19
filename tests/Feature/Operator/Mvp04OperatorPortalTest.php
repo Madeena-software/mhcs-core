@@ -277,20 +277,33 @@ final class Mvp04OperatorPortalTest extends TestCase
     public function test_assigned_shift_shows_current_participating_booking_count(): void
     {
         $fixture = $this->operatorFixture(false);
+        $statuses = [
+            'confirmed',
+            'arrived',
+            'checked_in',
+            'in_progress',
+            'completed',
+            'pending_payment',
+            'postponed',
+            'cancelled',
+            'no_show',
+        ];
+        $bookingIds = [$fixture['bookingId']];
+        foreach (array_slice($statuses, 1) as $index => $status) {
+            $bookingIds[] = $this->insertRosterBooking($fixture, $index + 1);
+        }
+        foreach ($bookingIds as $index => $bookingId) {
+            DB::table('bookings')->where('id', $bookingId)->update(['status' => $statuses[$index]]);
+        }
+        DB::table('operator_eligible_shifts')->where('id', $fixture['eligibleId'])->update(['confirmed_count_at_eligibility' => 99]);
+
         $this->actingAs($fixture['operator']);
         $this->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
 
         $this->get(route('operator.eligible-shifts'))
             ->assertOk()
-            ->assertSee('1 / 5')
-            ->assertDontSee('5 / 5');
-
-        DB::table('bookings')->where('id', $fixture['bookingId'])->update(['status' => 'completed']);
-
-        $this->get(route('operator.eligible-shifts'))
-            ->assertOk()
-            ->assertSee('1 / 5')
-            ->assertDontSee('5 / 5');
+            ->assertSee('5 / 5')
+            ->assertDontSee('99 / 5');
     }
 
     public function test_selected_shift_roster_keeps_all_members_and_shows_state_and_next_action(): void
@@ -449,7 +462,7 @@ final class Mvp04OperatorPortalTest extends TestCase
     }
 
     /** @param array<string, mixed> $fixture */
-    private function insertRosterBooking(array $fixture, int $index): void
+    private function insertRosterBooking(array $fixture, int $index): string
     {
         $now = now();
         $memberUser = User::factory()->create(['email' => 'roster-member-'.$index.'-'.Str::lower(Str::random(6)).'@example.test']);
@@ -512,6 +525,8 @@ final class Mvp04OperatorPortalTest extends TestCase
             'reverses_id' => null,
             'created_at' => $now,
         ]);
+
+        return $bookingId;
     }
 
     /** @param array<string, mixed> $fixture */

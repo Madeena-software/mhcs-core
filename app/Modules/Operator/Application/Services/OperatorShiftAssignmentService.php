@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Modules\Operator\Application\Services;
 
-use App\Modules\Member\Application\Contracts\BookingCapacityStatusProvider;
+use App\Modules\Member\Application\Contracts\OperatorAttendanceContract;
 use App\Modules\Operator\Domain\Models\OperatorEligibleShift;
 use App\Modules\Operator\Domain\Models\OperatorProfile;
 use App\Modules\Operator\Domain\Models\OperatorShiftAssignment;
@@ -26,7 +26,7 @@ final readonly class OperatorShiftAssignmentService
         private AuditStore $audit,
         private OutboxStore $outbox,
         private Clock $clock,
-        private BookingCapacityStatusProvider $bookingStatuses,
+        private OperatorAttendanceContract $memberAttendance,
     ) {}
 
     public function assign(string $eligibleShiftId, string $profileId): OperatorShiftAssignment
@@ -101,7 +101,7 @@ final readonly class OperatorShiftAssignmentService
     {
         $portal = $this->authorization->portal();
         $site = $this->authorization->portalSite($portal);
-        $participatingStatuses = $this->bookingStatuses->participatingStatuses();
+        $participatingStatuses = $this->memberAttendance->participatingBookingStatuses();
 
         return OperatorEligibleShift::query()
             ->join('operator_shift_assignments', 'operator_shift_assignments.operator_eligible_shift_id', '=', 'operator_eligible_shifts.id')
