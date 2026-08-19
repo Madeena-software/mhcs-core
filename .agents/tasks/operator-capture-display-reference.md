@@ -2,13 +2,13 @@
 title: Operator Capture Display Reference
 document_id: MHCS-TASK-OPERATOR-CAPTURE-DISPLAY-REFERENCE-001
 version: 1.0
-status: draft
+status: superseded
 language: en-US
 last_updated: 2026-08-13
 scope:
   - Operator NPZ capture-page display identifier
   - existing paper-ticket reference reuse
-authority_note: Draft task. It becomes executable only after this exact content is committed unchanged, published as validated, and its immutable SHA is supplied to the Executor.
+authority_note: Superseded by `.agents/tasks/prestige-rehearsal-schedule-and-radiography-capture-readiness.md`; preserved as historical planning material and not executable.
 ---
 
 # Executable Task
@@ -19,7 +19,9 @@ authority_note: Draft task. It becomes executable only after this exact content 
 
 **Task path:** `.agents/tasks/operator-capture-display-reference.md`
 
-**Task contract state:** `Draft`
+**Task contract state:** `Superseded`
+
+**Superseded by:** `.agents/tasks/prestige-rehearsal-schedule-and-radiography-capture-readiness.md`
 
 **Delivery objective / Work Package / MVP:** `Local MVP Operator capture usability`
 
