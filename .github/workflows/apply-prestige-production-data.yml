@@ -61,7 +61,7 @@ jobs:
 
           cleanup() {
             if [ -n "${APP_CONTAINER:-}" ]; then
-              docker exec "$APP_CONTAINER" rm -f -- "$CONTAINER_CSV" >/dev/null 2>&1 || true
+              docker exec -u 0 "$APP_CONTAINER" rm -f -- "$CONTAINER_CSV" >/dev/null 2>&1 || true
             fi
             if [ -n "${HOST_CSV:-}" ]; then
               rm -f -- "$HOST_CSV"
@@ -174,7 +174,15 @@ jobs:
           echo "CSV_VALIDATED rows=${CSV_ROWS}"
 
           docker cp "$HOST_CSV" "$APP_CONTAINER:$CONTAINER_CSV"
-          docker exec "$APP_CONTAINER" chmod 600 "$CONTAINER_CSV"
+          docker exec -u 0 "$APP_CONTAINER" \
+            chown www-data:www-data "$CONTAINER_CSV"
+          docker exec -u 0 "$APP_CONTAINER" \
+            chmod 600 "$CONTAINER_CSV"
+          CONTAINER_CSV_OWNER="$(docker exec "$APP_CONTAINER" stat -c '%U' "$CONTAINER_CSV" 2>/dev/null || true)"
+          if [ "$CONTAINER_CSV_OWNER" != "www-data" ]; then
+            echo "FATAL: container Prestige CSV ownership is unsafe."
+            exit 1
+          fi
           CONTAINER_CSV_MODE="$(docker exec "$APP_CONTAINER" stat -c '%a' "$CONTAINER_CSV" 2>/dev/null || true)"
           if [ "$CONTAINER_CSV_MODE" != "600" ]; then
             echo "FATAL: container Prestige CSV copy permissions are unsafe."

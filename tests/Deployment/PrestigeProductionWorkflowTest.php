@@ -13,6 +13,8 @@ final class PrestigeProductionWorkflowTest extends TestCase
         $workflow = file_get_contents(base_path('.github/workflows/apply-prestige-production-data.yml'));
 
         $this->assertIsString($workflow);
+        $normalizedWorkflow = preg_replace('/\s+/', ' ', $workflow);
+        $this->assertIsString($normalizedWorkflow);
         $this->assertSame(1, substr_count($workflow, 'workflow_dispatch:'));
         $this->assertStringNotContainsString('push:', $workflow);
         $this->assertStringNotContainsString('pull_request:', $workflow);
@@ -50,11 +52,22 @@ final class PrestigeProductionWorkflowTest extends TestCase
         $this->assertStringContainsString('chmod 600', $workflow);
         $this->assertStringContainsString('PRESTIGE_EMPLOYEE_CSV=/tmp/mhcs-prestige-employee.csv', $workflow);
         $this->assertStringContainsString('docker cp', $workflow);
+        $this->assertStringContainsString('docker exec -u 0 "$APP_CONTAINER" \\ chown www-data:www-data "$CONTAINER_CSV"', $normalizedWorkflow);
+        $this->assertStringContainsString('docker exec -u 0 "$APP_CONTAINER" \\ chmod 600 "$CONTAINER_CSV"', $normalizedWorkflow);
+        $this->assertStringContainsString('CONTAINER_CSV_OWNER="$(docker exec "$APP_CONTAINER" stat -c \'%U\' "$CONTAINER_CSV"', $workflow);
+        $this->assertStringContainsString('[ "$CONTAINER_CSV_OWNER" != "www-data" ]', $workflow);
+        $this->assertStringContainsString('CONTAINER_CSV_MODE="$(docker exec "$APP_CONTAINER" stat -c \'%a\' "$CONTAINER_CSV"', $workflow);
+        $this->assertStringContainsString('[ "$CONTAINER_CSV_MODE" != "600" ]', $workflow);
         $this->assertStringContainsString('trap cleanup EXIT', $workflow);
+        $this->assertStringContainsString('docker exec -u 0 "$APP_CONTAINER" rm -f -- "$CONTAINER_CSV"', $workflow);
         $this->assertStringNotContainsString('$GITHUB_WORKSPACE', $workflow);
 
         $this->assertStringContainsString('MHCS_ALLOW_PRODUCTION_MVP_SEED=true', $workflow);
         $this->assertSame(1, substr_count($workflow, 'MHCS_ALLOW_PRODUCTION_MVP_SEED=true'));
+        $seedExecStart = strrpos(substr($workflow, 0, $seedCommand), 'docker exec');
+        $this->assertNotFalse($seedExecStart);
+        $seedInvocation = substr($workflow, $seedExecStart, $seedCommand + strlen("php artisan db:seed --class='Database\\Seeders\\PrestigeClinicSeeder' --force") - $seedExecStart);
+        $this->assertStringNotContainsString('-u 0', $seedInvocation);
         $this->assertStringNotContainsString('inputs.seeder', $workflow);
         $this->assertStringNotContainsString('inputs.csv', $workflow);
         $this->assertStringNotContainsString('inputs.command', $workflow);
