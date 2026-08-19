@@ -1,258 +1,261 @@
 ---
-title: Controlled MHCS Core Production Swarm Deployment — Upload-Limit Remediation
+title: Controlled MHCS Core Production Swarm Operations
 document_id: MHCS-TASK-PRODUCTION-SWARM-DEPLOYMENT-001
-version: 1.3
+version: 1.4
 status: validated-on-publication
 language: en-US
 last_updated: 2026-08-19
 scope:
-  - bounded remediation of production HTTP request-size configuration
-  - effective Nginx and PHP-FPM upload-limit verification
-  - controlled Swarm redeployment through the existing GitHub Actions workflow
-authority_note: This remediation remains within the approved controlled-production-deployment objective. It authorizes no change to the approved 100 MiB-per-file Image Gateway policy, clinical workflow, storage boundary, MPIPS boundary, or production data. Production deployment remains subject to the explicit gates and stop conditions below.
+  - recurring bounded production Swarm configuration and verification work
+  - GitHub Actions deployment and non-destructive operational probes
+  - existing Nginx/PHP upload-limit policy and ingress verification
+authority_note: This stable task authorizes only the recurring operational changes explicitly eligible below. It does not authorize arbitrary production changes, alter approved application behavior, or remove the separate release gate.
 ---
 
 # Executable Task
 
 ## Task identity
 
-**Task title:**  
-`Controlled MHCS Core Production Swarm Deployment — Upload-Limit Remediation`
+**Task title:**
+`Controlled MHCS Core Production Swarm Operations`
 
-**Task path:**  
+**Task path:**
 `.agents/tasks/production-swarm-deployment.md`
 
-**Task contract state:**  
-`Validated/Published upon immutable publication of this exact content; the governing task SHA must be supplied to the Executor before execution.`
+**Task contract state:**
+`Validated/Published upon immutable publication of this exact content. Supply that full task-publication SHA to every Executor.`
 
-**Delivery objective / Work Package / MVP:**  
-`MVP-09 / Release Gate — bounded production NPZ-upload remediation`
+**Delivery objective / Work Package / MVP:**
+`MVP-09 / controlled production Swarm operations and verification`
 
-**Owner / designated planning authority:**  
+**Owner / designated planning authority:**
 `Faliq Adlan, CTO`
 
 ## Delivery context
 
-The existing controlled-production-deployment task was published at
-`.agents/tasks/production-swarm-deployment.md @ 01b5d2847749049d52c58cd1f2e8e1b645196add`.
-GitHub Actions deployed implementation revision
-`b22e76ef0e587a81e011c27b6d6abc66e2572dbc` successfully in run
-`31770911997` on 14 August 2026.
+This is the stable task path for small, related MHCS production-deployment
+feedback. It intentionally avoids a new filename or task revision for each
+eligible operational correction, while preserving a clear boundary for changes
+that need new authority.
 
-The owner reports HTTP 413 while submitting the radiograph/gain NPZ pair in
-production. Observed source evidence shows the deployed Nginx configuration
-does not set `client_max_body_size`, and the PHP-FPM configuration does not set
-`post_max_size` or `upload_max_filesize`. The existing deployment workflow,
-application configuration, and unit test deliberately use one policy: two
-100 MiB files plus 1 MiB multipart overhead, yielding a 201 MiB request.
+The previous upload-limit remediation was governed by this path at
+`66ebade787a5292bc1ea4842262b8c1c91157673`. Its implementation revision
+`75c85976f38e372f808378d5369649a5b7043511` was successfully deployed in
+Actions run `32210699919`: Nginx was observed at `201m`; PHP was observed at
+`100M` per file and `201M` per request; and the public health endpoint passed.
+The current clean deployed baseline is
+`a719019930f99762bfedb739c251ad6157548137`, successfully deployed in Actions
+run `32211852025`.
 
-This task corrects and verifies those three effective runtime boundaries. It
-does not increase the approved application upload policy and does not upload
-clinical or NPZ content as a smoke test.
+The immediate delivery slice adds a manual GitHub Actions production-ingress
+probe. It must prove that the existing server accepts a generated 100 MiB
+multipart file without submitting clinical content or changing application
+behavior.
 
 ## Baseline and task revision
 
-**Implementation baseline:**  
-`b22e76ef0e587a81e011c27b6d6abc66e2572dbc`
+**Initial implementation baseline:**
+`a719019930f99762bfedb739c251ad6157548137`
 
-This is the immutable revision deployed by successful GitHub Actions run
-`31770911997`. It is the remediation baseline, not a new accepted baseline.
-
-**Deployment-template baseline:**  
-`Madeena-software/deploy-templates @ 569a30d4a089b0ee404ed6e963fdd2dfd96d3787`
-
-**Task revision:**  
+**Task revision:**
 `The full SHA of the commit containing this exact task content, supplied after publication.`
 
-Before implementation, confirm that the governing task-publication commit
-descends from the implementation baseline and that the working tree contains
-no unrelated changes to the listed deployment surfaces.
+For the immediate slice, start from the initial baseline. For a later owner
+feedback item that qualifies under **Recurring-feedback eligibility**, start
+from the latest accepted, clean descendant and record its full SHA as that
+execution's immutable baseline. This transition is explicit and only permitted
+after the prior execution reached an `ACCEPTED` review verdict under this exact
+task revision.
+
+Stop if the working tree is dirty, the current baseline is not an accepted
+descendant, or there is overlapping unreviewed deployment work.
 
 ## Objective
 
-Restore the approved production NPZ-upload path by configuring Nginx and
-PHP-FPM for exactly the current 100 MiB-per-file / 201 MiB-per-request policy,
-and prove the effective limits after the controlled Swarm rollout without
-altering application upload validation or handling clinical data.
+Maintain and prove the approved MHCS production Swarm delivery properties using
+the existing Docker and GitHub Actions mechanisms. Eligible owner feedback may
+be implemented under this task without creating a replacement task, provided it
+stays within the fixed operational envelope below.
+
+### Immediate objective
+
+Add one manual-only GitHub Actions workflow that sends a generated 100 MiB
+multipart probe through the deployed MHCS Nginx ingress and fails on HTTP 413.
+It must prove transport to the existing application boundary only; it must not
+create an upload endpoint, persist a file, or exercise clinical processing.
 
 ## Authoritative inputs
 
 ### Governing authority
 
-- `.agents/AGENTS.md` and `.agents/software-workflow.md` — delivery, evidence, and release boundaries.
-- `.agents/context/project.md` and `.agents/context/modules/image-gateway/project.md` — Image Gateway ownership, private-object boundary, and production restrictions.
-- `.agents/tasks/production-swarm-deployment.md @ 01b5d2847749049d52c58cd1f2e8e1b645196add` — original controlled-deployment objective and side-effect boundary.
-- User-approved 19 August 2026 remediation scope — production 413 diagnosis and bounded task publication.
-- `config/mhcs.php`, `.env.example`, and `tests/Unit/UploadLimitConfigurationTest.php` — one 100 MiB file policy, two-file total, and 1 MiB multipart allowance.
-- `.github/workflows/deploy-swarm.yml` — current production environment generation and Swarm deployment verification.
-- `docker/nginx.conf`, `docker/php.ini`, `Dockerfile`, and `docker-compose.prod.yml` — deployed request path.
+- `.agents/AGENTS.md` and `.agents/software-workflow.md` — delivery, evidence, acceptance, and release boundaries.
+- `.agents/context/project.md` and `.agents/context/modules/image-gateway/project.md` — private-object, Image Gateway, and MPIPS boundaries.
+- `config/mhcs.php`, `.env.example`, and `tests/Unit/UploadLimitConfigurationTest.php` — approved 100 MiB-per-file, two-file, 201 MiB request policy.
+- `.github/workflows/deploy-swarm.yml`, `docker-compose.prod.yml`, `docker/nginx.conf`, `docker/php.ini`, `Dockerfile` — established production delivery mechanism.
+- CTO approval on 19 August 2026 — reuse this stable task for the bounded deployment-operation envelope and add the 100 MiB ingress probe.
 
 ### Requirement traceability
 
 - `MVP-GAP-022` → controlled production deployment and observed release evidence.
-- `MVP-GAP-023` → deployment/CI evidence must be observed and not overstated.
-- Image Gateway approved architecture → raw NPZ remains private; browser submission is validated and durably accepted only by MHCS Image Gateway.
-- Existing approved upload policy → exactly two 100 MiB files plus 1 MiB multipart overhead; no implicit capacity increase.
+- `MVP-GAP-023` → CI/deployment evidence must be observed and not overstated.
+- Image Gateway approved architecture → raw NPZ stays private; browser submission is accepted only by the MHCS Image Gateway.
+- Existing approved upload policy → two 100 MiB files plus 1 MiB multipart overhead; no implicit capacity increase.
 
 ## Scope
 
 ### In scope
 
-- Modify `docker/nginx.conf` to set `client_max_body_size 201m;` for the public application server.
-- Modify `docker/php.ini` to set `upload_max_filesize = 100M` and `post_max_size = 201M`.
-- Extend `tests/Unit/UploadLimitConfigurationTest.php` so the deployment configuration remains aligned with the existing `mhcs.upload` policy.
-- Extend `.github/workflows/deploy-swarm.yml` post-deploy verification to assert the active Nginx and PHP-FPM limit values by container inspection, emitting only the expected limit values and pass/fail status.
-- Build, test, and redeploy only through the existing controlled GitHub Actions Swarm workflow after its normal safety gates pass.
-- Record sanitized remediation evidence in `docs/mvp/evidence/production-swarm-deployment.md` if, and only if, the workflow reaches a reviewable terminal state.
+- The existing Docker Swarm deployment package: `Dockerfile`, `docker-compose.prod.yml`, `docker/nginx.conf`, and `docker/php.ini`.
+- Production GitHub Actions workflows and tightly focused deployment configuration tests or sanitized evidence records.
+- Non-destructive configuration, health, ingress, container, rollout, and private-network verification using the established self-hosted runner and workflow mechanism.
+- Minimal fixes to deployment configuration or verification that preserve the approved application policy and topology.
+- The immediate manual-only workflow, preferably `.github/workflows/verify-production-upload.yml`, which must:
+  - use `workflow_dispatch` only and share `production-deployment-mhcs_core` concurrency with deployment;
+  - create a temporary, generated 100 MiB zero-filled or sparse file under `/tmp` and delete it with a shell `trap`;
+  - submit it as multipart to `http://127.0.0.1:8013/up` from the existing self-hosted production runner;
+  - require a complete upload of at least 100 MiB and the expected HTTP `405`, because `/up` is an existing `GET|HEAD` health route; and
+  - fail clearly on `413`, transport failure, timeout, or any unexpected response.
+
+### Recurring-feedback eligibility
+
+An Executor may act directly on later CTO deployment feedback under this exact
+task revision only when every condition holds:
+
+1. the change is limited to the in-scope deployment surfaces or their focused verification/evidence;
+2. it preserves the approved application upload policy, database, storage, private-object, MPIPS, authorization, and network boundaries;
+3. it requires no new dependency, service, public route, secret, cloud account, upstream proxy, or architecture decision;
+4. it is independently reviewable with the task's existing acceptance and verification model; and
+5. the Executor records the feedback, execution baseline, changed files, and observed evidence in the review handoff.
 
 ### Out of scope
 
-- Changing `MHCS_MAX_UPLOAD_MB`, image file count, Image Gateway request validation, database schema, application upload handlers, storage, MPIPS, or any clinical workflow.
-- A new environment variable, Nginx templating mechanism, service, package, proxy, or abstraction.
-- Uploading a real NPZ, DICOM, clinical payload, Member data, or credential as a smoke test.
-- Any DNS, TLS, upstream-proxy, firewall, IAM, storage-policy, secret, database, migration, or MPIPS change.
-- The duplicate `.agents/tasks/production-swarm-deployment-v1.2.md`; it is not this task's governing path and must not be used as a replacement task revision.
+- Application routes, upload handlers, validation behavior, clinical workflows, database schema, migrations, queues, storage layout, MPIPS, or any new endpoint.
+- Real NPZ, DICOM, Member, credential, object-storage, or clinical data; a probe must be generated dummy bytes only.
+- DNS, TLS, WAF/CDN, external/upstream proxy, firewall, IAM, secret, cloud-account, or persistent-data changes.
+- New dependencies, templating layers, services, public interfaces, abstractions, or runtime configuration sources.
+- Any feedback that fails **Recurring-feedback eligibility**. It requires planning and a new bounded task.
 
 ### Preserved behavior
 
-- The application continues to reject files above 100 MiB and requests above the existing 201 MiB envelope.
-- Raw NPZ remains private and never becomes downloadable or browser-addressable through object storage.
-- Existing authorization, CSRF, checksum, manifest, safe-schema, and durable-acceptance checks remain unchanged.
-- The current Swarm service topology, queue isolation, private MPIPS boundary, persistent data, and deployment rollback rules remain unchanged.
+- The application remains limited to two 100 MiB files plus 1 MiB multipart overhead; the probe does not raise that policy.
+- `/up` remains a `GET|HEAD` health route. Its expected `405` response to the probe is a non-mutating transport proof, not a failed health check.
+- Raw NPZ stays private and inaccessible through public object storage; no object is persisted by the probe.
+- Existing Swarm topology, Image Gateway worker isolation, MPIPS privacy boundary, normal health checks, and rollback rules remain unchanged.
 
 ## Dependencies and assumptions
 
 ### Dependencies
 
-- Implementation baseline `b22e76ef0e587a81e011c27b6d6abc66e2572dbc`.
-- A fresh immutable task-publication revision.
-- Existing self-hosted Actions runner, active Swarm manager, GitHub Environment/branch approvals, and non-destructive deployment workflow.
+- Initial implementation baseline `a719019930f99762bfedb739c251ad6157548137`.
+- A clean working tree and the immutable governing task-publication revision.
+- Existing self-hosted Actions runner on the production host, Swarm manager, and published port `8013` used by `deploy-swarm.yml`.
+- Existing Nginx/PHP limits: `201m`, `100M`, and `201M`.
 
 ### Approved assumptions
 
-- GitHub Actions currently writes `MHCS_MAX_UPLOAD_MB=100`; the same value is already asserted by the existing configuration test.
-- `docker/nginx.conf` is copied to the deployed Nginx bind mount, and `docker/php.ini` is copied into the application image.
-- The Nginx release-version environment setting forces a new Nginx task on each immutable deployment revision.
+- A multipart POST to `/up` reaches the existing Laravel application boundary only after Nginx accepts the request; Laravel returns `405` because the route accepts `GET|HEAD` only.
+- A sparse/generated zero file transmits as 100 MiB of nonclinical data while avoiding persistent test fixtures and storage use.
+- Existing deployment workflow configuration assertions remain the source of truth for active Nginx and PHP limits.
 
 ### Remaining approval requirements
 
-- The designated owner must explicitly authorize any GitHub Actions production deployment after implementation is reviewed and the exact release revision is identified.
-- Stop for any GitHub Environment, branch-protection, runner, or infrastructure approval required by the existing workflow.
+- The Executor may implement, locally validate, and prepare a reviewable implementation under this task.
+- A push to `main`, production deployment, or manual production-probe dispatch is **not yet authorized**. The CTO must explicitly authorize the exact reviewed implementation revision because a `main` push triggers the existing deployment workflow.
+- Stop for any GitHub branch, environment, runner, or infrastructure approval required by the existing workflow.
 
 ## Required capabilities
 
 **Required capabilities:**
 
 - repository read and bounded write;
-- Git inspection and one bounded local commit for task publication;
-- PHP test, Docker build, and Docker Compose validation;
-- GitHub Actions inspection and authorized workflow dispatch;
-- non-destructive Swarm/container configuration inspection.
+- Git inspection and one bounded local implementation commit;
+- focused PHP test and Docker/Compose validation;
+- GitHub Actions workflow inspection; and
+- after explicit release approval, authorized push, workflow dispatch, and non-destructive production observation.
 
 ## Execution constraints
 
-- Start from the stated implementation baseline and exact immutable task revision; stop on unrelated overlapping changes.
-- Reuse the static values already declared by the production workflow. Do not introduce another limit setting or runtime templating layer.
-- Do not weaken the current app-level file-count, per-file, total-size, untrusted-input, or authorization checks.
-- Do not read, print, persist, or disclose secret values, clinical payloads, object keys, NPZ/DICOM bytes, or generated credentials.
-- Verify effective container configuration by querying only the three relevant limit values; do not dump full Nginx, PHP, or environment configuration.
-- Do not deploy or push an implementation release until the remaining deployment approval requirement is satisfied.
-- If an upstream proxy still returns 413 after the deployed Nginx/PHP values are proven, stop and return to planning; an upstream-proxy change is outside this task.
-
-## Remediation
-
-**Review basis:**
-
-- Original governing task: `.agents/tasks/production-swarm-deployment.md @ 01b5d2847749049d52c58cd1f2e8e1b645196add`.
-- Deployed implementation: `b22e76ef0e587a81e011c27b6d6abc66e2572dbc`, GitHub Actions run `31770911997`, concluded `success`.
-- Observed production symptom: owner-reported HTTP 413 while submitting the NPZ pair.
-- Observed source: no `client_max_body_size` in `docker/nginx.conf` and no PHP upload/post limit in `docker/php.ini`.
-
-### Required corrections
-
-- Apply the three configuration values in scope without changing the app policy.
-- Add focused source-level regression coverage for their alignment with `config('mhcs.upload')`.
-- Add a post-deploy effective-configuration assertion for Nginx and PHP-FPM.
-
-### Additional verification
-
-- Confirm the focused test fails before the configuration change and passes after it.
-- Confirm the production image and Compose configuration build successfully.
-- Confirm the Actions run reports the effective `201m`, `100M`, and `201M` values without exposing other configuration.
+- Reuse existing workflow, Docker, Nginx, PHP, port, and concurrency conventions. Do not add a helper service or application endpoint for the probe.
+- Keep the probe in a separate manual workflow. Do not add a 100 MiB request to every deployment, push, or health check.
+- Make the expected response and byte threshold explicit; never treat a non-413 response by itself as proof of a completed 100 MiB upload.
+- Do not print request bodies, generated file contents, secrets, full environment/configuration dumps, or application logs containing sensitive data.
+- Limit runtime output to byte count, HTTP status, and pass/fail messages.
+- Use the existing controlled CI/CD path only. Direct SSH or manual production commands are prohibited.
+- Preserve unrelated behavior and stop rather than broadening this task for an unknown upstream 413 or new infrastructure boundary.
 
 ## Acceptance criteria
 
-- [ ] Nginx limits the public request body to exactly 201 MiB.
-- [ ] PHP-FPM limits individual files to exactly 100 MiB and POST bodies to exactly 201 MiB.
-- [ ] The existing application policy remains two 100 MiB files plus 1 MiB multipart overhead; it is not increased.
-- [ ] A focused automated test derives the expected values from the existing MHCS upload policy and fails if either production configuration file drifts.
-- [ ] Post-deploy verification proves the active Nginx and PHP-FPM values without logging secrets or payload data.
-- [ ] No clinical payload, real NPZ/DICOM, object data, credential, or new dependency is used.
-- [ ] Existing Swarm service topology, Image Gateway worker isolation, private MPIPS boundary, and normal health verification remain intact.
-- [ ] If the reported path still returns 413 after active Nginx/PHP verification, the task stops before any upstream-proxy change.
+- [ ] A manual-only GitHub Actions workflow exists for the 100 MiB production-ingress probe and cannot overlap the production deployment workflow.
+- [ ] The workflow sends generated dummy multipart content of at least 100 MiB through the deployed local Nginx ingress and deletes the temporary file on all exits.
+- [ ] The workflow passes only when upload transfer completes and `/up` returns the expected `405`; it fails on `413`, timeout, transport failure, or another status.
+- [ ] No application route, persistence path, upload policy, clinical workflow, secret, credential, or new dependency is added or changed.
+- [ ] Existing focused upload-limit configuration tests and production build/Compose validation remain passing.
+- [ ] A future feedback item may use this task only when all **Recurring-feedback eligibility** conditions are demonstrably met.
 
 ## Verification requirements
 
-### Required checks
+### Required checks before review
 
-1. Run `vendor/bin/phpunit tests/Unit/UploadLimitConfigurationTest.php` before and after the change.
-2. Run the repository's existing production image build and secret-safe `docker compose -f docker-compose.prod.yml config` validation.
-3. Run the repository-required CI checks for the changed release revision.
-4. After an owner-authorized deployment, use the running containers to assert only:
-   - Nginx effective `client_max_body_size` is `201m`;
-   - PHP effective `upload_max_filesize` is `100M`; and
-   - PHP effective `post_max_size` is `201M`.
-5. Run the existing non-destructive public health check. Do not submit a clinical upload as a probe.
+1. Run `vendor/bin/phpunit tests/Unit/UploadLimitConfigurationTest.php`.
+2. Run `git diff --check` and inspect the exact workflow diff for manual trigger, shared concurrency, temporary-file cleanup, multipart transfer, byte threshold, and `405`/`413` handling.
+3. Run the existing production Docker build and secret-safe `docker compose -f docker-compose.prod.yml config` validation when deployment configuration is touched.
+4. After explicit release approval, observe the exact Actions run for the implementation revision and manually dispatch the new probe; report its run identity, HTTP status, uploaded byte count, and conclusion.
 
 ### Required evidence
 
-The Executor MUST report the immutable implementation revision, exact governing
-task revision, commands actually executed, observed focused-test/build/Compose
-results, Actions run identity and conclusion, effective limit assertions,
-public-health result, checks not run, and any remaining upstream-proxy or
-approval limitation. Evidence must distinguish local, CI, and production
-observations.
+The Executor MUST report the governing task revision, immutable execution
+baseline, implementation revision, owner feedback when applicable, changed
+files, commands actually run, observed results, checks not run, and known
+limitations. Production evidence must distinguish deployment-run observations
+from the manual probe run and must not expose sensitive values or payloads.
 
 ## Stop conditions
 
-Stop and return to planning if any of the following occurs:
+Stop and return to planning if:
 
-- the task revision or implementation baseline cannot be established;
-- a needed value differs from the approved 100 MiB / 201 MiB policy;
-- effective Nginx/PHP inspection would require a secret or broad configuration dump;
-- deployment approval, GitHub Environment approval, or runner policy is absent;
-- image build, focused test, Compose validation, or required CI fails outside this bounded configuration defect;
-- deployment would require database, storage, MPIPS, DNS, TLS, upstream-proxy, credential, IAM, or destructive action; or
-- a 413 remains after active Nginx/PHP verification, indicating an upstream boundary outside scope.
+- the task revision, accepted execution baseline, or current working-tree state cannot be established;
+- the change requires a public endpoint, application behavior change, new dependency, database/migration, secret, or external-infrastructure decision;
+- the expected 100 MiB transfer cannot be proven without exposing data or changing the approved upload policy;
+- the server returns 413 after the deployed Nginx/PHP limits are proven, indicating an upstream boundary outside this task;
+- an eligible feedback item cannot meet the stated acceptance criteria with existing mechanisms; or
+- required release, GitHub, runner, or infrastructure approval is missing.
 
 ## Side-effect authorization
 
-### Explicitly authorized side effects
+### Explicitly authorized
 
-- Create one bounded local Git commit containing this task publication.
+- Modify only the in-scope repository surfaces.
+- Create one bounded local implementation commit after local verification.
+- Record sanitized local and CI evidence in the existing deployment evidence record when a reviewable terminal state is reached.
 
 ### Not yet authorized
 
-- Push a remediation implementation, dispatch production deployment, or mutate production. Those actions require the explicit deployment approval stated above and all existing workflow gates.
+- Push to `main`, dispatch any workflow against production, deploy, alter production services, write production data, or create external infrastructure resources.
 
 ## Expected terminal outcome
 
 ### Review Required
 
-Use when a reviewable implementation revision and truthful local/CI evidence
-exist. A production deployment, if later authorized, must report separately as
-`deployed-and-healthy`, `rolled-back-to-previous-release`, or
-`deployment-not-attempted-after-preflight-failure`.
+Use when a reviewable implementation revision and truthful local evidence exist.
+The Reviewer must decide whether it satisfies this exact task revision before a
+release is requested.
+
+### Deployed and probe-verified
+
+Use only after the CTO authorizes the exact reviewed revision, the deployment
+workflow succeeds, and the manual probe reports a completed at-least-100-MiB
+transfer with HTTP `405` rather than `413`.
 
 ### Planning Required
 
-Use when a stop condition or an upstream-proxy boundary prevents the bounded
-remediation. Do not enlarge this task to modify an unknown upstream service.
+Use when feedback falls outside **Recurring-feedback eligibility** or a stop
+condition reveals a new upstream, architecture, security, data, or release
+boundary.
 
-## Review and remediation handling
+## Review and recurring remediation handling
 
-The Reviewer evaluates the implementation against this exact task revision,
-baseline `b22e76ef0e587a81e011c27b6d6abc66e2572dbc`, the original deployment
-authority, and observed verification evidence. Acceptance does not authorize
-production release. Any remaining upstream-proxy limit, product-size change, or
-unrelated deployment finding returns to planning as separate work.
+Each execution is reviewed against this exact immutable task revision and its
+recorded execution baseline. A review verdict of `ACCEPTED` establishes that
+implementation revision as the next eligible baseline for later qualifying
+feedback. This stable task path avoids needless replacement tasks; it does not
+authorize an unbounded production workstream or silently alter approved scope.
