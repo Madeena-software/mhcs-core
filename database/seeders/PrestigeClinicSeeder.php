@@ -19,6 +19,8 @@ use App\Shared\Security\ProtectedIdentifierService;
 use App\Shared\Storage\PrivateObject;
 use App\Shared\Storage\PrivateObjectStore;
 use App\Shared\Time\Clock;
+use DateTimeImmutable;
+use DateTimeZone;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -406,10 +408,10 @@ final class PrestigeClinicSeeder extends Seeder
 
         $this->removeObsoleteSchedules($siteRefId, (string) $offeringA->id);
 
-        // Prestige rehearsal: 27 and 28 August 2026, 01:00–10:00.
+        // Prestige rehearsal: full local calendar days in Asia/Jakarta.
         $scheduleDates = [
-            ['start' => '2026-08-27 01:00:00', 'end' => '2026-08-27 10:00:00'],
-            ['start' => '2026-08-28 01:00:00', 'end' => '2026-08-28 10:00:00'],
+            $this->localDayWindow('2026-08-27'),
+            $this->localDayWindow('2026-08-28'),
         ];
 
         $schedules = [];
@@ -499,12 +501,31 @@ final class PrestigeClinicSeeder extends Seeder
         return $schedules;
     }
 
+    /** @return array{start: string, end: string} */
+    private function localDayWindow(string $date): array
+    {
+        $localTimezone = new DateTimeZone(self::SITE_TIMEZONE);
+        $utc = new DateTimeZone('UTC');
+        $start = new DateTimeImmutable($date.'T00:00:00', $localTimezone);
+        $end = $start->modify('+1 day');
+
+        return [
+            'start' => $start->setTimezone($utc)->format('Y-m-d H:i:s'),
+            'end' => $end->setTimezone($utc)->format('Y-m-d H:i:s'),
+        ];
+    }
+
     private function removeObsoleteSchedules(string $siteRefId, string $offeringId): void
     {
         $obsolete = DB::table('shift_schedules')
             ->where('examination_site_id', $siteRefId)
             ->where('service_offering_id', $offeringId)
-            ->whereIn('starts_at', ['2026-08-14 01:00:00', '2026-08-26 01:00:00'])
+            ->whereIn('starts_at', [
+                '2026-08-14 01:00:00',
+                '2026-08-26 01:00:00',
+                '2026-08-27 01:00:00',
+                '2026-08-28 01:00:00',
+            ])
             ->get(['id']);
 
         foreach ($obsolete as $schedule) {

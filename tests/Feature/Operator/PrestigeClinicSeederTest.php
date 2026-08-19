@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Tests\Feature\Operator;
 
 use Database\Seeders\PrestigeClinicSeeder;
+use DateTimeImmutable;
+use DateTimeZone;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -61,7 +63,17 @@ final class PrestigeClinicSeederTest extends TestCase
         $this->assertSame(5, DB::table('users')->where('email', 'like', 'operatorprestige%@madeena-xray.com')->count());
         $this->assertSame(5, DB::table('operator_profiles')->where('employee_code', 'like', 'OPR-PRES-%')->count());
         $this->assertCount(2, $schedules);
-        $this->assertSame(['2026-08-27 01:00:00', '2026-08-28 01:00:00'], $schedules->pluck('starts_at')->all());
+        $this->assertSame(['2026-08-26 17:00:00', '2026-08-27 17:00:00'], $schedules->pluck('starts_at')->all());
+        $this->assertSame(['2026-08-27 17:00:00', '2026-08-28 17:00:00'], $schedules->pluck('ends_at')->all());
+        $utc = new DateTimeZone('UTC');
+        $local = new DateTimeZone(PrestigeClinicSeeder::SITE_TIMEZONE);
+        $this->assertSame([
+            ['2026-08-27T00:00:00+07:00', '2026-08-28T00:00:00+07:00'],
+            ['2026-08-28T00:00:00+07:00', '2026-08-29T00:00:00+07:00'],
+        ], $schedules->map(fn (object $schedule): array => [
+            (new DateTimeImmutable((string) $schedule->starts_at, $utc))->setTimezone($local)->format(DATE_ATOM),
+            (new DateTimeImmutable((string) $schedule->ends_at, $utc))->setTimezone($local)->format(DATE_ATOM),
+        ])->all());
         $this->assertSame([37, 37], $schedules->pluck('quota')->map(fn ($quota): int => (int) $quota)->all());
         $this->assertSame(37, DB::table('members')->count());
         $this->assertSame(37, DB::table('bookings')->where('shift_schedule_id', $schedules[0]->id)->where('status', 'confirmed')->count());
