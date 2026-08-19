@@ -1,0 +1,321 @@
+name: Apply Prestige Production Data
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type the exact production-data confirmation phrase.
+        required: true
+        type: string
+
+concurrency:
+  group: production-deployment-mhcs_core
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  confirm:
+    name: Require explicit confirmation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate confirmation phrase
+        env:
+          CONFIRMATION: ${{ inputs.confirmation }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "$CONFIRMATION" != "APPLY-PRESTIGE-2026-08-27-28" ]; then
+            echo "FATAL: exact Prestige production-data confirmation is required."
+            exit 1
+          fi
+
+          echo "Confirmation accepted."
+
+  apply:
+    name: Backup, seed, and verify Prestige data
+    needs: confirm
+    runs-on: self-hosted
+    timeout-minutes: 30
+    steps:
+      - name: Apply guarded Prestige production data operation
+        env:
+          SUDO_PASSWORD: ${{ secrets.SUDO_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+
+          EXPECTED_REVISION="4488f37787bc521869a2bb6113507387c5a983c8"
+          PRESTIGE_SOURCE="/etc/madeena-mhcs_core-prestige-employee.csv"
+          CONTAINER_CSV="/tmp/mhcs-prestige-employee.csv"
+          APP_CONTAINER=""
+          HOST_CSV=""
+          BACKUP_LOG=""
+
+          _sudo() {
+            printf '%s\n' "$SUDO_PASSWORD" | sudo -S -p '' "$@"
+          }
+
+          cleanup() {
+            if [ -n "${APP_CONTAINER:-}" ]; then
+              docker exec "$APP_CONTAINER" rm -f -- "$CONTAINER_CSV" >/dev/null 2>&1 || true
+            fi
+            if [ -n "${HOST_CSV:-}" ]; then
+              rm -f -- "$HOST_CSV"
+            fi
+            if [ -n "${BACKUP_LOG:-}" ]; then
+              rm -f -- "$BACKUP_LOG"
+            fi
+          }
+          trap cleanup EXIT
+
+          echo "===> Verify exact production revision before any database operation"
+          SERVICE_REPLICAS="$(docker service ls --format '{{.Replicas}}' --filter name=mhcs_core_app 2>/dev/null | head -n 1 || true)"
+          if [ "$SERVICE_REPLICAS" != "1/1" ]; then
+            echo "FATAL: mhcs_core_app is not exactly one healthy production replica."
+            exit 1
+          fi
+
+          SERVICE_IMAGE="$(docker service inspect mhcs_core_app --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 2>/dev/null || true)"
+          if [[ "$SERVICE_IMAGE" != "mhcs_core:${EXPECTED_REVISION}" && "$SERVICE_IMAGE" != "mhcs_core:${EXPECTED_REVISION}"@sha256:* ]]; then
+            echo "FATAL: mhcs_core_app service image is not the expected immutable revision."
+            exit 1
+          fi
+
+          TASK_ID="$(docker service ps mhcs_core_app --filter desired-state=running --no-trunc --format '{{.ID}}' 2>/dev/null | head -n 1 || true)"
+          if [ -z "$TASK_ID" ]; then
+            echo "FATAL: mhcs_core_app has no current desired running task."
+            exit 1
+          fi
+
+          TASK_STATE="$(docker service ps mhcs_core_app --filter "id=${TASK_ID}" --format '{{.CurrentState}}' 2>/dev/null || true)"
+          case "$TASK_STATE" in
+            Running*) ;;
+            *)
+              echo "FATAL: mhcs_core_app current desired task is not running."
+              exit 1
+              ;;
+          esac
+
+          while IFS= read -r candidate; do
+            [ -n "$candidate" ] || continue
+            candidate_task="$(docker inspect "$candidate" --format '{{index .Config.Labels "com.docker.swarm.task.id"}}' 2>/dev/null || true)"
+            if [ "$candidate_task" = "$TASK_ID" ] || [[ "$candidate_task" == "$TASK_ID"* ]] || [[ "$TASK_ID" == "$candidate_task"* ]]; then
+              APP_CONTAINER="$candidate"
+              break
+            fi
+          done < <(docker ps -q --filter "label=com.docker.swarm.service.name=mhcs_core_app" --filter status=running)
+
+          if [ -z "$APP_CONTAINER" ]; then
+            echo "FATAL: current desired mhcs_core_app container was not found."
+            exit 1
+          fi
+
+          CONTAINER_IMAGE="$(docker inspect "$APP_CONTAINER" --format '{{.Config.Image}}' 2>/dev/null || true)"
+          if [[ "$CONTAINER_IMAGE" != "mhcs_core:${EXPECTED_REVISION}" && "$CONTAINER_IMAGE" != "mhcs_core:${EXPECTED_REVISION}"@sha256:* ]]; then
+            echo "FATAL: current mhcs_core_app container image is not the expected immutable revision."
+            exit 1
+          fi
+
+          CONTAINER_HEALTH="$(docker inspect "$APP_CONTAINER" --format '{{.State.Health.Status}}' 2>/dev/null || true)"
+          if [ "$CONTAINER_HEALTH" != "healthy" ]; then
+            echo "FATAL: current mhcs_core_app container is not healthy."
+            exit 1
+          fi
+
+          VERSION_MOUNT="$(docker inspect "$APP_CONTAINER" --format '{{range .Mounts}}{{if eq .Destination "/var/www/html/VERSION-CURRENT"}}{{.RW}}{{end}}{{end}}' 2>/dev/null || true)"
+          if [ "$VERSION_MOUNT" != "false" ]; then
+            echo "FATAL: VERSION-CURRENT is not mounted read-only in the current app container."
+            exit 1
+          fi
+
+          RUNTIME_VERSION="$(docker exec "$APP_CONTAINER" cat /var/www/html/VERSION-CURRENT 2>/dev/null || true)"
+          if [ "$RUNTIME_VERSION" != "$EXPECTED_REVISION" ]; then
+            echo "FATAL: VERSION-CURRENT does not match the expected production revision."
+            exit 1
+          fi
+
+          echo "PRODUCTION_REVISION_VERIFIED revision=${EXPECTED_REVISION} health=healthy version_file=match"
+
+          echo "===> Validate protected runner-host CSV transport"
+          if [ -z "${SUDO_PASSWORD:-}" ]; then
+            echo "FATAL: existing protected-file access credential is unavailable."
+            exit 1
+          fi
+          if ! _sudo test -f "$PRESTIGE_SOURCE" || ! _sudo test -r "$PRESTIGE_SOURCE" || _sudo test -L "$PRESTIGE_SOURCE"; then
+            echo "FATAL: protected Prestige CSV source is unavailable."
+            exit 1
+          fi
+
+          SOURCE_MODE="$(_sudo stat -c '%a' "$PRESTIGE_SOURCE" 2>/dev/null || true)"
+          case "$SOURCE_MODE" in
+            400|600) ;;
+            *)
+              echo "FATAL: protected Prestige CSV source permissions are unsafe."
+              exit 1
+              ;;
+          esac
+
+          HOST_CSV="$(mktemp /tmp/mhcs-prestige-csv.XXXXXX)"
+          chmod 600 "$HOST_CSV"
+          if ! _sudo cat "$PRESTIGE_SOURCE" >"$HOST_CSV"; then
+            echo "FATAL: protected Prestige CSV could not be staged privately."
+            exit 1
+          fi
+
+          CSV_ROWS="$(awk 'NR > 1 && length($0) > 0 { rows++ } END { print rows + 0 }' "$HOST_CSV")"
+          if [ "$CSV_ROWS" != "37" ]; then
+            echo "FATAL: protected Prestige CSV row-count validation failed."
+            exit 1
+          fi
+          echo "CSV_VALIDATED rows=${CSV_ROWS}"
+
+          docker cp "$HOST_CSV" "$APP_CONTAINER:$CONTAINER_CSV"
+          docker exec "$APP_CONTAINER" chmod 600 "$CONTAINER_CSV"
+          CONTAINER_CSV_MODE="$(docker exec "$APP_CONTAINER" stat -c '%a' "$CONTAINER_CSV" 2>/dev/null || true)"
+          if [ "$CONTAINER_CSV_MODE" != "600" ]; then
+            echo "FATAL: container Prestige CSV copy permissions are unsafe."
+            exit 1
+          fi
+
+          echo "===> Run established verified production database backup"
+          BACKUP_SCRIPT="/etc/madeena-mhcs_core-db-backup.sh"
+          if ! _sudo test -x "$BACKUP_SCRIPT"; then
+            echo "FATAL: established production database backup script is unavailable."
+            exit 1
+          fi
+
+          BACKUP_LOG="$(mktemp /tmp/mhcs-prestige-backup.XXXXXX)"
+          chmod 600 "$BACKUP_LOG"
+          if ! _sudo "$BACKUP_SCRIPT" >"$BACKUP_LOG" 2>&1; then
+            echo "FATAL: database backup failed; seeding blocked."
+            exit 1
+          fi
+
+          BACKUP_REFERENCE="$(sed -n 's/.*Local backup verified: \([^ ]*\) (.*/\1/p' "$BACKUP_LOG" | tail -n 1)"
+          if ! [[ "$BACKUP_REFERENCE" =~ ^[A-Za-z0-9._-]+\.sql\.gz$ ]]; then
+            echo "FATAL: database backup produced no sanitized verified reference; seeding blocked."
+            exit 1
+          fi
+          echo "BACKUP_VERIFIED reference=${BACKUP_REFERENCE}"
+
+          echo "===> Run exact PrestigeClinicSeeder with process-scoped production authorization"
+          docker exec \
+            -e MHCS_ALLOW_PRODUCTION_MVP_SEED=true \
+            -e PRESTIGE_EMPLOYEE_CSV=/tmp/mhcs-prestige-employee.csv \
+            "$APP_CONTAINER" \
+            php artisan db:seed --class='Database\Seeders\PrestigeClinicSeeder' --force
+          echo "SEED_STATUS=success"
+
+          echo "===> Run sanitized read-only Prestige verification"
+          if verification_output="$(docker exec "$APP_CONTAINER" php -r '
+            require "vendor/autoload.php";
+            $app = require "bootstrap/app.php";
+            $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+            $db = Illuminate\Support\Facades\DB::class;
+
+            $site = $db::table("examination_site_refs")
+                ->where("operator_site_id", "site-prestige")
+                ->where("code", "PRES-01")
+                ->where("display_name", "Rumah Skrining CV Prestige")
+                ->where("timezone", "Asia/Jakarta")
+                ->where("active", true)
+                ->first();
+            $offering = $db::table("service_offerings")
+                ->where("code", "SYN-CHEST-A")
+                ->first();
+            $expected = [
+                ["starts_at" => "2026-08-26 17:00:00", "ends_at" => "2026-08-27 17:00:00", "quota" => 37],
+                ["starts_at" => "2026-08-27 17:00:00", "ends_at" => "2026-08-28 17:00:00", "quota" => 37],
+            ];
+
+            $schedules = $site !== null && $offering !== null
+                ? $db::table("shift_schedules")
+                    ->where("examination_site_id", $site->id)
+                    ->where("service_offering_id", $offering->id)
+                    ->orderBy("starts_at")
+                    ->get(["id", "starts_at", "ends_at", "quota"])
+                : collect();
+            $scheduleRows = $schedules->map(static fn (object $row): array => [
+                "starts_at" => (string) $row->starts_at,
+                "ends_at" => (string) $row->ends_at,
+                "quota" => (int) $row->quota,
+            ])->all();
+            $scheduleBoundsMatch = $scheduleRows === $expected;
+            $quotaValues = $schedules->map(static fn (object $row): int => (int) $row->quota)->all();
+            $confirmedCounts = [];
+            $memberSets = [];
+            $totalBookings = 0;
+            $distinctMembers = 0;
+            $memberSetsEqual = false;
+            $memberSetsHave37 = false;
+
+            if ($schedules->count() === 2) {
+                foreach ($schedules as $schedule) {
+                    $scheduleId = (string) $schedule->id;
+                    $confirmedCounts[] = (int) $db::table("bookings")
+                        ->where("shift_schedule_id", $scheduleId)
+                        ->where("status", "confirmed")
+                        ->count();
+                    $memberSets[] = $db::table("bookings")
+                        ->where("shift_schedule_id", $scheduleId)
+                        ->where("status", "confirmed")
+                        ->pluck("member_id")
+                        ->map(static fn ($id): string => (string) $id)
+                        ->sort(SORT_STRING)
+                        ->values()
+                        ->all();
+                }
+                $scheduleIds = $schedules->pluck("id")->all();
+                $totalBookings = (int) $db::table("bookings")->whereIn("shift_schedule_id", $scheduleIds)->count();
+                $distinctMembers = (int) $db::table("bookings")
+                    ->whereIn("shift_schedule_id", $scheduleIds)
+                    ->distinct()
+                    ->count("member_id");
+                $memberSetsEqual = $memberSets[0] === $memberSets[1];
+                $memberSetsHave37 = count($memberSets[0]) === 37
+                    && count($memberSets[1]) === 37
+                    && count(array_unique($memberSets[0])) === 37
+                    && count(array_unique($memberSets[1])) === 37;
+            }
+
+            $passed = $site !== null
+                && $offering !== null
+                && $schedules->count() === 2
+                && $scheduleBoundsMatch
+                && $quotaValues === [37, 37]
+                && $confirmedCounts === [37, 37]
+                && $totalBookings === 74
+                && $distinctMembers === 37
+                && $memberSetsEqual
+                && $memberSetsHave37;
+
+            echo json_encode([
+                "site_active" => $site !== null,
+                "schedule_count" => $schedules->count(),
+                "schedule_bounds_match" => $scheduleBoundsMatch,
+                "quota_27" => $quotaValues[0] ?? null,
+                "quota_28" => $quotaValues[1] ?? null,
+                "confirmed_27" => $confirmedCounts[0] ?? null,
+                "confirmed_28" => $confirmedCounts[1] ?? null,
+                "total_bookings" => $totalBookings,
+                "distinct_members" => $distinctMembers,
+                "member_sets_equal" => $memberSetsEqual,
+                "verification_passed" => $passed,
+            ], JSON_THROW_ON_ERROR).PHP_EOL;
+            exit($passed ? 0 : 1);
+          ' 2>/dev/null)"; then
+            printf '%s\n' "$verification_output"
+          else
+            verification_status=$?
+            if [ -n "$verification_output" ]; then
+              printf '%s\n' "$verification_output"
+            fi
+            echo "FATAL: sanitized Prestige verification failed."
+            exit "$verification_status"
+          fi
+
+          echo "PRESTIGE_PRODUCTION_DATA_STATUS=pass"
