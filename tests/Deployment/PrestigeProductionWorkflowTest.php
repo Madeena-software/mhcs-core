@@ -35,9 +35,15 @@ final class PrestigeProductionWorkflowTest extends TestCase
 
         $revisionGate = strpos($workflow, 'Verify exact production revision');
         $csvStage = strpos($workflow, 'Stage protected Environment CSV privately');
+        $csvValidation = strpos($workflow, 'CSV_VALIDATED rows=');
         $operatorStage = strpos($workflow, 'Stage protected Prestige Operator credentials privately');
+        $operatorValidation = strpos($workflow, 'FILTER_VALIDATE_EMAIL');
         $adminPrecheck = strpos($workflow, 'Check required production administrator credentials');
         $containerOperatorStage = strpos($workflow, 'Stage protected Operator credentials in the application container');
+        $employeeContainerCopy = strpos($workflow, 'docker cp "$HOST_CSV" "$APP_CONTAINER:$CONTAINER_CSV"');
+        $operatorContainerCopy = strpos($workflow, 'docker cp "$HOST_OPERATOR_CREDENTIALS" "$APP_CONTAINER:$CONTAINER_OPERATOR_CREDENTIALS"');
+        $operatorDestinationCheck = strpos($workflow, 'OPERATOR_PATH_STATE=');
+        $operatorCleanupActivation = strpos($workflow, 'CONTAINER_OPERATOR_STAGED=1');
         $backupGate = strpos($workflow, 'Run established verified production database backup');
         $seedCommand = strpos($workflow, "php artisan db:seed --class='Database\\Seeders\\PrestigeClinicSeeder' --force");
         $bootstrapValidation = strpos($workflow, 'Verify temporary bootstrap credential output');
@@ -46,9 +52,15 @@ final class PrestigeProductionWorkflowTest extends TestCase
 
         $this->assertNotFalse($revisionGate);
         $this->assertNotFalse($csvStage);
+        $this->assertNotFalse($csvValidation);
         $this->assertNotFalse($operatorStage);
+        $this->assertNotFalse($operatorValidation);
         $this->assertNotFalse($adminPrecheck);
         $this->assertNotFalse($containerOperatorStage);
+        $this->assertNotFalse($employeeContainerCopy);
+        $this->assertNotFalse($operatorContainerCopy);
+        $this->assertNotFalse($operatorDestinationCheck);
+        $this->assertNotFalse($operatorCleanupActivation);
         $this->assertNotFalse($backupGate);
         $this->assertNotFalse($seedCommand);
         $this->assertNotFalse($bootstrapValidation);
@@ -56,11 +68,18 @@ final class PrestigeProductionWorkflowTest extends TestCase
         $this->assertNotFalse($seedStatus);
         $this->assertLessThan($csvStage, $revisionGate);
         $this->assertLessThan($operatorStage, $csvStage);
+        $this->assertLessThan($operatorValidation, $csvValidation);
         $this->assertLessThan($adminPrecheck, $operatorStage);
         $this->assertLessThan($containerOperatorStage, $adminPrecheck);
+        $this->assertLessThan($employeeContainerCopy, $adminPrecheck);
+        $this->assertLessThan($operatorContainerCopy, $adminPrecheck);
+        $this->assertLessThan($backupGate, $employeeContainerCopy);
+        $this->assertLessThan($backupGate, $operatorContainerCopy);
         $this->assertLessThan($backupGate, $containerOperatorStage);
         $this->assertLessThan($backupGate, $revisionGate);
         $this->assertLessThan($seedCommand, $backupGate);
+        $this->assertLessThan($operatorContainerCopy, $operatorCleanupActivation);
+        $this->assertLessThan($operatorCleanupActivation, $operatorDestinationCheck);
         $this->assertLessThan($seedCommand, $bootstrapExpected);
         $this->assertLessThan($bootstrapValidation, $seedCommand);
         $this->assertLessThan($seedStatus, $bootstrapValidation);

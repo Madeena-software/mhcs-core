@@ -193,22 +193,6 @@ jobs:
           fi
           echo "CSV_VALIDATED rows=${CSV_ROWS}"
 
-          docker cp "$HOST_CSV" "$APP_CONTAINER:$CONTAINER_CSV"
-          docker exec -u 0 "$APP_CONTAINER" \
-            chown www-data:www-data "$CONTAINER_CSV"
-          docker exec -u 0 "$APP_CONTAINER" \
-            chmod 600 "$CONTAINER_CSV"
-          CONTAINER_CSV_OWNER="$(docker exec "$APP_CONTAINER" stat -c '%U' "$CONTAINER_CSV" 2>/dev/null || true)"
-          if [ "$CONTAINER_CSV_OWNER" != "www-data" ]; then
-            echo "FATAL: container Prestige CSV ownership is unsafe."
-            exit 1
-          fi
-          CONTAINER_CSV_MODE="$(docker exec "$APP_CONTAINER" stat -c '%a' "$CONTAINER_CSV" 2>/dev/null || true)"
-          if [ "$CONTAINER_CSV_MODE" != "600" ]; then
-            echo "FATAL: container Prestige CSV copy permissions are unsafe."
-            exit 1
-          fi
-
           echo "===> Stage protected Prestige Operator credentials privately"
           if [ -z "${PRESTIGE_OPERATOR_CREDENTIALS:-}" ]; then
             echo "FATAL: protected Prestige Operator credentials are unavailable."
@@ -275,6 +259,22 @@ jobs:
             exit 1
           fi
 
+          docker cp "$HOST_CSV" "$APP_CONTAINER:$CONTAINER_CSV"
+          docker exec -u 0 "$APP_CONTAINER" \
+            chown www-data:www-data "$CONTAINER_CSV"
+          docker exec -u 0 "$APP_CONTAINER" \
+            chmod 600 "$CONTAINER_CSV"
+          CONTAINER_CSV_OWNER="$(docker exec "$APP_CONTAINER" stat -c '%U' "$CONTAINER_CSV" 2>/dev/null || true)"
+          if [ "$CONTAINER_CSV_OWNER" != "www-data" ]; then
+            echo "FATAL: container Prestige CSV ownership is unsafe."
+            exit 1
+          fi
+          CONTAINER_CSV_MODE="$(docker exec "$APP_CONTAINER" stat -c '%a' "$CONTAINER_CSV" 2>/dev/null || true)"
+          if [ "$CONTAINER_CSV_MODE" != "600" ]; then
+            echo "FATAL: container Prestige CSV copy permissions are unsafe."
+            exit 1
+          fi
+
           echo "===> Stage protected Operator credentials in the application container"
           OPERATOR_PATH_STATE="$(docker exec -u 0 "$APP_CONTAINER" sh -c '
             if [ -L "$1" ]; then
@@ -290,12 +290,12 @@ jobs:
             exit 1
           fi
 
+          CONTAINER_OPERATOR_STAGED=1
           OPERATOR_DIRECTORY="$(dirname -- "$CONTAINER_OPERATOR_CREDENTIALS")"
           if ! docker exec "$APP_CONTAINER" test -d "$OPERATOR_DIRECTORY"; then
             docker exec -u 0 "$APP_CONTAINER" mkdir -p -- "$OPERATOR_DIRECTORY"
           fi
           docker cp "$HOST_OPERATOR_CREDENTIALS" "$APP_CONTAINER:$CONTAINER_OPERATOR_CREDENTIALS"
-          CONTAINER_OPERATOR_STAGED=1
           docker exec -u 0 "$APP_CONTAINER" \
             chown www-data:www-data "$CONTAINER_OPERATOR_CREDENTIALS"
           docker exec -u 0 "$APP_CONTAINER" \
