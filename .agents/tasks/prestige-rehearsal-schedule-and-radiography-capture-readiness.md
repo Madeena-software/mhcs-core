@@ -1,7 +1,7 @@
 ---
 title: Prestige Rehearsal Schedule and Radiography Capture Readiness
 document_id: MHCS-TASK-PRESTIGE-REHEARSAL-RADIOGRAPHY-001
-version: 1.0
+version: 1.1
 status: validated-on-publication
 language: en-US
 last_updated: 2026-08-19
@@ -36,11 +36,16 @@ radiography capture flow for the 27–28 August 2026 rehearsal. This is one
 coherent rehearsal outcome: both approved schedules must show the same 37
 employees, and the Operator must see current capacity and have a usable,
 localized capture workflow without weakening Member booking integrity or
-exposing private employee data.
+exposing private employee data. Each rehearsal schedule covers its entire
+local calendar day in `Asia/Jakarta` as a half-open interval: 27 August is
+`[2026-08-27T00:00:00+07:00, 2026-08-28T00:00:00+07:00)` and 28 August is
+`[2026-08-28T00:00:00+07:00, 2026-08-29T00:00:00+07:00)`.
 
 ## Baseline and task revision
 
-**Implementation baseline:** `0f6b1b56554f57396e9d03dd1b69871ba18702a0`
+**Implementation baseline:** `84c4772feff0ecd3f02b418113ce5a9bb90115c1`
+
+**Previous governing task revision:** `b50f29c8c4e157e82fa922a8b2b07dc201cd132d`
 
 **Superseded draft:** `.agents/tasks/operator-capture-display-reference.md`
 
@@ -49,11 +54,12 @@ exposing private employee data.
 ## Objective
 
 Make a clean or safely reconcilable Prestige bootstrap converge to two
-quota-37 schedules on 27 and 28 August 2026, book all 37 private-source
-employees on both schedules through the explicitly authorized fixture path,
-and make the existing Operator capture workflow display the current live
-capacity, paper-ticket reference, controlled metadata choices, and finite
-upload progress telemetry.
+quota-37 schedules covering the full 27 and 28 August 2026 local calendar
+days in `Asia/Jakarta`, book all 37 private-source employees on both
+schedules through the explicitly authorized fixture path, and make the
+existing Operator capture workflow display the current live capacity,
+paper-ticket reference, controlled metadata choices, and finite upload
+progress telemetry.
 
 ## Authoritative inputs
 
@@ -61,8 +67,10 @@ upload progress telemetry.
 
 - Faliq Adlan, CTO, human-approved rehearsal objective supplied for this task
   on 2026-08-19: the same 37 CV Prestige employees are confirmed on both
-  rehearsal dates; the private CSV remains ignored and untracked; no live
-  database mutation or deployment is authorized.
+  rehearsal dates, each schedule covers its entire `Asia/Jakarta` local
+  calendar day using the approved half-open intervals; the private CSV
+  remains ignored and untracked; no live database mutation or deployment is
+  authorized.
 - `docs/mvp/decision-log.md` MVP-DEC-042: the approved two-day Prestige
   rehearsal fixture exception.
 - `.agents/context/project.md`: modular-monolith boundaries, Member data
@@ -96,11 +104,19 @@ upload progress telemetry.
   readability, exact row count (37), required fields, and duplicate employee
   identifiers before creating target schedules or bookings. Tests generate a
   synthetic temporary CSV at runtime and never require or inspect the real CSV.
-- Replace the Prestige seed-owned schedule definitions with exactly
-  `2026-08-27 01:00:00`–`10:00:00` and `2026-08-28 01:00:00`–`10:00:00` in
-  `Asia/Jakarta`, both quota 37. Reconcile only clearly Prestige seed-owned
-  obsolete schedule state. Inspect downstream foreign-key/clinical records
-  first; refuse unsafe reconciliation rather than deleting progressed history.
+- Replace the Prestige seed-owned schedule definitions with exactly these
+  half-open local-time intervals in `Asia/Jakarta`, both quota 37:
+  - 27 August: `[2026-08-27T00:00:00+07:00, 2026-08-28T00:00:00+07:00)`.
+  - 28 August: `[2026-08-28T00:00:00+07:00, 2026-08-29T00:00:00+07:00)`.
+  Persist them using the existing Member schedule convention: explicit
+  offset-bearing instants normalized to UTC database strings, expected to be
+  `2026-08-26 17:00:00` through `2026-08-27 17:00:00` and
+  `2026-08-27 17:00:00` through `2026-08-28 17:00:00`, respectively. Do not
+  use `23:59:59` as an artificial end boundary. Reconcile only clearly
+  Prestige seed-owned obsolete schedule state, including a prior short-window
+  target record only when it has no downstream records. Inspect downstream
+  foreign-key/clinical records first; refuse unsafe reconciliation rather
+  than deleting progressed history.
 - Preserve normal `Mvp03BookingService` behavior and its one-active-booking
   invariant. In the authorized `PrestigeClinicSeeder` fixture path only, ensure
   every one of the 37 Members has one confirmed booking on each target
@@ -170,6 +186,9 @@ upload progress telemetry.
   provide the test input.
 - Existing migrations and foreign keys are the authority for determining
   whether an obsolete seed-owned schedule is safe to reconcile.
+- `Mvp03ScheduleService` requires explicit-offset schedule instants and stores
+  them as UTC `Y-m-d H:i:s` values; the seeder derives local-midnight bounds
+  from `PrestigeClinicSeeder::SITE_TIMEZONE` before persisting them.
 - Existing `Mvp03BookingService::capacityStatuses()` is the source for
   participating booking-state semantics unless current repository evidence
   requires a bounded extension for terminal completed bookings.
@@ -178,6 +197,8 @@ upload progress telemetry.
 
 - The two-day double booking is an explicitly authorized rehearsal/bootstrap
   fixture exception and is not a new Member product rule.
+- The approved schedule windows are half-open local calendar-day intervals;
+  the next local midnight is the exclusive end of each schedule.
 - The existing `operator_paper_tickets.ticket_number` joined by the admission
   query is the required human-readable capture reference.
 - The current XHR upload flow and existing Indonesian translation registry are
@@ -219,8 +240,13 @@ upload progress telemetry.
   fails clearly before target schedules are created; a private override path is
   supported; tests use a generated synthetic 37-row CSV.
 - [ ] A clean Prestige bootstrap converges to exactly two target schedules on
-  27 and 28 August 2026 in the existing site timezone, each with quota 37,
-  with no obsolete 14 or 26 August schedule in the intended seeded state.
+  27 and 28 August 2026 in `Asia/Jakarta`, each with quota 37 and exact
+  half-open intervals `[2026-08-27T00:00:00+07:00,
+  2026-08-28T00:00:00+07:00)` and
+  `[2026-08-28T00:00:00+07:00, 2026-08-29T00:00:00+07:00)`; their persisted
+  UTC values are `2026-08-26 17:00:00`–`2026-08-27 17:00:00` and
+  `2026-08-27 17:00:00`–`2026-08-28 17:00:00`, with no `23:59:59` boundary
+  and no obsolete 14 or 26 August schedule in the intended seeded state.
 - [ ] The verified synthetic fixture contains 37 unique Members, 37 confirmed
   bookings on 27 August, 37 on 28 August, 74 total, and remains unchanged on a
   second seed run.
@@ -251,7 +277,8 @@ upload progress telemetry.
 
 - Focused Prestige, Member booking, Operator assigned-shift/capture, Image
   Gateway metadata, localization, and JavaScript upload tests discovered during
-  implementation.
+  implementation, including assertions that the two Prestige schedule rows
+  round-trip to the exact approved local intervals and UTC storage values.
 - `TARGET="." vendor/bin/phpunit`
 - `TARGET="." npm run build`
 - `TARGET="." vendor/bin/pint --test`
@@ -264,9 +291,10 @@ upload progress telemetry.
 
 Report the exact governing task path and immutable revision, implementation
 baseline and commit, changed files, observed commands/results, synthetic
-counts only, UI projection results, capture reference behavior, select/telemetry
-coverage, and any verification gap. Confirm the real CSV was not staged or
-committed without printing its contents.
+counts only, schedule local/UTC interval evidence, UI projection results,
+capture reference behavior, select/telemetry coverage, and any verification
+gap. Confirm the real CSV was not staged or committed without printing its
+contents.
 
 ## Stop conditions
 
