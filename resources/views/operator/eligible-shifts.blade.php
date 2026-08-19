@@ -15,7 +15,7 @@
                     <tr>
                         <td><strong>{{ $shift->schedule_display_reference }}</strong></td>
                         <td>{{ $shift->schedule_starts_at }} — {{ $shift->schedule_ends_at }}</td>
-                        <td>{{ $shift->confirmed_count_at_eligibility }} / {{ $shift->quota }}</td>
+                        <td>{{ $shift->current_confirmed_count }} / {{ $shift->schedule_quota }}</td>
                         <td><a href="{{ route('operator.attendance', ['schedule' => $shift->member_schedule_id, 'at' => $shift->schedule_starts_at->format(DATE_ATOM)]) }}">{{ __('Open attendance') }}</a></td>
                     </tr>
                 @empty

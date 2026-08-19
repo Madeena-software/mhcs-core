@@ -274,6 +274,25 @@ final class Mvp04OperatorPortalTest extends TestCase
             ]), false);
     }
 
+    public function test_assigned_shift_shows_current_participating_booking_count(): void
+    {
+        $fixture = $this->operatorFixture(false);
+        $this->actingAs($fixture['operator']);
+        $this->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
+
+        $this->get(route('operator.eligible-shifts'))
+            ->assertOk()
+            ->assertSee('1 / 5')
+            ->assertDontSee('5 / 5');
+
+        DB::table('bookings')->where('id', $fixture['bookingId'])->update(['status' => 'completed']);
+
+        $this->get(route('operator.eligible-shifts'))
+            ->assertOk()
+            ->assertSee('1 / 5')
+            ->assertDontSee('5 / 5');
+    }
+
     public function test_selected_shift_roster_keeps_all_members_and_shows_state_and_next_action(): void
     {
         $fixture = $this->operatorFixture(false);

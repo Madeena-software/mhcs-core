@@ -1,4 +1,5 @@
 import { VIEWER_TIMEOUT_MS, withViewerTimeout } from './operator-viewer-timeout.js';
+import { initCaptureUpload } from './operator-upload.js';
 
 function viewerTimeout(root) {
     const configured = Number(root.dataset.viewerTimeoutMs);
@@ -43,6 +44,7 @@ export async function bootstrapViewer(root, importViewer = () => import('./opera
 }
 
 if (typeof document !== 'undefined') {
+    initCaptureUpload();
     const root = document.querySelector('[data-dicom-viewer]');
     if (root) {
         bootstrapViewer(root);

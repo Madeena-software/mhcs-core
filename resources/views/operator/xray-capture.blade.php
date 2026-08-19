@@ -5,9 +5,9 @@
 @section('content')
 <section aria-labelledby="xray-capture-title">
     <h1 id="xray-capture-title">{{ __('Submit radiograph capture') }}</h1>
-    <p class="muted">{{ __('Radiography admission') }} <code>{{ $admissionId }}</code>; {{ __('Upload one radiograph NPZ and its matching gain NPZ.') }}</p>
+    <p class="muted">{{ __('Radiography admission') }}: <code>{{ $form['ticket_number'] }}</code>; {{ __('Upload one radiograph NPZ and its matching gain NPZ.') }}</p>
     <p class="warning" role="alert">{{ __('Do not navigate away during upload. Processing continues safely after capture acceptance.') }}</p>
-    <p id="capture-status" role="status" aria-live="polite" data-start="{{ __('Capture upload started.') }}" data-progress="{{ __('Uploading capture: :percent% (:loaded of :total bytes).') }}" data-processing="{{ __('Capture accepted. Waiting for DICOM processing.') }}" data-missing="{{ __('Capture sources are incomplete. Choose only the missing file.') }}" data-ready="{{ __('DICOM study ready. Opening results.') }}" data-failed="{{ __('Processing failed. No DICOM study is available. Retry DICOM processing or check status.') }}" data-error="{{ __('The capture status could not be checked. Retrying.') }}"></p>
+    <p id="capture-status" role="status" aria-live="polite" data-start="{{ __('Capture upload started.') }}" data-progress-unknown="{{ __('Uploading capture: :loaded.') }}" data-calculating="{{ __('Uploading capture: :percent% (:loaded of :total). Speed and ETA are being calculated.') }}" data-telemetry="{{ __('Uploading capture: :percent% (:loaded of :total). Speed: :speed. ETA: :eta.') }}" data-processing="{{ __('Capture accepted. Waiting for DICOM processing.') }}" data-missing="{{ __('Capture sources are incomplete. Choose only the missing file.') }}" data-ready="{{ __('DICOM study ready. Opening results.') }}" data-failed="{{ __('Processing failed. No DICOM study is available. Retry DICOM processing or check status.') }}" data-error="{{ __('The capture status could not be checked. Retrying.') }}"></p>
     <progress id="capture-progress" max="100" value="0" hidden aria-label="{{ __('Capture upload progress') }}"></progress>
     @if ($form['missing'] !== [])
         <p class="muted">{{ __('Missing capture files:') }} {{ implode(', ', array_map(static fn (string $type): string => __($type === 'radiograph' ? 'Radiograph NPZ' : 'Matching gain NPZ'), $form['missing'])) }}</p>
@@ -31,26 +31,23 @@
                         @endforeach
                     </select>
                     <label for="body_part_examined">{{ __('Body part examined') }}</label>
-                    <input id="body_part_examined" name="metadata[capture][body_part_examined]" type="text" list="body-part-options" value="{{ old('metadata.capture.body_part_examined', $metadata['capture']['body_part_examined']) }}" required>
-                    <datalist id="body-part-options">
+                    <select id="body_part_examined" name="metadata[capture][body_part_examined]" required>
                         @foreach (\App\Modules\ImageGateway\Application\Services\ImageGatewayCaptureService::BODY_PARTS as $option)
-                            <option value="{{ $option }}">{{ __($option) }}</option>
+                            <option value="{{ $option }}" @selected(old('metadata.capture.body_part_examined', $metadata['capture']['body_part_examined']) === $option)>{{ __($option) }}</option>
                         @endforeach
-                    </datalist>
+                    </select>
                     <label for="laterality">{{ __('Laterality') }}</label>
-                    <input id="laterality" name="metadata[capture][laterality]" type="text" list="laterality-options" value="{{ old('metadata.capture.laterality', $metadata['capture']['laterality']) }}" required>
-                    <datalist id="laterality-options">
+                    <select id="laterality" name="metadata[capture][laterality]" required>
                         @foreach (\App\Modules\ImageGateway\Application\Services\ImageGatewayCaptureService::LATERALITIES as $option)
-                            <option value="{{ $option }}">{{ __($option) }}</option>
+                            <option value="{{ $option }}" @selected(old('metadata.capture.laterality', $metadata['capture']['laterality']) === $option)>{{ __($option) }}</option>
                         @endforeach
-                    </datalist>
+                    </select>
                     <label for="projection">{{ __('Projection') }}</label>
-                    <input id="projection" name="metadata[capture][projection]" type="text" list="projection-options" value="{{ old('metadata.capture.projection', $metadata['capture']['projection']) }}" required>
-                    <datalist id="projection-options">
+                    <select id="projection" name="metadata[capture][projection]" required>
                         @foreach (\App\Modules\ImageGateway\Application\Services\ImageGatewayCaptureService::PROJECTIONS as $option)
-                            <option value="{{ $option }}">{{ __($option) }}</option>
+                            <option value="{{ $option }}" @selected(old('metadata.capture.projection', $metadata['capture']['projection']) === $option)>{{ __($option) }}</option>
                         @endforeach
-                    </datalist>
+                    </select>
                 </fieldset>
             @else
                 <fieldset disabled>
@@ -77,138 +74,5 @@
         @endif
     </form>
 </section>
-<script>
-    (() => {
-        const form = document.getElementById('capture-form');
-        if (!form) return;
-        const status = document.getElementById('capture-status');
-        const progress = document.getElementById('capture-progress');
-        const inputs = [...form.querySelectorAll('input[type="file"]')];
-        const button = form.querySelector('button[type="submit"]');
-        let active = false;
-        let uploading = false;
-        let pollTimer = null;
-        let request = null;
-
-        const setStatus = (message) => { status.textContent = message; };
-        const setControls = (disabled, missing = form.dataset.missing.split(',').filter(Boolean)) => {
-            inputs.forEach((input) => {
-                const type = input.name === 'radiograph_npz' ? 'radiograph' : 'gain';
-                input.disabled = disabled || !missing.includes(type);
-            });
-            if (button) button.disabled = disabled;
-        };
-        const stopPolling = () => {
-            if (pollTimer !== null) window.clearTimeout(pollTimer);
-            pollTimer = null;
-        };
-        const applyStatus = (result) => {
-            const missing = Array.isArray(result.missing_components) ? result.missing_components : [];
-            form.dataset.missing = missing.join(',');
-            if (result.processing_state === 'ready') {
-                stopPolling();
-                active = false;
-                uploading = false;
-                setStatus(status.dataset.ready);
-                window.location.assign(result.ready_results_url);
-                return true;
-            }
-            if (result.processing_state === 'failed') {
-                stopPolling();
-                active = false;
-                uploading = false;
-                setControls(false, missing);
-                setStatus(status.dataset.failed);
-                return true;
-            }
-            if (result.processing_state === 'awaiting_sources') {
-                stopPolling();
-                active = false;
-                uploading = false;
-                setControls(false, missing);
-                setStatus(status.dataset.missing);
-                return true;
-            }
-            active = true;
-            uploading = false;
-            setControls(true, missing);
-            setStatus(status.dataset.processing);
-            return false;
-        };
-        const poll = () => {
-            stopPolling();
-            const xhr = new XMLHttpRequest();
-            request = xhr;
-            xhr.open('GET', form.dataset.statusUrl);
-            xhr.setRequestHeader('Accept', 'application/json');
-            xhr.onload = () => {
-                if (request === xhr) request = null;
-                if (xhr.status >= 200 && xhr.status < 300) {
-                    try {
-                        if (applyStatus(JSON.parse(xhr.responseText))) return;
-                    } catch (error) {
-                        setStatus(status.dataset.error);
-                    }
-                } else {
-                    setStatus(status.dataset.error);
-                }
-                pollTimer = window.setTimeout(poll, 2000);
-            };
-            xhr.onerror = () => {
-                if (request === xhr) request = null;
-                setStatus(status.dataset.error);
-                pollTimer = window.setTimeout(poll, 2000);
-            };
-            xhr.send();
-        };
-        window.addEventListener('beforeunload', (event) => {
-            if (uploading) {
-                event.preventDefault();
-                event.returnValue = '';
-            }
-        });
-        window.addEventListener('pagehide', () => {
-            stopPolling();
-            if (request) request.abort();
-        }, { once: true });
-        form.addEventListener('submit', (event) => {
-            event.preventDefault();
-            if (active) return;
-            active = true;
-            uploading = true;
-            const body = new FormData(form);
-            setControls(true);
-            progress.hidden = false;
-            progress.value = 0;
-            setStatus(status.dataset.start);
-            request = new XMLHttpRequest();
-            request.open('POST', form.action);
-            request.setRequestHeader('Accept', 'application/json');
-            request.upload.addEventListener('progress', (uploadEvent) => {
-                if (!uploadEvent.lengthComputable) return;
-                const percent = Math.round((uploadEvent.loaded / uploadEvent.total) * 100);
-                progress.value = percent;
-                setStatus(status.dataset.progress.replace(':percent', percent).replace(':loaded', uploadEvent.loaded.toLocaleString()).replace(':total', uploadEvent.total.toLocaleString()));
-            });
-            request.onload = () => {
-                request = null;
-                poll();
-            };
-            request.onerror = () => {
-                request = null;
-                setStatus(status.dataset.error);
-                poll();
-            };
-            request.send(body);
-        });
-        if (form.dataset.hasCapture === '1') {
-            active = true;
-            uploading = false;
-            setControls(true);
-            poll();
-        } else {
-            setControls(false);
-        }
-    })();
-</script>
+@vite('resources/js/app.js')
 @endsection

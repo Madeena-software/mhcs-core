@@ -56,7 +56,7 @@ final readonly class ImageGatewayCaptureService implements OperatorStudyQuery
         private ManifestSigner $signer,
     ) {}
 
-    /** @return array{capture_id: ?string, submission_id: string, missing: list<string>, status: string, can_retry: bool} */
+    /** @return array{capture_id: ?string, submission_id: string, missing: list<string>, status: string, can_retry: bool, ticket_number: string} */
     public function captureForm(
         AuthenticatedContext $context,
         string $profileId,
@@ -65,7 +65,7 @@ final readonly class ImageGatewayCaptureService implements OperatorStudyQuery
         string $admissionId,
     ): array {
         $this->assertContext($context, self::CAPTURE_PURPOSE);
-        $this->admission($profileId, $siteId, $operatorSiteId, $admissionId, false, true);
+        $admission = $this->admission($profileId, $siteId, $operatorSiteId, $admissionId, false, true);
 
         $capture = DB::table('image_gateway_capture_sets')->where('admission_id', $admissionId)->first();
         $missing = $capture === null ? ['radiograph', 'gain'] : array_values(array_filter([
@@ -84,6 +84,7 @@ final readonly class ImageGatewayCaptureService implements OperatorStudyQuery
             'missing' => $missing,
             'status' => (string) ($capture->status ?? 'capturing'),
             'can_retry' => $this->canRetryProcessing($capture, $missing),
+            'ticket_number' => (string) $admission->ticket_number,
             'metadata' => $metadata,
             'metadata_editable' => $capture === null,
         ];
@@ -623,7 +624,7 @@ final readonly class ImageGatewayCaptureService implements OperatorStudyQuery
                     ->where('assignments.status', 'active')
                     ->where('eligible.sync_status', 'eligible');
             })
-            ->select('admissions.*', 'tickets.booking_id');
+            ->select('admissions.*', 'tickets.booking_id', 'tickets.ticket_number');
         if ($lock) {
             $query->lockForUpdate();
         }

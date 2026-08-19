@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Modules\Operator\Application\Services;
 
+use App\Modules\Member\Application\Contracts\BookingCapacityStatusProvider;
 use App\Modules\Operator\Domain\Models\OperatorEligibleShift;
 use App\Modules\Operator\Domain\Models\OperatorProfile;
 use App\Modules\Operator\Domain\Models\OperatorShiftAssignment;
@@ -25,6 +26,7 @@ final readonly class OperatorShiftAssignmentService
         private AuditStore $audit,
         private OutboxStore $outbox,
         private Clock $clock,
+        private BookingCapacityStatusProvider $bookingStatuses,
     ) {}
 
     public function assign(string $eligibleShiftId, string $profileId): OperatorShiftAssignment
@@ -99,6 +101,7 @@ final readonly class OperatorShiftAssignmentService
     {
         $portal = $this->authorization->portal();
         $site = $this->authorization->portalSite($portal);
+        $participatingStatuses = $this->bookingStatuses->participatingStatuses();
 
         return OperatorEligibleShift::query()
             ->join('operator_shift_assignments', 'operator_shift_assignments.operator_eligible_shift_id', '=', 'operator_eligible_shifts.id')
@@ -109,6 +112,11 @@ final readonly class OperatorShiftAssignmentService
             ->join('shift_schedules', 'shift_schedules.id', '=', 'operator_eligible_shifts.member_schedule_id')
             ->select('operator_eligible_shifts.*')
             ->addSelect('shift_schedules.display_reference as schedule_display_reference')
+            ->addSelect('shift_schedules.quota as schedule_quota')
+            ->addSelect(['current_confirmed_count' => DB::table('bookings')
+                ->selectRaw('count(*)')
+                ->whereColumn('bookings.shift_schedule_id', 'operator_eligible_shifts.member_schedule_id')
+                ->whereIn('bookings.status', $participatingStatuses)])
             ->orderBy('operator_eligible_shifts.schedule_starts_at')
             ->get()
             ->all();

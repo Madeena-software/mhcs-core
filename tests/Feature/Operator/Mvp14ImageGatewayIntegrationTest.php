@@ -231,18 +231,20 @@ final class Mvp14ImageGatewayIntegrationTest extends TestCase
 
         $this->get(route('operator.xray-capture.show', $admission))
             ->assertOk()
+            ->assertSee('Tiket sesi foto radiografi: <code>IMG-XRAY-01</code>', false)
             ->assertSee('name="metadata[examination][study_description]"', false)
             ->assertSee('value="CHEST RADIOGRAPH"', false)
             ->assertSee('name="metadata[capture][detector_type]"', false)
             ->assertSee('value="BED"', false)
             ->assertSee('value="TRX"', false)
-            ->assertSee('name="metadata[capture][body_part_examined]"', false)
+            ->assertSee('<select id="body_part_examined"', false)
             ->assertSee('value="CHEST"', false)
-            ->assertSee('name="metadata[capture][laterality]"', false)
+            ->assertSee('<select id="laterality"', false)
             ->assertSee('value="U"', false)
-            ->assertSee('name="metadata[capture][projection]"', false)
+            ->assertSee('<select id="projection"', false)
             ->assertSee('value="PA"', false)
-            ->assertDontSee('THORAX');
+            ->assertDontSee('<datalist', false)
+            ->assertDontSee('value="THORAX"', false);
     }
 
     public function test_frozen_capture_metadata_shows_laterality_code_and_label(): void

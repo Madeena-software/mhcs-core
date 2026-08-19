@@ -10,9 +10,7 @@ use App\Modules\Member\Application\Services\Mvp03PointService;
 use App\Modules\Member\Application\Services\Mvp03SiteReferenceService;
 use App\Modules\Member\Application\Services\Mvp04OperatorSiteReferenceService;
 use App\Modules\Member\Domain\Enums\PointEntryType;
-use App\Modules\Member\Domain\PointAmount;
 use App\Modules\Operator\Application\Services\OperatorAuthorization;
-use App\Shared\Audit\AuditEvent;
 use App\Shared\Audit\AuditStore;
 use App\Shared\Context\AuthenticatedContext;
 use App\Shared\Context\CorrelationId;
@@ -30,11 +28,18 @@ use RuntimeException;
 final class PrestigeClinicSeeder extends Seeder
 {
     public const ORGANIZATION_ID = 'org-prestige';
+
     public const ORGANIZATION_NAME = 'CV Prestige';
+
     public const OPERATOR_SITE_ID = 'site-prestige';
+
     public const SITE_CODE = 'PRES-01';
+
     public const SITE_DISPLAY_NAME = 'Rumah Skrining CV Prestige';
+
     public const SITE_TIMEZONE = 'Asia/Jakarta';
+
+    private const EMPLOYEE_COUNT = 37;
 
     /** @var list<string> */
     private const ADMIN_PERMISSIONS = [
@@ -57,12 +62,13 @@ final class PrestigeClinicSeeder extends Seeder
             throw new RuntimeException('PrestigeClinicSeeder is limited to local, testing, or authorized production bootstrap.');
         }
 
+        $employees = $this->loadEmployees();
         $adminUser = $this->seedAdmin();
         $siteId = $this->seedSite();
         $this->seedOperators($adminUser, $siteId);
         $schedules = $this->seedCatalogueAndSchedules($siteId);
         $rateId = app(Mvp03PointService::class)->ensureInitialLocalRate($adminUser->getKey());
-        $this->seedMembersAndBookings($schedules, $rateId);
+        $this->seedMembersAndBookings($employees, $schedules, $rateId);
 
         $this->command?->info('Prestige Clinic dataset seeded successfully.');
     }
@@ -398,11 +404,12 @@ final class PrestigeClinicSeeder extends Seeder
             ]);
         }
 
-        // Schedules: 14 August 2026, 26 August 2026, 27 August 2026
+        $this->removeObsoleteSchedules($siteRefId, (string) $offeringA->id);
+
+        // Prestige rehearsal: 27 and 28 August 2026, 01:00–10:00.
         $scheduleDates = [
-            ['start' => '2026-08-14 01:00:00', 'end' => '2026-08-14 10:00:00'],
-            ['start' => '2026-08-26 01:00:00', 'end' => '2026-08-26 10:00:00'],
             ['start' => '2026-08-27 01:00:00', 'end' => '2026-08-27 10:00:00'],
+            ['start' => '2026-08-28 01:00:00', 'end' => '2026-08-28 10:00:00'],
         ];
 
         $schedules = [];
@@ -424,13 +431,21 @@ final class PrestigeClinicSeeder extends Seeder
                     'service_offering_id' => (string) $offeringA->id,
                     'starts_at' => $date['start'],
                     'ends_at' => $date['end'],
-                    'quota' => 50,
+                    'quota' => self::EMPLOYEE_COUNT,
                     'status' => 'open',
                     'eligible_at' => $now,
                     'created_at' => $now,
                     'updated_at' => $now,
                 ]);
                 $sched = DB::table('shift_schedules')->where('id', $schedId)->first();
+            } else {
+                DB::table('shift_schedules')->where('id', $sched->id)->update([
+                    'ends_at' => $date['end'],
+                    'quota' => self::EMPLOYEE_COUNT,
+                    'status' => 'open',
+                    'updated_at' => $now,
+                ]);
+                $sched = DB::table('shift_schedules')->where('id', $sched->id)->first();
             }
 
             // Eligible shift & operator assignments
@@ -450,6 +465,13 @@ final class PrestigeClinicSeeder extends Seeder
                     'eligible_at' => $now,
                     'sync_status' => 'eligible',
                     'created_at' => $now,
+                    'updated_at' => $now,
+                ]);
+            } else {
+                DB::table('operator_eligible_shifts')->where('id', $eligibleId)->update([
+                    'schedule_starts_at' => $sched->starts_at,
+                    'schedule_ends_at' => $sched->ends_at,
+                    'quota' => self::EMPLOYEE_COUNT,
                     'updated_at' => $now,
                 ]);
             }
@@ -477,60 +499,122 @@ final class PrestigeClinicSeeder extends Seeder
         return $schedules;
     }
 
-    /** @param list<object> $schedules */
-    private function seedMembersAndBookings(array $schedules, string $rateId): void
+    private function removeObsoleteSchedules(string $siteRefId, string $offeringId): void
     {
-        $csvPath = base_path('research/prestige/data-karyawan-cv-prestige.csv');
-        if (! file_exists($csvPath)) {
-            throw new RuntimeException("Data karyawan CSV not found at $csvPath");
+        $obsolete = DB::table('shift_schedules')
+            ->where('examination_site_id', $siteRefId)
+            ->where('service_offering_id', $offeringId)
+            ->whereIn('starts_at', ['2026-08-14 01:00:00', '2026-08-26 01:00:00'])
+            ->get(['id']);
+
+        foreach ($obsolete as $schedule) {
+            $scheduleId = (string) $schedule->id;
+            foreach ([
+                ['bookings', 'shift_schedule_id'],
+                ['local_imaging_orders', 'shift_schedule_id'],
+                ['operator_paper_tickets', 'member_schedule_id'],
+                ['operator_queue_admissions', 'member_schedule_id'],
+                ['operator_arrivals', 'member_schedule_id'],
+                ['operator_identity_verifications', 'member_schedule_id'],
+                ['member_paper_questionnaires', 'member_schedule_id'],
+                ['member_vital_signs_assessments', 'member_schedule_id'],
+                ['image_gateway_capture_sets', 'member_schedule_id'],
+            ] as [$table, $column]) {
+                if (DB::table($table)->where($column, $scheduleId)->exists()) {
+                    throw new RuntimeException('An obsolete Prestige schedule has downstream records and needs separate cleanup.');
+                }
+            }
+
+            $eligibleIds = DB::table('operator_eligible_shifts')->where('member_schedule_id', $scheduleId)->pluck('id');
+            if ($eligibleIds->isNotEmpty()) {
+                DB::table('operator_shift_assignments')->whereIn('operator_eligible_shift_id', $eligibleIds)->delete();
+                DB::table('operator_eligible_shifts')->whereIn('id', $eligibleIds)->delete();
+            }
+            DB::table('shift_schedules')->where('id', $scheduleId)->delete();
+        }
+    }
+
+    /** @return list<array{no: string, name: string, place: string, birth_date: string, address: string, nik: string}> */
+    private function loadEmployees(): array
+    {
+        $configuredPath = getenv('PRESTIGE_EMPLOYEE_CSV');
+        $csvPath = is_string($configuredPath) && trim($configuredPath) !== ''
+            ? trim($configuredPath)
+            : base_path('research/prestige/data-karyawan-cv-prestige.csv');
+        if (! is_file($csvPath) || ! is_readable($csvPath)) {
+            throw new RuntimeException('Prestige employee CSV is missing or unreadable.');
         }
 
         $fp = fopen($csvPath, 'r');
         if ($fp === false) {
-            throw new RuntimeException("Cannot open CSV at $csvPath");
+            throw new RuntimeException('Prestige employee CSV could not be opened.');
         }
 
-        $header = fgetcsv($fp, 0, ',', '"', '\\');
         $months = [
             'Jan' => '01', 'Feb' => '02', 'Mar' => '03', 'Apr' => '04',
             'Mei' => '05', 'Jun' => '06', 'Jul' => '07', 'Agu' => '08',
             'Sep' => '09', 'Okt' => '10', 'Nov' => '11', 'Des' => '12',
         ];
 
-        $membersData = [];
-        while (($row = fgetcsv($fp, 0, ',', '"', '\\')) !== false) {
-            if (count($row) < 6) {
-                continue;
-            }
-            $no = trim($row[0]);
-            $name = trim($row[1]);
-            $place = trim($row[2]);
-            $rawDate = trim($row[3]);
-            $address = trim($row[4]);
-            $nik = trim($row[5]);
-
-            $dateParts = explode('-', $rawDate);
-            if (count($dateParts) === 3) {
-                $d = sprintf('%02d', (int) $dateParts[0]);
-                $m = $months[$dateParts[1]] ?? '01';
-                $y = (int) $dateParts[2];
-                $fullY = ($y > 30) ? 1900 + $y : 2000 + $y;
-                $birthDate = "$fullY-$m-$d";
-            } else {
-                $birthDate = '1980-01-01';
+        try {
+            $header = fgetcsv($fp, 0, ',', '"', '\\');
+            if (! is_array($header) || count($header) < 6) {
+                throw new RuntimeException('Prestige employee CSV header is invalid.');
             }
 
-            $membersData[] = [
-                'no' => $no,
-                'name' => $name,
-                'place' => $place,
-                'birth_date' => $birthDate,
-                'address' => $address,
-                'nik' => $nik,
-            ];
+            $membersData = [];
+            $numbers = [];
+            $niks = [];
+            while (($row = fgetcsv($fp, 0, ',', '"', '\\')) !== false) {
+                if (count($row) < 6) {
+                    throw new RuntimeException('Prestige employee CSV contains a malformed row.');
+                }
+
+                [$no, $name, $place, $rawDate, $address, $nik] = array_map(static fn (string $value): string => trim($value), array_slice($row, 0, 6));
+                if ($no === '' || $name === '' || $place === '' || $rawDate === '' || $address === '' || $nik === '') {
+                    throw new RuntimeException('Prestige employee CSV contains an incomplete row.');
+                }
+                if (! preg_match('/^\d+$/', $no) || ! preg_match('/^\d{10,20}$/', $nik) || isset($numbers[$no]) || isset($niks[$nik])) {
+                    throw new RuntimeException('Prestige employee CSV contains duplicate or invalid identifiers.');
+                }
+
+                $dateParts = explode('-', $rawDate);
+                if (count($dateParts) !== 3 || ! isset($months[$dateParts[1]]) || ! ctype_digit($dateParts[0]) || ! ctype_digit($dateParts[2])) {
+                    throw new RuntimeException('Prestige employee CSV contains an invalid birth date.');
+                }
+                $day = (int) $dateParts[0];
+                $year = (int) $dateParts[2];
+                $fullYear = $year > 30 ? 1900 + $year : 2000 + $year;
+                $month = (int) $months[$dateParts[1]];
+                if (! checkdate($month, $day, $fullYear)) {
+                    throw new RuntimeException('Prestige employee CSV contains an invalid birth date.');
+                }
+
+                $numbers[$no] = true;
+                $niks[$nik] = true;
+                $membersData[] = [
+                    'no' => $no,
+                    'name' => $name,
+                    'place' => $place,
+                    'birth_date' => sprintf('%04d-%02d-%02d', $fullYear, $month, $day),
+                    'address' => $address,
+                    'nik' => $nik,
+                ];
+            }
+        } finally {
+            fclose($fp);
         }
-        fclose($fp);
 
+        if (count($membersData) !== self::EMPLOYEE_COUNT) {
+            throw new RuntimeException('Prestige employee CSV must contain exactly 37 valid employee rows.');
+        }
+
+        return $membersData;
+    }
+
+    /** @param list<array{no: string, name: string, place: string, birth_date: string, address: string, nik: string}> $membersData @param list<object> $schedules */
+    private function seedMembersAndBookings(array $membersData, array $schedules, string $rateId): void
+    {
         $identifiers = app(ProtectedIdentifierService::class);
         $mrn = app(MedicalRecordNumberGenerator::class);
         $objects = app(PrivateObjectStore::class);
@@ -539,7 +623,7 @@ final class PrestigeClinicSeeder extends Seeder
 
         $offering = DB::table('service_offerings')->where('code', 'SYN-CHEST-A')->firstOrFail();
 
-        foreach ($membersData as $index => $item) {
+        foreach ($membersData as $item) {
             $nik = $item['nik'];
             $name = $item['name'];
             $email = "{$nik}@prestige.madeena-xray.com";
@@ -639,17 +723,16 @@ final class PrestigeClinicSeeder extends Seeder
                 'prestige:credit:'.hash('sha256', $nik),
             );
 
-            // Assign schedule in round-robin: 14 Aug (index 0..12), 26 Aug (13..24), 27 Aug (25..36)
-            $scheduleIndex = $index % count($schedules);
-            $selectedSchedule = $schedules[$scheduleIndex];
+            foreach ($schedules as $selectedSchedule) {
+                $existingBooking = DB::table('bookings')
+                    ->where('member_id', $member->id)
+                    ->where('shift_schedule_id', $selectedSchedule->id)
+                    ->first();
 
-            // Ensure confirmed booking
-            $existingBooking = DB::table('bookings')
-                ->where('member_id', $member->id)
-                ->where('shift_schedule_id', $selectedSchedule->id)
-                ->first();
+                if ($existingBooking !== null) {
+                    continue;
+                }
 
-            if ($existingBooking === null) {
                 $bookingId = (string) Str::uuid();
                 DB::table('bookings')->insert([
                     'id' => $bookingId,

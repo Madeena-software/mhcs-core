@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Modules\Member\Application\Services;
 
 use App\Models\User;
+use App\Modules\Member\Application\Contracts\BookingCapacityStatusProvider;
 use App\Modules\Member\Domain\Enums\BookingStatus;
 use App\Modules\Member\Domain\Enums\PointEntryType;
 use App\Modules\Member\Domain\Models\Booking;
@@ -31,7 +32,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Throwable;
 
-final readonly class Mvp03BookingService
+final readonly class Mvp03BookingService implements BookingCapacityStatusProvider
 {
     /** @var list<string> */
     private const ACTIVE_STATUSES = [
@@ -57,6 +58,12 @@ final readonly class Mvp03BookingService
     public static function capacityStatuses(): array
     {
         return self::ACTIVE_STATUSES;
+    }
+
+    /** @return list<string> */
+    public function participatingStatuses(): array
+    {
+        return [...self::ACTIVE_STATUSES, BookingStatus::Completed->value];
     }
 
     /** @return array<string, mixed> */
