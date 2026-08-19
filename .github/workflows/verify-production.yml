@@ -1,0 +1,468 @@
+name: Verify Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_revision:
+        description: Optional live application revision to require.
+        required: false
+        default: ''
+        type: string
+      run_large_upload_probe:
+        description: Run the generated 100 MiB local ingress probe.
+        required: false
+        default: false
+        type: boolean
+      verify_prestige:
+        description: Run sanitized read-only Prestige invariant checks.
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: production-deployment-mhcs_core
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Read-only production verification
+    runs-on: self-hosted
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Verify production state without mutation
+        env:
+          EXPECTED_REVISION: ${{ inputs.expected_revision }}
+          RUN_LARGE_UPLOAD_PROBE: ${{ inputs.run_large_upload_probe }}
+          VERIFY_PRESTIGE: ${{ inputs.verify_prestige }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          FAIL=0
+          APP_SERVICE="mhcs_core_app"
+          DB_SERVICE="mhcs_core_db"
+          QUEUE_SERVICE="mhcs_core_queue"
+          SCHEDULER_SERVICE="mhcs_core_scheduler"
+          IMAGE_WORKER_SERVICE="mhcs_core_image-worker"
+          NGINX_SERVICE="mhcs_core_nginx"
+          APP_NETWORK="mhcs-core-application-network"
+          MPIPS_NETWORK="mhcs-mpips-integration-v1"
+          APP_CONTAINER=""
+
+          echo "===> Read-only Swarm and service verification"
+
+          SWARM_STATE="$(docker info --format '{{.Swarm.LocalNodeState}}' 2>/dev/null || true)"
+          SWARM_MANAGER="$(docker info --format '{{.Swarm.ControlAvailable}}' 2>/dev/null || true)"
+          if [ "$SWARM_STATE" = "active" ]; then
+            echo "swarm_active=true"
+          else
+            echo "swarm_active=false"
+            FAIL=1
+          fi
+          if [ "$SWARM_MANAGER" = "true" ]; then
+            echo "swarm_manager=true"
+          else
+            echo "swarm_manager=false"
+            FAIL=1
+          fi
+
+          for service in \
+            "$DB_SERVICE" \
+            "$APP_SERVICE" \
+            "$QUEUE_SERVICE" \
+            "$SCHEDULER_SERVICE" \
+            "$IMAGE_WORKER_SERVICE" \
+            "$NGINX_SERVICE"; do
+            replicas="$(docker service ls --format '{{.Replicas}}' --filter "name=${service}" 2>/dev/null | head -n 1 || true)"
+            echo "service_${service}_replicas=${replicas:-unknown}"
+            if [ "$replicas" != "1/1" ]; then
+              FAIL=1
+            fi
+          done
+
+          container_for_service() {
+            docker ps \
+              -q \
+              --filter "label=com.docker.swarm.service.name=$1" \
+              --filter status=running \
+              | head -n 1
+          }
+
+          for service in \
+            "$DB_SERVICE" \
+            "$APP_SERVICE" \
+            "$QUEUE_SERVICE" \
+            "$SCHEDULER_SERVICE" \
+            "$IMAGE_WORKER_SERVICE" \
+            "$NGINX_SERVICE"; do
+            container="$(container_for_service "$service")"
+            if [ -n "$container" ]; then
+              echo "container_${service}_running=true"
+            else
+              echo "container_${service}_running=false"
+              FAIL=1
+            fi
+            health="$(docker inspect "$container" --format '{{.State.Health.Status}}' 2>/dev/null || true)"
+            echo "container_${service}_health=${health:-unavailable}"
+            case "$service" in
+              "$DB_SERVICE"|"$APP_SERVICE"|"$NGINX_SERVICE")
+                if [ "$health" != "healthy" ]; then
+                  FAIL=1
+                fi
+                ;;
+            esac
+          done
+
+          for network in "$APP_NETWORK" "$MPIPS_NETWORK"; do
+            if docker network inspect "$network" --format '{{.Name}}' >/dev/null 2>&1; then
+              echo "network_${network}=present"
+            else
+              echo "network_${network}=missing"
+              FAIL=1
+            fi
+          done
+
+          MPIPS_CONTAINER="$(docker ps -q --filter name=mpips-api --filter status=running | head -n 1)"
+          if [ -n "$MPIPS_CONTAINER" ]; then
+            echo "mpips_api_running=true"
+            MPIPS_HEALTH="$(docker inspect "$MPIPS_CONTAINER" --format '{{.State.Health.Status}}' 2>/dev/null || true)"
+            echo "mpips_api_health=${MPIPS_HEALTH:-unavailable}"
+          else
+            echo "mpips_api_running=false"
+            echo "mpips_api_health=unavailable"
+            FAIL=1
+          fi
+
+          echo "===> Read-only production revision observability"
+
+          SERVICE_REPLICAS="$(docker service ls --format '{{.Replicas}}' --filter "name=${APP_SERVICE}" 2>/dev/null | head -n 1 || true)"
+          SERVICE_IMAGE="$(docker service inspect "$APP_SERVICE" --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 2>/dev/null || true)"
+          TASK_ID="$(docker service ps "$APP_SERVICE" --filter desired-state=running --no-trunc --format '{{.ID}}' 2>/dev/null | head -n 1 || true)"
+          TASK_STATE=""
+          if [ -n "$TASK_ID" ]; then
+            TASK_STATE="$(docker service ps "$APP_SERVICE" --filter "id=${TASK_ID}" --format '{{.CurrentState}}' 2>/dev/null || true)"
+          fi
+
+          if [ -n "$TASK_ID" ]; then
+            while IFS= read -r candidate; do
+              [ -n "$candidate" ] || continue
+              candidate_task="$(docker inspect "$candidate" --format '{{index .Config.Labels "com.docker.swarm.task.id"}}' 2>/dev/null || true)"
+              if [ "$candidate_task" = "$TASK_ID" ] || [[ "$candidate_task" == "$TASK_ID"* ]] || [[ "$TASK_ID" == "$candidate_task"* ]]; then
+                APP_CONTAINER="$candidate"
+                break
+              fi
+            done < <(docker ps -q --filter "label=com.docker.swarm.service.name=${APP_SERVICE}" --filter status=running)
+          fi
+
+          CONTAINER_IMAGE=""
+          CONTAINER_HEALTH=""
+          RAW_VERSION_CURRENT=""
+          if [ -n "$APP_CONTAINER" ]; then
+            CONTAINER_IMAGE="$(docker inspect "$APP_CONTAINER" --format '{{.Config.Image}}' 2>/dev/null || true)"
+            CONTAINER_HEALTH="$(docker inspect "$APP_CONTAINER" --format '{{.State.Health.Status}}' 2>/dev/null || true)"
+            RAW_VERSION_CURRENT="$(docker exec "$APP_CONTAINER" cat /var/www/html/VERSION-CURRENT 2>/dev/null || true)"
+          fi
+
+          safe_image_metadata() {
+            local image="$1"
+            if [ -z "$image" ]; then
+              printf 'unknown'
+            elif [[ "$image" =~ ^[A-Za-z0-9._:/@-]+$ ]]; then
+              printf '%s' "$image"
+            else
+              printf 'invalid'
+            fi
+          }
+
+          SERVICE_IMAGE_SAFE="$(safe_image_metadata "$SERVICE_IMAGE")"
+          CONTAINER_IMAGE_SAFE="$(safe_image_metadata "$CONTAINER_IMAGE")"
+          VERSION_CURRENT="invalid"
+          if [[ "$RAW_VERSION_CURRENT" =~ ^[0-9a-f]{40}$ ]]; then
+            VERSION_CURRENT="$RAW_VERSION_CURRENT"
+          else
+            FAIL=1
+          fi
+
+          image_revision() {
+            local image="$1"
+            local revision=""
+            if [[ "$image" == mhcs_core:* ]]; then
+              revision="${image#mhcs_core:}"
+              revision="${revision%%@sha256:*}"
+            fi
+            printf '%s' "$revision"
+          }
+
+          SERVICE_REVISION="$(image_revision "$SERVICE_IMAGE")"
+          CONTAINER_REVISION="$(image_revision "$CONTAINER_IMAGE")"
+          REVISION_CONSISTENT=false
+          if [ -n "$SERVICE_REVISION" ] && [ -n "$CONTAINER_REVISION" ] && [ -n "$VERSION_CURRENT" ] \
+            && [ "$SERVICE_REVISION" = "$CONTAINER_REVISION" ] \
+            && [ "$CONTAINER_REVISION" = "$VERSION_CURRENT" ]; then
+            REVISION_CONSISTENT=true
+          else
+            FAIL=1
+          fi
+
+          echo "PRODUCTION_REVISION"
+          echo "service_replicas=${SERVICE_REPLICAS:-unknown}"
+          echo "task_state=${TASK_STATE:-unknown}"
+          echo "container_health=${CONTAINER_HEALTH:-unavailable}"
+          echo "service_image=$SERVICE_IMAGE_SAFE"
+          echo "container_image=$CONTAINER_IMAGE_SAFE"
+          echo "version_current=$VERSION_CURRENT"
+          echo "consistent=${REVISION_CONSISTENT}"
+
+          if [ "$SERVICE_REPLICAS" != "1/1" ] || [[ "$TASK_STATE" != Running* ]] || [ "$CONTAINER_HEALTH" != "healthy" ] || [ -z "$APP_CONTAINER" ]; then
+            FAIL=1
+          fi
+
+          if [ -n "$EXPECTED_REVISION" ]; then
+            SAFE_EXPECTED_REVISION="invalid"
+            if [[ "$EXPECTED_REVISION" =~ ^[0-9a-f]{40}$ ]]; then
+              SAFE_EXPECTED_REVISION="$EXPECTED_REVISION"
+            fi
+            echo "EXPECTED_REVISION=$SAFE_EXPECTED_REVISION"
+            REVISION_MATCH=false
+            if [ "$SAFE_EXPECTED_REVISION" != "invalid" ] \
+              && [ "$REVISION_CONSISTENT" = "true" ] \
+              && [ "$VERSION_CURRENT" = "$SAFE_EXPECTED_REVISION" ]; then
+              REVISION_MATCH=true
+            fi
+            echo "REVISION_MATCH=$REVISION_MATCH"
+            if [ "$REVISION_MATCH" != "true" ]; then
+              FAIL=1
+            fi
+          fi
+
+          echo "===> Read-only application and database checks"
+
+          LOCAL_INGRESS_STATUS="$(curl --silent --show-error --max-time 5 --output /dev/null --write-out '%{http_code}' http://127.0.0.1:8013/up 2>/dev/null || true)"
+          echo "local_ingress_http_status=${LOCAL_INGRESS_STATUS:-000}"
+          if [ "$LOCAL_INGRESS_STATUS" != "200" ]; then
+            FAIL=1
+          fi
+
+          if [ -n "$APP_CONTAINER" ]; then
+            if docker exec "$APP_CONTAINER" php -r '
+              require "vendor/autoload.php";
+              $app = require "bootstrap/app.php";
+              $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+            ' >/dev/null 2>&1; then
+              echo "LARAVEL_BOOTSTRAP=pass"
+            else
+              echo "LARAVEL_BOOTSTRAP=fail"
+              FAIL=1
+            fi
+
+            if docker exec "$APP_CONTAINER" php -r '
+              require "vendor/autoload.php";
+              $app = require "bootstrap/app.php";
+              $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+              Illuminate\Support\Facades\DB::select("select 1");
+            ' >/dev/null 2>&1; then
+              echo "DATABASE_READ_ONLY_QUERY=pass"
+            else
+              echo "DATABASE_READ_ONLY_QUERY=fail"
+              FAIL=1
+            fi
+          else
+            echo "LARAVEL_BOOTSTRAP=fail"
+            echo "DATABASE_READ_ONLY_QUERY=fail"
+            FAIL=1
+          fi
+
+          if [ "$RUN_LARGE_UPLOAD_PROBE" = "true" ]; then
+            echo "===> Run generated 100 MiB local ingress probe"
+            required_bytes=$((100 * 1024 * 1024))
+            probe_file="$(mktemp /tmp/mhcs-production-upload.XXXXXX)"
+            trap 'rm -f -- "$probe_file"' EXIT INT TERM
+
+            truncate -s "$required_bytes" "$probe_file"
+            file_bytes="$(stat -c '%s' "$probe_file")"
+            if (( file_bytes < required_bytes )); then
+              echo "FAIL: generated probe is smaller than 100 MiB."
+              exit 1
+            fi
+
+            curl_exit=0
+            response="$(
+              curl \
+                --silent \
+                --show-error \
+                --max-time 180 \
+                --request POST \
+                --form "probe=@${probe_file};type=application/octet-stream" \
+                --output /dev/null \
+                --write-out '%{http_code} %{size_upload}' \
+                http://127.0.0.1:8013/up 2>/dev/null
+            )" || curl_exit=$?
+
+            http_status="${response%% *}"
+            uploaded_bytes="${response##* }"
+            [[ "$http_status" =~ ^[0-9]{3}$ ]] || http_status=000
+            [[ "$uploaded_bytes" =~ ^[0-9]+$ ]] || uploaded_bytes=0
+
+            echo "HTTP status: $http_status"
+            echo "Uploaded bytes: $uploaded_bytes"
+
+            if (( curl_exit != 0 )); then
+              if (( curl_exit == 28 )); then
+                echo "FAIL: production ingress probe timed out."
+              else
+                echo "FAIL: production ingress transport failed."
+              fi
+              exit 1
+            fi
+
+            if [[ "$http_status" == 413 ]]; then
+              echo "FAIL: production ingress returned HTTP 413."
+              exit 1
+            fi
+
+            if (( uploaded_bytes < required_bytes )); then
+              echo "FAIL: multipart upload completed below 100 MiB."
+              exit 1
+            fi
+
+            if [[ "$http_status" != 405 ]]; then
+              echo "FAIL: expected HTTP 405 from the existing /up GET|HEAD route."
+              exit 1
+            fi
+
+            echo "PASS: completed at least 100 MiB multipart transfer and received HTTP 405."
+          else
+            echo "UPLOAD_PROBE=skipped"
+          fi
+
+          if [ "$VERIFY_PRESTIGE" = "true" ]; then
+            echo "===> Run sanitized read-only Prestige verification"
+            if [ -z "$APP_CONTAINER" ]; then
+              echo "PRESTIGE_VERIFICATION=failed"
+              FAIL=1
+            else
+              prestige_output=""
+              if prestige_output="$(docker exec "$APP_CONTAINER" php -r '
+                require "vendor/autoload.php";
+                $app = require "bootstrap/app.php";
+                $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+                $db = Illuminate\Support\Facades\DB::class;
+
+                $site = $db::table("examination_site_refs")
+                    ->where("operator_site_id", "site-prestige")
+                    ->where("code", "PRES-01")
+                    ->where("display_name", "Rumah Skrining CV Prestige")
+                    ->where("timezone", "Asia/Jakarta")
+                    ->where("active", true)
+                    ->first();
+                $offering = $db::table("service_offerings")
+                    ->where("code", "SYN-CHEST-A")
+                    ->first();
+                $expected = [
+                    ["starts_at" => "2026-08-26 17:00:00", "ends_at" => "2026-08-27 17:00:00", "quota" => 37],
+                    ["starts_at" => "2026-08-27 17:00:00", "ends_at" => "2026-08-28 17:00:00", "quota" => 37],
+                ];
+
+                $schedules = $site !== null && $offering !== null
+                    ? $db::table("shift_schedules")
+                        ->where("examination_site_id", $site->id)
+                        ->where("service_offering_id", $offering->id)
+                        ->orderBy("starts_at")
+                        ->get(["id", "starts_at", "ends_at", "quota"])
+                    : collect();
+                $scheduleRows = $schedules->map(static fn (object $row): array => [
+                    "starts_at" => (string) $row->starts_at,
+                    "ends_at" => (string) $row->ends_at,
+                    "quota" => (int) $row->quota,
+                ])->all();
+                $scheduleBoundsMatch = $scheduleRows === $expected;
+                $quotaValues = $schedules->map(static fn (object $row): int => (int) $row->quota)->all();
+                $confirmedCounts = [];
+                $memberSets = [];
+                $totalBookings = 0;
+                $distinctMembers = 0;
+                $memberSetsEqual = false;
+                $memberSetsHave37 = false;
+
+                if ($schedules->count() === 2) {
+                    foreach ($schedules as $schedule) {
+                        $scheduleId = (string) $schedule->id;
+                        $confirmedCounts[] = (int) $db::table("bookings")
+                            ->where("shift_schedule_id", $scheduleId)
+                            ->where("status", "confirmed")
+                            ->count();
+                        $memberSets[] = $db::table("bookings")
+                            ->where("shift_schedule_id", $scheduleId)
+                            ->where("status", "confirmed")
+                            ->pluck("member_id")
+                            ->map(static fn ($id): string => (string) $id)
+                            ->sort(SORT_STRING)
+                            ->values()
+                            ->all();
+                    }
+                    $scheduleIds = $schedules->pluck("id")->all();
+                    $totalBookings = (int) $db::table("bookings")->whereIn("shift_schedule_id", $scheduleIds)->count();
+                    $distinctMembers = (int) $db::table("bookings")
+                        ->whereIn("shift_schedule_id", $scheduleIds)
+                        ->distinct()
+                        ->count("member_id");
+                    $memberSetsEqual = $memberSets[0] === $memberSets[1];
+                    $memberSetsHave37 = count($memberSets[0]) === 37
+                        && count($memberSets[1]) === 37
+                        && count(array_unique($memberSets[0])) === 37
+                        && count(array_unique($memberSets[1])) === 37;
+                }
+
+                $passed = $site !== null
+                    && $offering !== null
+                    && $schedules->count() === 2
+                    && $scheduleBoundsMatch
+                    && $quotaValues === [37, 37]
+                    && $confirmedCounts === [37, 37]
+                    && $totalBookings === 74
+                    && $distinctMembers === 37
+                    && $memberSetsEqual
+                    && $memberSetsHave37;
+
+                echo json_encode([
+                    "site_active" => $site !== null,
+                    "schedule_count" => $schedules->count(),
+                    "schedule_bounds_match" => $scheduleBoundsMatch,
+                    "quota_27" => $quotaValues[0] ?? null,
+                    "quota_28" => $quotaValues[1] ?? null,
+                    "confirmed_27" => $confirmedCounts[0] ?? null,
+                    "confirmed_28" => $confirmedCounts[1] ?? null,
+                    "total_bookings" => $totalBookings,
+                    "distinct_members" => $distinctMembers,
+                    "member_sets_equal" => $memberSetsEqual,
+                    "verification_passed" => $passed,
+                ], JSON_THROW_ON_ERROR).PHP_EOL;
+                exit($passed ? 0 : 1);
+              ' 2>/dev/null)"; then
+                printf '%s\n' "$prestige_output"
+                echo "PRESTIGE_VERIFICATION=pass"
+              else
+                prestige_status=$?
+                if [ -n "$prestige_output" ]; then
+                  printf '%s\n' "$prestige_output"
+                fi
+                echo "PRESTIGE_VERIFICATION=failed"
+                echo "PRESTIGE_VERIFICATION_EXIT=$prestige_status"
+                FAIL=1
+              fi
+            fi
+          else
+            echo "PRESTIGE_VERIFICATION=skipped"
+          fi
+
+          if [ "$FAIL" -gt 0 ]; then
+            echo "PRODUCTION_VERIFICATION_STATUS=fail"
+            exit 1
+          fi
+
+          echo "PRODUCTION_VERIFICATION_STATUS=pass"
