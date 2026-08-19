@@ -661,7 +661,30 @@ jobs:
           ' >/dev/null
           _pass "Application production runtime assertions passed"
 
-          echo "7/8 Public HTTP health endpoint & domain verification"
+          echo "7/9 Effective upload-limit configuration"
+          nginx_container="$(docker ps -q -f name=mhcs_core_nginx -f status=running | head -n 1)"
+          nginx_limit="$(docker exec "$nginx_container" nginx -T 2>/dev/null | awk '$1 == "client_max_body_size" {gsub(";", "", $2); print $2; exit}' || true)"
+          if [ "$nginx_limit" = "201m" ]; then
+            _pass "Nginx client_max_body_size: $nginx_limit"
+          else
+            _fail "Nginx client_max_body_size: ${nginx_limit:-unavailable} (expected 201m)"
+          fi
+
+          php_limits="$(docker exec "$app_container" php -r 'echo ini_get("upload_max_filesize"), "\n", ini_get("post_max_size"), "\n";' 2>/dev/null || true)"
+          php_upload_limit="$(printf '%s\n' "$php_limits" | sed -n '1p')"
+          php_request_limit="$(printf '%s\n' "$php_limits" | sed -n '2p')"
+          if [ "$php_upload_limit" = "100M" ]; then
+            _pass "PHP upload_max_filesize: $php_upload_limit"
+          else
+            _fail "PHP upload_max_filesize: ${php_upload_limit:-unavailable} (expected 100M)"
+          fi
+          if [ "$php_request_limit" = "201M" ]; then
+            _pass "PHP post_max_size: $php_request_limit"
+          else
+            _fail "PHP post_max_size: ${php_request_limit:-unavailable} (expected 201M)"
+          fi
+
+          echo "8/9 Public HTTP health endpoint & domain verification"
           # Dynamically resolve Node IP from default route
           NODE_IP="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}' || echo "")"
           if [ -z "$NODE_IP" ]; then
@@ -708,7 +731,7 @@ jobs:
             _fail "Public health endpoint /up returned HTTP $http_code (expected 200 at $HEALTH_URL on port ${APP_PORT})"
           fi
 
-          echo "8/8 Credential server file protection"
+          echo "9/9 Credential server file protection"
           if docker exec "$app_container" test -f /var/www/html/storage/app/private/bootstrap/credential-server.txt; then
             dir_mode="$(docker exec "$app_container" stat -c '%a' /var/www/html/storage/app/private/bootstrap 2>/dev/null || echo 'unknown')"
             cred_mode="$(docker exec "$app_container" stat -c '%a' /var/www/html/storage/app/private/bootstrap/credential-server.txt 2>/dev/null || echo 'unknown')"
