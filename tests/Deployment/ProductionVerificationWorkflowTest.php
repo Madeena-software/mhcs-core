@@ -88,6 +88,9 @@ final class ProductionVerificationWorkflowTest extends TestCase
         $this->assertStringContainsString('http://127.0.0.1:8013/up', $workflow);
         $this->assertStringContainsString('LARAVEL_BOOTSTRAP=pass', $workflow);
         $this->assertStringContainsString('DATABASE_READ_ONLY_QUERY=pass', $workflow);
+        foreach (['target_schedule_count', 'target_bounds_match', 'target_total_bookings', 'target_distinct_members', 'target_member_sets_equal', 'target_charge_entries', 'historical_schedule_preserved', 'historical_status_closed', 'historical_bookings', 'historical_charge_entries', 'historical_reversal_entries'] as $invariant) {
+            $this->assertStringContainsString($invariant, $workflow);
+        }
         $this->assertStringContainsString('select 1', $workflow);
 
         $this->assertStringContainsString('RUN_LARGE_UPLOAD_PROBE', $workflow);

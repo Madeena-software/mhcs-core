@@ -92,12 +92,15 @@ final class PrestigeProductionWorkflowTest extends TestCase
         $this->assertStringContainsString('BACKUP_VERIFIED reference=', $workflow);
         $this->assertStringContainsString('database backup failed; seeding blocked', $workflow);
 
-        $this->assertStringContainsString('EXPECTED_REVISION="b5a2306e7d2d1491285edfd0418d25b1cdea568f"', $workflow);
-        $this->assertSame(1, substr_count($workflow, 'EXPECTED_REVISION="b5a2306e7d2d1491285edfd0418d25b1cdea568f"'));
+        $this->assertStringContainsString('EXPECTED_REVISION="e7831b9cb2883182462fb7fabc23e097cb791107"', $workflow);
+        $this->assertSame(1, substr_count($workflow, 'EXPECTED_REVISION="e7831b9cb2883182462fb7fabc23e097cb791107"'));
         $this->assertStringNotContainsString('4488f37787bc521869a2bb6113507387c5a983c8', $workflow);
         $this->assertStringContainsString('mhcs_core_app', $workflow);
         $this->assertStringContainsString('VERSION-CURRENT', $workflow);
         $this->assertStringContainsString('healthy', $workflow);
+        foreach (['target_schedule_count', 'target_bounds_match', 'target_total_bookings', 'target_distinct_members', 'target_member_sets_equal', 'target_charge_entries', 'historical_schedule_preserved', 'historical_status_closed', 'historical_bookings', 'historical_charge_entries', 'historical_reversal_entries'] as $invariant) {
+            $this->assertStringContainsString($invariant, $workflow);
+        }
 
         $this->assertStringNotContainsString('/etc/madeena-mhcs_core-prestige-employee.csv', $workflow);
         $this->assertStringNotContainsString('PRESTIGE_SOURCE', $workflow);
