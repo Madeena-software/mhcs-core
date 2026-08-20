@@ -1,7 +1,7 @@
 ---
 title: Prestige legacy-schedule production reconciliation
 document_id: MHCS-TASK-PRESTIGE-PRODUCTION-DATA-APPLICATION-001
-version: 1.8
+version: 1.9
 status: validated-on-publication
 language: en-US
 last_updated: 2026-08-20
@@ -31,7 +31,11 @@ The authoritative read-only diagnostic run 32375201758 observed three legacy sch
 
 ## Baseline and task revision
 
-**Implementation baseline:** 4ea91807a267dc5ea10d539bce5690754097c093
+**Implementation baseline:** 6d2dbec77ae25a4f6d6395eead5098c45c2d98db
+
+**Remediation review basis:** Phase A `e7831b9cb2883182462fb7fabc23e097cb791107`; Phase B `6d2dbec77ae25a4f6d6395eead5098c45c2d98db`
+
+**Terminal review verdict:** REMEDIATION REQUIRED
 
 **Current production application runtime before reconciliation:** b5a2306e7d2d1491285edfd0418d25b1cdea568f
 
@@ -160,6 +164,131 @@ Require all eight historical downstream aggregate counts from diagnostic 3237520
 
 Phase A is the application/seeder commit. Phase B is the workflow/verifier commit hardcoding the exact Phase-A SHA. Production apply may run only after exact Phase A deployment and canonical runtime verification.
 
+## Bounded remediation v1.9
+
+The v1.8 delivery objective and approved reconciliation strategy remain
+unchanged. This republication authorizes only the following bounded
+remediation of the reviewed implementation. It does not authorize a generic
+migration API, a production operation, or a material redesign.
+
+### R1 — Scoped legacy preconditions
+
+All legacy aggregates MUST be scoped to the exact diagnosed 14-Aug, 26-Aug,
+and 27-Aug Prestige schedule rows. Do not use global application booking or
+Member counts. Require `legacy_booking_count=37` and
+`legacy_distinct_members=37` across those three rows only.
+
+Derive the fixed cohort independently from the exact
+`@prestige.madeena-xray.com` User namespace and exact User-to-Member linkage.
+Require exactly 37 linked Prestige Members and require the booked-member set
+across the three diagnosed rows to equal that cohort without emitting either
+set. Unrelated application Members, bookings, schedules, or other data MUST
+NOT affect classification or be modified.
+
+Require exact total booking/status shapes: 14-Aug total 13 with 4
+`checked_in` and 9 `confirmed`; 26-Aug total 12 with 12 `confirmed`; and
+27-Aug total 12 with 12 `confirmed`. No other booking status is allowed.
+
+### R2 — Atomic classification and reconciliation
+
+For the production legacy state, classification, validation, row locking where
+supported, and all 14/26/27 reconciliation mutations MUST execute inside one
+controlled database transaction. Lock the fixed schedules and directly
+relevant mutable eligible-shift and assignment rows where supported. There
+MUST be no check-then-mutate gap. Any validation failure MUST commit none of
+historical closure, assignment revocation, target rewrites, or Target-C
+creation. Add rollback and fail-closed coverage.
+
+### R3 — Production final state preserves history
+
+An authorized production final-state rerun MUST contain all four rows:
+historical 14-Aug closed plus Targets A, B, and C. A three-target-only state
+after production history existed is invalid and MUST fail closed.
+
+An empty local/testing database MAY retain its separate normal three-target
+fixture and local idempotency behavior, but that fresh-fixture state MUST NOT
+be accepted as a production reconciliation final state. Keep this distinction
+tied to the existing authorized production-seeder context.
+
+Final-state validation MUST independently revalidate the historical exact
+boundaries, quota 50, closed status, 13 bookings (4 checked-in and 9
+confirmed), 13 distinct Members, 13 total ledger entries, 13 charges, zero
+reversals, all eight progressed counts, one eligible shift, five assignments,
+zero active assignments, and five revoked assignments. It MUST also revalidate
+exact A/B/C boundaries, quota 37, open status, 37 confirmed bookings each,
+111 target bookings, 37 distinct target Members, equal 37-member sets, 111
+target charges, and zero target reconciliation reversals.
+
+### R4 — Exact Prestige Operator identities
+
+Do not select Target-C Operators with `LIMIT 5` or arbitrary global profile
+selection. Derive the exact five existing Prestige Operator profile
+identities from the diagnosed existing schedule assignments. Require the
+26-Aug and 27-Aug assignment profile sets to be the same exact five
+identities; differing or ambiguous sets MUST fail closed. Create Target-C
+assignments only for that validated set. Do not output or change Operator
+identities. Add coverage proving unrelated Operator profiles are excluded.
+
+### R5 — Complete canonical verifier
+
+Both production workflows MUST verify all eight historical downstream counts:
+
+    local_imaging_orders=0
+    operator_paper_tickets=4
+    operator_queue_admissions=8
+    operator_arrivals=4
+    operator_identity_verifications=4
+    member_paper_questionnaires=4
+    member_vital_signs_assessments=4
+    image_gateway_capture_sets=0
+
+They MUST compute independently `historical_point_ledger_entries=13`,
+`historical_charge_entries=13`, and `historical_reversal_entries=0`, require
+`historical_progressed_records_preserved=true`, and include it in pass/fail
+logic. Target schedules MUST verify `status=open`.
+
+Emit these exact canonical names and values: `quota_20_26=37`,
+`quota_27_28=37`, `quota_28_29=37`, `confirmed_20_26=37`,
+`confirmed_27_28=37`, and `confirmed_28_29=37`. Evaluate
+`legacy_26_old_absent`, `legacy_27_old_absent`, and `legacy_28_old_absent`
+independently, each scoped to the exact Prestige site and SYN-CHEST-A
+offering. Preserve read-only behavior, `verify_prestige_members`,
+`diagnose_prestige_legacy`, privacy, and the no-IDs/no-PII output boundary.
+
+### R6 — End-to-end reconciliation tests
+
+Phase-A tests MUST construct and execute the exact sanitized diagnosed shape:
+14-Aug with 13 bookings (4 checked-in, 9 confirmed), 13 charges, all eight
+progressed counts, one eligible shift, and five assignments; 26-Aug and
+27-Aug each with 12 confirmed bookings, 12 charges, zero progressed records,
+one eligible shift, and five assignments; no old 28-Aug row; and the fixed
+37-member cohort.
+
+They MUST prove historical row, booking, timestamp, status, ledger,
+downstream, and assignment identity preservation; in-place 26→A and 27→B
+schedule/eligible/12-booking/charge identity reuse; Target-C creation with
+the exact five validated Operators; exclusion of unrelated Operators; final
+37/37/37, 111 total, 37 distinct, equal sets; 24 preserved and 87 new target
+bookings; 24 preserved and 87 new target charges; exactly one new charge per
+new booking; no reconciliation reversals; separate historical charges;
+production-final rerun idempotency; historical-missing, changed-precondition,
+mixed/partial, and transaction-rollback rejection; unrelated application
+Member/booking preservation; unchanged Member password hashes; unchanged
+normal schedule immutability; and unchanged duplicate-active-booking
+behavior.
+
+Phase-B workflow tests MUST cover all eight historical counts,
+`historical_progressed_records_preserved`, independent ledger/charge/reversal
+totals, exact canonical field names, independent old-start checks, and the
+exact full Phase-A pin.
+
+After this remediation publication is independently accepted, remediation
+Phase A MUST produce a new immutable SHA from this baseline and remediation
+Phase B MUST be a direct child of corrected Phase A with
+`EXPECTED_REVISION` hardcoded to that new full SHA. The workflows MUST NOT
+remain pinned to `e7831b9cb2883182462fb7fabc23e097cb791107` after corrected
+Phase A exists.
+
 ## Acceptance criteria
 
 - [ ] Phase A implements the exact preservation, in-place reconciliation, target creation, arithmetic, fail-closed, transaction, and idempotency contract.
@@ -172,7 +301,7 @@ Phase A is the application/seeder commit. Phase B is the workflow/verifier commi
 
 ## Dependencies, approvals, and stop conditions
 
-Phase B depends on the exact Phase-A commit. Execution depends on baseline 4ea91807a267dc5ea10d539bce5690754097c093 remaining applicable.
+Phase B depends on the exact Phase-A commit. Execution depends on remediation baseline 6d2dbec77ae25a4f6d6395eead5098c45c2d98db remaining applicable.
 
 After independent acceptance, fresh explicit owner authorization is separately required for Phase-A deployment, exact runtime verification, Member verification, any fresh read-only precondition check, temporary Prestige secrets, APPLY-PRESTIGE-2026-08-20-28, mandatory verified backup, production reconciliation, secret deletion, and final canonical verification.
 
