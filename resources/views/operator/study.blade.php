@@ -165,7 +165,7 @@
      data-loading-message="{{ __('Loading DICOM…') }}"
      data-ready-message="{{ __('DICOM study ready. Automatic VOI is applied.') }}"
      data-display-error-message="{{ __('The DICOM study could not be displayed.') }}"
-     data-viewer-timeout-ms="15000"
+     data-viewer-timeout-ms="45000"
      data-viewer-state="loading"
      @if (isset($window_center) && $window_center !== null) data-window-center="{{ $window_center }}" @endif
      @if (isset($window_width) && $window_width !== null) data-window-width="{{ $window_width }}" @endif>

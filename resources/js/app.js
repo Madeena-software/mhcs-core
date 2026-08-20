@@ -38,7 +38,8 @@ export async function bootstrapViewer(root, importViewer = () => import('./opera
     try {
         const viewer = await withViewerTimeout(importViewer(), viewerTimeout(root));
         await withViewerTimeout(viewer.renderStudy(root), viewerTimeout(root));
-    } catch {
+    } catch (error) {
+        console.error('[BOOTSTRAP VIEWER ERROR]:', error);
         setViewerUnavailable(root);
     }
 }

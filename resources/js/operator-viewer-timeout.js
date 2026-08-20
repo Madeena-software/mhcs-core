@@ -1,4 +1,4 @@
-export const VIEWER_TIMEOUT_MS = 15000;
+export const VIEWER_TIMEOUT_MS = 45000;
 
 export function withViewerTimeout(value, timeoutMs = VIEWER_TIMEOUT_MS) {
     return new Promise((resolve, reject) => {

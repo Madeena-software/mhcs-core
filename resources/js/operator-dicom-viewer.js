@@ -1,9 +1,13 @@
 import {
     Enums,
     RenderingEngine,
+    getWebWorkerManager,
     init as cornerstoneInit,
 } from '@cornerstonejs/core';
-import { init as dicomImageLoaderInit } from '@cornerstonejs/dicom-image-loader';
+import {
+    decodeImageFrame,
+    init as dicomImageLoaderInit,
+} from '@cornerstonejs/dicom-image-loader';
 import dicomParser from 'dicom-parser';
 import { VIEWER_TIMEOUT_MS, withViewerTimeout } from './operator-viewer-timeout.js';
 
@@ -202,6 +206,32 @@ function viewerTimeout(root) {
     return Number.isFinite(configured) && configured > 0 ? configured : VIEWER_TIMEOUT_MS;
 }
 
+export function registerDicomDecoder() {
+    try {
+        dicomImageLoaderInit({ maxWebWorkers: 1 });
+    } catch {
+        // Fall back to direct decoder registration if native worker initialization fails.
+    }
+    const workerManager = typeof getWebWorkerManager === 'function' ? getWebWorkerManager() : null;
+    if (workerManager) {
+        const inProcessDecoder = {
+            async decodeTask({ imageFrame, transferSyntax, decodeConfig, options, pixelData, callbackFn }) {
+                return decodeImageFrame(imageFrame, transferSyntax, pixelData, decodeConfig, options, callbackFn);
+            },
+        };
+        workerManager.workerRegistry['dicomImageLoader'] = {
+            instances: [inProcessDecoder],
+            nativeWorkers: [],
+            loadCounters: [0],
+            lastActiveTime: [Date.now()],
+            workerFn: () => null,
+            autoTerminateOnIdle: false,
+            idleCheckIntervalId: null,
+            idleTimeThreshold: 3000,
+        };
+    }
+}
+
 export async function renderStudy(root) {
     const element = root.querySelector('[data-testid="dicom-viewport"]');
     if (!element) {
@@ -217,7 +247,7 @@ export async function renderStudy(root) {
             throw new Error(root.dataset.parserUnavailableMessage);
         }
         await withViewerTimeout(Promise.resolve(cornerstoneInit()), timeoutMs);
-        await withViewerTimeout(Promise.resolve(dicomImageLoaderInit({ maxWebWorkers: 1 })), timeoutMs);
+        registerDicomDecoder();
         const renderingEngine = new RenderingEngine(ENGINE_ID);
         renderingEngine.enableElement({
             viewportId: VIEWPORT_ID,
@@ -249,7 +279,9 @@ export async function renderStudy(root) {
         bindViewerControls(root, viewport, renderingEngine);
         window.__mhcsDicomViewerReady = true;
         setViewerState(root, 'ready', root.dataset.readyMessage);
-    } catch {
+    } catch (error) {
+        console.error('[RENDER STUDY ERROR]:', error);
         setViewerState(root, 'error');
     }
 }
+
