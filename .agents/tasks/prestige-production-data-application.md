@@ -1,260 +1,193 @@
 ---
-title: Prestige legacy-schedule production diagnostic
+title: Prestige legacy-schedule production reconciliation
 document_id: MHCS-TASK-PRESTIGE-PRODUCTION-DATA-APPLICATION-001
-version: 1.7
+version: 1.8
 status: validated-on-publication
 language: en-US
 last_updated: 2026-08-20
 scope:
-  - bounded read-only diagnostic for four obsolete Prestige schedules
-  - sanitized aggregate evidence for final reconciliation planning
-authority_note: This republication supersedes the prior implementation objective at this stable task path. It authorizes only the bounded verifier workflow and its existing test, does not authorize seeding, cleanup, migration, deployment, workflow dispatch, secret provisioning, or production mutation, and remains subject to independent task-revision review.
+  - bounded final reconciliation of diagnosed Prestige rehearsal schedules
+  - two-phase application and verifier implementation with immutable runtime binding
+authority_note: This republication supersedes the prior diagnostic objective at this stable task path. It authorizes only the bounded implementation described here after publication review. It does not authorize production execution, deployment, workflow dispatch, secret provisioning, or production mutation.
 ---
 
 # Executable Task
 
 ## Task identity
 
-**Task title:** `Prestige legacy-schedule production diagnostic`
+**Task title:** Prestige legacy-schedule production reconciliation
 
-**Task path:** `.agents/tasks/prestige-production-data-application.md`
+**Task path:** .agents/tasks/prestige-production-data-application.md
 
-**Task contract state:** `Validated/Published upon immutable publication of this exact content`
+**Task contract state:** Validated/Published upon immutable publication of this exact content
 
-**Delivery objective / Work Package / MVP:** `Characterize obsolete Prestige schedule data so Planner/Reviewer can select one final reconciliation strategy from sanitized evidence.`
+**Delivery objective / Work Package / MVP:** Preserve progressed Prestige history and reconcile the two unprogressed diagnosed legacy schedules into three 37-member rehearsal targets, with fail-closed and idempotent behavior.
 
-**Owner / designated planning authority:** `Faliq Adlan, CTO`
+**Owner / designated planning authority:** Faliq Adlan, CTO
 
 ## Delivery context
 
-The failed production apply run `32365225831` reached the accepted
-`PrestigeClinicSeeder` only after the exact runtime gate, private CSV
-validation, Operator credential validation, SUPER_ADMIN precheck, and
-mandatory database backup succeeded. The seeder then failed closed because an
-obsolete Prestige schedule has downstream records.
-
-The current main is `b7953a930461ad180a6c8419345585bffb692bce` and the current
-production application runtime is
-`b5a2306e7d2d1491285edfd0418d25b1cdea568f`. The diagnostic MUST NOT guess
-which records to delete or migrate. Existing records are evidence, not a
-verifier failure.
+The authoritative read-only diagnostic run 32375201758 observed three legacy schedules, 37 bookings covering the fixed 37-member Prestige cohort, and one progressed historical schedule. The reconciliation preserves progressed history, reuses the two unprogressed schedule identities, creates one target schedule, and preserves existing target-compatible bookings and charges.
 
 ## Baseline and task revision
 
-**Implementation baseline:** `b7953a930461ad180a6c8419345585bffb692bce`
+**Implementation baseline:** 4ea91807a267dc5ea10d539bce5690754097c093
 
-**Current production runtime:** `b5a2306e7d2d1491285edfd0418d25b1cdea568f`
+**Current production application runtime before reconciliation:** b5a2306e7d2d1491285edfd0418d25b1cdea568f
 
-**Failed apply evidence:** `32365225831`
+**Authoritative diagnostic:** run 32375201758
 
-**Task revision:** `The full SHA of the commit containing this exact validated task content, supplied after publication.`
+**Task revision:** The full SHA of the publication commit containing this exact content.
 
-The task revision is resolved by the publication commit and MUST be reviewed
-before any implementation execution.
+Resolve the task revision before execution and independently review it before implementation.
 
-## Objective
+## Authoritative observed state
 
-Add one optional, manually selected, sanitized read-only diagnostic to the
-existing production verifier. When selected, it characterizes only the four
-known obsolete Prestige schedules and reports aggregate evidence sufficient to
-distinguish empty, rehearsal, point-ledger-only, and progressed schedules.
+Production runtime was b5a2306e7d2d1491285edfd0418d25b1cdea568f; Member accounts were 37/37/37/37 with exact linkage.
 
-## Authoritative inputs
-
-- Failed apply evidence: run `32365225831`.
-- Current main: `b7953a930461ad180a6c8419345585bffb692bce`.
-- Current production runtime: `b5a2306e7d2d1491285edfd0418d25b1cdea568f`.
-- Existing task contract at this stable path, republished as v1.6.
-- Existing verifier and its current read-only guard in `.github/workflows/verify-production.yml`.
+- 14-Aug 01:00–10:00 UTC, quota 50, open: 13 bookings (checked_in=4, confirmed=9), 13 distinct Members, 13 ledger entries (13 charges, 0 reversals), progressed counts {local_imaging_orders:0, operator_paper_tickets:4, operator_queue_admissions:8, operator_arrivals:4, operator_identity_verifications:4, member_paper_questionnaires:4, member_vital_signs_assessments:4, image_gateway_capture_sets:0}, 1 eligible shift, 5 assignments.
+- 26-Aug 01:00–10:00 UTC, quota 50, open: 12 confirmed bookings, 12 distinct Members, 12 charge ledger entries, 0 reversals, no progressed clinical records, 1 eligible shift, 5 assignments.
+- 27-Aug 01:00–10:00 UTC: the same exact 12/confirmed/ledger-only shape.
+- 28-Aug 01:00 UTC: absent.
+- Global: legacy_schedule_count=3, legacy_booking_count=37, legacy_distinct_members=37, legacy_point_ledger_entries=37, legacy_progressed_schedule_count=1.
 
 ## Scope
 
-### In scope
+### Phase A: application/seeder implementation
 
-- `.github/workflows/verify-production.yml`
-- `tests/Deployment/ProductionVerificationWorkflowTest.php`
-- Optional `workflow_dispatch` boolean input:
+Modify only:
 
-```yaml
-diagnose_prestige_legacy:
-  type: boolean
-  required: false
-  default: false
-```
+- database/seeders/PrestigeClinicSeeder.php
+- tests/Feature/Operator/PrestigeClinicSeederTest.php
+- an already-existing directly relevant regression test only if genuinely necessary.
 
-- Sanitized diagnostic execution through the current production app
-  container, using the existing verifier invocation and guard patterns.
+Implement fail-closed state classification, historical preservation/closure, historical assignment retirement, 26-Aug to Target A in-place reconciliation, 27-Aug to Target B in-place reconciliation, Target C creation, completion to 37/37/37, booking/ledger preservation, and idempotent final-state rerun.
+
+### Phase B: workflow/verifier implementation
+
+Starting from the exact Phase-A commit, modify only:
+
+- .github/workflows/apply-prestige-production-data.yml
+- .github/workflows/verify-production.yml
+- tests/Deployment/PrestigeProductionWorkflowTest.php
+- tests/Deployment/ProductionVerificationWorkflowTest.php
+
+Preserve the diagnostic input, secret and credential controls, mandatory backup-before-seed, cleanup, environment, concurrency, privacy, runtime gate, verify_prestige_members, and read-only canonical verification. Hardcode EXPECTED_REVISION="<PHASE_A_SHA>" with the exact full Phase-A SHA. Preserve confirmation APPLY-PRESTIGE-2026-08-20-28.
 
 ### Out of scope
 
-- `database/seeders/PrestigeClinicSeeder.php`
-- `.github/workflows/apply-prestige-production-data.yml`
-- `.github/workflows/server-setup-db.yml`
-- `deploy-swarm.yml`
-- schema migrations and runtime booking logic
-- seeding, retrying the Prestige apply, deleting, migrating, or reconciling
-  records
-- workflow dispatch, deployment, secret provisioning, backup execution, or
-  any production mutation
-- arbitrary SQL input or user-selected schedule/table identifiers
+Normal runtime schedule services, booking immutability, duplicate-active-booking behavior, generic migration APIs, schema migrations, unrelated refactors/tests, deployment, workflow dispatch, seeding, backup, secret provisioning, apply retry, manual SQL, production mutation, changing Operator identities, and deleting schedules/bookings/ledger/assignments/clinical records.
 
-### Preserved behavior
+## Reconciliation contract
 
-When `diagnose_prestige_legacy=false`, the verifier MUST emit
-`PRESTIGE_LEGACY_DIAGNOSTIC=skipped` and existing behavior MUST remain
-unchanged. Preserve workflow-dispatch-only execution, expected-revision and
-revision-consistency checks, service/Swarm health, Laravel bootstrap, the
-generic database read-only check, upload probe, `verify_prestige_members`,
-`verify_prestige`, and the existing three-schedule verification.
+### Historical 14-Aug
 
-## Diagnostic invocation
+Preserve the same row, boundaries 2026-08-14 01:00:00 to 10:00:00 UTC, quota 50, all 13 bookings and statuses, all 13 charge entries, all eight progressed-table counts, occurrence timestamps, and ledger identities/relationships. Change only status open to closed. Preserve five assignment rows and revoke them using established semantics: status=revoked, current mutation timestamp, and bounded non-PII reason. Final historical active assignments=0 and revoked assignments=5. Do not alter Operator identities.
 
-The enabled path MUST support exactly this canonical read-only invocation:
+### Target A from 26-Aug in place
 
-```text
-expected_revision=b5a2306e7d2d1491285edfd0418d25b1cdea568f
-run_large_upload_probe=false
-verify_prestige=false
-verify_prestige_members=true
-diagnose_prestige_legacy=true
-```
+Reuse the same schedule and eligible-shift identities. Transform 2026-08-26 01:00:00 to 10:00:00 UTC, quota 50 into 2026-08-19 17:00:00 to 2026-08-26 17:00:00 UTC, quota 37, status open. Preserve 12 existing confirmed bookings, their IDs/timestamps/snapshots, and 12 charge relationships. Create only 25 missing target bookings and charges.
 
-It MUST execute through the current production application container and
-MUST emit `PRESTIGE_LEGACY_DIAGNOSTIC=pass` when the diagnostic safely
-completes, including when data exists.
+### Target B from 27-Aug in place
 
-It MUST fail only when production/runtime access fails, the read-only
-diagnostic cannot execute safely, or an unexpected structural condition makes
-aggregate evidence unreliable.
+Reuse the same schedule and eligible-shift identities. Transform 2026-08-27 01:00:00 to 10:00:00 UTC, quota 50 into 2026-08-26 17:00:00 to 2026-08-27 17:00:00 UTC, quota 37, status open. Preserve 12 existing confirmed bookings and their 12 charge relationships. Create only 25 missing target bookings and charges.
 
-## Legacy schedule scope
+### Target C
 
-Inspect only Prestige site/offering schedules whose `starts_at` is one of:
+Create 2026-08-27 17:00:00 to 2026-08-28 17:00:00 UTC, quota 37, status open, using existing fixture semantics for one eligible shift and five Operator assignments. Create 37 confirmed bookings and charges for the fixed cohort.
 
-| Label | `starts_at` |
-|---|---|
-| `legacy_2026_08_14` | `2026-08-14 01:00:00` |
-| `legacy_2026_08_26` | `2026-08-26 01:00:00` |
-| `legacy_2026_08_27` | `2026-08-27 01:00:00` |
-| `legacy_2026_08_28` | `2026-08-28 01:00:00` |
+### Arithmetic and final model
 
-Emit one sanitized aggregate row for each known start value, even when the
-schedule does not exist. Do not inspect unrelated schedules or emit schedule
-IDs.
+Targets A/B/C finish at 37 confirmed each: target_total_bookings=111, target_distinct_members=37, target_member_sets_equal=true, target_charge_entries=111. Preserve 24 compatible target bookings/charges; create exactly 87 new target bookings and exactly 87 new target charges; create no reconciliation reversals; preserve 13 historical charges separately.
 
-## Per-schedule aggregate report
+There are four preserved schedule rows total: one historical closed row and three active target rows. Verification must report target_schedule_count=3 and historical_schedule_preserved=true, not total rows=3. Old 26-Aug, 27-Aug, and 28-Aug starts must be absent after reconciliation.
 
-For each label, report safe schedule metadata:
+## Fail-closed, transaction, and idempotency contract
 
-- `exists`, `starts_at`, `ends_at`, `quota`, and `status`;
-- total bookings;
-- booking counts grouped by booking status;
-- distinct Member count;
-- whether all booked Members belong to the existing fixed Prestige Member
-  namespace cohort;
-- whether the booked Member set has exactly 37 unique Members.
+Before any mutation, re-read state inside the seeder transaction or controlled reconciliation boundary. Require the exact observed 14/26/27 shapes above, absent old 28-Aug, global 37 bookings and 37 distinct fixed-cohort Members, and no pre-existing ambiguous Target A/B/C schedules.
 
-Report aggregate counts only for bookings and these downstream records:
+Any mismatch must throw a sanitized non-PII exception, perform no legacy reconciliation, and stop the apply. A transaction must prevent partial 14/26/27 commit.
 
-- `local_imaging_orders`
-- `operator_paper_tickets`
-- `operator_queue_admissions`
-- `operator_arrivals`
-- `operator_identity_verifications`
-- `member_paper_questionnaires`
-- `member_vital_signs_assessments`
-- `image_gateway_capture_sets`
-- `operator_eligible_shifts`
-- `operator_shift_assignments`
+Recognize either the exact pre-reconciliation state or exact final reconciled state. Do not require old 26/27 starts on later runs. Any mixed or partial state fails closed.
 
-For booking IDs belonging to each legacy schedule, report only aggregate
-point-ledger evidence: `point_ledger_entries` count and, if safely available,
-charge-entry count and reversal-entry count. Do not emit booking IDs, ledger
-IDs, Member IDs, or `source_reference` values.
+## Required tests
 
-For every schedule derive:
+Synthetic fixtures only. Prove:
 
-```text
-has_bookings=true|false
-has_point_ledger=true|false
-has_progressed_clinical_records=true|false
-```
+- historical boundaries/quota, closure, booking/status/ledger identity preservation, all eight downstream counts, assignment preservation and revocation;
+- 26/27 schedule and eligible-shift identity reuse, preservation of 12 bookings and ledger relationships, and correct target metadata;
+- Target C creation; final 37/37/37, total 111, distinct 37, identical Member sets;
+- exactly 87 new target bookings and charges, no reconciliation reversals, 24 compatible and 13 historical charges preserved;
+- second-run idempotency, mixed/partial fail-closed, changed-precondition fail-closed, and unchanged normal runtime behavior.
 
-`has_progressed_clinical_records` is true when any of the eight clinical and
-operational tables from `local_imaging_orders` through
-`image_gateway_capture_sets` has a non-zero count. Eligible-shift and
-assignment rows are reported separately and do not constitute clinical
-progress.
+Commit Phase A separately with message fix(prestige): reconcile legacy rehearsal schedules and record its exact full SHA as PHASE_A_SHA. Do not deploy.
 
-## Global sanitized summary
+## Required verifier results
 
-Emit aggregate totals:
+The read-only canonical verifier must require:
 
-```text
-legacy_schedule_count=<n>
-legacy_booking_count=<n>
-legacy_distinct_members=<n>
-legacy_point_ledger_entries=<n>
-legacy_progressed_schedule_count=<n>
-```
+    target_schedule_count=3
+    target_bounds_match=true
+    quota_20_26=37
+    quota_27_28=37
+    quota_28_29=37
+    confirmed_20_26=37
+    confirmed_27_28=37
+    confirmed_28_29=37
+    target_total_bookings=111
+    target_distinct_members=37
+    target_member_sets_equal=true
+    target_charge_entries=111
+    historical_schedule_preserved=true
+    historical_status_closed=true
+    historical_bookings=13
+    historical_checked_in=4
+    historical_confirmed=9
+    historical_distinct_members=13
+    historical_point_ledger_entries=13
+    historical_charge_entries=13
+    historical_reversal_entries=0
+    historical_progressed_records_preserved=true
+    historical_active_operator_assignments=0
+    historical_revoked_operator_assignments=5
+    legacy_26_old_absent=true
+    legacy_27_old_absent=true
+    legacy_28_old_absent=true
 
-## Read-only and privacy guarantees
+Require all eight historical downstream aggregate counts from diagnostic 32375201758 unchanged. Keep verify_prestige_members unchanged and diagnose_prestige_legacy available.
 
-The diagnostic MUST NOT INSERT, UPDATE, DELETE, seed, migrate, alter
-services, execute a backup, provision secrets, write business data, or use a
-write transaction. It MUST use fixed diagnostic scope and no arbitrary SQL
-input.
+## Two-phase immutable-runtime rule
 
-Never emit PII or secrets, including NIK, names, addresses, birth dates,
-emails or generated email local-parts, Member IDs, booking IDs, schedule IDs,
-ledger IDs, passwords/hashes, credentials, or private CSV contents. Only the
-fixed schedule dates, sanitized labels, aggregate counts, and status values
-may be emitted.
+Phase A is the application/seeder commit. Phase B is the workflow/verifier commit hardcoding the exact Phase-A SHA. Production apply may run only after exact Phase A deployment and canonical runtime verification.
 
-## Verification and acceptance evidence
+## Acceptance criteria
 
-The implementation MUST add or update focused tests proving:
+- [ ] Phase A implements the exact preservation, in-place reconciliation, target creation, arithmetic, fail-closed, transaction, and idempotency contract.
+- [ ] Phase A tests cover required preservation, identity, count, arithmetic, failure, and unchanged-runtime invariants.
+- [ ] Phase B binds apply to the exact full Phase-A SHA and preserves accepted controls.
+- [ ] Canonical verification reports historical preservation and three active targets without identifiers or PII.
+- [ ] verify_prestige_members and diagnose_prestige_legacy remain available.
+- [ ] No generic runtime migration behavior is introduced.
+- [ ] Focused tests, repository-required checks, and git diff --check pass.
 
-- the optional input defaults to false and emits `skipped`;
-- the enabled invocation and expected revision are present;
-- all four fixed schedule starts and aggregate fields are covered;
-- no identifiers or PII are emitted;
-- read-only and preserved-verifier contracts remain enforced; and
-- `git diff --check` passes.
+## Dependencies, approvals, and stop conditions
 
-After implementation and independent review, the designated operator MAY run
-the canonical verifier invocation above, collect only sanitized aggregate
-evidence, and STOP. The diagnostic result is the decision gate for final
-reconciliation design. No cleanup or migration is authorized yet.
+Phase B depends on the exact Phase-A commit. Execution depends on baseline 4ea91807a267dc5ea10d539bce5690754097c093 remaining applicable.
 
-## Remaining approval requirements and stop conditions
+After independent acceptance, fresh explicit owner authorization is separately required for Phase-A deployment, exact runtime verification, Member verification, any fresh read-only precondition check, temporary Prestige secrets, APPLY-PRESTIGE-2026-08-20-28, mandatory verified backup, production reconciliation, secret deletion, and final canonical verification.
 
-- Planner/Reviewer MUST review the exact publication revision before
-  execution.
-- Production execution requires separate operational authorization.
-- No apply retry, cleanup, migration, seeding, secret provisioning,
-  deployment, workflow dispatch, or production mutation is authorized by this
-  task.
-- If the diagnostic would require broader schedule scope, a new table,
-  unsanitized output, a write, or a reconciliation decision, stop and return
-  to Planner/Reviewer.
+Stop and return to Planner/Reviewer for missing/contradictory authority, changed baseline, unexpected data shape, mixed/partial state, ambiguous targets, inability to preserve identity or clinical data, scope expansion, security/privacy/data-integrity risk, or any unapproved side effect. No automatic remediation or retry.
 
-## Delivery boundary
+## Side-effect authorization and publication
 
-Only this file may be committed or pushed for this publication:
+This task authorizes implementation and local verification only after publication review. It does not authorize deployment, dispatch, production execution, backup, secret access/provisioning, seeding, apply retry, manual SQL, or production mutation.
 
-`.agents/tasks/prestige-production-data-application.md`
+For this publication turn only, the owner authorizes committing and pushing only this same task path as a normal fast-forward to main, from an isolated temporary worktree based on exact origin/main. No other file may be committed or pushed.
 
-Do not create a new task or `task.md`. Suggested publication message:
+This publication changes only .agents/tasks/prestige-production-data-application.md. Do not create a new task or task.md. The primary worktree contains unrelated d6507b5... work and must remain untouched.
 
-`docs(task): diagnose legacy Prestige schedule data`
+## Verification and terminal outcome
 
-## Publication return contract
+Run git diff --check and verify only the task file is changed. Return version, publication SHA, baseline, runtime, diagnostic evidence, reconciliation strategy, arithmetic, historical contract, Phase-A/Phase-B contract, changed file, validation, origin/main, primary-worktree preservation, and confirmation of no implementation/deployment/dispatch/secrets/production mutation.
 
-Return the task version, publication SHA, baseline, production runtime,
-diagnostic scope, aggregate fields, privacy/read-only guarantees, changed
-file, confirmation that no new task/task.md exists, validation result,
-confirmation of no workflow dispatch, no secrets, and no production mutation,
-plus HEAD/origin-main and worktree state.
-
-**Terminal:** `TASK REVISION REVIEW REQUIRED`
+Terminal: TASK REVISION REVIEW REQUIRED
