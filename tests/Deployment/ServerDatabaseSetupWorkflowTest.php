@@ -147,4 +147,62 @@ final class ServerDatabaseSetupWorkflowTest extends TestCase
             $this->assertStringNotContainsString($newSemantic, $workflow);
         }
     }
+
+    public function test_post_install_verification_checks_only_sanitized_backup_metadata(): void
+    {
+        $workflow = file_get_contents(base_path('.github/workflows/server-setup-db.yml'));
+
+        $this->assertIsString($workflow);
+
+        $backupStart = strpos($workflow, '      - name: Install S3 backup script and cron job');
+        $verificationStart = strpos($workflow, '      - name: Verify installed backup prerequisite');
+        $this->assertNotFalse($backupStart);
+        $this->assertNotFalse($verificationStart);
+        $this->assertGreaterThan($backupStart, $verificationStart);
+
+        $verificationStep = substr($workflow, $verificationStart);
+        $verificationEnvStart = strpos($verificationStep, "        env:\n");
+        $verificationRunStart = strpos($verificationStep, '        run:');
+        $this->assertNotFalse($verificationEnvStart);
+        $this->assertNotFalse($verificationRunStart);
+        $this->assertSame(
+            "        env:\n"
+            ."          SUDO_PASSWORD: \${{ secrets.SUDO_PASSWORD }}\n",
+            substr($verificationStep, $verificationEnvStart, $verificationRunStart - $verificationEnvStart),
+        );
+
+        preg_match_all('/\$\{\{ secrets\.([A-Z0-9_]+) \}\}/', $verificationStep, $secretMatches);
+        $this->assertSame(['SUDO_PASSWORD'], $secretMatches[1]);
+
+        foreach ([
+            '_sudo test -f "$BACKUP_SCRIPT"',
+            '_sudo test ! -L "$BACKUP_SCRIPT"',
+            '_sudo test -x "$BACKUP_SCRIPT"',
+            'SCRIPT_MODE="$(_sudo stat -c \'%a\' "$BACKUP_SCRIPT")"',
+            '[ "$SCRIPT_MODE" != "700" ]',
+            '_sudo bash -n "$BACKUP_SCRIPT"',
+            'BACKUP_SCRIPT_VERIFIED present=true regular=true symlink=false executable=true mode=700 syntax=pass',
+            '_sudo test -f "$BACKUP_ENV_FILE"',
+            '_sudo test ! -L "$BACKUP_ENV_FILE"',
+            '_sudo test -s "$BACKUP_ENV_FILE"',
+            'ENV_MODE="$(_sudo stat -c \'%a\' "$BACKUP_ENV_FILE")"',
+            '[ "$ENV_MODE" != "600" ]',
+            'BACKUP_ENV_VERIFIED present=true regular=true symlink=false nonempty=true mode=600',
+            'ROOT_CRON="$(_sudo crontab -l 2>/dev/null || true)"',
+            '# madeena-mhcs_core-db-backup-start',
+            '# madeena-mhcs_core-db-backup-end',
+            'CRON_TZ=Asia/Jakarta',
+            '0 2 * * * $BACKUP_SCRIPT >> /var/log/madeena-mhcs_core-db-backup.log 2>&1 # madeena-mhcs_core-db-backup',
+            'CRON_BLOCK_COUNT',
+            'CRON_SCHEDULE_COUNT',
+            'CRON_BACKUP_JOB_COUNT',
+            'BACKUP_CRON_VERIFIED blocks=1 timezone=Asia/Jakarta schedule="0 2 * * *"',
+        ] as $verificationBehavior) {
+            $this->assertStringContainsString($verificationBehavior, $verificationStep);
+        }
+
+        foreach (['cat ', 'source ', '. "$BACKUP_ENV_FILE"', 'mysqldump', 'docker exec', 'docker run'] as $forbiddenOperation) {
+            $this->assertStringNotContainsString($forbiddenOperation, $verificationStep);
+        }
+    }
 }
