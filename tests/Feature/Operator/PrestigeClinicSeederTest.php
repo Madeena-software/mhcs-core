@@ -49,6 +49,38 @@ final class PrestigeClinicSeederTest extends TestCase
         $this->assertSame(0, DB::table('shift_schedules')->count());
     }
 
+    public function test_authorized_production_seed_rejects_empty_prestige_schedule_state(): void
+    {
+        $this->withSyntheticCsv(function (): void {
+            putenv('MHCS_ALLOW_PRODUCTION_MVP_SEED=true');
+            $_ENV['MHCS_ALLOW_PRODUCTION_MVP_SEED'] = 'true';
+
+            try {
+                $this->seed(PrestigeClinicSeeder::class);
+                $this->fail('Authorized production seeding must reject an empty Prestige state.');
+            } catch (RuntimeException $exception) {
+                $this->assertSame('Prestige production state is not an exact diagnosed legacy or clean final state.', $exception->getMessage());
+            } finally {
+                putenv('MHCS_ALLOW_PRODUCTION_MVP_SEED');
+                unset($_ENV['MHCS_ALLOW_PRODUCTION_MVP_SEED']);
+            }
+        });
+
+        $this->assertSame(0, DB::table('shift_schedules')->count());
+    }
+
+    public function test_reset_source_deletes_queue_admissions_before_paper_tickets(): void
+    {
+        $source = file_get_contents(base_path('database/seeders/PrestigeClinicSeeder.php'));
+
+        $this->assertIsString($source);
+        $queueDelete = strpos($source, "['operator_queue_admissions', 'id', ".'$queueIds]');
+        $ticketDelete = strpos($source, "['operator_paper_tickets', 'member_schedule_id', ".'$scheduleIds]');
+        $this->assertNotFalse($queueDelete);
+        $this->assertNotFalse($ticketDelete);
+        $this->assertLessThan($ticketDelete, $queueDelete);
+    }
+
     public function test_prestige_clinic_seeder_creates_the_three_schedule_fixture_and_is_idempotent(): void
     {
         $memberPasswordHashes = [];

@@ -61,11 +61,19 @@ final class PrestigeClinicSeeder extends Seeder
 
     public function run(): void
     {
-        if (! app()->environment(['local', 'testing']) && ! (bool) env('MHCS_ALLOW_PRODUCTION_MVP_SEED', false)) {
+        if (! app()->environment(['local', 'testing']) && ! $this->productionSeedAuthorized()) {
             throw new RuntimeException('PrestigeClinicSeeder is limited to local, testing, or authorized production bootstrap.');
         }
 
         $employees = $this->loadEmployees();
+        if ($this->productionSeedAuthorized() && ! DB::table('shift_schedules')
+            ->join('examination_site_refs', 'examination_site_refs.id', '=', 'shift_schedules.examination_site_id')
+            ->join('service_offerings', 'service_offerings.id', '=', 'shift_schedules.service_offering_id')
+            ->where('examination_site_refs.operator_site_id', self::OPERATOR_SITE_ID)
+            ->where('service_offerings.code', 'SYN-CHEST-A')
+            ->exists()) {
+            throw new RuntimeException('Prestige production state is not an exact diagnosed legacy or clean final state.');
+        }
         $adminUser = $this->seedAdmin();
         $siteId = $this->seedSite();
         $this->seedOperators($adminUser, $siteId);
@@ -407,9 +415,16 @@ final class PrestigeClinicSeeder extends Seeder
             ]);
         }
 
-        $state = $this->classifyPrestigeState($siteRefId, (string) $offeringA->id);
-        if ($state === 'legacy') {
-            DB::transaction(fn (): array => $this->resetLegacyPrestigeSchedules($siteRefId, (string) $offeringA->id));
+        $state = DB::transaction(function () use ($siteRefId, $offeringA): string {
+            $state = $this->classifyPrestigeState($siteRefId, (string) $offeringA->id);
+            if ($state === 'legacy') {
+                $this->resetLegacyPrestigeSchedules($siteRefId, (string) $offeringA->id);
+            }
+
+            return $state;
+        });
+        if ($state === 'empty' && $this->productionSeedAuthorized()) {
+            throw new RuntimeException('Prestige production state is not an exact diagnosed legacy or clean final state.');
         }
 
         // Prestige rehearsal: full local calendar days in Asia/Jakarta.
@@ -538,6 +553,10 @@ final class PrestigeClinicSeeder extends Seeder
         $targetStarts = ['2026-08-19 17:00:00', '2026-08-26 17:00:00', '2026-08-27 17:00:00'];
 
         if ($schedules->isEmpty()) {
+            if ($this->productionSeedAuthorized()) {
+                throw new RuntimeException('Prestige production state is not an exact diagnosed legacy or clean final state.');
+            }
+
             return 'empty';
         }
         if ($this->hasExactScheduleStarts($starts, $legacyStarts)) {
@@ -550,6 +569,11 @@ final class PrestigeClinicSeeder extends Seeder
         }
 
         throw new RuntimeException('Prestige reconciliation preconditions are not satisfied.');
+    }
+
+    private function productionSeedAuthorized(): bool
+    {
+        return filter_var(getenv('MHCS_ALLOW_PRODUCTION_MVP_SEED') ?: ($_ENV['MHCS_ALLOW_PRODUCTION_MVP_SEED'] ?? null), FILTER_VALIDATE_BOOLEAN);
     }
 
     /** @param list<string> $actual @param list<string> $expected */
@@ -603,7 +627,9 @@ final class PrestigeClinicSeeder extends Seeder
             || $prestigeUsers->where('login_enabled', true)->count() !== 37 || $prestigeMembers->count() !== 37
             || $prestigeMembers->pluck('user_id')->unique()->count() !== 37 || $prestigeMembers->pluck('id')->unique()->count() !== 37
             || $bookedMembers->count() !== 37 || $bookedMembers->diff($prestigeMembers->pluck('id'))->isNotEmpty()
-            || (int) DB::table('bookings')->whereIn('shift_schedule_id', $schedules->pluck('id'))->count() !== 37) {
+            || (int) DB::table('bookings')->whereIn('shift_schedule_id', $schedules->pluck('id'))->count() !== 37
+            || (int) DB::table('operator_profiles')->where('employee_code', 'like', 'OPR-PRES-%')->where('active', true)->count() !== 5
+            || (int) DB::table('operator_site_assignments')->where('operator_site_id', self::OPERATOR_SITE_ID)->where('active', true)->count() !== 5) {
             throw new RuntimeException('Prestige reconciliation preconditions are not satisfied.');
         }
     }
@@ -662,21 +688,22 @@ final class PrestigeClinicSeeder extends Seeder
         $scheduleIds = $schedules->pluck('id')->all();
         $bookingIds = DB::table('bookings')->whereIn('shift_schedule_id', $scheduleIds)->lockForUpdate()->pluck('id')->all();
         $eligibleIds = DB::table('operator_eligible_shifts')->whereIn('member_schedule_id', $scheduleIds)->pluck('id')->all();
+        $queueIds = DB::table('operator_queue_admissions')->whereIn('member_schedule_id', $scheduleIds)->pluck('id')->all();
         $deleteBy = [
             ['image_gateway_studies', 'capture_set_id', DB::table('image_gateway_capture_sets')->whereIn('member_schedule_id', $scheduleIds)->pluck('id')->all()],
             ['image_gateway_capture_objects', 'capture_set_id', DB::table('image_gateway_capture_sets')->whereIn('member_schedule_id', $scheduleIds)->pluck('id')->all()],
             ['image_gateway_capture_sets', 'member_schedule_id', $scheduleIds],
             ['operator_vital_signs_executions', 'member_vital_signs_assessment_id', DB::table('member_vital_signs_assessments')->whereIn('member_schedule_id', $scheduleIds)->pluck('id')->all()],
-            ['operator_vital_signs_executions', 'operator_queue_admission_id', DB::table('operator_queue_admissions')->whereIn('member_schedule_id', $scheduleIds)->pluck('id')->all()],
+            ['operator_vital_signs_executions', 'operator_queue_admission_id', $queueIds],
             ['member_vital_signs_assessments', 'member_schedule_id', $scheduleIds],
             ['operator_identity_verification_events', 'verification_id', DB::table('operator_identity_verifications')->whereIn('member_schedule_id', $scheduleIds)->pluck('id')->all()],
             ['operator_identity_verifications', 'member_schedule_id', $scheduleIds],
-            ['operator_queue_admission_history', 'operator_queue_admission_id', DB::table('operator_queue_admissions')->whereIn('member_schedule_id', $scheduleIds)->pluck('id')->all()],
+            ['operator_queue_admission_history', 'operator_queue_admission_id', $queueIds],
             ['operator_arrivals', 'member_schedule_id', $scheduleIds],
             ['examination_consents', 'booking_id', $bookingIds],
             ['member_paper_questionnaires', 'member_schedule_id', $scheduleIds],
+            ['operator_queue_admissions', 'id', $queueIds],
             ['operator_paper_tickets', 'member_schedule_id', $scheduleIds],
-            ['operator_queue_admissions', 'member_schedule_id', $scheduleIds],
             ['local_imaging_orders', 'shift_schedule_id', $scheduleIds],
             ['booking_status_events', 'booking_id', $bookingIds],
             ['point_ledger_entries', 'booking_id', $bookingIds],
