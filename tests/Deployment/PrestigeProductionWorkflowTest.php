@@ -92,13 +92,16 @@ final class PrestigeProductionWorkflowTest extends TestCase
         $this->assertStringContainsString('BACKUP_VERIFIED reference=', $workflow);
         $this->assertStringContainsString('database backup failed; seeding blocked', $workflow);
 
-        $this->assertStringContainsString('EXPECTED_REVISION="fb013e7657484105bd86c046e687d676fb3d253b"', $workflow);
-        $this->assertSame(1, substr_count($workflow, 'EXPECTED_REVISION="fb013e7657484105bd86c046e687d676fb3d253b"'));
+        $this->assertStringContainsString('EXPECTED_REVISION="f14cd98848887d1192196655b344d63d1e39f029"', $workflow);
+        $this->assertSame(1, substr_count($workflow, 'EXPECTED_REVISION="f14cd98848887d1192196655b344d63d1e39f029"'));
         $this->assertStringNotContainsString('4488f37787bc521869a2bb6113507387c5a983c8', $workflow);
         $this->assertStringContainsString('mhcs_core_app', $workflow);
         $this->assertStringContainsString('VERSION-CURRENT', $workflow);
         $this->assertStringContainsString('healthy', $workflow);
         foreach (['target_schedule_count', 'target_bounds_match', 'target_total_bookings', 'target_distinct_members', 'target_member_sets_equal', 'target_charge_entries', 'old_14_absent', 'old_26_absent', 'old_27_absent', 'old_28_absent'] as $invariant) {
+            $this->assertStringContainsString($invariant, $workflow);
+        }
+        foreach (['expectedSchedules', 'expectedProgressed', 'operator_queue_admissions', 'operator_shift_assignments', 'quota_27_28', 'quota_28_29', 'confirmed_27_28', 'confirmed_28_29', 'allSchedules->count() === 3', 'service_offering_id", $offering?->id'] as $invariant) {
             $this->assertStringContainsString($invariant, $workflow);
         }
 
