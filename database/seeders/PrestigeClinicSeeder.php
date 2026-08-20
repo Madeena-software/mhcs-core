@@ -22,6 +22,7 @@ use App\Shared\Time\Clock;
 use DateTimeImmutable;
 use DateTimeZone;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
@@ -408,7 +409,7 @@ final class PrestigeClinicSeeder extends Seeder
 
         $state = $this->classifyPrestigeState($siteRefId, (string) $offeringA->id);
         if ($state === 'legacy') {
-            return DB::transaction(fn (): array => $this->reconcilePrestigeSchedules($siteRefId, (string) $offeringA->id, $now));
+            DB::transaction(fn (): array => $this->resetLegacyPrestigeSchedules($siteRefId, (string) $offeringA->id));
         }
 
         // Prestige rehearsal: full local calendar days in Asia/Jakarta.
@@ -419,7 +420,13 @@ final class PrestigeClinicSeeder extends Seeder
         ];
 
         $schedules = [];
-        $profiles = DB::table('operator_profiles')->get();
+        $profiles = DB::table('operator_profiles')
+            ->where('employee_code', 'like', 'OPR-PRES-%')
+            ->orderBy('employee_code')
+            ->get();
+        if ($profiles->count() !== 5) {
+            throw new RuntimeException('Prestige operator fixture is not exact.');
+        }
 
         foreach ($scheduleDates as $date) {
             $sched = DB::table('shift_schedules')
@@ -528,7 +535,7 @@ final class PrestigeClinicSeeder extends Seeder
 
         $starts = $schedules->pluck('starts_at')->all();
         $legacyStarts = ['2026-08-14 01:00:00', '2026-08-26 01:00:00', '2026-08-27 01:00:00'];
-        $targetStarts = ['2026-08-14 01:00:00', '2026-08-19 17:00:00', '2026-08-26 17:00:00', '2026-08-27 17:00:00'];
+        $targetStarts = ['2026-08-19 17:00:00', '2026-08-26 17:00:00', '2026-08-27 17:00:00'];
 
         if ($schedules->isEmpty()) {
             return 'empty';
@@ -538,9 +545,7 @@ final class PrestigeClinicSeeder extends Seeder
 
             return 'legacy';
         }
-        if (($this->hasExactScheduleStarts($starts, array_slice($targetStarts, 1))
-                || $this->hasExactScheduleStarts($starts, $targetStarts))
-            && $this->isFinalPrestigeState($schedules)) {
+        if ($this->hasExactScheduleStarts($starts, $targetStarts) && $this->isFinalPrestigeState($schedules)) {
             return 'final';
         }
 
@@ -556,7 +561,7 @@ final class PrestigeClinicSeeder extends Seeder
         return $actual === $expected;
     }
 
-    /** @param \Illuminate\Support\Collection<int, object> $schedules */
+    /** @param Collection<int, object> $schedules */
     private function assertLegacyPrestigeState($schedules): void
     {
         foreach ([
@@ -576,7 +581,8 @@ final class PrestigeClinicSeeder extends Seeder
                     throw new RuntimeException('Prestige reconciliation preconditions are not satisfied.');
                 }
             }
-            if ((int) (clone $bookings)->distinct()->count('member_id') !== $members
+            if ((int) (clone $bookings)->count() !== array_sum($statuses)
+                || (int) (clone $bookings)->distinct()->count('member_id') !== $members
                 || (int) DB::table('point_ledger_entries')->whereIn('booking_id', $bookingIds)->count() !== $ledger[0]
                 || (int) DB::table('point_ledger_entries')->whereIn('booking_id', $bookingIds)->where('entry_type', PointEntryType::Charge->value)->count() !== $ledger[1]
                 || (int) DB::table('point_ledger_entries')->whereIn('booking_id', $bookingIds)->whereNotNull('reverses_id')->count() !== $ledger[2]
@@ -590,25 +596,23 @@ final class PrestigeClinicSeeder extends Seeder
                 throw new RuntimeException('Prestige reconciliation preconditions are not satisfied.');
             }
         }
-        if ((int) DB::table('bookings')->count() !== 37 || (int) DB::table('bookings')->distinct()->count('member_id') !== 37
-            || (int) DB::table('members')->count() !== 37) {
+        $prestigeUsers = DB::table('users')->where('email', 'like', '%@prestige.madeena-xray.com')->get(['id', 'account_status', 'login_enabled']);
+        $prestigeMembers = DB::table('members')->whereIn('user_id', $prestigeUsers->pluck('id'))->get(['id', 'user_id']);
+        $bookedMembers = DB::table('bookings')->whereIn('shift_schedule_id', $schedules->pluck('id'))->distinct()->pluck('member_id');
+        if ($prestigeUsers->count() !== 37 || $prestigeUsers->where('account_status', 'active')->count() !== 37
+            || $prestigeUsers->where('login_enabled', true)->count() !== 37 || $prestigeMembers->count() !== 37
+            || $prestigeMembers->pluck('user_id')->unique()->count() !== 37 || $prestigeMembers->pluck('id')->unique()->count() !== 37
+            || $bookedMembers->count() !== 37 || $bookedMembers->diff($prestigeMembers->pluck('id'))->isNotEmpty()
+            || (int) DB::table('bookings')->whereIn('shift_schedule_id', $schedules->pluck('id'))->count() !== 37) {
             throw new RuntimeException('Prestige reconciliation preconditions are not satisfied.');
         }
     }
 
-    /** @param \Illuminate\Support\Collection<int, object> $schedules */
+    /** @param Collection<int, object> $schedules */
     private function isFinalPrestigeState($schedules): bool
     {
-        if ($schedules->count() !== 3 && $schedules->count() !== 4) {
+        if ($schedules->count() !== 3) {
             return false;
-        }
-        if ($schedules->count() === 4) {
-            $historical = $schedules->firstWhere('starts_at', '2026-08-14 01:00:00');
-            if ($historical === null || $historical->ends_at !== '2026-08-14 10:00:00' || $historical->quota !== 50 || $historical->status !== 'closed'
-                || DB::table('bookings')->where('shift_schedule_id', $historical->id)->count() !== 13
-                || DB::table('operator_shift_assignments')->whereIn('operator_eligible_shift_id', DB::table('operator_eligible_shifts')->where('member_schedule_id', $historical->id)->pluck('id'))->where('status', 'active')->exists()) {
-                return false;
-            }
         }
         $memberSets = [];
         foreach ([
@@ -625,6 +629,7 @@ final class PrestigeClinicSeeder extends Seeder
         }
 
         $targetIds = $schedules->whereIn('starts_at', ['2026-08-19 17:00:00', '2026-08-26 17:00:00', '2026-08-27 17:00:00'])->pluck('id');
+
         return $memberSets[0] === $memberSets[1]
             && $memberSets[1] === $memberSets[2]
             && count(array_unique($memberSets[0])) === 37
@@ -648,43 +653,53 @@ final class PrestigeClinicSeeder extends Seeder
         ]);
     }
 
-    /** @return list<object> */
-    private function reconcilePrestigeSchedules(string $siteRefId, string $offeringId, mixed $now): array
+    private function resetLegacyPrestigeSchedules(string $siteRefId, string $offeringId): void
     {
-        $historical = DB::table('shift_schedules')->where('examination_site_id', $siteRefId)->where('service_offering_id', $offeringId)->where('starts_at', '2026-08-14 01:00:00')->firstOrFail();
-        DB::table('shift_schedules')->where('id', $historical->id)->update(['status' => 'closed', 'updated_at' => $now]);
-        $eligibleId = DB::table('operator_eligible_shifts')->where('member_schedule_id', $historical->id)->value('id');
-        $assignments = DB::table('operator_shift_assignments')->where('operator_eligible_shift_id', $eligibleId)->get();
-        foreach ($assignments as $assignment) {
-            if ($assignment->status !== 'active' && $assignment->status !== 'revoked') {
-                throw new RuntimeException('Prestige reconciliation preconditions are not satisfied.');
-            }
-            if ($assignment->status === 'active') {
-                DB::table('operator_shift_assignments')->where('id', $assignment->id)->update(['status' => 'revoked', 'revoked_at' => $now, 'reason' => 'Prestige reconciliation history closure', 'updated_at' => $now]);
-            }
+        $schedules = DB::table('shift_schedules')->where('examination_site_id', $siteRefId)->where('service_offering_id', $offeringId)->whereIn('starts_at', ['2026-08-14 01:00:00', '2026-08-26 01:00:00', '2026-08-27 01:00:00'])->lockForUpdate()->get(['id']);
+        if ($schedules->count() !== 3) {
+            throw new RuntimeException('Prestige reset preconditions are not satisfied.');
         }
-
-        $targets = [
-            ['2026-08-26 01:00:00', '2026-08-19 17:00:00', '2026-08-26 17:00:00'],
-            ['2026-08-27 01:00:00', '2026-08-26 17:00:00', '2026-08-27 17:00:00'],
+        $scheduleIds = $schedules->pluck('id')->all();
+        $bookingIds = DB::table('bookings')->whereIn('shift_schedule_id', $scheduleIds)->lockForUpdate()->pluck('id')->all();
+        $eligibleIds = DB::table('operator_eligible_shifts')->whereIn('member_schedule_id', $scheduleIds)->pluck('id')->all();
+        $deleteBy = [
+            ['image_gateway_studies', 'capture_set_id', DB::table('image_gateway_capture_sets')->whereIn('member_schedule_id', $scheduleIds)->pluck('id')->all()],
+            ['image_gateway_capture_objects', 'capture_set_id', DB::table('image_gateway_capture_sets')->whereIn('member_schedule_id', $scheduleIds)->pluck('id')->all()],
+            ['image_gateway_capture_sets', 'member_schedule_id', $scheduleIds],
+            ['operator_vital_signs_executions', 'member_vital_signs_assessment_id', DB::table('member_vital_signs_assessments')->whereIn('member_schedule_id', $scheduleIds)->pluck('id')->all()],
+            ['operator_vital_signs_executions', 'operator_queue_admission_id', DB::table('operator_queue_admissions')->whereIn('member_schedule_id', $scheduleIds)->pluck('id')->all()],
+            ['member_vital_signs_assessments', 'member_schedule_id', $scheduleIds],
+            ['operator_identity_verification_events', 'verification_id', DB::table('operator_identity_verifications')->whereIn('member_schedule_id', $scheduleIds)->pluck('id')->all()],
+            ['operator_identity_verifications', 'member_schedule_id', $scheduleIds],
+            ['operator_queue_admission_history', 'operator_queue_admission_id', DB::table('operator_queue_admissions')->whereIn('member_schedule_id', $scheduleIds)->pluck('id')->all()],
+            ['operator_arrivals', 'member_schedule_id', $scheduleIds],
+            ['examination_consents', 'booking_id', $bookingIds],
+            ['member_paper_questionnaires', 'member_schedule_id', $scheduleIds],
+            ['operator_paper_tickets', 'member_schedule_id', $scheduleIds],
+            ['operator_queue_admissions', 'member_schedule_id', $scheduleIds],
+            ['local_imaging_orders', 'shift_schedule_id', $scheduleIds],
+            ['booking_status_events', 'booking_id', $bookingIds],
+            ['point_ledger_entries', 'booking_id', $bookingIds],
         ];
-        $result = [];
-        foreach ($targets as [$oldStart, $start, $end]) {
-            $schedule = DB::table('shift_schedules')->where('examination_site_id', $siteRefId)->where('service_offering_id', $offeringId)->where('starts_at', $oldStart)->firstOrFail();
-            DB::table('shift_schedules')->where('id', $schedule->id)->update(['starts_at' => $start, 'ends_at' => $end, 'quota' => 37, 'status' => 'open', 'updated_at' => $now]);
-            DB::table('operator_eligible_shifts')->where('member_schedule_id', $schedule->id)->update(['schedule_starts_at' => $start, 'schedule_ends_at' => $end, 'quota' => 37, 'updated_at' => $now]);
-            $result[] = DB::table('shift_schedules')->where('id', $schedule->id)->first();
+        foreach ($deleteBy as [$table, $column, $ids]) {
+            if ($ids !== []) {
+                DB::table($table)->whereIn($column, $ids)->delete();
+            }
         }
-
-        $cId = (string) Str::uuid();
-        DB::table('shift_schedules')->insert(['id' => $cId, 'display_reference' => 'JAD-'.Str::upper(Str::random(8)), 'examination_site_id' => $siteRefId, 'service_offering_id' => $offeringId, 'starts_at' => '2026-08-27 17:00:00', 'ends_at' => '2026-08-28 17:00:00', 'quota' => 37, 'status' => 'open', 'eligible_at' => $now, 'created_at' => $now, 'updated_at' => $now]);
-        $eligibleId = (string) Str::uuid();
-        DB::table('operator_eligible_shifts')->insert(['id' => $eligibleId, 'member_schedule_id' => $cId, 'operator_site_id' => self::OPERATOR_SITE_ID, 'schedule_starts_at' => '2026-08-27 17:00:00', 'schedule_ends_at' => '2026-08-28 17:00:00', 'confirmed_count_at_eligibility' => 0, 'quota' => 37, 'event_version' => 1, 'source_event_id' => 'prestige:shift-eligible:'.$cId, 'eligible_at' => $now, 'sync_status' => 'eligible', 'created_at' => $now, 'updated_at' => $now]);
-        foreach (DB::table('operator_profiles')->limit(5)->get() as $profile) {
-            DB::table('operator_shift_assignments')->insert(['id' => (string) Str::uuid(), 'operator_eligible_shift_id' => $eligibleId, 'operator_profile_id' => $profile->id, 'assigned_by_user_id' => $profile->user_id, 'status' => 'active', 'assigned_at' => $now, 'revoked_at' => null, 'reason' => null, 'created_at' => $now, 'updated_at' => $now]);
+        DB::table('bookings')->whereIn('id', $bookingIds)->delete();
+        DB::table('operator_shift_assignments')->whereIn('operator_eligible_shift_id', $eligibleIds)->delete();
+        DB::table('operator_eligible_shifts')->whereIn('id', $eligibleIds)->delete();
+        DB::table('shift_schedules')->whereIn('id', $scheduleIds)->delete();
+        foreach ([
+            ['shift_schedules', 'id', $scheduleIds],
+            ['bookings', 'id', $bookingIds],
+            ['operator_eligible_shifts', 'id', $eligibleIds],
+            ['point_ledger_entries', 'booking_id', $bookingIds],
+        ] as [$table, $column, $ids]) {
+            if ($ids !== [] && DB::table($table)->whereIn($column, $ids)->exists()) {
+                throw new RuntimeException('Prestige reset did not remove all diagnosed execution data.');
+            }
         }
-
-        return array_merge($result, [DB::table('shift_schedules')->where('id', $cId)->first()]);
     }
 
     /** @return list<array{no: string, name: string, place: string, birth_date: string, address: string, nik: string}> */

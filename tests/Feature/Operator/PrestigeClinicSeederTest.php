@@ -103,7 +103,9 @@ final class PrestigeClinicSeederTest extends TestCase
         $this->assertSame(111, DB::table('bookings')->where('status', 'confirmed')->count());
         $this->assertSame(111, DB::table('bookings')->count());
         $this->assertSame(37, DB::table('bookings')->distinct('member_id')->count('member_id'));
-        $this->assertSame(0, DB::table('shift_schedules')->whereIn('starts_at', ['2026-08-14 01:00:00', '2026-08-26 01:00:00'])->count());
+        $this->assertSame(111, DB::table('point_ledger_entries')->where('entry_type', 'charge')->whereNotNull('booking_id')->count());
+        $this->assertSame(0, DB::table('shift_schedules')->whereIn('starts_at', ['2026-08-14 01:00:00', '2026-08-26 01:00:00', '2026-08-27 01:00:00', '2026-08-28 01:00:00'])->count());
+        $this->assertSame(15, DB::table('operator_shift_assignments')->count());
         $this->assertSame(
             $memberPasswordHashes,
             DB::table('users')
