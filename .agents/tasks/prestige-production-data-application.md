@@ -1,18 +1,19 @@
 ---
 title: Controlled Prestige Production Data Application
 document_id: MHCS-TASK-PRESTIGE-PRODUCTION-DATA-APPLICATION-001
-version: 1.3
+version: 1.4
 status: validated-on-publication
 language: en-US
 last_updated: 2026-08-20
 scope:
-  - dedicated manual production workflow for the approved Prestige fixture
+  - dedicated manual production workflow for the approved three-schedule Prestige fixture
+  - bounded Prestige seeder schedule and booking reconciliation for the rehearsal
   - production revision, backup, private-source, and post-seed safety gates
   - protected operator/admin credential handling for the approved production seed
   - sanitized read-only verification of the Prestige production dataset
   - restoration and verification of the established production backup prerequisite
   - optional sanitized read-only verification of the existing Prestige Member accounts
-authority_note: This task authorizes implementation and publication of the dedicated workflow, the bounded credential-safety remediation, the backup-prerequisite correction, and the optional read-only Member-account preflight described in revision 1.3. Later production execution remains a separately approved operational action; this task republication and implementation do not themselves dispatch the workflow, deploy, seed, or mutate the live database.
+authority_note: This task authorizes bounded changes to the Prestige seeder, the dedicated apply workflow, the canonical production verifier, and directly relevant tests for the owner-requested three-schedule rehearsal. Existing backup, protected-environment, credential, privacy, and Member-account safety controls remain mandatory, while server-setup-db.yml is preserved and not in implementation scope. Later production execution remains a separately approved operational action; this task republication and implementation do not themselves dispatch the workflow, deploy, seed, or mutate the live database.
 ---
 
 # Executable Task
@@ -31,37 +32,40 @@ authority_note: This task authorizes implementation and publication of the dedic
 
 ## Delivery context
 
-The accepted Prestige rehearsal must run at the immutable production
-application revision `4488f37787bc521869a2bb6113507387c5a983c8`. Production
-application of that approved dataset was intentionally outside the previous
-readiness task. This task creates one narrowly dedicated, manually triggered
-GitHub Actions workflow for applying the already-approved Prestige fixture to
-the live MHCS environment with fail-closed production, backup, private-source,
-and post-seed verification controls.
+The owner-requested Prestige rehearsal uses the same existing 37 Prestige
+Members in three non-overlapping schedules: one full local-calendar interval
+from 20 through 26 August 2026, followed by 27 August and 28 August 2026.
+The accepted production application must run at the immutable application
+revision `4488f37787bc521869a2bb6113507387c5a983c8`. Production application of
+that approved dataset remains outside implementation and review execution.
+This task updates one narrowly dedicated, manually triggered GitHub Actions
+workflow, the bounded fixture seeder behavior, and the canonical verifier with
+fail-closed production, backup, private-source, and post-seed controls.
 
 The workflow is an operational data-application mechanism, not a general
 seeder runner, deployment replacement, or production release authorization.
 
-Revision 1.1 added an owner-approved credential-safety remediation. At the
+Revision 1.1 added the owner-approved credential-safety remediation. At the
 expected production revision, `PrestigeClinicSeeder` has fallback values for
 operator and administrator credentials when private credential material is
 unavailable. The production workflow MUST fail closed before backup or
 seeding unless the approved private credential inputs are present, structured,
-and staged safely. Revision 1.3 preserves those controls and adds the
-owner-approved backup-prerequisite correction and optional read-only
-Member-account preflight. The existing seeder and application code remain
-unchanged.
+and staged safely. Revision 1.4 preserves those controls, the established
+verified backup prerequisite, and the optional read-only Member-account
+preflight while authorizing only the bounded three-schedule seeder and
+workflow/verifier changes described below. The normal runtime booking service
+remains unchanged.
 
 ## Baseline and task revision
 
-**Implementation baseline:** `1fc5c9440415d0e38e7039f06d2f4362e00ccf21`
+**Implementation baseline:** `12dd1ccd0763d48fd581fe3dec9eb53f5a794c05`
 
 **Task revision:** `The full SHA of the commit containing this exact validated task content, supplied by the Planner after publication.`
 
 The implementation baseline and expected production application/runtime
 revision are intentionally distinct:
 
-- **Implementation baseline** = `1fc5c9440415d0e38e7039f06d2f4362e00ccf21`
+- **Implementation baseline** = `12dd1ccd0763d48fd581fe3dec9eb53f5a794c05`
 - **Expected production application/runtime revision** =
   `4488f37787bc521869a2bb6113507387c5a983c8`
 
@@ -121,8 +125,8 @@ It MAY create the parent directories when needed. The file MUST be readable
 by the normal application user, owned as `www-data:www-data`, and have mode
 `0600`. Ownership and mode MUST be verified without printing contents.
 The container copy and runner temporary copy MUST be removed by EXIT cleanup.
-The task does not authorize changing `PrestigeClinicSeeder` or adding another
-path abstraction.
+This task does not authorize changing the private credential path, parser,
+fallback behavior, or adding another path abstraction.
 
 ### D. Production administrator credential precheck
 
@@ -147,9 +151,10 @@ sufficient privilege.
 
 ### F. Fixed seeder execution
 
-The existing application seeder remains unchanged and MUST execute as the
-normal application user, never root. The only allowed production data
-invocation remains the fixed class:
+The bounded schedule and booking changes authorized by this task MUST remain
+inside the existing application seeder. It MUST execute as the normal
+application user, never root. The only allowed production data invocation
+remains the fixed class:
 
 `Database\\Seeders\\PrestigeClinicSeeder`
 
@@ -194,38 +199,61 @@ dispatch during implementation, review, or task publication.
 
 ### I. Post-seed data contract
 
-The existing sanitized verification remains mandatory:
+The three-schedule sanitized verification remains mandatory:
 
 ```text
 site_active=true
-schedule_count=2
+schedule_count=3
 schedule_bounds_match=true
+quota_20_26=37
 quota_27=37
 quota_28=37
+confirmed_20_26=37
 confirmed_27=37
 confirmed_28=37
-total_bookings=74
+total_bookings=111
 distinct_members=37
 member_sets_equal=true
 verification_passed=true
 ```
 
+The required closed-open local intervals use `Asia/Jakarta`, and the
+UTC-persisted boundaries are:
+
+```text
+20–26 Aug:
+  local [2026-08-20T00:00:00+07:00, 2026-08-27T00:00:00+07:00)
+  starts_at = 2026-08-19 17:00:00
+  ends_at   = 2026-08-26 17:00:00
+27 Aug:
+  local [2026-08-27T00:00:00+07:00, 2026-08-28T00:00:00+07:00)
+  starts_at = 2026-08-26 17:00:00
+  ends_at   = 2026-08-27 17:00:00
+28 Aug:
+  local [2026-08-28T00:00:00+07:00, 2026-08-29T00:00:00+07:00)
+  starts_at = 2026-08-27 17:00:00
+  ends_at   = 2026-08-28 17:00:00
+```
+
+All three schedules MUST have quota 37, 37 confirmed bookings, and identical
+sets of the same 37 existing Members. The three intervals MUST NOT overlap.
+
 No Member IDs, employee PII, emails, or credentials may be emitted.
 
 ### J. Preserved scope boundary
 
-Application source, `PrestigeClinicSeeder`, migrations, schema, deployment,
-generic secret infrastructure, generic seeder/command runners, direct SQL,
-manual production mutation, and unrelated credential rotation remain out of
-scope.
+Migrations, schema, deployment, generic secret infrastructure, generic
+seeder/command runners, direct SQL, manual production mutation, unrelated
+application changes, and unrelated credential rotation remain out of scope.
 
 ## Approved backup-prerequisite and Member-account preflight
 
-Revision 1.3 remains part of the same controlled Prestige production-data
-objective. It adds only the owner-approved correction to the existing backup
-setup workflow and an optional, independent read-only proof of the existing
-Prestige Member-account population. It does not redefine Member credentials,
-change the seeder, or introduce new production account semantics.
+Revision 1.4 remains part of the same controlled Prestige production-data
+objective. It preserves the established backup prerequisite and adds the
+owner-requested three-schedule fixture contract plus an independent,
+read-only proof of the existing Prestige Member-account population. It does
+not redefine Member credentials or introduce new production account
+semantics.
 
 ### A. Existing Member-account precondition
 
@@ -247,8 +275,8 @@ The accepted Member credential contract remains:
 
 The implementation MUST NOT reset Member passwords, recreate existing Member
 users, alter Member login semantics, expose NIK values, generated email
-local-parts, Member IDs, or password hashes. `PrestigeClinicSeeder` remains
-unchanged and continues to reuse existing Member accounts when found.
+local-parts, Member IDs, or password hashes. The bounded seeder update MUST
+continue to reuse existing Member accounts when found.
 
 ### B. Canonical optional Member verification
 
@@ -308,63 +336,28 @@ so the account precondition can be verified before schedule remediation.
 The verifier MUST remain `workflow_dispatch` only and MUST preserve its
 production concurrency boundary, optional `expected_revision` behavior,
 Swarm/service checks, revision consistency, Laravel bootstrap, read-only
-database query, optional large-upload probe, and existing optional
-`verify_prestige` schedule/booking checks. The Member verification is
-read-only and MUST NOT deploy, migrate, seed, modify services, or write
-business data. When `verify_prestige=false`, absent Prestige schedules or
+database query, optional large-upload probe, and the existing optional
+`verify_prestige` schedule/booking check updated to the exact three-schedule
+invariant. The Member verification is read-only and MUST NOT deploy, migrate,
+seed, modify services, or write business data. When `verify_prestige=false`,
+absent Prestige schedules or
 bookings MUST NOT fail the generic verification; when
 `verify_prestige_members=true`, absent or invalid Member-account evidence MUST
 fail it.
 
-### D. Server backup setup correction
+### D. Existing backup prerequisite
 
-The existing `.github/workflows/server-setup-db.yml` currently has a material
-environment-scoping defect: required values are supplied to the DB-container
-location step, while later consumers reference them under `set -u` without
-receiving them. The implementation MUST correct only this scoping defect and
-make each value available to every step that consumes it, using the narrowest
-safe explicit job-level or consumer-step-level environment scope.
+The established production backup mechanism remains mandatory and outside the
+seeder's data contract. Before any Prestige database mutation, the apply
+workflow MUST use the existing verified backup path, including the installed
+`/etc/madeena-mhcs_core-db-backup.sh` mechanism, non-empty archive/gzip and
+`CREATE TABLE` validation, established S3/MinIO upload, and retention cleanup.
+The existing `server-setup-db.yml`, its protected inputs, backup paths, grants,
+and cron behavior are preserved and are not implementation scope for this
+task. No new backup architecture, destination, grant, or cleanup mechanism is
+authorized.
 
-The corrected workflow MUST safely provide, without exposing values:
-
-```text
-SUDO_PASSWORD
-APP_KEY
-DB_DATABASE
-DB_USERNAME
-DB_PASSWORD
-DB_ROOT_PASSWORD
-AWS_ACCESS_KEY_ID
-AWS_SECRET_ACCESS_KEY
-AWS_BUCKET
-AWS_ENDPOINT
-AWS_DEFAULT_REGION
-```
-
-No secret value may be printed, persisted to outputs, or added to a new
-infrastructure mechanism.
-
-### E. Server setup behavior preservation
-
-`server-setup-db.yml` MUST remain `workflow_dispatch` only on `self-hosted`
-and MUST preserve all existing behavior and paths:
-
-- discovery of the existing `mhcs_core_db` container;
-- application-user grants and `FLUSH PRIVILEGES`;
-- application DB-user access verification;
-- `/etc/madeena-mhcs_core-db-backup.sh` as the backup script;
-- `/etc/madeena-mhcs_core-db-backup.env` as the backup environment file;
-- backup environment mode `0600`;
-- backup script mode `0700`;
-- the established S3/MinIO backup implementation;
-- non-empty archive, gzip, and `CREATE TABLE` validation;
-- existing S3 copy and retention behavior;
-- the marked root cron block with `CRON_TZ=Asia/Jakarta` and daily `02:00`.
-
-It MUST NOT introduce new grants, databases, backup destinations, cron
-schedules, or infrastructure semantics.
-
-### F. Backup-prerequisite execution order
+### E. Backup-prerequisite execution order
 
 After implementation and independent review, the required operational order
 is:
@@ -374,20 +367,20 @@ is:
    `verify_prestige_members=true`, `verify_prestige=false`, and
    `run_large_upload_probe=false`;
 2. require the sanitized 37-account Member verification to pass;
-3. run the corrected `server-setup-db.yml`;
-4. verify the backup script is a regular non-symlink executable with mode
-   `0700`, `bash -n` passes, the backup env is a regular non-symlink file with
-   mode `0600` and non-zero size, and exactly one expected managed cron block
-   exists with the approved timezone and schedule;
-5. run the canonical production verifier again read-only; and
-6. only after these prerequisites succeed may the already-authorized Prestige
-   production-data workflow be retried in a later reviewed operation.
+3. require the established verified backup prerequisite and its S3/MinIO
+   upload/retention evidence without changing `server-setup-db.yml`;
+4. obtain the owner's separate authorization for the final three-schedule
+   apply using the new confirmation phrase;
+5. after a successful apply, run the canonical verifier read-only with both
+   `verify_prestige=true` and `verify_prestige_members=true`; and
+6. treat any failed preflight, backup, apply, or canonical verification as a
+   stop condition.
 
-Setup and Prestige seeding MUST NOT be combined into one execution. The
-backup setup workflow MUST NOT be replaced by manual SQL or a new backup
+The backup prerequisite and Prestige seeding MUST remain separate executions.
+The backup setup workflow MUST NOT be replaced by manual SQL or a new backup
 architecture.
 
-### G. Member credential safety
+### F. Member credential safety
 
 Existing Member accounts MUST be reused. No password reset, user recreation,
 credential migration, login-semantic change, or plaintext/hash inspection is
@@ -395,7 +388,7 @@ authorized. The existing Operator private credential contract and the
 existing production `SUPER_ADMIN_EMAIL`/`SUPER_ADMIN_PASSWORD` contract
 remain unchanged. No remediation in this revision may redefine credentials.
 
-### H. Privacy
+### G. Privacy
 
 No workflow output may contain NIK, employee names, generated Member email
 values, Member IDs, password values, password hashes, Operator credentials,
@@ -403,61 +396,68 @@ administrator credentials, backup environment contents, or private source
 contents. Only aggregate counts and sanitized operational metadata may be
 logged.
 
-### I. Implementation scope
+### H. Implementation scope
 
 The allowed implementation files are:
 
-- `.github/workflows/server-setup-db.yml`;
+- `database/seeders/PrestigeClinicSeeder.php`;
+- `.github/workflows/apply-prestige-production-data.yml`;
 - `.github/workflows/verify-production.yml`; and
-- directly relevant deployment/workflow regression tests.
+- directly relevant tests, including the existing Prestige seeder and
+  deployment/workflow contract tests.
 
-`PrestigeClinicSeeder`, application source, migrations, schema, Member
-credential behavior, deployment behavior, and generic infrastructure remain
-out of scope. No Prestige seed is retried during implementation or review.
+No unrelated application changes, migrations, schema changes, deployment
+changes, `server-setup-db.yml` changes, Member credential changes, or generic
+infrastructure changes are authorized. No Prestige seed is run against
+production during implementation or review.
 
-### J. Required regression coverage
+### I. Required regression coverage
 
-Regression coverage MUST prove that `server-setup-db.yml` remains manual-only,
-its required environment values are available to every consuming step, no
-secret value is printed, grant/flush/access semantics are unchanged, backup
-paths and modes `0700`/`0600` are unchanged, the approved cron
-timezone/schedule remains, and no new infrastructure behavior is introduced.
+Regression coverage for `PrestigeClinicSeeder` MUST prove exactly three
+schedules, the exact three UTC windows, quota 37 for each, 37 confirmed
+bookings for each, 111 total bookings, 37 distinct Members, identical Member
+sets, idempotent rerun, existing Member reuse, no password reset, and no
+change to normal runtime duplicate-active-booking rejection.
 
-Regression coverage for `verify-production.yml` MUST prove that
-`verify_prestige_members` is a boolean defaulting to false, false emits the
-skipped marker, true performs only a read-only aggregate query, the cohort is
-identified independently of bookings, the expected aggregate counts are
-`37/37/37/37`, linkage/status/login invariants are enforced, no PII or
-password/hash inspection is logged, existing `verify_prestige` behavior and
-expected-revision behavior remain unchanged, and the workflow remains
-read-only. Existing Prestige credential-safety and `37/37/74` assertions MUST
-remain covered.
+Regression coverage for the apply workflow MUST prove the exact new
+confirmation phrase, rejection of the stale
+`APPLY-PRESTIGE-2026-08-27-28` phrase, the three-schedule post-seed invariant,
+the 111/37 totals, all Member-set equality semantics, and preservation of
+backup, secret, credential, cleanup, and privacy controls. Regression
+coverage for `verify-production.yml` MUST prove the same three-schedule
+invariant for `verify_prestige`, preserve the independent
+`verify_prestige_members` 37/37/37/37 account check, and require both checks
+for successful post-apply verification.
 
 ## Objective
 
-Create the dedicated `.github/workflows/apply-prestige-production-data.yml`
-and implement the bounded v1.3 prerequisites that make its later reviewed
-operation safe: correct the existing `server-setup-db.yml` environment
-scoping, extend the canonical `verify-production.yml` with optional
-read-only proof of the 37 existing Prestige Member accounts, and preserve the
-exact production revision, backup-before-seed, credential-safety, fixed
-seeder, and sanitized `37/37/74` contracts. The apply workflow must remain a
-manual-only controlled operation and must not be dispatched by this task.
+Update the existing Prestige production-data delivery contract and authorize
+the bounded implementation needed for the owner-requested three-schedule
+rehearsal: update `PrestigeClinicSeeder` to reconcile one 20–26 August
+schedule plus 27 August and 28 August schedules for the same 37 existing
+Members, update the dedicated manual apply workflow to verify the resulting
+111-booking invariant, and update `verify-production.yml` to use the identical
+three-schedule check while preserving its independent Member-account preflight.
+The exact production revision, backup-before-seed, credential-safety, privacy,
+and normal runtime booking contracts remain enforced. The workflow must
+remain manual-only and must not be dispatched by this task.
 
 ## Authoritative inputs
 
 ### Governing authority
 
-- Human-authority production-data application contract supplied for this task:
-  dedicated workflow, manual confirmation, exact-version gate, serialized
-  production operations, backup-before-seed, private CSV handling, exact
-  seeder restriction, post-seed verification, idempotency, and explicit
-  prohibition on production execution until separate approval.
+- Owner-requested three-schedule production-data contract supplied for this
+  task: one 20–26 August 2026 schedule plus 27 August and 28 August 2026,
+  full Asia/Jakarta calendar boundaries, exact UTC persistence, the same 37
+  existing Members in all schedules, idempotent booking reconciliation, exact
+  37/37/37/111/37 totals, and no production execution until separate
+  approval.
 - Owner-approved revisions 1.1 and 1.3: protected `production` Environment
   use, temporary fixed employee/operator secrets, fail-closed credential
-  prechecks, disposable bootstrap-credential output, correction of the
-  existing backup-workflow environment scoping, and optional read-only
-  Member-account preflight.
+  prechecks, disposable bootstrap-credential output, established verified
+  backup handling, and optional read-only Member-account preflight. Revision
+  1.4 preserves those controls while replacing the stale two-schedule
+  fixture contract.
 - `.agents/AGENTS.md` and `.agents/software-workflow.md` — task readiness,
   evidence, side-effect, acceptance, and separate release-gate requirements.
 - `.agents/tasks/prestige-rehearsal-schedule-and-radiography-capture-readiness.md`
@@ -475,8 +475,9 @@ the human authority above:
   service names, `VERSION-CURRENT`, immutable image tags, production
   concurrency group, environment secrets, and application readiness checks.
 - `.github/workflows/server-setup-db.yml` — existing DB grant/access and
-  `/etc/madeena-mhcs_core-db-backup.sh` backup mechanism, including the
-  environment-scoping defect that this task bounds for correction.
+  `/etc/madeena-mhcs_core-db-backup.sh` backup mechanism, inspected only to
+  preserve the established verified backup, S3/MinIO, and retention behavior;
+  this task does not authorize changes to that workflow.
 - `.github/workflows/verify-production.yml` — canonical read-only production
   verifier, established app-container/database access boundary, revision gate,
   and existing optional Prestige schedule/booking verification.
@@ -504,24 +505,29 @@ the human authority above:
 - `Credential-safety remediation` → owner-approved revision 1.1 contract,
   protected Environment, operator/admin prechecks, and existing
   `MvpCredentialFile.php` path behavior.
-- `Backup-prerequisite restoration` → owner-approved revision 1.3 contract,
-  existing `server-setup-db.yml` behavior, and the established backup paths,
-  validation, S3, retention, and cron conventions.
+- `Verified backup prerequisite preservation` → owner-approved production
+  safety contract, existing `server-setup-db.yml` behavior, and the
+  established backup paths, validation, S3/MinIO upload, and retention
+  conventions.
 - `Prestige Member-account preflight` → owner-approved revision 1.3 contract,
   existing `verify-production.yml` read-only boundary, and the established
   `@prestige.madeena-xray.com` account convention.
-- `Exact seed and final-state invariants` → human-authority contract,
+- `Three-schedule seed and final-state invariants` → owner-requested contract,
   PRODUCTION SEED AUTHORIZATION, APPLICATION CODE, and POST-SEED VERIFICATION
-  sections, plus the accepted Prestige task.
+  sections, plus the accepted Prestige task lineage.
+- `Normal runtime booking preservation` → existing booking-domain behavior and
+  the existing duplicate-active-booking regression coverage.
 
 ## Scope
 
 ### In scope
 
-- Add the single workflow `.github/workflows/apply-prestige-production-data.yml`.
+- Add or update the single workflow
+  `.github/workflows/apply-prestige-production-data.yml`.
 - Use `workflow_dispatch` only with one required confirmation input whose exact
-  accepted value is `APPLY-PRESTIGE-2026-08-27-28`. Invalid or missing input
-  MUST fail before the production mutation job starts.
+  accepted value is `APPLY-PRESTIGE-2026-08-20-28`. Invalid or missing input,
+  including the stale `APPLY-PRESTIGE-2026-08-27-28` phrase, MUST fail before
+  the production mutation job starts.
 - Use the existing production serialization boundary exactly:
   `concurrency.group: production-deployment-mhcs_core` with
   `cancel-in-progress: false`. The workflow MUST NOT run concurrently with
@@ -533,23 +539,25 @@ the human authority above:
   immutable service image tag, and the mounted `/var/www/html/VERSION-CURRENT`
   value, or an equivalent established runtime version proof. Missing,
   unknown, or mismatched version evidence MUST fail closed.
-- Correct only the environment-scoping defect in the existing
-  `.github/workflows/server-setup-db.yml` so `SUDO_PASSWORD`, `APP_KEY`,
-  `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD`, `DB_ROOT_PASSWORD`,
-  `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_BUCKET`, `AWS_ENDPOINT`,
-  and `AWS_DEFAULT_REGION` are available to every step that consumes them.
-  Preserve its manual-only trigger, self-hosted runner, DB grant/access,
-  backup, S3/MinIO, validation, retention, and cron behavior exactly.
-- Extend `.github/workflows/verify-production.yml` with the optional boolean
-  `verify_prestige_members` input, defaulting to false, and the independent
-  sanitized read-only 37-account Member verification. It MUST support the
-  Member preflight with `verify_prestige=true|false` independently and MUST
-  remain read-only.
+- Update `database/seeders/PrestigeClinicSeeder.php` to configure exactly the
+  three required full-day local-calendar windows. Prefer one clear reusable
+  local-date-range helper; do not spread timezone arithmetic literals through
+  the seeder. Reuse existing Members, matching schedules, and matching
+  Member/schedule bookings; create only missing records; and keep reruns
+  idempotent. The existing 27 and 28 August boundaries remain unchanged, while
+  one schedule spans 20 through 26 August inclusive.
+- Extend or update `.github/workflows/verify-production.yml` with the optional
+  boolean `verify_prestige_members` input, defaulting to false, and preserve
+  its independent sanitized read-only 37-account Member verification. Its
+  `verify_prestige` check MUST use the exact same three-schedule invariant as
+  the apply workflow. A successful post-apply canonical verification MUST
+  require both `verify_prestige=true` and `verify_prestige_members=true`.
 - Before the seeder, invoke the established production database backup
   mechanism installed at `/etc/madeena-mhcs_core-db-backup.sh`. Require its
   successful exit and its existing non-empty/integrity/S3 verification before
-  continuing. Report only a sanitized backup success/reference. Do not add an
-  automatic restore path unless existing repository policy later requires one.
+  continuing. Preserve the established S3/MinIO upload and retention cleanup;
+  report only a sanitized backup success/reference. Do not add an automatic
+  restore path or change `server-setup-db.yml`.
 - Securely provide the real private CSV at runtime using the fixed protected
   GitHub `production` Environment secret `PRESTIGE_EMPLOYEE_CSV`. The
   implementation MUST document only the mechanism, not the file contents. If
@@ -575,7 +583,7 @@ the human authority above:
   only to the fixed Prestige seeder process. Verify any resulting file is
   mode 0600 without reading its contents and remove it with sufficient
   privilege on EXIT.
-- Run exactly the existing seeder and no user-selected class:
+- Run exactly the fixed seeder class and no user-selected class:
 
   ```bash
   docker exec \
@@ -591,21 +599,19 @@ the human authority above:
   repository variables. The workflow MUST NOT accept a seeder class, CSV path,
   or arbitrary production command as user input.
 - After successful seeding, run read-only verification inside the current app
-  container. Verify the active Prestige site, exactly the two intended target
-  schedules, exact UTC bounds, quota 37 on each, 37 confirmed bookings on each,
-  74 total bookings, 37 distinct Members, and equality of the two Member ID
-  sets. Emit only sanitized booleans/counts and schedule values; never emit
-  Member IDs, names, NIKs, addresses, birth dates, credentials, or query rows.
-- Preserve the existing seeder's idempotent behavior and fail-closed obsolete
-  schedule/downstream-data protection. No production second-run test or live
-  dispatch is authorized by this task; local synthetic seeder regression is
-  the required evidence for idempotency.
-- Add focused static workflow validation/regression coverage if existing
-  deployment tests do not already cover the new workflow contract. Prefer a
-  workflow-only implementation and do not change application code or the
-  existing seeder for this task.
-- Add or update focused deployment/workflow regression coverage for both the
-  server-setup environment scoping and the optional Member-account verifier.
+  container. Require `site_active=true`, `schedule_count=3`,
+  `schedule_bounds_match=true`, quota and confirmed counts of 37 for 20–26,
+  27, and 28 August, `total_bookings=111`, `distinct_members=37`, and
+  `member_sets_equal=true` with all three sets identical. Emit only sanitized
+  booleans/counts and schedule values; never emit Member IDs, names, NIKs,
+  addresses, birth dates, credentials, or query rows.
+- Preserve the existing seeder's production guard, exact-37 CSV validation,
+  private credential behavior, idempotent behavior, and fail-closed
+  obsolete-schedule/downstream-data protection. No production second-run test
+  or live dispatch is authorized by this task; local synthetic seeder
+  regression is the required evidence for idempotency.
+- Add or update focused tests for the seeder, apply workflow, canonical
+  verifier, and the existing normal runtime duplicate-active-booking behavior.
 
 ### Out of scope
 
@@ -613,9 +619,13 @@ the human authority above:
 - A generic arbitrary-seeder workflow, arbitrary command runner, user-supplied
   seeder class, user-supplied production revision, or user-supplied database
   target.
-- Changes to `PrestigeClinicSeeder`, application source, migrations, database
-  schema, deployment behavior, `deploy-swarm.yml`, Docker topology, or the
-  accepted Prestige dataset semantics.
+- Changes to application code other than the bounded
+  `PrestigeClinicSeeder` schedule/booking fixture behavior, migrations,
+  database schema, deployment behavior, `deploy-swarm.yml`, Docker topology,
+  or unrelated application semantics.
+- Changes to `.github/workflows/server-setup-db.yml`; it is preserved as the
+  existing backup/setup mechanism and is not an implementation target for this
+  revision.
 - Generic secret infrastructure, generic secret rotation, runner-host CSV
   transport, Docker credentials, or cloud credentials. The later approved
   operational attempt may provision exactly the temporary
@@ -646,29 +656,28 @@ the human authority above:
 
 - `PrestigeClinicSeeder` production authorization, CSV validation, exact-37
   requirement, uniqueness checks, schedule reconciliation safety, and
-  idempotency remain unchanged.
-- The two approved `Asia/Jakarta` half-open schedule intervals remain:
-  `27 Aug [2026-08-27T00:00:00+07:00, 2026-08-28T00:00:00+07:00)` and
-  `28 Aug [2026-08-28T00:00:00+07:00, 2026-08-29T00:00:00+07:00)`.
-- Their expected stored UTC boundaries remain:
-  `2026-08-26 17:00:00` → `2026-08-27 17:00:00` and
-  `2026-08-27 17:00:00` → `2026-08-28 17:00:00`.
-- The final dataset remains quota 37 per schedule, 37 unique Members, 37
-  confirmed bookings per date, the same 37 Members on both dates, and 74
-  total bookings.
+  idempotency remain unchanged except for the bounded three-window fixture
+  update authorized here.
+- The 27 and 28 August `Asia/Jakarta` half-open intervals and their UTC
+  boundaries remain unchanged. The new first interval is exactly:
+  `20–26 Aug [2026-08-20T00:00:00+07:00, 2026-08-27T00:00:00+07:00)` with
+  stored UTC `2026-08-19 17:00:00` → `2026-08-26 17:00:00`.
+- The final dataset remains quota 37 per schedule, 37 unique Members in each
+  schedule, 37 confirmed bookings per schedule, identical Member sets across
+  all three schedules, and 111 total bookings.
 - The ordinary Member one-active-booking runtime invariant remains unchanged;
-  the two-date duplicate assignment remains limited to the approved Prestige
-  fixture.
+  the three-date duplicate assignment remains limited to the approved
+  fixture/seeder path.
 - The real CSV remains ignored and untracked, and workflow logs remain free of
   employee PII and credentials. The ignored operator source remains outside
   Git and its contents remain private.
 - Operator and administrator credentials MUST be supplied explicitly for the
   approved operation; no seeder fallback credentials may be used. Bootstrap
   credential output remains temporary, mode 0600, and disposable.
-- `server-setup-db.yml` remains the sole approved setup path for the existing
-  DB grants, backup script, protected backup environment, S3/MinIO behavior,
-  retention, and root cron block. The v1.3 change is limited to making its
-  existing consumer-step environment values available safely.
+- The existing `server-setup-db.yml` and installed backup mechanism remain the
+  approved setup path for DB grants, the protected backup environment,
+  S3/MinIO behavior, retention, and the managed cron block. This task changes
+  none of those controls.
 - `verify-production.yml` remains read-only. Its generic verification behavior
   and existing optional `verify_prestige` schedule/booking checks remain
   unchanged when `verify_prestige_members=false`; the new Member check is
@@ -684,17 +693,16 @@ the human authority above:
 ### Dependencies
 
 - A clean checkout at implementation baseline
-  `1fc5c9440415d0e38e7039f06d2f4362e00ccf21` and the exact published task
+  `12dd1ccd0763d48fd581fe3dec9eb53f5a794c05` and the exact published task
   revision. The live runtime gate remains the separate exact revision
   `4488f37787bc521869a2bb6113507387c5a983c8`.
 - The existing self-hosted production runner has Docker access and is a Swarm
   manager for `mhcs_core`; the app and database services are reachable through
   the established deployment paths.
-- The existing `server-setup-db.yml` is the sole approved mechanism for
-  restoring and verifying the backup prerequisite. Its current
-  environment-scoping defect must be corrected and accepted before the
-  installed `/etc/madeena-mhcs_core-db-backup.sh` and its protected env file
-  may be relied upon for the Prestige operation.
+- The established `server-setup-db.yml` and installed
+  `/etc/madeena-mhcs_core-db-backup.sh` backup path are available as the
+  existing prerequisite mechanism. This task may preserve and consume that
+  mechanism but does not modify its environment scoping or other behavior.
 - The existing GitHub `production` Environment is restricted exactly to the
   `main` branch. A designated operator may provision the two approved fixed
   Environment secrets only for the later operational attempt and must delete
@@ -715,9 +723,10 @@ the human authority above:
 - `4488f37787bc521869a2bb6113507387c5a983c8` is the exact expected reviewed
   production application revision for the first workflow execution. A
   mismatch is a safety failure, not permission to select another revision.
-- After the bounded setup correction, the backup script's successful return is
-  the repository-approved backup completion signal because it validates the
-  compressed dump and uploads it through the established S3/MinIO mechanism.
+- The backup script's successful return is the repository-approved backup
+  completion signal because it validates the compressed dump and uploads it
+  through the established S3/MinIO mechanism; retention cleanup remains part
+  of that existing path.
 - The existing protected `production` Environment can carry the two fixed
   temporary secrets without placing private material in the repository
   workspace. Inventing a new secret system or infrastructure boundary is not
@@ -731,11 +740,10 @@ the human authority above:
 
 - Planner/Reviewer must review and accept the workflow implementation before
   production execution is considered.
-- Planner/Reviewer must review and accept the bounded server-setup and
-  canonical-verifier implementation before the prerequisite execution order
-  may begin.
+- Planner/Reviewer must review and accept the bounded seeder and canonical
+  verifier implementation before the prerequisite execution order may begin.
 - A designated production/release authority must separately approve the exact
-  implementation revision and each later `workflow_dispatch` run.
+  implementation revision and the final three-schedule `workflow_dispatch` run.
 - The existing `production` Environment policy remains an operational
   prerequisite. The designated operator must provision exactly the two fixed
   temporary secrets only for the separately approved attempt and must delete
@@ -755,17 +763,19 @@ the human authority above:
 - Reuse the existing `deploy-swarm.yml` self-hosted runner, service names,
   version evidence, environment boundary, backup convention, and concurrency
   group. Do not create an unrelated deployment mechanism or use direct SSH.
-- Keep `server-setup-db.yml` `workflow_dispatch`-only on `self-hosted`. Supply
-  each of its existing secret/configuration values to every consuming step
-  with explicit narrow scope; do not print, persist, or rename any value.
-  Preserve its existing DB grant, `FLUSH PRIVILEGES`, application-access,
-  backup, S3/MinIO, validation, retention, and cron operations.
-- Keep `verify-production.yml` `workflow_dispatch`-only and read-only. Add
-  only the optional `verify_prestige_members` boolean input and its aggregate
+- Keep `server-setup-db.yml` and its established backup behavior unchanged;
+  it is a read-only dependency, not an implementation target. Preserve its DB
+  grants, `FLUSH PRIVILEGES`, application-access checks, backup paths,
+  S3/MinIO upload, validation, retention, and cron controls.
+- Keep `verify-production.yml` `workflow_dispatch`-only and read-only. Preserve
+  the optional `verify_prestige_members` boolean input and its aggregate
   account query. Identify candidates by the fixed
   `@prestige.madeena-xray.com` namespace and Member linkage, not bookings.
   Emit only the required counts and booleans; never inspect password hashes or
-  print credentials or identity fields.
+  print credentials or identity fields. Its `verify_prestige` check MUST
+  require the exact three windows, 37/37/37 quota, 37/37/37 confirmed counts,
+  111 total bookings, 37 distinct Members, and equality of all three Member
+  sets.
 - Validate confirmation and exact production version before the backup/seed
   path. A bad confirmation or version mismatch MUST prevent all database
   commands, including any seed and post-seed mutation path.
@@ -793,16 +803,25 @@ the human authority above:
   verify the resulting `/tmp/mhcs-prestige-bootstrap-credentials.txt` mode
   without reading it, and remove it on EXIT with sufficient privilege.
 - Use the exact `PrestigeClinicSeeder` class and Laravel production force
-  option. Do not weaken its production guard, alter `.env`, or run migrations,
-  arbitrary Artisan commands, or another seeder as part of the data operation.
+  option. The only seeder logic change permitted is the bounded three-window
+  schedule/booking fixture reconciliation. Do not weaken its production guard,
+  alter `.env`, reset or recreate Members, or run migrations, arbitrary
+  Artisan commands, or another seeder as part of the data operation.
 - Keep post-seed checks read-only and compare Member sets in memory without
-  printing identities. Fail if any expected schedule, quota, count, or set
-  invariant is not observed.
+  printing identities. Fail if any expected three-schedule window, quota,
+  confirmed count, total, distinct-member, or all-set-equality invariant is not
+  observed.
 - For the later reviewed operational sequence, run Member preflight first
-  with `verify_prestige_members=true`, then the corrected server setup, then a
-  second canonical verifier. Do not combine backup setup with Prestige
-  seeding and do not retry the seed until both verifier runs and the backup
-  prerequisite checks pass.
+  with `verify_prestige_members=true` and `verify_prestige=false`, require the
+  established verified backup prerequisite, then run the separately approved
+  three-schedule apply. After it succeeds, run the canonical verifier with
+  both `verify_prestige=true` and `verify_prestige_members=true`. Do not
+  combine backup setup with Prestige seeding and do not retry the seed until
+  the required checks pass.
+- Preserve normal runtime booking behavior: the ordinary one-active-booking
+  rule MUST continue to reject duplicate active bookings where currently
+  required. The fixture/seeder exception is not permission to weaken the
+  normal booking service.
 - Do not add a dependency merely to parse or run the workflow. Use existing
   repository tooling or an already-installed validator; if a required validator
   is unavailable, stop or use a focused repository-native static test rather
@@ -814,8 +833,9 @@ the human authority above:
   only `workflow_dispatch`; it has no push, pull-request, schedule, or cron
   trigger and is not a generic seeder/command workflow.
 - [ ] The workflow requires the exact confirmation phrase
-  `APPLY-PRESTIGE-2026-08-27-28`; invalid or missing confirmation fails before
-  any production mutation job or database command can run.
+  `APPLY-PRESTIGE-2026-08-20-28`; invalid or missing confirmation, including
+  `APPLY-PRESTIGE-2026-08-27-28`, fails before any production mutation job or
+  database command can run.
 - [ ] The workflow uses concurrency group
   `production-deployment-mhcs_core` with `cancel-in-progress: false`, so it
   cannot intentionally overlap `deploy-swarm.yml`.
@@ -823,13 +843,11 @@ the human authority above:
   app is exactly revision `4488f37787bc521869a2bb6113507387c5a983c8` using
   established runtime version evidence and fails closed on missing, unknown,
   or mismatched evidence.
-- [ ] `server-setup-db.yml` remains manual-only and self-hosted; every
-  existing required environment value is available to each consuming step
-  without any secret value being printed or persisted.
-- [ ] The server-setup DB grant, `FLUSH PRIVILEGES`, application-access check,
-  backup paths, S3/MinIO validation and copy/retention behavior, `0700`/`0600`
-  modes, and one `CRON_TZ=Asia/Jakarta` daily `02:00` managed block remain
-  unchanged, with no new infrastructure behavior.
+- [ ] `PrestigeClinicSeeder` configures exactly three schedules: one
+  20–26 August interval and the unchanged 27 August and 28 August intervals,
+  using the exact closed-open Asia/Jakarta and UTC boundaries in this task.
+  It reuses existing Members and matching records, creates missing bookings
+  only, remains idempotent, and does not reset Member passwords.
 - [ ] `verify-production.yml` has a `verify_prestige_members` boolean input
   with `required: false` and `default: false`; false emits
   `PRESTIGE_MEMBER_VERIFICATION=skipped`.
@@ -843,7 +861,13 @@ the human authority above:
   failed marker.
 - [ ] The Member-account verification is independent from `verify_prestige`,
   so `verify_prestige_members=true` with `verify_prestige=false` is supported;
-  existing generic verification and schedule/booking behavior remain intact.
+  existing generic verification remains intact. After a successful apply,
+  canonical verification requires both inputs true.
+- [ ] The canonical `verify_prestige` check uses the exact same sanitized
+  three-schedule post-apply invariant as the apply workflow:
+  `schedule_count=3`, exact 20–26/27/28 UTC bounds, quota 37/37/37,
+  confirmed 37/37/37, `total_bookings=111`, `distinct_members=37`, and all
+  three Member sets equal, with no Member identifiers emitted.
 - [ ] The established production backup mechanism runs before the seeder and
   the workflow cannot continue after backup failure or failed verification.
   No automatic restore is added.
@@ -875,20 +899,22 @@ the human authority above:
   credential paths. No user-supplied class, path, or arbitrary command is
   accepted, and the seeder does not run as root.
 - [ ] Read-only post-seed verification fails the workflow unless the active
-  Prestige site exists, exactly the two intended schedules exist, UTC bounds
-  match, each quota is 37, each schedule has 37 confirmed bookings, total
-  bookings are 74, distinct Members are 37, and both schedules contain the
-  same Member set.
+  Prestige site exists, exactly the three intended schedules exist, all three
+  UTC bounds match, each quota is 37, each schedule has 37 confirmed bookings,
+  total bookings are 111, distinct Members are 37, and all three schedules
+  contain the identical Member set.
 - [ ] The accepted full-day local intervals, UTC storage convention, ordinary
   Member one-active-booking invariant, seeder guard/validation/idempotency,
-  and obsolete-schedule downstream-data protection remain unchanged.
+  existing-Member reuse, no-password-reset rule, and obsolete-schedule
+  downstream-data protection remain enforced.
 - [ ] Existing Member credentials are reused with NIK login semantics; no
   Member password reset, recreation, migration, login-semantic change, or
   password/hash inspection is introduced.
-- [ ] After implementation review, operational prerequisite order is
-  Member verifier → corrected server setup → backup-prerequisite metadata
-  checks → canonical read-only verifier → later separately reviewed Prestige
-  seed; setup and seed are never combined.
+- [ ] After implementation and independent review, operational prerequisite
+  order is Member-account preflight → established verified backup prerequisite
+  → separately owner-authorized three-schedule apply → canonical read-only
+  verification with both `verify_prestige=true` and
+  `verify_prestige_members=true`; setup and seed are never combined.
 - [ ] Focused workflow/static checks and the existing synthetic Prestige seeder
   regression pass; no live workflow dispatch, production seed, deployment, or
   live database mutation is performed as implementation evidence.
@@ -906,14 +932,20 @@ the human authority above:
   seed ordering, fixed Environment secrets, operator/admin fail-closed
   credential gates, exact seeder class, process-scoped authorization and
   bootstrap path, private-path handling, cleanup, no arbitrary seeder input,
-  and sanitized verification contract. It must also cover the corrected
-  `server-setup-db.yml` environment scoping and preserved grant/backup/cron
-  behavior, plus the `verify_prestige_members` input, skipped path, read-only
-  aggregate path, independent cohort identification, `37/37/37/37` counts,
-  no-PII/no-hash contract, and unchanged `verify_prestige` behavior.
+  the exact new confirmation phrase, rejection of the old phrase, and the
+  sanitized three-schedule verification contract. It must also prove that
+  `server-setup-db.yml` and its backup/grant/S3/MinIO/retention safety remain
+  untouched by this task, plus the `verify_prestige_members` input, skipped
+  path, read-only aggregate path, independent cohort identification,
+  `37/37/37/37` counts, no-PII/no-hash contract, exact three-schedule
+  `verify_prestige` invariant, and required both-check post-apply contract.
 3. Run `vendor/bin/phpunit tests/Feature/Operator/PrestigeClinicSeederTest.php`
-   and any focused deployment/workflow test changed by the implementation.
-   Tests MUST use generated synthetic CSV data only.
+   and the focused deployment/workflow tests changed by the implementation.
+   Tests MUST use generated synthetic CSV data only. Seeder coverage MUST
+   assert exact local/UTC windows, 37/37/37 quotas and confirmations, 111
+   bookings, 37 distinct Members, identical Member sets, idempotent rerun,
+   existing Member reuse, and unchanged normal duplicate-active-booking
+   rejection.
 4. Run `TARGET="." vendor/bin/phpunit`.
 5. Run `TARGET="." npm run build` if the repository's required build gate is
    affected or required by current governance.
@@ -927,13 +959,15 @@ the human authority above:
    without printing either private file's contents.
 8. Do not trigger the new workflow, run the seeder against production, deploy,
    or mutate any live database as part of task implementation or verification.
-9. Validate the revised task contract itself: version `1.3`,
+9. Validate the revised task contract itself: version `1.4`,
    `last_updated: 2026-08-20`, implementation baseline
-   `1fc5c9440415d0e38e7039f06d2f4362e00ccf21`, expected production runtime
-   `4488f37787bc521869a2bb6113507387c5a983c8`, no stale assumption that the
-   backup workflow is usable before its scoping correction, no assumption
-   that schedules/bookings prove Member accounts, preserved credential and
-   `37/37/74` contracts, and no authorization to reset credentials.
+   `12dd1ccd0763d48fd581fe3dec9eb53f5a794c05`, expected production runtime
+   `4488f37787bc521869a2bb6113507387c5a983c8`, exact 20–26/27/28 local and
+   UTC windows, 3 schedules, 37/37/37 quotas and confirmations, 111 total
+   bookings, 37 distinct Members, identical Member sets, the new confirmation
+   phrase, rejection of the old phrase, preserved backup/credential/privacy
+   safeguards, unchanged normal runtime duplicate-booking behavior, and no
+   authorization to reset credentials or run production.
 10. Run `git diff --check` and confirm the task revision is the only changed
     repository file during this republication.
 
@@ -959,10 +993,9 @@ Stop and return to Planner/Reviewer if:
   backup without inventing a new backup mechanism;
 - the existing protected `production` Environment or either fixed temporary
   secret is unavailable at the separately approved operational attempt;
-- the corrected `server-setup-db.yml` cannot make each required value
-  available to its consuming steps without exposing or persisting secrets, or
-  its established grant, backup, validation, S3/MinIO, retention, or cron
-  behavior would need to change;
+- the established backup mechanism, its validation, S3/MinIO upload,
+  retention, or protected inputs cannot be verified without changing
+  `server-setup-db.yml` or inventing a new backup path;
 - the canonical verifier cannot independently identify the fixed Prestige
   Member-account cohort and prove the required aggregate/linkage/status/login
   invariants without PII or password/hash inspection;
@@ -975,12 +1008,17 @@ Stop and return to Planner/Reviewer if:
   require a fallback value;
 - bootstrap credential output cannot be kept at the fixed private temporary
   path with mode 0600 and removed on EXIT;
-- the task would require changing application code, the seeder, deployment
-  concurrency, database schema, or accepted Prestige semantics;
+- the task would require application changes outside the bounded
+  `PrestigeClinicSeeder` schedule/booking fixture update, deployment
+  concurrency changes, database schema changes, or an unapproved change to
+  accepted Prestige semantics;
 - workflow logs could expose employee PII, credentials, CSV contents, or
   Member identity data;
-- the post-seed invariant query cannot prove the exact two schedules/counts/
-  same-member-set without printing identities;
+- the post-seed invariant query cannot prove the exact three schedules/counts,
+  exact windows, or all-three same-member-set invariant without printing
+  identities;
+- normal runtime duplicate-active-booking behavior would need to be weakened
+  to satisfy the fixture's three-schedule booking contract;
 - a production trigger, live database mutation, deployment, release, or other
   external side effect would be required; or
 - implementation reveals a new authority, architecture, security, privacy,
@@ -994,17 +1032,18 @@ task as permission to run production operations.
 ### Explicitly authorized
 
 - Publish this task and its immutable Git revision.
-- Implement only the dedicated workflow, the bounded `server-setup-db.yml`
-  environment-scoping correction, the optional read-only Member verifier, and
-  their focused static/regression tests required by this task.
+- Implement only the bounded `PrestigeClinicSeeder` schedule/booking change,
+  the dedicated apply workflow, the canonical read-only Member/schedule
+  verifier, and their focused tests required by this task. Do not change
+  `server-setup-db.yml`.
 - Run local syntax, static, test, build, format, diff, and privacy checks using
   synthetic data only.
 - Commit and push this task revision only during task republication.
 - After implementation and independent review, run the canonical read-only
-  Member preflight, the corrected existing server-setup workflow, its safe
-  backup-prerequisite metadata/syntax checks, and the canonical read-only
-  verifier again in the exact order defined by this task. These operations
-  remain separate from the later Prestige seed approval.
+  Member preflight, verify the established backup prerequisite, and run the
+  canonical read-only verifier in the exact order defined by this task. These
+  operations remain separate from the later three-schedule Prestige seed
+  approval.
 - During a later separately approved operational attempt, provision exactly the
   two temporary `production` Environment secrets from the approved private
   sources, dispatch the accepted workflow, independently verify production, and
@@ -1030,11 +1069,11 @@ task as permission to run production operations.
 
 ### Review Required
 
-Return one reviewable implementation revision covering the dedicated workflow,
-the bounded backup-workflow correction, the optional read-only Member
-preflight, and their truthful local verification evidence. Planner/Reviewer
-must separately accept the implementation before any prerequisite execution
-or production seed decision.
+Return one reviewable implementation revision covering the bounded seeder
+change, dedicated workflow, canonical three-schedule verifier, optional
+read-only Member preflight, and truthful local verification evidence.
+Planner/Reviewer must separately accept the implementation before any
+prerequisite execution or production seed decision.
 
 ### Planning Required
 
