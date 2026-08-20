@@ -116,6 +116,103 @@ final class PrestigeClinicSeederTest extends TestCase
         );
     }
 
+    public function test_authorized_legacy_reset_removes_real_fk_graph_and_reseeds_idempotently(): void
+    {
+        $this->withSyntheticCsv(function (): void {
+            $this->seed(PrestigeClinicSeeder::class);
+            $this->makeLegacyFixture();
+            $beforeUsers = DB::table('users')->where('email', 'like', '%@prestige.madeena-xray.com')->orderBy('id')->pluck('password', 'id')->all();
+            $beforeMemberNames = DB::table('members')->whereIn('user_id', array_keys($beforeUsers))->orderBy('id')->pluck('name', 'id')->all();
+            $beforeNonBookingLedger = DB::table('point_ledger_entries')->whereNull('booking_id')->count();
+            putenv('MHCS_ALLOW_PRODUCTION_MVP_SEED=true');
+
+            try {
+                $this->seed(PrestigeClinicSeeder::class);
+            } finally {
+                putenv('MHCS_ALLOW_PRODUCTION_MVP_SEED');
+            }
+
+            $this->assertSame(0, DB::table('shift_schedules')->whereIn('starts_at', ['2026-08-14 01:00:00', '2026-08-26 01:00:00', '2026-08-27 01:00:00'])->count());
+            $this->assertSame(111, DB::table('bookings')->where('status', 'confirmed')->count());
+            $this->assertSame(111, DB::table('point_ledger_entries')->where('entry_type', 'charge')->whereNotNull('booking_id')->count());
+            foreach (['operator_paper_tickets', 'operator_queue_admissions', 'operator_queue_admission_history', 'operator_arrivals', 'operator_identity_verifications', 'operator_identity_verification_events', 'member_paper_questionnaires', 'member_vital_signs_assessments', 'operator_vital_signs_executions', 'examination_consents', 'booking_status_events'] as $table) {
+                $this->assertSame(0, DB::table($table)->count(), $table);
+            }
+            $this->assertSame(37, DB::table('users')->where('email', 'like', '%@prestige.madeena-xray.com')->count());
+            $this->assertSame($beforeUsers, DB::table('users')->whereIn('id', array_keys($beforeUsers))->orderBy('id')->pluck('password', 'id')->all());
+            $this->assertSame($beforeMemberNames, DB::table('members')->whereIn('id', array_keys($beforeMemberNames))->orderBy('id')->pluck('name', 'id')->all());
+            $this->assertSame($beforeNonBookingLedger, DB::table('point_ledger_entries')->whereNull('booking_id')->count());
+
+            $before = [
+                'schedules' => DB::table('shift_schedules')->count(),
+                'bookings' => DB::table('bookings')->count(),
+                'charges' => DB::table('point_ledger_entries')->where('entry_type', 'charge')->whereNotNull('booking_id')->count(),
+                'assignments' => DB::table('operator_shift_assignments')->count(),
+            ];
+            putenv('MHCS_ALLOW_PRODUCTION_MVP_SEED=true');
+            try {
+                $this->seed(PrestigeClinicSeeder::class);
+            } finally {
+                putenv('MHCS_ALLOW_PRODUCTION_MVP_SEED');
+            }
+            $this->assertSame($before['schedules'], DB::table('shift_schedules')->count());
+            $this->assertSame($before['bookings'], DB::table('bookings')->count());
+            $this->assertSame($before['charges'], DB::table('point_ledger_entries')->where('entry_type', 'charge')->whereNotNull('booking_id')->count());
+            $this->assertSame($before['assignments'], DB::table('operator_shift_assignments')->count());
+        });
+    }
+
+    public function test_legacy_reset_rolls_back_after_a_descendant_delete(): void
+    {
+        $this->withSyntheticCsv(function (): void {
+            $this->seed(PrestigeClinicSeeder::class);
+            $this->makeLegacyFixture();
+            $before = [
+                'schedules' => DB::table('shift_schedules')->count(),
+                'bookings' => DB::table('bookings')->count(),
+                'charges' => DB::table('point_ledger_entries')->where('entry_type', 'charge')->whereNotNull('booking_id')->count(),
+                'tickets' => DB::table('operator_paper_tickets')->count(),
+                'queues' => DB::table('operator_queue_admissions')->count(),
+                'vitals' => DB::table('operator_vital_signs_executions')->count(),
+            ];
+            putenv('MHCS_ALLOW_PRODUCTION_MVP_SEED=true');
+            putenv('PRESTIGE_TEST_RESET_FAILURE_AFTER_DELETE=1');
+            try {
+                $this->expectException(RuntimeException::class);
+                $this->seed(PrestigeClinicSeeder::class);
+            } finally {
+                putenv('MHCS_ALLOW_PRODUCTION_MVP_SEED');
+                putenv('PRESTIGE_TEST_RESET_FAILURE_AFTER_DELETE');
+            }
+            $this->assertSame($before['schedules'], DB::table('shift_schedules')->count());
+            $this->assertSame($before['bookings'], DB::table('bookings')->count());
+            $this->assertSame($before['charges'], DB::table('point_ledger_entries')->where('entry_type', 'charge')->whereNotNull('booking_id')->count());
+            $this->assertSame($before['tickets'], DB::table('operator_paper_tickets')->count());
+            $this->assertSame($before['queues'], DB::table('operator_queue_admissions')->count());
+            $this->assertSame($before['vitals'], DB::table('operator_vital_signs_executions')->count());
+        });
+    }
+
+    public function test_authorized_production_seed_rejects_empty_prestige_schedule_state(): void
+    {
+        $this->withSyntheticCsv(function (): void {
+            putenv('MHCS_ALLOW_PRODUCTION_MVP_SEED=true');
+            $_ENV['MHCS_ALLOW_PRODUCTION_MVP_SEED'] = 'true';
+
+            try {
+                $this->seed(PrestigeClinicSeeder::class);
+                $this->fail('An authorized production seed must reject an empty Prestige state.');
+            } catch (RuntimeException $exception) {
+                $this->assertSame('Prestige production state is not an exact diagnosed legacy or clean final state.', $exception->getMessage());
+            } finally {
+                putenv('MHCS_ALLOW_PRODUCTION_MVP_SEED');
+                unset($_ENV['MHCS_ALLOW_PRODUCTION_MVP_SEED']);
+            }
+        });
+
+        $this->assertSame(0, DB::table('shift_schedules')->count());
+    }
+
     public function test_progressed_obsolete_schedule_stops_without_deleting_it(): void
     {
         $this->withSyntheticCsv(function (): void {
@@ -177,6 +274,73 @@ final class PrestigeClinicSeederTest extends TestCase
             putenv('PRESTIGE_EMPLOYEE_CSV');
             unlink($path);
         }
+    }
+
+    private function makeLegacyFixture(): void
+    {
+        $site = DB::table('examination_site_refs')->where('operator_site_id', PrestigeClinicSeeder::OPERATOR_SITE_ID)->first();
+        $offering = DB::table('service_offerings')->where('code', 'SYN-CHEST-A')->first();
+        $schedules = DB::table('shift_schedules')->where('examination_site_id', $site->id)->where('service_offering_id', $offering->id)->orderBy('starts_at')->get();
+        $legacy = [
+            ['2026-08-14 01:00:00', '2026-08-14 10:00:00', 13],
+            ['2026-08-26 01:00:00', '2026-08-26 10:00:00', 12],
+            ['2026-08-27 01:00:00', '2026-08-27 10:00:00', 12],
+        ];
+        $cohortIds = DB::table('members')->orderBy('id')->pluck('id');
+        foreach ($schedules as $index => $schedule) {
+            $bookings = DB::table('bookings')->where('shift_schedule_id', $schedule->id)->orderBy('id')->get();
+            $offset = $index === 0 ? 0 : ($index === 1 ? 13 : 25);
+            $keepMemberIds = $cohortIds->slice($offset, $legacy[$index][2]);
+            foreach ($bookings as $booking) {
+                if ($keepMemberIds->contains($booking->member_id)) {
+                    continue;
+                }
+                DB::table('point_ledger_entries')->where('booking_id', $booking->id)->delete();
+                DB::table('bookings')->where('id', $booking->id)->delete();
+            }
+            DB::table('shift_schedules')->where('id', $schedule->id)->update(['starts_at' => $legacy[$index][0], 'ends_at' => $legacy[$index][1], 'quota' => 50, 'status' => 'open']);
+        }
+        $old = DB::table('shift_schedules')->where('starts_at', '2026-08-14 01:00:00')->first();
+        $siteStableId = (string) DB::table('operator_sites')->where('operator_site_id', PrestigeClinicSeeder::OPERATOR_SITE_ID)->value('id');
+        $profileId = (string) DB::table('operator_profiles')->where('employee_code', 'like', 'OPR-PRES-%')->orderBy('employee_code')->value('id');
+        $bookings = DB::table('bookings')->where('shift_schedule_id', $old->id)->orderBy('id')->get();
+        DB::table('bookings')->whereIn('id', $bookings->take(4)->pluck('id'))->update(['status' => 'checked_in']);
+        $now = now();
+        foreach ($bookings->take(4) as $index => $booking) {
+            $ticketId = (string) Str::uuid();
+            DB::table('operator_paper_tickets')->insert(['id' => $ticketId, 'booking_id' => $booking->id, 'member_schedule_id' => $old->id, 'operator_site_id' => $siteStableId, 'operator_profile_id' => $profileId, 'ticket_number' => 'LEGACY-'.($index + 1), 'issued_at' => $now, 'created_at' => $now, 'updated_at' => $now]);
+            $arrivalId = (string) Str::uuid();
+            DB::table('operator_arrivals')->insert(['id' => $arrivalId, 'booking_id' => $booking->id, 'member_schedule_id' => $old->id, 'operator_site_id' => $siteStableId, 'operator_profile_id' => $profileId, 'occurrence_at' => $now, 'recorded_at' => $now, 'operation_id' => (string) Str::uuid(), 'source' => 'legacy-test', 'status' => 'recorded', 'created_at' => $now, 'updated_at' => $now]);
+            $verificationId = (string) Str::uuid();
+            DB::table('operator_identity_verifications')->insert(['id' => $verificationId, 'arrival_id' => $arrivalId, 'booking_id' => $booking->id, 'member_schedule_id' => $old->id, 'operator_site_id' => $siteStableId, 'operator_profile_id' => $profileId, 'active_claim_operator_profile_id' => null, 'state' => 'verified', 'started_at' => $now, 'decided_at' => $now, 'reason_category' => null, 'reason' => null, 'operation_id' => (string) Str::uuid(), 'created_at' => $now, 'updated_at' => $now]);
+            DB::table('operator_identity_verification_events')->insert(['id' => (string) Str::uuid(), 'verification_id' => $verificationId, 'event_type' => 'verified', 'from_state' => 'open', 'to_state' => 'verified', 'reason' => null, 'operation_id' => (string) Str::uuid(), 'occurred_at' => $now, 'created_at' => $now, 'updated_at' => $now]);
+            DB::table('member_paper_questionnaires')->insert(['id' => (string) Str::uuid(), 'member_id' => $booking->member_id, 'booking_id' => $booking->id, 'member_schedule_id' => $old->id, 'examination_site_id' => $site->id, 'operator_site_id' => $siteStableId, 'operator_profile_id' => $profileId, 'completed_at' => $now, 'form_version' => 'V1', 'private_photo_object_key' => 'legacy-questionnaire-'.$index, 'private_photo_checksum' => hash('sha256', (string) $index), 'private_photo_bytes' => 1, 'private_photo_format' => 'image/jpeg', 'operation_id' => (string) Str::uuid(), 'created_at' => $now, 'updated_at' => $now]);
+            $assessmentId = (string) Str::uuid();
+            DB::table('member_vital_signs_assessments')->insert(['id' => $assessmentId, 'member_id' => $booking->member_id, 'booking_id' => $booking->id, 'member_schedule_id' => $old->id, 'systolic_bp_value' => '120', 'systolic_bp_unit' => 'mmHg', 'systolic_bp_missing_reason' => null, 'diastolic_bp_value' => '80', 'diastolic_bp_unit' => 'mmHg', 'diastolic_bp_missing_reason' => null, 'temperature_value' => '36.5', 'temperature_unit' => 'C', 'temperature_missing_reason' => null, 'height_value' => '180', 'height_unit' => 'cm', 'height_missing_reason' => null, 'weight_value' => '75', 'weight_unit' => 'kg', 'weight_missing_reason' => null, 'bmi_value' => '23.1', 'bmi_unit' => 'kg/m2', 'bmi_missing_reason' => null, 'effective_at' => $now, 'created_at' => $now, 'updated_at' => $now]);
+            DB::table('booking_status_events')->insert(['id' => (string) Str::uuid(), 'booking_id' => $booking->id, 'source_service' => 'legacy-test', 'source_operator_id' => $profileId, 'event_type' => 'checked_in', 'occurred_at' => $now, 'received_at' => $now, 'idempotency_key' => (string) Str::uuid(), 'created_at' => $now, 'updated_at' => $now]);
+        }
+        $tickets = DB::table('operator_paper_tickets')->where('member_schedule_id', $old->id)->get();
+        foreach ($tickets as $ticket) {
+            foreach (['basic_examination', 'xray'] as $stage) {
+                $admissionId = (string) Str::uuid();
+                DB::table('operator_queue_admissions')->insert(['id' => $admissionId, 'operator_paper_ticket_id' => $ticket->id, 'operator_site_id' => $siteStableId, 'member_schedule_id' => $old->id, 'queue_class' => 'advance', 'stage' => $stage, 'state' => 'waiting', 'ready_at' => $now, 'created_at' => $now, 'updated_at' => $now]);
+                DB::table('operator_queue_admission_history')->insert(['id' => (string) Str::uuid(), 'operator_queue_admission_id' => $admissionId, 'operator_profile_id' => $profileId, 'event_type' => 'admitted', 'from_state' => null, 'to_state' => 'waiting', 'operation_id' => (string) Str::uuid(), 'occurred_at' => $now, 'created_at' => $now, 'updated_at' => $now]);
+            }
+        }
+        $assessments = DB::table('member_vital_signs_assessments')->where('member_schedule_id', $old->id)->get();
+        $queues = DB::table('operator_queue_admissions')->where('member_schedule_id', $old->id)->orderBy('id')->get();
+        foreach ($assessments as $index => $assessment) {
+            DB::table('operator_vital_signs_executions')->insert(['id' => (string) Str::uuid(), 'member_vital_signs_assessment_id' => $assessment->id, 'operator_queue_admission_id' => $queues[$index]->id, 'operator_profile_id' => $profileId, 'operator_site_id' => $siteStableId, 'occurred_at' => $now, 'operation_id' => (string) Str::uuid(), 'created_at' => $now, 'updated_at' => $now]);
+        }
+        DB::table('point_ledger_entries')->insert(['id' => (string) Str::uuid(), 'member_id' => $bookings->first()->member_id, 'booking_id' => null, 'funding_source' => 'member', 'entry_type' => 'credit', 'point_delta' => '5.0000', 'source_reference' => 'legacy-test-non-booking', 'reverses_id' => null, 'created_at' => $now]);
+        $this->assertSame([13, 12, 12], DB::table('shift_schedules')->orderBy('starts_at')->get()->map(fn ($schedule) => DB::table('bookings')->where('shift_schedule_id', $schedule->id)->count())->all());
+        $this->assertSame(['checked_in' => 4, 'confirmed' => 9], DB::table('bookings')->where('shift_schedule_id', $old->id)->select('status', DB::raw('count(*) as aggregate'))->groupBy('status')->pluck('aggregate', 'status')->all());
+        $this->assertSame([13, 12, 12], DB::table('shift_schedules')->orderBy('starts_at')->get()->map(fn ($schedule) => DB::table('point_ledger_entries')->whereIn('booking_id', DB::table('bookings')->where('shift_schedule_id', $schedule->id)->pluck('id'))->where('entry_type', 'charge')->count())->all());
+        $this->assertSame([0, 4, 8, 4, 4, 4, 4, 0], [0, DB::table('operator_paper_tickets')->where('member_schedule_id', $old->id)->count(), DB::table('operator_queue_admissions')->where('member_schedule_id', $old->id)->count(), DB::table('operator_arrivals')->where('member_schedule_id', $old->id)->count(), DB::table('operator_identity_verifications')->where('member_schedule_id', $old->id)->count(), DB::table('member_paper_questionnaires')->where('member_schedule_id', $old->id)->count(), DB::table('member_vital_signs_assessments')->where('member_schedule_id', $old->id)->count(), DB::table('image_gateway_capture_sets')->where('member_schedule_id', $old->id)->count()]);
+        $this->assertSame(4, DB::table('operator_paper_tickets')->count());
+        $this->assertSame(8, DB::table('operator_queue_admissions')->count());
+        $this->assertSame(4, DB::table('member_vital_signs_assessments')->count());
+        $this->assertSame(4, DB::table('operator_vital_signs_executions')->count());
     }
 
     private function insertObsoleteSchedule(bool $withBooking = false): string
