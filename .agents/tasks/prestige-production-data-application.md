@@ -1,7 +1,7 @@
 ---
 title: Prestige legacy-schedule production diagnostic
 document_id: MHCS-TASK-PRESTIGE-PRODUCTION-DATA-APPLICATION-001
-version: 1.6
+version: 1.7
 status: validated-on-publication
 language: en-US
 last_updated: 2026-08-20
@@ -180,7 +180,7 @@ has_point_ledger=true|false
 has_progressed_clinical_records=true|false
 ```
 
-`has_progressed_clinical_records` is true when any of the seven clinical and
+`has_progressed_clinical_records` is true when any of the eight clinical and
 operational tables from `local_imaging_orders` through
 `image_gateway_capture_sets` has a non-zero count. Eligible-shift and
 assignment rows are reported separately and do not constitute clinical
