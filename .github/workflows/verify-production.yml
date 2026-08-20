@@ -56,7 +56,7 @@ jobs:
           set -euo pipefail
 
           FAIL=0
-          if [ -z "$EXPECTED_REVISION" ]; then EXPECTED_REVISION="fb013e7657484105bd86c046e687d676fb3d253b"; fi
+          if [ -z "$EXPECTED_REVISION" ]; then EXPECTED_REVISION="f3dbb053d0ed84a8a19e805233020dcdf410bffe"; fi
           APP_SERVICE="mhcs_core_app"
           DB_SERVICE="mhcs_core_db"
           QUEUE_SERVICE="mhcs_core_queue"
@@ -442,9 +442,9 @@ jobs:
                     ->where("code", "SYN-CHEST-A")
                     ->first();
                 $expected = [
-                    ["starts_at" => "2026-08-19 17:00:00", "ends_at" => "2026-08-26 17:00:00", "quota" => 37],
-                    ["starts_at" => "2026-08-26 17:00:00", "ends_at" => "2026-08-27 17:00:00", "quota" => 37],
-                    ["starts_at" => "2026-08-27 17:00:00", "ends_at" => "2026-08-28 17:00:00", "quota" => 37],
+                    ["starts_at" => "2026-08-19 17:00:00", "ends_at" => "2026-08-26 17:00:00", "quota" => 37, "status" => "open"],
+                    ["starts_at" => "2026-08-26 17:00:00", "ends_at" => "2026-08-27 17:00:00", "quota" => 37, "status" => "open"],
+                    ["starts_at" => "2026-08-27 17:00:00", "ends_at" => "2026-08-28 17:00:00", "quota" => 37, "status" => "open"],
                 ];
 
                 $schedules = $site !== null && $offering !== null
@@ -453,12 +453,19 @@ jobs:
                         ->where("service_offering_id", $offering->id)
                         ->whereIn("starts_at", ["2026-08-19 17:00:00", "2026-08-26 17:00:00", "2026-08-27 17:00:00"])
                         ->orderBy("starts_at")
-                        ->get(["id", "starts_at", "ends_at", "quota"])
+                        ->get(["id", "starts_at", "ends_at", "quota", "status"])
+                    : collect();
+                $allSchedules = $site !== null && $offering !== null
+                    ? $db::table("shift_schedules")
+                        ->where("examination_site_id", $site->id)
+                        ->where("service_offering_id", $offering->id)
+                        ->get(["id"])
                     : collect();
                 $scheduleRows = $schedules->map(static fn (object $row): array => [
                     "starts_at" => (string) $row->starts_at,
                     "ends_at" => (string) $row->ends_at,
                     "quota" => (int) $row->quota,
+                    "status" => (string) $row->status,
                 ])->all();
                 $scheduleBoundsMatch = $scheduleRows === $expected;
                 $quotaValues = $schedules->map(static fn (object $row): int => (int) $row->quota)->all();
@@ -468,6 +475,7 @@ jobs:
                 $distinctMembers = 0;
                 $memberSetsEqual = false;
                 $memberSetsHave37 = false;
+                $cohortMatch = false;
 
                 if ($schedules->count() === 3) {
                     foreach ($schedules as $schedule) {
@@ -499,10 +507,21 @@ jobs:
                         && count(array_unique($memberSets[0])) === 37
                         && count(array_unique($memberSets[1])) === 37
                         && count(array_unique($memberSets[2])) === 37;
+                    $prestigeMemberIds = $db::table("members")
+                        ->whereIn("user_id", $db::table("users")->where("email", "like", "%@prestige.madeena-xray.com")->pluck("id"))
+                        ->pluck("id")
+                        ->map(static fn ($id): string => (string) $id)
+                        ->sort(SORT_STRING)
+                        ->values()
+                        ->all();
+                    $cohortMatch = $prestigeMemberIds === $memberSets[0]
+                        && $prestigeMemberIds === $memberSets[1]
+                        && $prestigeMemberIds === $memberSets[2];
                 }
 
                 $passed = $site !== null
                     && $offering !== null
+                    && $allSchedules->count() === 3
                     && $schedules->count() === 3
                     && $scheduleBoundsMatch
                     && $quotaValues === [37, 37, 37]
@@ -510,22 +529,26 @@ jobs:
                     && $totalBookings === 111
                     && $distinctMembers === 37
                     && $memberSetsEqual
-                    && $memberSetsHave37;
+                    && $memberSetsHave37
+                    && $cohortMatch;
 
-                $targetCharges = (int) $db::table("point_ledger_entries")->whereIn("booking_id", $schedules->pluck("id")->isEmpty() ? [] : $db::table("bookings")->whereIn("shift_schedule_id", $schedules->pluck("id"))->pluck("id"))->where("entry_type", "charge")->count();
+                $targetBookingIds = $db::table("bookings")->whereIn("shift_schedule_id", $schedules->pluck("id"))->pluck("id");
+                $targetChargeRows = $db::table("point_ledger_entries")->whereIn("booking_id", $targetBookingIds)->where("entry_type", "charge");
+                $targetCharges = (int) $targetChargeRows->count();
                 $oldStartsAbsent = ! $db::table("shift_schedules")->where("examination_site_id", $site?->id)->where("service_offering_id", $offering?->id)->whereIn("starts_at", ["2026-08-14 01:00:00", "2026-08-26 01:00:00", "2026-08-27 01:00:00", "2026-08-28 01:00:00"])->exists();
-                $passed = $passed && $targetCharges === 111 && $oldStartsAbsent;
+                $targetReversals = (int) $db::table("point_ledger_entries")->whereIn("booking_id", $targetBookingIds)->whereNotNull("reverses_id")->count();
+                $passed = $passed && $targetCharges === 111 && (int) $targetChargeRows->distinct("booking_id")->count("booking_id") === 111 && $targetReversals === 0 && $oldStartsAbsent;
 
                 echo json_encode([
                     "site_active" => $site !== null,
                     "schedule_count" => $schedules->count(),
                     "schedule_bounds_match" => $scheduleBoundsMatch,
                     "quota_20_26" => $quotaValues[0] ?? null,
-                    "quota_27" => $quotaValues[1] ?? null,
-                    "quota_28" => $quotaValues[2] ?? null,
+                    "quota_27_28" => $quotaValues[1] ?? null,
+                    "quota_28_29" => $quotaValues[2] ?? null,
                     "confirmed_20_26" => $confirmedCounts[0] ?? null,
-                    "confirmed_27" => $confirmedCounts[1] ?? null,
-                    "confirmed_28" => $confirmedCounts[2] ?? null,
+                    "confirmed_27_28" => $confirmedCounts[1] ?? null,
+                    "confirmed_28_29" => $confirmedCounts[2] ?? null,
                     "total_bookings" => $totalBookings,
                     "distinct_members" => $distinctMembers,
                     "member_sets_equal" => $memberSetsEqual,
@@ -534,11 +557,13 @@ jobs:
                     "target_total_bookings" => $totalBookings,
                     "target_distinct_members" => $distinctMembers,
                     "target_member_sets_equal" => $memberSetsEqual,
+                    "target_cohort_match" => $cohortMatch,
                     "target_charge_entries" => $targetCharges,
-                    "old_14_absent" => ! $db::table("shift_schedules")->where("examination_site_id", $site?->id)->where("starts_at", "2026-08-14 01:00:00")->exists(),
-                    "old_26_absent" => ! $db::table("shift_schedules")->where("examination_site_id", $site?->id)->where("starts_at", "2026-08-26 01:00:00")->exists(),
-                    "old_27_absent" => ! $db::table("shift_schedules")->where("examination_site_id", $site?->id)->where("starts_at", "2026-08-27 01:00:00")->exists(),
-                    "old_28_absent" => ! $db::table("shift_schedules")->where("examination_site_id", $site?->id)->where("starts_at", "2026-08-28 01:00:00")->exists(),
+                    "target_reversal_entries" => $targetReversals,
+                    "old_14_absent" => ! $db::table("shift_schedules")->where("examination_site_id", $site?->id)->where("service_offering_id", $offering?->id)->where("starts_at", "2026-08-14 01:00:00")->exists(),
+                    "old_26_absent" => ! $db::table("shift_schedules")->where("examination_site_id", $site?->id)->where("service_offering_id", $offering?->id)->where("starts_at", "2026-08-26 01:00:00")->exists(),
+                    "old_27_absent" => ! $db::table("shift_schedules")->where("examination_site_id", $site?->id)->where("service_offering_id", $offering?->id)->where("starts_at", "2026-08-27 01:00:00")->exists(),
+                    "old_28_absent" => ! $db::table("shift_schedules")->where("examination_site_id", $site?->id)->where("service_offering_id", $offering?->id)->where("starts_at", "2026-08-28 01:00:00")->exists(),
                     "verification_passed" => $passed,
                 ], JSON_THROW_ON_ERROR).PHP_EOL;
                 exit($passed ? 0 : 1);
