@@ -1,7 +1,7 @@
 ---
 title: Prestige production rehearsal-data reset and fresh fixture seed
 document_id: MHCS-TASK-PRESTIGE-PRODUCTION-DATA-APPLICATION-001
-version: 2.1
+version: 2.2
 status: validated-on-publication
 language: en-US
 last_updated: 2026-08-20
@@ -33,11 +33,12 @@ including progressed 14-Aug records, is disposable test/rehearsal data. Version
 2.0 explicitly supersedes the v1.8/v1.9 strategy of preserving historical
 14-Aug clinical history and reconciling 26/27 schedules in place.
 
-**Implementation baseline:** `eabf45759cd7a6135ca592d93e6231d8154253e1`
+**Implementation baseline:** `4bd7546cc93726c271733acf4d7b638d447fdb12`
 
-Lineage note: `eabf45759cd7a6135ca592d93e6231d8154253e1` is an unrelated viewer
-commit already present in main; it is part of the implementation baseline but
-is OUT OF SCOPE for the Prestige reset.
+**Reviewed implementation:** Phase A `fb013e7657484105bd86c046e687d676fb3d253b`;
+Phase B/current main `4bd7546cc93726c271733acf4d7b638d447fdb12`.
+
+**Terminal review verdict:** `REMEDIATION REQUIRED`.
 
 **Production runtime before reset:** `b5a2306e7d2d1491285edfd0418d25b1cdea568f`
 
@@ -94,14 +95,25 @@ schedules and bookings:
 The old 2026-08-28 01:00:00 UTC schedule was absent in diagnostic `32375201758`
 and MUST remain absent at the reset precondition.
 
-Where present, delete booking-owned `point_ledger_entries`,
-`booking_status_events`, local imaging orders, operator paper tickets, queue
-admissions, arrivals, identity verifications, member paper questionnaires,
-member vital-sign assessments, operator vital-sign executions, image-gateway
-capture sets and descendants, examination consent, and every other dependency
-whose ownership is unambiguously rooted in the exact old schedule/booking IDs.
-Then delete old operator shift assignments, eligible shifts, the 37 bookings,
-and finally the three schedules.
+Before implementation, re-audit the complete schema dependency DAG and derive a
+true child-before-parent order. At minimum, preserve these relationships:
+
+- `image_gateway_studies` → `image_gateway_capture_objects` →
+  `image_gateway_capture_sets` → `operator_queue_admissions`;
+- `operator_vital_signs_executions` → `member_vital_signs_assessments` →
+  bookings/schedules;
+- `operator_vital_signs_executions` → `operator_queue_admissions`;
+- `operator_identity_verification_events` →
+  `operator_identity_verifications` → `operator_arrivals`;
+- `operator_queue_admission_history` → `operator_queue_admissions` →
+  `operator_paper_tickets`;
+- booking-owned consent/questionnaire/etc. → bookings; and
+- `operator_shift_assignments` → `operator_eligible_shifts`.
+
+In particular, delete `operator_queue_admissions` before
+`operator_paper_tickets`. Then delete every other discovered descendant,
+booking-linked charge row, old operator shift assignment, eligible shift, the
+37 bookings, and finally the three schedules.
 
 Inspect all current migrations/schema references to `booking_id`,
 `shift_schedule_id`, `member_schedule_id`, and `operator_eligible_shift_id` and
@@ -126,6 +138,12 @@ equal to the exact fixed 37-member Prestige cohort.
 
 Any material mismatch MUST fail closed before deletion.
 
+Empty Prestige schedules MAY be accepted for normal local/testing fixture
+creation only. With authorized production-seeding semantics, valid states are
+only the exact diagnosed pre-reset state or the exact clean post-reset
+three-target state. Empty, partial, mixed, or ambiguous production state MUST
+fail closed.
+
 ## Mandatory backup and atomic reset
 
 Immediately before the destructive transaction, execute a NEW verified
@@ -134,13 +152,27 @@ all read/credential/runtime validation → fresh verified backup → destructive
 reset transaction → fresh seed → invariant verification. Backup failure means
 no deletion and no seed; do not rely only on a previous backup.
 
-Within one controlled transaction where supported, revalidate and lock exact
-old roots, resolve exact IDs, delete deepest descendants first, delete old
-booking-linked charge rows, bookings, operator assignments, eligible shifts,
-and schedules. Unexpected dependencies, row counts, ownership mismatches, FK
-failures, or ambiguous relationships MUST roll back. Errors/logs contain no
-PII. Verify all old schedules, bookings, booking-linked charges, and downstream
-execution rows are absent while the 37 User/Member identities remain intact.
+The destructive reset transaction MUST begin before the exact old Prestige
+roots are locked and validated. It MUST re-read the full exact v2.1 pre-reset
+shape inside the transaction, including the three schedules' exact starts,
+ends, quotas and statuses; old 28 absence; 13/12/12 bookings and exact status
+distributions; exact 37 legacy bookings and distinct Members equal to the fixed
+cohort; ledger/charge totals and zero reversals; eight progressed counts;
+eligible-shift counts; assignment counts/statuses; and every dependency
+invariant required for safe deletion. Resolve IDs only after this validation,
+then delete descendants, assert the complete post-delete state, and commit.
+No detailed check may rely solely on the pre-transaction classifier; any change
+between classification and transactional validation MUST fail closed.
+
+Before commit, assert using captured old IDs that every discovered execution
+category is gone: tickets, queue admissions/history, arrivals, identity
+verification/events, questionnaires, vitals/executions, consents, local
+imaging, booking status events, image-gateway sets/objects/studies, charges,
+bookings, eligible shifts, assignments, and schedules. Reassert the preserved
+37 Users, 37 linked Members, fixed cohort identities, and Prestige Operators.
+Unexpected dependencies, row counts, ownership mismatches, FK failures, or
+ambiguous relationships MUST roll back. Never disable FK checks or truncate.
+Errors/logs contain no IDs or PII.
 
 ## Fresh seed and idempotency
 
@@ -156,23 +188,64 @@ A second normal seeder run recognizes the clean three-target fixture and
 creates zero schedules, bookings, charges, or duplicate assignments. Any mixed
 or partial state fails closed; reset must not run again after successful seed.
 
-## Phase A / Phase B and tests
+## Synthetic reset fixture and tests
+
+Synthetic tests MUST contain the real legacy graph: fixed 37 Prestige Members;
+14-Aug with 13 bookings (4 checked-in, 9 confirmed), 4 paper tickets, 8 queue
+admissions, 4 arrivals, 4 identity verifications, 4 questionnaires, 4 vital
+assessments, corresponding deeper history/execution rows, 13 charges, one
+eligible shift and five assignments; 26-Aug and 27-Aug with 12 confirmed
+bookings, 12 charges, zero progressed records, one eligible shift and five
+assignments each; old 28-Aug absent. Include unrelated Member, booking,
+schedule, Operator, and ledger rows.
+
+Exercise the real reset success path and prove the full old dependency graph,
+37 bookings, 37 booking-linked charges, schedules, and execution descendants
+are removed; identities, password hashes, Operators, non-booking Prestige
+credits, and unrelated rows survive; fresh A/B/C has 111 bookings and charges,
+one charge per booking, equal fixed cohort sets, deterministic Operators, and
+a second run creates nothing. Inject a mid-cleanup failure and prove complete
+rollback, including rows deleted before failure. Add changed-precondition
+failure tests. Reversing the admission/paper-ticket order MUST fail the
+synthetic FK-constrained test.
+
+## Phase A / Phase B and workflow/verifier tests
 
 Phase A is application/seeder plus synthetic tests. Phase B is apply workflow,
 canonical verifier, plus workflow tests. Phase B MUST hardcode the exact full
 Phase-A SHA; production may deploy only the accepted Phase-A revision.
 
-Tests MUST prove exact pre-reset acceptance; changed-shape fail-closed before
-deletion; all old descendants/schedules/bookings/charges deleted; preservation
-of 37 User/Member identities, password hashes, profile data, Operator
-identities, Member non-booking setup, and unrelated data; no broad deletion;
-FK-safe order; rollback after injected cleanup failure; fresh 37/37/37,
-111/111 arithmetic and equal member sets; and second-run idempotency.
+Workflow pre-reset gate MUST independently verify the sanitized full diagnostic
+shape: exact starts/ends, quota 50, status open, old 28 absence, 13/12/12
+bookings and statuses, ledger/charge/reversal totals, eight progressed counts,
+eligible shifts, assignment counts/statuses, 37 legacy bookings, 37 distinct
+Members, and equality to the fixed cohort. Tests MUST prove
+`PRE_RESET_GATE < BACKUP < SEEDER`, and backup failure MUST make the seeder
+unreachable.
 
-Workflow tests MUST prove exact Phase-A pin, fresh backup before reset, backup
-failure preventing deletion, old-data fail-closed gate, private credential
-controls, canonical clean-fixture verification, old starts absent, preserved
-37-member verification, optional read-only diagnostic, and no PII/IDs in output.
+The canonical clean verifier and apply post-seed verification MUST query all
+Prestige `SYN-CHEST-A` schedule rows and require the entire set to be exactly
+A/B/C, with each target `status=open`, 37 unique Members, equal target Member
+sets equal to the fixed cohort, exactly one Charge per booking, 111 charges,
+and zero reversals. Use canonical output names:
+`quota_20_26=37`, `quota_27_28=37`, `quota_28_29=37`,
+`confirmed_20_26=37`, `confirmed_27_28=37`, `confirmed_28_29=37`.
+Old-start checks MUST scope both exact Prestige site and `SYN-CHEST-A` and
+independently require `old_14_absent=true`, `old_26_absent=true`,
+`old_27_absent=true`, and `old_28_absent=true`. Canonical verify-production
+remains strictly read-only.
+
+Workflow tests MUST fail if any of these checks, the exact Phase-A pin, backup
+ordering, credential controls, cleanup/environment/concurrency protections,
+Member verifier, or no-PII/ID output protections disappear.
+
+## Two-phase remediation
+
+After this task revision is independently accepted, corrected Phase A is
+seeder plus seeder tests only and produces a new full `PHASE_A_SHA`. Corrected
+Phase B is workflows plus deployment tests only, is a direct child of Phase A,
+and pins `EXPECTED_REVISION` to that exact Phase-A SHA. No deployment or
+production operation is authorized.
 
 Do not add a generic migration API, schema migration, unrelated refactor,
 deployment, workflow dispatch, secret provisioning, manual SQL, or production
@@ -186,8 +259,9 @@ This publication turn changes only:
 .agents/tasks/prestige-production-data-application.md
 ```
 
-It MUST NOT implement, deploy, dispatch, provision secrets, access or mutate
-production, create `task.md`, or create a new task. Require `git diff --check`
-and confirm no implementation or production operation occurred.
+It MUST NOT implement, deploy, dispatch workflows, provision secrets, access
+or mutate production, run backup/reset/seed, create `task.md`, or create a new
+task. Require `git diff --check` and confirm no implementation or production
+operation occurred.
 
 **Terminal:** TASK REVISION REVIEW REQUIRED.
