@@ -1,7 +1,7 @@
 ---
 title: Controlled Prestige Production Data Application
 document_id: MHCS-TASK-PRESTIGE-PRODUCTION-DATA-APPLICATION-001
-version: 1.4
+version: 1.5
 status: validated-on-publication
 language: en-US
 last_updated: 2026-08-20
@@ -13,7 +13,7 @@ scope:
   - sanitized read-only verification of the Prestige production dataset
   - restoration and verification of the established production backup prerequisite
   - optional sanitized read-only verification of the existing Prestige Member accounts
-authority_note: This task authorizes bounded changes to the Prestige seeder, the dedicated apply workflow, the canonical production verifier, and directly relevant tests for the owner-requested three-schedule rehearsal. Existing backup, protected-environment, credential, privacy, and Member-account safety controls remain mandatory, while server-setup-db.yml is preserved and not in implementation scope. Later production execution remains a separately approved operational action; this task republication and implementation do not themselves dispatch the workflow, deploy, seed, or mutate the live database.
+authority_note: This task authorizes a two-phase implementation of the owner-requested three-schedule rehearsal: Phase A produces and tests the application revision containing the seeder, and Phase B produces and tests the workflows pinned to the exact accepted Phase-A revision. Existing backup, protected-environment, credential, privacy, and Member-account safety controls remain mandatory, while server-setup-db.yml is preserved and not in implementation scope. Later deployment and production execution remain separately approved operational actions; this task republication and implementation do not themselves dispatch workflows, deploy, seed, or mutate the live database.
 ---
 
 # Executable Task
@@ -35,26 +35,26 @@ authority_note: This task authorizes bounded changes to the Prestige seeder, the
 The owner-requested Prestige rehearsal uses the same existing 37 Prestige
 Members in three non-overlapping schedules: one full local-calendar interval
 from 20 through 26 August 2026, followed by 27 August and 28 August 2026.
-The accepted production application must run at the immutable application
-revision `4488f37787bc521869a2bb6113507387c5a983c8`. Production application of
-that approved dataset remains outside implementation and review execution.
-This task updates one narrowly dedicated, manually triggered GitHub Actions
-workflow, the bounded fixture seeder behavior, and the canonical verifier with
-fail-closed production, backup, private-source, and post-seed controls.
+The current pre-change production runtime is
+`4488f37787bc521869a2bb6113507387c5a983c8`; it contains the old two-schedule
+seeder and MUST NOT be used for the expanded three-schedule mutation. Phase A
+must first produce the application revision containing the new seeder. Phase B
+then updates the manually triggered workflows to require that exact Phase-A
+revision. Production application remains outside implementation and review
+execution.
 
 The workflow is an operational data-application mechanism, not a general
 seeder runner, deployment replacement, or production release authorization.
 
-Revision 1.1 added the owner-approved credential-safety remediation. At the
-expected production revision, `PrestigeClinicSeeder` has fallback values for
+Revision 1.1 added the owner-approved credential-safety remediation. The
+current pre-change runtime's `PrestigeClinicSeeder` has fallback values for
 operator and administrator credentials when private credential material is
 unavailable. The production workflow MUST fail closed before backup or
 seeding unless the approved private credential inputs are present, structured,
-and staged safely. Revision 1.4 preserves those controls, the established
+and staged safely. Revision 1.5 preserves those controls, the established
 verified backup prerequisite, and the optional read-only Member-account
-preflight while authorizing only the bounded three-schedule seeder and
-workflow/verifier changes described below. The normal runtime booking service
-remains unchanged.
+preflight while authorizing the bounded two-phase seeder and workflow/verifier
+changes described below. The normal runtime booking service remains unchanged.
 
 ## Baseline and task revision
 
@@ -62,18 +62,92 @@ remains unchanged.
 
 **Task revision:** `The full SHA of the commit containing this exact validated task content, supplied by the Planner after publication.`
 
-The implementation baseline and expected production application/runtime
-revision are intentionally distinct:
+The implementation baseline, current pre-change production runtime, and
+three-schedule application runtime are intentionally distinct:
 
 - **Implementation baseline** = `12dd1ccd0763d48fd581fe3dec9eb53f5a794c05`
-- **Expected production application/runtime revision** =
+- **Current pre-change production runtime** =
   `4488f37787bc521869a2bb6113507387c5a983c8`
+- **Three-schedule application runtime** = the exact immutable Phase-A
+  application implementation commit produced under this task and subsequently
+  accepted by Planner/Reviewer.
 
-The expected production application/runtime revision for the first execution
-is the exact immutable revision `4488f37787bc521869a2bb6113507387c5a983c8`.
-A later production revision MUST NOT be accepted by this workflow merely
-because it is newer; changing the expected runtime revision is a separate
-planning/review decision.
+Phase B MUST hardcode the full Phase-A SHA as the apply workflow's
+`EXPECTED_REVISION` after Phase A has been committed. The apply workflow MUST
+reject the current pre-change runtime for the expanded mutation. A Phase-A SHA
+MUST NOT remain a placeholder in the Phase-B workflow and MUST NOT be replaced
+by a mutable branch name or an unrelated newer revision.
+
+## Two-phase implementation contract
+
+Implementation may occur in one Executor session, but it MUST produce two
+distinct commits based on the implementation baseline.
+
+### Phase A — application revision
+
+Phase A may modify only:
+
+- `database/seeders/PrestigeClinicSeeder.php`;
+- `tests/Feature/Operator/PrestigeClinicSeederTest.php`; and
+- an existing directly relevant normal runtime duplicate-booking regression
+  test, only if modification is genuinely necessary.
+
+Phase A MUST NOT modify either workflow or any workflow test. It MUST implement
+exactly the three schedules, quota/count/set invariants, existing-Member reuse,
+no password reset or recreation, private CSV and credential behavior,
+production seeder guard, idempotent booking reconciliation, obsolete-schedule
+safety, and unchanged normal runtime duplicate-active-booking behavior defined
+by this task. A reusable local-date-range/window helper is preferred.
+
+After Phase-A tests pass, commit Phase A separately with an immutable full SHA.
+The Executor MUST record:
+
+```text
+THREE_SCHEDULE_APP_REVISION=<PHASE_A_SHA>
+```
+
+Suggested Phase-A commit message:
+`fix(prestige): add three rehearsal schedules`
+
+Phase A MUST NOT be deployed by implementation.
+
+### Phase B — workflow revision
+
+Starting from the Phase-A commit, Phase B may modify only:
+
+- `.github/workflows/apply-prestige-production-data.yml`;
+- `.github/workflows/verify-production.yml`;
+- `tests/Deployment/PrestigeProductionWorkflowTest.php`;
+- `tests/Deployment/ProductionVerificationWorkflowTest.php`; and
+- another existing directly relevant workflow test, only if necessary.
+
+Phase B MUST hardcode:
+
+```yaml
+EXPECTED_REVISION="<PHASE_A_SHA>"
+```
+
+where `<PHASE_A_SHA>` is the exact Phase-A commit just produced. It MUST NOT
+continue accepting `4488f37787bc521869a2bb6113507387c5a983c8` for the expanded
+three-schedule mutation. Phase B MUST preserve the exact confirmation,
+three-schedule verification, Member-account verification, backup, secret,
+credential, cleanup, and privacy contracts in this task.
+
+After Phase-B tests pass, commit Phase B separately with an immutable full SHA.
+Suggested Phase-B commit message:
+`fix(workflow): apply three-schedule Prestige fixture`
+
+The final topology is:
+
+```text
+Phase-A SHA
+  → deployable application revision containing the three-schedule seeder
+Phase-B SHA
+  → main workflow revision pinned to the accepted Phase-A SHA
+```
+
+Neither phase authorizes deployment, workflow dispatch, secret provisioning,
+or production mutation.
 
 ## Approved credential-safety remediation
 
@@ -248,9 +322,9 @@ application changes, and unrelated credential rotation remain out of scope.
 
 ## Approved backup-prerequisite and Member-account preflight
 
-Revision 1.4 remains part of the same controlled Prestige production-data
-objective. It preserves the established backup prerequisite and adds the
-owner-requested three-schedule fixture contract plus an independent,
+The prior publication remains part of the same controlled Prestige
+production-data objective. It preserves the established backup prerequisite
+and adds the owner-requested three-schedule fixture contract plus an independent,
 read-only proof of the existing Prestige Member-account population. It does
 not redefine Member credentials or introduce new production account
 semantics.
@@ -307,6 +381,7 @@ prestige_user_accounts=37
 prestige_linked_members=37
 prestige_active_accounts=37
 prestige_login_enabled_accounts=37
+prestige_member_linkage_exact=true
 ```
 
 It MUST also prove, without identity output, that every candidate user has
@@ -359,26 +434,33 @@ authorized.
 
 ### E. Backup-prerequisite execution order
 
-After implementation and independent review, the required operational order
-is:
+After Phase A and Phase B implementation and independent review, the eventual
+operational order is:
 
-1. run `verify-production.yml` with
-   `expected_revision=4488f37787bc521869a2bb6113507387c5a983c8`,
-   `verify_prestige_members=true`, `verify_prestige=false`, and
-   `run_large_upload_probe=false`;
-2. require the sanitized 37-account Member verification to pass;
-3. require the established verified backup prerequisite and its S3/MinIO
-   upload/retention evidence without changing `server-setup-db.yml`;
-4. obtain the owner's separate authorization for the final three-schedule
-   apply using the new confirmation phrase;
-5. after a successful apply, run the canonical verifier read-only with both
-   `verify_prestige=true` and `verify_prestige_members=true`; and
-6. treat any failed preflight, backup, apply, or canonical verification as a
-   stop condition.
+1. separately authorize and deploy the exact accepted Phase-A SHA;
+2. run `verify-production.yml` with
+   `expected_revision=<PHASE_A_SHA>`, `verify_prestige_members=true`,
+   `verify_prestige=false`, and `run_large_upload_probe=false`;
+3. require the sanitized 37-account Member verification to pass;
+4. require the established backup prerequisite to remain available without
+   changing `server-setup-db.yml`;
+5. separately authorize and temporarily provision the two protected Prestige
+   secrets;
+6. dispatch the accepted Phase-B/main workflow using
+   `APPLY-PRESTIGE-2026-08-20-28`;
+7. require the apply workflow's mandatory verified database backup;
+8. require the apply workflow to execute the Phase-A three-schedule seeder;
+9. require 37/37/37 confirmed bookings, 111 total bookings, 37 distinct
+   Members, and identical Member sets;
+10. delete and verify absence of both temporary secrets; and
+11. run the canonical verifier with `expected_revision=<PHASE_A_SHA>`,
+    `verify_prestige=true`, and `verify_prestige_members=true`.
 
-The backup prerequisite and Prestige seeding MUST remain separate executions.
-The backup setup workflow MUST NOT be replaced by manual SQL or a new backup
-architecture.
+Server-setup/backup-prerequisite establishment and verification MUST be
+separate from the Prestige apply operation. The actual database backup
+execution remains inside `apply-prestige-production-data.yml` and MUST succeed
+immediately before the seeder is allowed to mutate Prestige data. The backup
+setup workflow MUST NOT be replaced by manual SQL or a new backup architecture.
 
 ### F. Member credential safety
 
@@ -398,13 +480,22 @@ logged.
 
 ### H. Implementation scope
 
-The allowed implementation files are:
+The bounded implementation is split into the two commits defined above:
 
-- `database/seeders/PrestigeClinicSeeder.php`;
-- `.github/workflows/apply-prestige-production-data.yml`;
-- `.github/workflows/verify-production.yml`; and
-- directly relevant tests, including the existing Prestige seeder and
-  deployment/workflow contract tests.
+- Phase A is limited to `database/seeders/PrestigeClinicSeeder.php`,
+  `tests/Feature/Operator/PrestigeClinicSeederTest.php`, and an existing
+  directly relevant normal runtime duplicate-booking regression test only if
+  genuinely necessary.
+- Phase B starts from Phase A and is limited to
+  `.github/workflows/apply-prestige-production-data.yml`,
+  `.github/workflows/verify-production.yml`,
+  `tests/Deployment/PrestigeProductionWorkflowTest.php`,
+  `tests/Deployment/ProductionVerificationWorkflowTest.php`, and another
+  existing directly relevant workflow test only if genuinely necessary.
+
+Phase A MUST NOT modify workflows. Phase B MUST NOT modify the seeder or its
+Phase-A tests. Each phase MUST be committed separately and reviewed within its
+bounded scope.
 
 No unrelated application changes, migrations, schema changes, deployment
 changes, `server-setup-db.yml` changes, Member credential changes, or generic
@@ -431,16 +522,15 @@ for successful post-apply verification.
 
 ## Objective
 
-Update the existing Prestige production-data delivery contract and authorize
-the bounded implementation needed for the owner-requested three-schedule
-rehearsal: update `PrestigeClinicSeeder` to reconcile one 20–26 August
-schedule plus 27 August and 28 August schedules for the same 37 existing
-Members, update the dedicated manual apply workflow to verify the resulting
-111-booking invariant, and update `verify-production.yml` to use the identical
-three-schedule check while preserving its independent Member-account preflight.
-The exact production revision, backup-before-seed, credential-safety, privacy,
-and normal runtime booking contracts remain enforced. The workflow must
-remain manual-only and must not be dispatched by this task.
+Implement the owner-requested three-schedule Prestige rehearsal in two bounded
+commits: Phase A updates `PrestigeClinicSeeder` and its seeder regression to
+produce one 20–26 August schedule plus 27 August and 28 August schedules for
+the same 37 existing Members; Phase B updates the dedicated apply workflow and
+`verify-production.yml` to pin runtime verification and the apply mutation to
+the exact accepted Phase-A SHA. Preserve the exact three-schedule invariant,
+backup-before-seed, credential-safety, privacy, and normal runtime booking
+contracts. The workflows must remain manual-only and neither phase may be
+dispatched, deployed, or used to mutate production by implementation itself.
 
 ## Authoritative inputs
 
@@ -452,12 +542,12 @@ remain manual-only and must not be dispatched by this task.
   existing Members in all schedules, idempotent booking reconciliation, exact
   37/37/37/111/37 totals, and no production execution until separate
   approval.
-- Owner-approved revisions 1.1 and 1.3: protected `production` Environment
+- Owner-approved revisions 1.1, 1.3, and 1.5: protected `production` Environment
   use, temporary fixed employee/operator secrets, fail-closed credential
   prechecks, disposable bootstrap-credential output, established verified
   backup handling, and optional read-only Member-account preflight. Revision
-  1.4 preserves those controls while replacing the stale two-schedule
-  fixture contract.
+  1.5 preserves those controls while making the Phase-A application revision
+  an explicit dependency of the Phase-B workflows.
 - `.agents/AGENTS.md` and `.agents/software-workflow.md` — task readiness,
   evidence, side-effect, acceptance, and separate release-gate requirements.
 - `.agents/tasks/prestige-rehearsal-schedule-and-radiography-capture-readiness.md`
@@ -498,7 +588,8 @@ the human authority above:
 - `Production workflow trigger and confirmation` → human-authority contract,
   TRIGGER and PRODUCTION SAFETY sections.
 - `Production revision and serialization gates` → human-authority contract,
-  PRODUCTION SAFETY and existing `deploy-swarm.yml` conventions.
+  PRODUCTION SAFETY, the Phase-A runtime handoff, and existing
+  `deploy-swarm.yml` conventions.
 - `Backup and private-source handling` → human-authority contract,
   DATABASE BACKUP and PRIVATE PRESTIGE CSV sections, plus the established
   `server-setup-db.yml` mechanism.
@@ -517,13 +608,17 @@ the human authority above:
   sections, plus the accepted Prestige task lineage.
 - `Normal runtime booking preservation` → existing booking-domain behavior and
   the existing duplicate-active-booking regression coverage.
+- `Phase-A/Phase-B sequencing` → owner-requested two-commit implementation
+  contract and the exact immutable Phase-A-to-Phase-B runtime dependency.
 
 ## Scope
 
 ### In scope
 
-- Add or update the single workflow
-  `.github/workflows/apply-prestige-production-data.yml`.
+- Update the dedicated apply workflow
+  `.github/workflows/apply-prestige-production-data.yml` and the canonical
+  read-only verifier `.github/workflows/verify-production.yml` in their
+  bounded Phase-B commit.
 - Use `workflow_dispatch` only with one required confirmation input whose exact
   accepted value is `APPLY-PRESTIGE-2026-08-20-28`. Invalid or missing input,
   including the stale `APPLY-PRESTIGE-2026-08-27-28` phrase, MUST fail before
@@ -532,13 +627,15 @@ the human authority above:
   `concurrency.group: production-deployment-mhcs_core` with
   `cancel-in-progress: false`. The workflow MUST NOT run concurrently with
   `deploy-swarm.yml`.
-- Before backup or seed, verify that the current healthy production
-  `mhcs_core_app` runtime is the exact expected revision
-  `4488f37787bc521869a2bb6113507387c5a983c8`. Reuse the existing deployment
-  paths and evidence, including the current desired app container, its
-  immutable service image tag, and the mounted `/var/www/html/VERSION-CURRENT`
-  value, or an equivalent established runtime version proof. Missing,
-  unknown, or mismatched version evidence MUST fail closed.
+- Before backup or seed, Phase B MUST verify that the current healthy
+  production `mhcs_core_app` runtime is the exact Phase-A SHA hardcoded in
+  `EXPECTED_REVISION`. Reuse the existing deployment paths and evidence,
+  including the current desired app container, its immutable service image
+  tag, and the mounted `/var/www/html/VERSION-CURRENT` value, or an equivalent
+  established runtime version proof. Missing, unknown, or mismatched version
+  evidence MUST fail closed. The current pre-change runtime
+  `4488f37787bc521869a2bb6113507387c5a983c8` MUST be rejected for the expanded
+  three-schedule mutation.
 - Update `database/seeders/PrestigeClinicSeeder.php` to configure exactly the
   three required full-day local-calendar windows. Prefer one clear reusable
   local-date-range helper; do not spread timezone arithmetic literals through
@@ -679,9 +776,9 @@ the human authority above:
   S3/MinIO behavior, retention, and the managed cron block. This task changes
   none of those controls.
 - `verify-production.yml` remains read-only. Its generic verification behavior
-  and existing optional `verify_prestige` schedule/booking checks remain
-  unchanged when `verify_prestige_members=false`; the new Member check is
-  optional and independently gated.
+  and independent `verify_prestige_members` account check remain unchanged;
+  only the optional `verify_prestige` schedule/booking check is updated to the
+  three-schedule invariant and the Phase-A runtime gate.
 - Prestige Member accounts retain the existing NIK login identifier and
   fixture password convention, and existing accounts are reused without
   resets, recreation, credential migration, or hash inspection.
@@ -694,8 +791,9 @@ the human authority above:
 
 - A clean checkout at implementation baseline
   `12dd1ccd0763d48fd581fe3dec9eb53f5a794c05` and the exact published task
-  revision. The live runtime gate remains the separate exact revision
-  `4488f37787bc521869a2bb6113507387c5a983c8`.
+  revision. Phase B's live runtime gate is the exact Phase-A SHA produced and
+  accepted during Phase A; the current pre-change runtime
+  `4488f37787bc521869a2bb6113507387c5a983c8` is not an acceptable apply gate.
 - The existing self-hosted production runner has Docker access and is a Swarm
   manager for `mhcs_core`; the app and database services are reachable through
   the established deployment paths.
@@ -720,9 +818,10 @@ the human authority above:
 
 ### Approved assumptions
 
-- `4488f37787bc521869a2bb6113507387c5a983c8` is the exact expected reviewed
-  production application revision for the first workflow execution. A
-  mismatch is a safety failure, not permission to select another revision.
+- The Phase-A commit SHA is the exact reviewed application revision required
+  for the three-schedule workflow. A missing, unaccepted, or mismatched Phase-A
+  SHA is a safety failure, not permission to select the current pre-change
+  runtime or another revision.
 - The backup script's successful return is the repository-approved backup
   completion signal because it validates the compressed dump and uploads it
   through the established S3/MinIO mechanism; retention cleanup remains part
@@ -738,12 +837,13 @@ the human authority above:
 
 ### Remaining approval requirements
 
-- Planner/Reviewer must review and accept the workflow implementation before
-  production execution is considered.
-- Planner/Reviewer must review and accept the bounded seeder and canonical
-  verifier implementation before the prerequisite execution order may begin.
-- A designated production/release authority must separately approve the exact
-  implementation revision and the final three-schedule `workflow_dispatch` run.
+- Planner/Reviewer must review and accept Phase A before Phase B may be
+  implemented against its SHA.
+- Planner/Reviewer must review and accept Phase B before production execution
+  is considered.
+- A designated production/release authority must separately approve deployment
+  of the Phase-A application revision and the final three-schedule
+  `workflow_dispatch` run.
 - The existing `production` Environment policy remains an operational
   prerequisite. The designated operator must provision exactly the two fixed
   temporary secrets only for the separately approved attempt and must delete
@@ -760,6 +860,14 @@ the human authority above:
 
 ## Execution constraints
 
+- Execute Phase A first and keep its write set limited to the seeder, its
+  focused seeder regression, and a genuinely necessary existing runtime
+  duplicate-booking regression. Commit Phase A separately and record its full
+  SHA before beginning Phase B.
+- Start Phase B from the Phase-A commit and keep its write set limited to the
+  apply workflow, canonical verifier, and focused workflow tests. Hardcode the
+  recorded Phase-A SHA in `EXPECTED_REVISION`; do not modify the seeder or
+  Phase-A tests in Phase B.
 - Reuse the existing `deploy-swarm.yml` self-hosted runner, service names,
   version evidence, environment boundary, backup convention, and concurrency
   group. Do not create an unrelated deployment mechanism or use direct SSH.
@@ -767,6 +875,10 @@ the human authority above:
   it is a read-only dependency, not an implementation target. Preserve its DB
   grants, `FLUSH PRIVILEGES`, application-access checks, backup paths,
   S3/MinIO upload, validation, retention, and cron controls.
+- The eventual post-apply canonical verifier MUST preserve
+  `prestige_user_accounts=37`, `prestige_linked_members=37`,
+  `prestige_active_accounts=37`, `prestige_login_enabled_accounts=37`, and
+  `prestige_member_linkage_exact=true` in its independent Member check.
 - Keep `verify-production.yml` `workflow_dispatch`-only and read-only. Preserve
   the optional `verify_prestige_members` boolean input and its aggregate
   account query. Identify candidates by the fixed
@@ -811,13 +923,16 @@ the human authority above:
   printing identities. Fail if any expected three-schedule window, quota,
   confirmed count, total, distinct-member, or all-set-equality invariant is not
   observed.
-- For the later reviewed operational sequence, run Member preflight first
-  with `verify_prestige_members=true` and `verify_prestige=false`, require the
-  established verified backup prerequisite, then run the separately approved
+- For the later reviewed operational sequence, deploy the accepted Phase-A
+  SHA first, run Member preflight with `expected_revision=<PHASE_A_SHA>`,
+  `verify_prestige_members=true`, and `verify_prestige=false`, require the
+  established backup prerequisite, then run the separately approved Phase-B
   three-schedule apply. After it succeeds, run the canonical verifier with
-  both `verify_prestige=true` and `verify_prestige_members=true`. Do not
-  combine backup setup with Prestige seeding and do not retry the seed until
-  the required checks pass.
+  `expected_revision=<PHASE_A_SHA>`, `verify_prestige=true`, and
+  `verify_prestige_members=true`. Do not combine backup-prerequisite
+  establishment with the Prestige apply; the apply's own backup remains
+  immediately before the seeder, and do not retry the seed until the required
+  checks pass.
 - Preserve normal runtime booking behavior: the ordinary one-active-booking
   rule MUST continue to reject duplicate active bookings where currently
   required. The fixture/seeder exception is not permission to weaken the
@@ -839,8 +954,16 @@ the human authority above:
 - [ ] The workflow uses concurrency group
   `production-deployment-mhcs_core` with `cancel-in-progress: false`, so it
   cannot intentionally overlap `deploy-swarm.yml`.
-- [ ] Before backup or seed, the workflow proves that the healthy production
-  app is exactly revision `4488f37787bc521869a2bb6113507387c5a983c8` using
+- [ ] Phase A is a separate commit containing only the bounded seeder and
+  permitted Phase-A tests; its exact full SHA is recorded and subsequently
+  accepted by Planner/Reviewer before Phase B begins.
+- [ ] Phase B starts from Phase A, is a separate commit containing only the
+  permitted workflows and workflow tests, and hardcodes
+  `EXPECTED_REVISION="<PHASE_A_SHA>"`. The apply workflow rejects the current
+  pre-change runtime `4488f37787bc521869a2bb6113507387c5a983c8` for the
+  expanded mutation.
+- [ ] Before backup or seed, the Phase-B workflow proves that healthy
+  production `mhcs_core_app` is exactly the accepted Phase-A revision using
   established runtime version evidence and fails closed on missing, unknown,
   or mismatched evidence.
 - [ ] `PrestigeClinicSeeder` configures exactly three schedules: one
@@ -855,8 +978,9 @@ the human authority above:
   only a read-only aggregate query that independently identifies the fixed
   `@prestige.madeena-xray.com` cohort and fails unless the sanitized results
   are `prestige_user_accounts=37`, `prestige_linked_members=37`,
-  `prestige_active_accounts=37`, and `prestige_login_enabled_accounts=37`,
-  with one unique Member linkage per user, active status, and login enabled.
+  `prestige_active_accounts=37`, `prestige_login_enabled_accounts=37`, and
+  `prestige_member_linkage_exact=true`, with one unique Member linkage per
+  user, active status, and login enabled.
   It emits no PII, credentials, or password/hash data and reports the pass or
   failed marker.
 - [ ] The Member-account verification is independent from `verify_prestige`,
@@ -910,11 +1034,14 @@ the human authority above:
 - [ ] Existing Member credentials are reused with NIK login semantics; no
   Member password reset, recreation, migration, login-semantic change, or
   password/hash inspection is introduced.
-- [ ] After implementation and independent review, operational prerequisite
-  order is Member-account preflight → established verified backup prerequisite
-  → separately owner-authorized three-schedule apply → canonical read-only
-  verification with both `verify_prestige=true` and
-  `verify_prestige_members=true`; setup and seed are never combined.
+- [ ] After implementation and independent review, operational order is:
+  separately authorized Phase-A deployment → canonical Member preflight with
+  `expected_revision=<PHASE_A_SHA>` and `verify_prestige_members=true` /
+  `verify_prestige=false` → established backup-prerequisite verification →
+  separately authorized Phase-B apply → mandatory apply backup immediately
+  before seeding → canonical verification with
+  `expected_revision=<PHASE_A_SHA>`, `verify_prestige=true`, and
+  `verify_prestige_members=true`.
 - [ ] Focused workflow/static checks and the existing synthetic Prestige seeder
   regression pass; no live workflow dispatch, production seed, deployment, or
   live database mutation is performed as implementation evidence.
@@ -959,25 +1086,31 @@ the human authority above:
    without printing either private file's contents.
 8. Do not trigger the new workflow, run the seeder against production, deploy,
    or mutate any live database as part of task implementation or verification.
-9. Validate the revised task contract itself: version `1.4`,
+9. Validate the revised task contract itself: version `1.5`,
    `last_updated: 2026-08-20`, implementation baseline
-   `12dd1ccd0763d48fd581fe3dec9eb53f5a794c05`, expected production runtime
-   `4488f37787bc521869a2bb6113507387c5a983c8`, exact 20–26/27/28 local and
-   UTC windows, 3 schedules, 37/37/37 quotas and confirmations, 111 total
-   bookings, 37 distinct Members, identical Member sets, the new confirmation
-   phrase, rejection of the old phrase, preserved backup/credential/privacy
-   safeguards, unchanged normal runtime duplicate-booking behavior, and no
-   authorization to reset credentials or run production.
+   `12dd1ccd0763d48fd581fe3dec9eb53f5a794c05`, current pre-change production
+   runtime `4488f37787bc521869a2bb6113507387c5a983c8`, the accepted Phase-A
+   SHA as the three-schedule runtime, and Phase B's hardcoded
+   `EXPECTED_REVISION` gate rejecting the old runtime. Validate the exact
+   20–26/27/28 local and UTC windows, 3 schedules, 37/37/37 quotas and
+   confirmations, 111 total bookings, 37 distinct Members, identical Member
+   sets, the new confirmation phrase, rejection of the old phrase, mandatory
+   backup inside the apply workflow immediately before the seeder, unchanged
+   `server-setup-db.yml`, preserved credential/privacy safeguards, unchanged
+   normal runtime duplicate-booking behavior, no Member credential changes,
+   no production authorization, and `git diff --check`.
 10. Run `git diff --check` and confirm the task revision is the only changed
     repository file during this republication.
 
 ### Required evidence
 
-The Executor MUST report the exact task revision, implementation baseline and
-revision, changed files, static/workflow test output, all commands actually
-run, observed results, any warnings or tests not run, and the Mvp14/browser
-limitation if applicable. Production execution evidence is not expected and
-must not be fabricated. Any workflow-run evidence later supplied must contain
+The Executor MUST report the exact task revision, implementation baseline,
+current pre-change runtime, Phase-A and Phase-B implementation SHAs when
+implementation occurs, changed files, static/workflow test output, all
+commands actually run, observed results, any warnings or tests not run, and
+the Mvp14/browser limitation if applicable. Production execution evidence is not
+expected and must not be fabricated. Any workflow-run evidence later supplied
+must contain
 only sanitized operational summaries and must identify the exact approved
 workflow revision and production version gate result.
 
@@ -987,8 +1120,14 @@ Stop and return to Planner/Reviewer if:
 
 - the current checkout is dirty, the accepted baseline is not the declared
   immutable revision, or overlapping unreviewed deployment changes exist;
-- the workflow cannot prove the exact expected production revision before the
-  backup/seed path;
+- Phase A is not a distinct committed application revision, its full SHA is
+  not recorded, or Planner/Reviewer has not accepted it before Phase B begins;
+- Phase B does not start from the accepted Phase-A commit, does not form a
+  distinct second commit, broadens either phase's write set, or leaves
+  `EXPECTED_REVISION` as a placeholder or mutable reference;
+- the workflow cannot prove the exact accepted Phase-A production revision
+  before the backup/seed path, or accepts the current pre-change runtime
+  `4488f37787bc521869a2bb6113507387c5a983c8` for the expanded mutation;
 - the established backup script is unavailable, fails, or cannot verify the
   backup without inventing a new backup mechanism;
 - the existing protected `production` Environment or either fixed temporary
@@ -1032,12 +1171,18 @@ task as permission to run production operations.
 ### Explicitly authorized
 
 - Publish this task and its immutable Git revision.
-- Implement only the bounded `PrestigeClinicSeeder` schedule/booking change,
-  the dedicated apply workflow, the canonical read-only Member/schedule
-  verifier, and their focused tests required by this task. Do not change
-  `server-setup-db.yml`.
+- Implement only the bounded changes required by this task in two distinct
+  commits: Phase A for the seeder and its permitted tests, then Phase B from
+  the accepted Phase-A commit for the dedicated apply workflow, canonical
+  read-only Member/schedule verifier, and permitted workflow tests. Do not
+  change `server-setup-db.yml`.
 - Run local syntax, static, test, build, format, diff, and privacy checks using
   synthetic data only.
+- Commit Phase A separately, record its exact full SHA as
+  `THREE_SCHEDULE_APP_REVISION=<PHASE_A_SHA>`, then commit Phase B separately
+  with the apply workflow hardcoded to that SHA. These implementation commits
+  are distinct from this task republication and do not authorize deployment or
+  production execution.
 - Commit and push this task revision only during task republication.
 - After implementation and independent review, run the canonical read-only
   Member preflight, verify the established backup prerequisite, and run the
@@ -1069,10 +1214,10 @@ task as permission to run production operations.
 
 ### Review Required
 
-Return one reviewable implementation revision covering the bounded seeder
-change, dedicated workflow, canonical three-schedule verifier, optional
-read-only Member preflight, and truthful local verification evidence.
-Planner/Reviewer must separately accept the implementation before any
+Return two reviewable implementation revisions: a Phase-A application commit
+and a Phase-B workflow/verifier commit pinned to the exact accepted Phase-A
+SHA, each with truthful local verification evidence and bounded changed-file
+scope. Planner/Reviewer must separately accept both phases before any
 prerequisite execution or production seed decision.
 
 ### Planning Required
