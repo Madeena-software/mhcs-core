@@ -60,7 +60,6 @@ final class PrestigeClinicSeederTest extends TestCase
                 ->orderBy('id')
                 ->pluck('password', 'id')
                 ->all();
-            $this->insertObsoleteSchedule();
             $this->seed(PrestigeClinicSeeder::class);
         });
 
@@ -125,10 +124,27 @@ final class PrestigeClinicSeederTest extends TestCase
                 $this->seed(PrestigeClinicSeeder::class);
                 $this->fail('A progressed obsolete schedule must require separate cleanup.');
             } catch (RuntimeException $exception) {
-                $this->assertStringContainsString('downstream records', $exception->getMessage());
+                $this->assertSame('Prestige reconciliation preconditions are not satisfied.', $exception->getMessage());
             }
 
             $this->assertDatabaseHas('shift_schedules', ['id' => $staleScheduleId]);
+        });
+    }
+
+    public function test_mixed_prestige_schedule_state_fails_closed_without_deleting_legacy_rows(): void
+    {
+        $this->withSyntheticCsv(function (): void {
+            $this->seed(PrestigeClinicSeeder::class);
+            $staleScheduleId = $this->insertObsoleteSchedule();
+
+            try {
+                $this->seed(PrestigeClinicSeeder::class);
+                $this->fail('A mixed Prestige schedule state must fail closed.');
+            } catch (RuntimeException $exception) {
+                $this->assertSame('Prestige reconciliation preconditions are not satisfied.', $exception->getMessage());
+            }
+
+            $this->assertDatabaseHas('shift_schedules', ['id' => $staleScheduleId, 'starts_at' => '2026-08-26 01:00:00']);
         });
     }
 
