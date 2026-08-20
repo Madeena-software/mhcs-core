@@ -23,6 +23,11 @@ on:
         required: false
         default: false
         type: boolean
+      diagnose_prestige_legacy:
+        description: Run sanitized read-only legacy Prestige schedule diagnostics.
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: production-deployment-mhcs_core
@@ -45,6 +50,7 @@ jobs:
           RUN_LARGE_UPLOAD_PROBE: ${{ inputs.run_large_upload_probe }}
           VERIFY_PRESTIGE: ${{ inputs.verify_prestige }}
           VERIFY_PRESTIGE_MEMBERS: ${{ inputs.verify_prestige_members }}
+          DIAGNOSE_PRESTIGE_LEGACY: ${{ inputs.diagnose_prestige_legacy }}
         shell: bash
         run: |
           set -euo pipefail
@@ -535,6 +541,160 @@ jobs:
             fi
           else
             echo "PRESTIGE_VERIFICATION=skipped"
+          fi
+
+          if [ "$DIAGNOSE_PRESTIGE_LEGACY" = "true" ]; then
+            echo "===> Run sanitized read-only legacy Prestige schedule diagnostic"
+            if [ -z "$APP_CONTAINER" ]; then
+              echo "PRESTIGE_LEGACY_DIAGNOSTIC=failed"
+              FAIL=1
+            else
+              legacy_output=""
+              if legacy_output="$(docker exec "$APP_CONTAINER" php -r '
+                require "vendor/autoload.php";
+                $app = require "bootstrap/app.php";
+                $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+                $db = Illuminate\Support\Facades\DB::class;
+
+                $sites = $db::table("examination_site_refs")
+                    ->where("operator_site_id", "site-prestige")
+                    ->where("code", "PRES-01")
+                    ->get(["id"]);
+                $offerings = $db::table("service_offerings")
+                    ->where("code", "SYN-CHEST-A")
+                    ->get(["id"]);
+                if ($sites->count() !== 1 || $offerings->count() !== 1) {
+                    echo "PRESTIGE_LEGACY_DIAGNOSTIC=failed".PHP_EOL;
+                    exit(1);
+                }
+
+                $fixedSchedules = [
+                    "legacy_2026_08_14" => "2026-08-14 01:00:00",
+                    "legacy_2026_08_26" => "2026-08-26 01:00:00",
+                    "legacy_2026_08_27" => "2026-08-27 01:00:00",
+                    "legacy_2026_08_28" => "2026-08-28 01:00:00",
+                ];
+                $progressedTables = [
+                    "local_imaging_orders" => "shift_schedule_id",
+                    "operator_paper_tickets" => "member_schedule_id",
+                    "operator_queue_admissions" => "member_schedule_id",
+                    "operator_arrivals" => "member_schedule_id",
+                    "operator_identity_verifications" => "member_schedule_id",
+                    "member_paper_questionnaires" => "member_schedule_id",
+                    "member_vital_signs_assessments" => "member_schedule_id",
+                    "image_gateway_capture_sets" => "member_schedule_id",
+                ];
+                $prestigeUsers = $db::table("users")
+                    ->where("email", "like", "%@prestige.madeena-xray.com")
+                    ->get(["id"]);
+                $prestigeMemberIds = $prestigeUsers->isEmpty()
+                    ? collect()
+                    : $db::table("members")
+                        ->whereIn("user_id", $prestigeUsers->pluck("id"))
+                        ->pluck("id");
+                $siteId = $sites->first()->id;
+                $offeringId = $offerings->first()->id;
+                $globalMembers = [];
+                $legacyBookingCount = 0;
+                $legacyPointLedgerEntries = 0;
+                $legacyProgressedScheduleCount = 0;
+                $scheduleCount = 0;
+
+                foreach ($fixedSchedules as $label => $startsAt) {
+                    $schedules = $db::table("shift_schedules")
+                        ->where("examination_site_id", $siteId)
+                        ->where("service_offering_id", $offeringId)
+                        ->where("starts_at", $startsAt)
+                        ->get(["id", "starts_at", "ends_at", "quota", "status"]);
+                    if ($schedules->count() > 1) {
+                        echo "PRESTIGE_LEGACY_DIAGNOSTIC=failed".PHP_EOL;
+                        exit(1);
+                    }
+
+                    $row = [
+                        "label" => $label,
+                        "exists" => $schedules->count() === 1,
+                        "starts_at" => $schedules->count() === 1 ? (string) $schedules->first()->starts_at : null,
+                        "ends_at" => $schedules->count() === 1 ? (string) $schedules->first()->ends_at : null,
+                        "quota" => $schedules->count() === 1 ? (int) $schedules->first()->quota : null,
+                        "status" => $schedules->count() === 1 ? (string) $schedules->first()->status : null,
+                        "bookings_total" => 0,
+                        "booking_status_counts" => [],
+                        "distinct_members" => 0,
+                        "all_booked_members_in_prestige_cohort" => true,
+                        "member_set_has_37_unique" => false,
+                        "has_bookings" => false,
+                        "progressed_table_counts" => [],
+                        "has_progressed_clinical_records" => false,
+                        "operator_eligible_shifts" => 0,
+                        "operator_shift_assignments" => 0,
+                        "point_ledger_entries" => 0,
+                        "point_ledger_charge_entries" => 0,
+                        "point_ledger_reversal_entries" => 0,
+                        "has_point_ledger" => false,
+                    ];
+                    if ($schedules->count() === 1) {
+                        $scheduleCount++;
+                        $scheduleId = $schedules->first()->id;
+                        $bookings = $db::table("bookings")
+                            ->where("shift_schedule_id", $scheduleId)
+                            ->get(["member_id", "status"]);
+                        $members = $bookings->pluck("member_id")->unique()->values();
+                        $row["bookings_total"] = $bookings->count();
+                        $row["has_bookings"] = $bookings->isNotEmpty();
+                        $row["distinct_members"] = $members->count();
+                        $row["member_set_has_37_unique"] = $members->count() === 37;
+                        $row["all_booked_members_in_prestige_cohort"] = $members->diff($prestigeMemberIds)->isEmpty();
+                        $row["booking_status_counts"] = $bookings->groupBy("status")
+                            ->map(static fn ($statusBookings, $status): array => ["status" => (string) $status, "count" => $statusBookings->count()])
+                            ->values()->all();
+                        foreach ($members as $memberId) {
+                            $globalMembers[(string) $memberId] = true;
+                        }
+                        $legacyBookingCount += $bookings->count();
+
+                        foreach ($progressedTables as $table => $column) {
+                            $count = (int) $db::table($table)->where($column, $scheduleId)->count();
+                            $row["progressed_table_counts"][$table] = $count;
+                            $row["has_progressed_clinical_records"] = $row["has_progressed_clinical_records"] || $count > 0;
+                        }
+                        if ($row["has_progressed_clinical_records"]) {
+                            $legacyProgressedScheduleCount++;
+                        }
+                        $eligible = $db::table("operator_eligible_shifts")->where("member_schedule_id", $scheduleId);
+                        $row["operator_eligible_shifts"] = (int) $eligible->count();
+                        $row["operator_shift_assignments"] = (int) $db::table("operator_shift_assignments")
+                            ->join("operator_eligible_shifts", "operator_shift_assignments.operator_eligible_shift_id", "=", "operator_eligible_shifts.id")
+                            ->where("operator_eligible_shifts.member_schedule_id", $scheduleId)->count();
+                        $ledger = $db::table("point_ledger_entries")
+                            ->join("bookings", "point_ledger_entries.booking_id", "=", "bookings.id")
+                            ->where("bookings.shift_schedule_id", $scheduleId);
+                        $row["point_ledger_entries"] = (int) $ledger->count();
+                        $row["point_ledger_charge_entries"] = (int) $ledger->clone()->where("point_ledger_entries.entry_type", \App\Modules\Member\Domain\Enums\PointEntryType::Charge->value)->count();
+                        $row["point_ledger_reversal_entries"] = (int) $ledger->clone()->whereNotNull("point_ledger_entries.reverses_id")->count();
+                        $row["has_point_ledger"] = $row["point_ledger_entries"] > 0;
+                        $legacyPointLedgerEntries += $row["point_ledger_entries"];
+                    }
+                    echo "LEGACY_PRESTIGE_SCHEDULE ".json_encode($row, JSON_THROW_ON_ERROR).PHP_EOL;
+                }
+                echo "legacy_schedule_count=".$scheduleCount.PHP_EOL;
+                echo "legacy_booking_count=".$legacyBookingCount.PHP_EOL;
+                echo "legacy_distinct_members=".count($globalMembers).PHP_EOL;
+                echo "legacy_point_ledger_entries=".$legacyPointLedgerEntries.PHP_EOL;
+                echo "legacy_progressed_schedule_count=".$legacyProgressedScheduleCount.PHP_EOL;
+                echo "PRESTIGE_LEGACY_DIAGNOSTIC=pass".PHP_EOL;
+              ' 2>/dev/null)"; then
+                printf '%s\n' "$legacy_output"
+              else
+                if [ -n "$legacy_output" ]; then
+                  printf '%s\n' "$legacy_output"
+                fi
+                echo "PRESTIGE_LEGACY_DIAGNOSTIC=failed"
+                FAIL=1
+              fi
+            fi
+          else
+            echo "PRESTIGE_LEGACY_DIAGNOSTIC=skipped"
           fi
 
           if [ "$FAIL" -gt 0 ]; then

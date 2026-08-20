@@ -31,6 +31,7 @@ final class ProductionVerificationWorkflowTest extends TestCase
             'run_large_upload_probe:',
             'verify_prestige:',
             'verify_prestige_members:',
+            'diagnose_prestige_legacy:',
         ] as $input) {
             $this->assertStringContainsString($input, $workflow);
         }
@@ -137,6 +138,14 @@ final class ProductionVerificationWorkflowTest extends TestCase
             'VERIFY_PRESTIGE_MEMBERS: ${{ inputs.verify_prestige_members }}',
             $workflow,
         );
+        $this->assertStringContainsString(
+            "      diagnose_prestige_legacy:\n        description: Run sanitized read-only legacy Prestige schedule diagnostics.\n        required: false\n        default: false\n        type: boolean",
+            $workflow,
+        );
+        $this->assertStringContainsString(
+            'DIAGNOSE_PRESTIGE_LEGACY: ${{ inputs.diagnose_prestige_legacy }}',
+            $workflow,
+        );
         $memberVerificationStart = strpos($workflow, '          if [ "$VERIFY_PRESTIGE_MEMBERS" = "true" ]; then');
         $prestigeVerificationStart = strpos($workflow, '          if [ "$VERIFY_PRESTIGE" = "true" ]; then');
         $this->assertNotFalse($memberVerificationStart);
@@ -208,6 +217,71 @@ final class ProductionVerificationWorkflowTest extends TestCase
         $this->assertStringNotContainsString('member_id" =>', $memberVerificationBlock);
         $this->assertStringContainsString('if [ "$VERIFY_PRESTIGE" = "true" ]; then', $workflow);
         $this->assertStringContainsString('DATABASE_READ_ONLY_QUERY=pass', $workflow);
+
+        $diagnosticStart = strpos($workflow, '          if [ "$DIAGNOSE_PRESTIGE_LEGACY" = "true" ]; then');
+        $diagnosticEnd = strpos($workflow, '          if [ "$FAIL" -gt 0 ]; then', $diagnosticStart);
+        $this->assertNotFalse($diagnosticStart);
+        $this->assertNotFalse($diagnosticEnd);
+        $diagnosticBlock = substr($workflow, $diagnosticStart, $diagnosticEnd - $diagnosticStart);
+        $this->assertStringContainsString('PRESTIGE_LEGACY_DIAGNOSTIC=skipped', $workflow);
+        $this->assertStringContainsString('PRESTIGE_LEGACY_DIAGNOSTIC=pass', $diagnosticBlock);
+        $this->assertStringContainsString('LEGACY_PRESTIGE_SCHEDULE ', $diagnosticBlock);
+        $this->assertStringContainsString('docker exec "$APP_CONTAINER" php -r', $diagnosticBlock);
+        $this->assertStringContainsString('site-prestige', $diagnosticBlock);
+        $this->assertStringContainsString('PRES-01', $diagnosticBlock);
+        $this->assertStringContainsString('SYN-CHEST-A', $diagnosticBlock);
+        foreach ([
+            'legacy_2026_08_14' => '2026-08-14 01:00:00',
+            'legacy_2026_08_26' => '2026-08-26 01:00:00',
+            'legacy_2026_08_27' => '2026-08-27 01:00:00',
+            'legacy_2026_08_28' => '2026-08-28 01:00:00',
+        ] as $label => $startsAt) {
+            $this->assertStringContainsString($label, $diagnosticBlock);
+            $this->assertStringContainsString($startsAt, $diagnosticBlock);
+        }
+        foreach ([
+            'exists', 'starts_at', 'ends_at', 'quota', 'status',
+            'bookings_total', 'booking_status_counts', 'distinct_members',
+            'all_booked_members_in_prestige_cohort', 'member_set_has_37_unique',
+            'has_bookings', 'has_point_ledger', 'has_progressed_clinical_records',
+            'operator_eligible_shifts', 'operator_shift_assignments',
+            'point_ledger_entries', 'point_ledger_charge_entries', 'point_ledger_reversal_entries',
+        ] as $aggregate) {
+            $this->assertStringContainsString('"'.$aggregate.'"', $diagnosticBlock);
+        }
+        foreach ([
+            'legacy_schedule_count=', 'legacy_booking_count=', 'legacy_distinct_members=',
+            'legacy_point_ledger_entries=', 'legacy_progressed_schedule_count=',
+        ] as $summary) {
+            $this->assertStringContainsString($summary, $diagnosticBlock);
+        }
+        foreach ([
+            'local_imaging_orders',
+            'operator_paper_tickets',
+            'operator_queue_admissions',
+            'operator_arrivals',
+            'operator_identity_verifications',
+            'member_paper_questionnaires',
+            'member_vital_signs_assessments',
+            'image_gateway_capture_sets',
+        ] as $progressedTable) {
+            $this->assertStringContainsString('"'.$progressedTable.'"', $diagnosticBlock);
+        }
+        $this->assertStringContainsString('$schedules->count() > 1', $diagnosticBlock);
+        $this->assertStringContainsString('where("starts_at", $startsAt)', $diagnosticBlock);
+        $this->assertStringContainsString('point_ledger_entries.booking_id', $diagnosticBlock);
+        $this->assertStringContainsString('PointEntryType::Charge->value', $diagnosticBlock);
+        $this->assertStringContainsString('whereNotNull("point_ledger_entries.reverses_id")', $diagnosticBlock);
+        $this->assertStringNotContainsString('source_reference', $diagnosticBlock);
+        foreach ([
+            'insert(', 'update(', 'delete(', 'upsert(', 'create(',
+            'lockForUpdate', 'seed', 'migrate', 'backup', 'php artisan',
+        ] as $forbiddenDiagnosticOperation) {
+            $this->assertStringNotContainsString($forbiddenDiagnosticOperation, strtolower($diagnosticBlock));
+        }
+        foreach (['"id"', '"member_id"', '"booking_id"', '"schedule_id"', '"user_id"'] as $forbiddenOutputField) {
+            $this->assertStringNotContainsString($forbiddenOutputField.' =>', $diagnosticBlock);
+        }
 
         $lowerWorkflow = strtolower($workflow);
         foreach ([
