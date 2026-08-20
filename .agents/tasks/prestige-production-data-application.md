@@ -1,7 +1,7 @@
 ---
 title: Prestige production rehearsal-data reset and fresh fixture seed
 document_id: MHCS-TASK-PRESTIGE-PRODUCTION-DATA-APPLICATION-001
-version: 2.0
+version: 2.1
 status: validated-on-publication
 language: en-US
 last_updated: 2026-08-20
@@ -33,7 +33,11 @@ including progressed 14-Aug records, is disposable test/rehearsal data. Version
 2.0 explicitly supersedes the v1.8/v1.9 strategy of preserving historical
 14-Aug clinical history and reconciling 26/27 schedules in place.
 
-**Implementation baseline:** `4a7d4f5f3b6d7fa1cb7dcc5db7a367ce573e9cc9`
+**Implementation baseline:** `eabf45759cd7a6135ca592d93e6231d8154253e1`
+
+Lineage note: `eabf45759cd7a6135ca592d93e6231d8154253e1` is an unrelated viewer
+commit already present in main; it is part of the implementation baseline but
+is OUT OF SCOPE for the Prestige reset.
 
 **Production runtime before reset:** `b5a2306e7d2d1491285edfd0418d25b1cdea568f`
 
