@@ -410,8 +410,9 @@ final class PrestigeClinicSeeder extends Seeder
 
         // Prestige rehearsal: full local calendar days in Asia/Jakarta.
         $scheduleDates = [
-            $this->localDayWindow('2026-08-27'),
-            $this->localDayWindow('2026-08-28'),
+            $this->localDateRange('2026-08-20', '2026-08-27'),
+            $this->localDateRange('2026-08-27', '2026-08-28'),
+            $this->localDateRange('2026-08-28', '2026-08-29'),
         ];
 
         $schedules = [];
@@ -502,12 +503,12 @@ final class PrestigeClinicSeeder extends Seeder
     }
 
     /** @return array{start: string, end: string} */
-    private function localDayWindow(string $date): array
+    private function localDateRange(string $startDate, string $exclusiveEndDate): array
     {
         $localTimezone = new DateTimeZone(self::SITE_TIMEZONE);
         $utc = new DateTimeZone('UTC');
-        $start = new DateTimeImmutable($date.'T00:00:00', $localTimezone);
-        $end = $start->modify('+1 day');
+        $start = new DateTimeImmutable($startDate.'T00:00:00', $localTimezone);
+        $end = new DateTimeImmutable($exclusiveEndDate.'T00:00:00', $localTimezone);
 
         return [
             'start' => $start->setTimezone($utc)->format('Y-m-d H:i:s'),

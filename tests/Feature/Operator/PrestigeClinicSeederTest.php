@@ -49,10 +49,17 @@ final class PrestigeClinicSeederTest extends TestCase
         $this->assertSame(0, DB::table('shift_schedules')->count());
     }
 
-    public function test_prestige_clinic_seeder_creates_the_two_day_fixture_and_is_idempotent(): void
+    public function test_prestige_clinic_seeder_creates_the_three_schedule_fixture_and_is_idempotent(): void
     {
-        $this->withSyntheticCsv(function (string $path): void {
+        $memberPasswordHashes = [];
+
+        $this->withSyntheticCsv(function (string $path) use (&$memberPasswordHashes): void {
             $this->seed(PrestigeClinicSeeder::class);
+            $memberPasswordHashes = DB::table('users')
+                ->where('email', 'like', '%@prestige.madeena-xray.com')
+                ->orderBy('id')
+                ->pluck('password', 'id')
+                ->all();
             $this->insertObsoleteSchedule();
             $this->seed(PrestigeClinicSeeder::class);
         });
@@ -62,28 +69,50 @@ final class PrestigeClinicSeederTest extends TestCase
 
         $this->assertSame(5, DB::table('users')->where('email', 'like', 'operatorprestige%@madeena-xray.com')->count());
         $this->assertSame(5, DB::table('operator_profiles')->where('employee_code', 'like', 'OPR-PRES-%')->count());
-        $this->assertCount(2, $schedules);
-        $this->assertSame(['2026-08-26 17:00:00', '2026-08-27 17:00:00'], $schedules->pluck('starts_at')->all());
-        $this->assertSame(['2026-08-27 17:00:00', '2026-08-28 17:00:00'], $schedules->pluck('ends_at')->all());
+        $this->assertCount(3, $schedules);
+        $this->assertSame(
+            ['2026-08-19 17:00:00', '2026-08-26 17:00:00', '2026-08-27 17:00:00'],
+            $schedules->pluck('starts_at')->all(),
+        );
+        $this->assertSame(
+            ['2026-08-26 17:00:00', '2026-08-27 17:00:00', '2026-08-28 17:00:00'],
+            $schedules->pluck('ends_at')->all(),
+        );
         $utc = new DateTimeZone('UTC');
         $local = new DateTimeZone(PrestigeClinicSeeder::SITE_TIMEZONE);
         $this->assertSame([
+            ['2026-08-20T00:00:00+07:00', '2026-08-27T00:00:00+07:00'],
             ['2026-08-27T00:00:00+07:00', '2026-08-28T00:00:00+07:00'],
             ['2026-08-28T00:00:00+07:00', '2026-08-29T00:00:00+07:00'],
         ], $schedules->map(fn (object $schedule): array => [
             (new DateTimeImmutable((string) $schedule->starts_at, $utc))->setTimezone($local)->format(DATE_ATOM),
             (new DateTimeImmutable((string) $schedule->ends_at, $utc))->setTimezone($local)->format(DATE_ATOM),
         ])->all());
-        $this->assertSame([37, 37], $schedules->pluck('quota')->map(fn ($quota): int => (int) $quota)->all());
+        $this->assertSame([37, 37, 37], $schedules->pluck('quota')->map(fn ($quota): int => (int) $quota)->all());
         $this->assertSame(37, DB::table('members')->count());
-        $this->assertSame(37, DB::table('bookings')->where('shift_schedule_id', $schedules[0]->id)->where('status', 'confirmed')->count());
-        $this->assertSame(37, DB::table('bookings')->where('shift_schedule_id', $schedules[1]->id)->where('status', 'confirmed')->count());
-        $firstDayMembers = DB::table('bookings')->where('shift_schedule_id', $schedules[0]->id)->orderBy('member_id')->pluck('member_id')->all();
-        $secondDayMembers = DB::table('bookings')->where('shift_schedule_id', $schedules[1]->id)->orderBy('member_id')->pluck('member_id')->all();
-        $this->assertSame($firstDayMembers, $secondDayMembers);
-        $this->assertSame(74, DB::table('bookings')->count());
+        $memberSets = $schedules->map(fn (object $schedule): array => DB::table('bookings')
+            ->where('shift_schedule_id', $schedule->id)
+            ->where('status', 'confirmed')
+            ->orderBy('member_id')
+            ->pluck('member_id')
+            ->all()
+        )->all();
+        $this->assertSame([37, 37, 37], array_map('count', $memberSets));
+        $this->assertSame([37, 37, 37], array_map(static fn (array $members): int => count(array_unique($members)), $memberSets));
+        $this->assertSame($memberSets[0], $memberSets[1]);
+        $this->assertSame($memberSets[1], $memberSets[2]);
+        $this->assertSame(111, DB::table('bookings')->where('status', 'confirmed')->count());
+        $this->assertSame(111, DB::table('bookings')->count());
         $this->assertSame(37, DB::table('bookings')->distinct('member_id')->count('member_id'));
         $this->assertSame(0, DB::table('shift_schedules')->whereIn('starts_at', ['2026-08-14 01:00:00', '2026-08-26 01:00:00'])->count());
+        $this->assertSame(
+            $memberPasswordHashes,
+            DB::table('users')
+                ->where('email', 'like', '%@prestige.madeena-xray.com')
+                ->orderBy('id')
+                ->pluck('password', 'id')
+                ->all(),
+        );
     }
 
     public function test_progressed_obsolete_schedule_stops_without_deleting_it(): void
