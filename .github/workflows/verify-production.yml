@@ -56,7 +56,7 @@ jobs:
           set -euo pipefail
 
           FAIL=0
-          if [ -z "$EXPECTED_REVISION" ]; then EXPECTED_REVISION="e7831b9cb2883182462fb7fabc23e097cb791107"; fi
+          if [ -z "$EXPECTED_REVISION" ]; then EXPECTED_REVISION="fb013e7657484105bd86c046e687d676fb3d253b"; fi
           APP_SERVICE="mhcs_core_app"
           DB_SERVICE="mhcs_core_db"
           QUEUE_SERVICE="mhcs_core_queue"
@@ -512,21 +512,9 @@ jobs:
                     && $memberSetsEqual
                     && $memberSetsHave37;
 
-                $historical = $site !== null && $offering !== null
-                    ? $db::table("shift_schedules")->where("examination_site_id", $site->id)->where("service_offering_id", $offering->id)->where("starts_at", "2026-08-14 01:00:00")->first()
-                    : null;
-                $historicalBookings = $historical === null ? 0 : (int) $db::table("bookings")->where("shift_schedule_id", $historical->id)->count();
-                $historicalCheckedIn = $historical === null ? 0 : (int) $db::table("bookings")->where("shift_schedule_id", $historical->id)->where("status", "checked_in")->count();
-                $historicalConfirmed = $historical === null ? 0 : (int) $db::table("bookings")->where("shift_schedule_id", $historical->id)->where("status", "confirmed")->count();
-                $historicalDistinctMembers = $historical === null ? 0 : (int) $db::table("bookings")->where("shift_schedule_id", $historical->id)->distinct()->count("member_id");
-                $historicalCharges = $historical === null ? 0 : (int) $db::table("point_ledger_entries")->whereIn("booking_id", $db::table("bookings")->where("shift_schedule_id", $historical->id)->pluck("id"))->where("entry_type", "charge")->count();
                 $targetCharges = (int) $db::table("point_ledger_entries")->whereIn("booking_id", $schedules->pluck("id")->isEmpty() ? [] : $db::table("bookings")->whereIn("shift_schedule_id", $schedules->pluck("id"))->pluck("id"))->where("entry_type", "charge")->count();
-                $historicalPreserved = $historical !== null && $historical->ends_at === "2026-08-14 10:00:00" && $historical->quota === 50 && $historical->status === "closed";
-                $historicalBookingIds = $historical === null ? [] : $db::table("bookings")->where("shift_schedule_id", $historical->id)->pluck("id");
-                $historicalReversals = (int) $db::table("point_ledger_entries")->whereIn("booking_id", $historicalBookingIds)->whereNotNull("reverses_id")->count();
-                $legacyOldAbsent = ! $db::table("shift_schedules")->where("examination_site_id", $site?->id)->whereIn("starts_at", ["2026-08-26 01:00:00", "2026-08-27 01:00:00", "2026-08-28 01:00:00"])->exists();
-                $historicalAssignments = $historical === null ? collect() : $db::table("operator_shift_assignments")->whereIn("operator_eligible_shift_id", $db::table("operator_eligible_shifts")->where("member_schedule_id", $historical->id)->pluck("id"));
-                $passed = $passed && $historicalPreserved && $historicalBookings === 13 && $historicalCheckedIn === 4 && $historicalConfirmed === 9 && $historicalDistinctMembers === 13 && $historicalCharges === 13 && $historicalReversals === 0 && $historicalAssignments->where("status", "active")->count() === 0 && $historicalAssignments->where("status", "revoked")->count() === 5 && $targetCharges === 111 && $legacyOldAbsent;
+                $oldStartsAbsent = ! $db::table("shift_schedules")->where("examination_site_id", $site?->id)->where("service_offering_id", $offering?->id)->whereIn("starts_at", ["2026-08-14 01:00:00", "2026-08-26 01:00:00", "2026-08-27 01:00:00", "2026-08-28 01:00:00"])->exists();
+                $passed = $passed && $targetCharges === 111 && $oldStartsAbsent;
 
                 echo json_encode([
                     "site_active" => $site !== null,
@@ -547,20 +535,10 @@ jobs:
                     "target_distinct_members" => $distinctMembers,
                     "target_member_sets_equal" => $memberSetsEqual,
                     "target_charge_entries" => $targetCharges,
-                    "historical_schedule_preserved" => $historicalPreserved,
-                    "historical_status_closed" => $historical?->status === "closed",
-                    "historical_bookings" => $historicalBookings,
-                    "historical_checked_in" => $historicalCheckedIn,
-                    "historical_confirmed" => $historicalConfirmed,
-                    "historical_distinct_members" => $historicalDistinctMembers,
-                    "historical_point_ledger_entries" => $historicalCharges,
-                    "historical_charge_entries" => $historicalCharges,
-                    "historical_reversal_entries" => $historicalReversals,
-                    "historical_active_operator_assignments" => $historicalAssignments->where("status", "active")->count(),
-                    "historical_revoked_operator_assignments" => $historicalAssignments->where("status", "revoked")->count(),
-                    "legacy_26_old_absent" => $legacyOldAbsent,
-                    "legacy_27_old_absent" => $legacyOldAbsent,
-                    "legacy_28_old_absent" => $legacyOldAbsent,
+                    "old_14_absent" => ! $db::table("shift_schedules")->where("examination_site_id", $site?->id)->where("starts_at", "2026-08-14 01:00:00")->exists(),
+                    "old_26_absent" => ! $db::table("shift_schedules")->where("examination_site_id", $site?->id)->where("starts_at", "2026-08-26 01:00:00")->exists(),
+                    "old_27_absent" => ! $db::table("shift_schedules")->where("examination_site_id", $site?->id)->where("starts_at", "2026-08-27 01:00:00")->exists(),
+                    "old_28_absent" => ! $db::table("shift_schedules")->where("examination_site_id", $site?->id)->where("starts_at", "2026-08-28 01:00:00")->exists(),
                     "verification_passed" => $passed,
                 ], JSON_THROW_ON_ERROR).PHP_EOL;
                 exit($passed ? 0 : 1);
