@@ -435,6 +435,7 @@ jobs:
                     ->where("code", "SYN-CHEST-A")
                     ->first();
                 $expected = [
+                    ["starts_at" => "2026-08-19 17:00:00", "ends_at" => "2026-08-26 17:00:00", "quota" => 37],
                     ["starts_at" => "2026-08-26 17:00:00", "ends_at" => "2026-08-27 17:00:00", "quota" => 37],
                     ["starts_at" => "2026-08-27 17:00:00", "ends_at" => "2026-08-28 17:00:00", "quota" => 37],
                 ];
@@ -460,7 +461,7 @@ jobs:
                 $memberSetsEqual = false;
                 $memberSetsHave37 = false;
 
-                if ($schedules->count() === 2) {
+                if ($schedules->count() === 3) {
                     foreach ($schedules as $schedule) {
                         $scheduleId = (string) $schedule->id;
                         $confirmedCounts[] = (int) $db::table("bookings")
@@ -482,20 +483,23 @@ jobs:
                         ->whereIn("shift_schedule_id", $scheduleIds)
                         ->distinct()
                         ->count("member_id");
-                    $memberSetsEqual = $memberSets[0] === $memberSets[1];
+                    $memberSetsEqual = $memberSets[0] === $memberSets[1]
+                        && $memberSets[1] === $memberSets[2];
                     $memberSetsHave37 = count($memberSets[0]) === 37
                         && count($memberSets[1]) === 37
+                        && count($memberSets[2]) === 37
                         && count(array_unique($memberSets[0])) === 37
-                        && count(array_unique($memberSets[1])) === 37;
+                        && count(array_unique($memberSets[1])) === 37
+                        && count(array_unique($memberSets[2])) === 37;
                 }
 
                 $passed = $site !== null
                     && $offering !== null
-                    && $schedules->count() === 2
+                    && $schedules->count() === 3
                     && $scheduleBoundsMatch
-                    && $quotaValues === [37, 37]
-                    && $confirmedCounts === [37, 37]
-                    && $totalBookings === 74
+                    && $quotaValues === [37, 37, 37]
+                    && $confirmedCounts === [37, 37, 37]
+                    && $totalBookings === 111
                     && $distinctMembers === 37
                     && $memberSetsEqual
                     && $memberSetsHave37;
@@ -504,10 +508,12 @@ jobs:
                     "site_active" => $site !== null,
                     "schedule_count" => $schedules->count(),
                     "schedule_bounds_match" => $scheduleBoundsMatch,
-                    "quota_27" => $quotaValues[0] ?? null,
-                    "quota_28" => $quotaValues[1] ?? null,
-                    "confirmed_27" => $confirmedCounts[0] ?? null,
-                    "confirmed_28" => $confirmedCounts[1] ?? null,
+                    "quota_20_26" => $quotaValues[0] ?? null,
+                    "quota_27" => $quotaValues[1] ?? null,
+                    "quota_28" => $quotaValues[2] ?? null,
+                    "confirmed_20_26" => $confirmedCounts[0] ?? null,
+                    "confirmed_27" => $confirmedCounts[1] ?? null,
+                    "confirmed_28" => $confirmedCounts[2] ?? null,
                     "total_bookings" => $totalBookings,
                     "distinct_members" => $distinctMembers,
                     "member_sets_equal" => $memberSetsEqual,

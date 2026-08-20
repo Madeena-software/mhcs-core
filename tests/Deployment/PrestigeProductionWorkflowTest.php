@@ -23,7 +23,8 @@ final class PrestigeProductionWorkflowTest extends TestCase
 
         $this->assertStringContainsString('confirmation:', $workflow);
         $this->assertStringContainsString('required: true', $workflow);
-        $this->assertStringContainsString('APPLY-PRESTIGE-2026-08-27-28', $workflow);
+        $this->assertStringContainsString('APPLY-PRESTIGE-2026-08-20-28', $workflow);
+        $this->assertStringNotContainsString('APPLY-PRESTIGE-2026-08-27-28', $workflow);
         $this->assertStringContainsString('production-deployment-mhcs_core', $workflow);
         $this->assertStringContainsString('cancel-in-progress: false', $workflow);
         $this->assertStringContainsString('needs: confirm', $workflow);
@@ -91,8 +92,9 @@ final class PrestigeProductionWorkflowTest extends TestCase
         $this->assertStringContainsString('BACKUP_VERIFIED reference=', $workflow);
         $this->assertStringContainsString('database backup failed; seeding blocked', $workflow);
 
-        $this->assertStringContainsString('EXPECTED_REVISION="4488f37787bc521869a2bb6113507387c5a983c8"', $workflow);
-        $this->assertSame(1, substr_count($workflow, 'EXPECTED_REVISION="4488f37787bc521869a2bb6113507387c5a983c8"'));
+        $this->assertStringContainsString('EXPECTED_REVISION="b5a2306e7d2d1491285edfd0418d25b1cdea568f"', $workflow);
+        $this->assertSame(1, substr_count($workflow, 'EXPECTED_REVISION="b5a2306e7d2d1491285edfd0418d25b1cdea568f"'));
+        $this->assertStringNotContainsString('4488f37787bc521869a2bb6113507387c5a983c8', $workflow);
         $this->assertStringContainsString('mhcs_core_app', $workflow);
         $this->assertStringContainsString('VERSION-CURRENT', $workflow);
         $this->assertStringContainsString('healthy', $workflow);
@@ -211,13 +213,25 @@ final class PrestigeProductionWorkflowTest extends TestCase
             'site_active',
             'schedule_count',
             'schedule_bounds_match',
+            'quota_20_26',
             'quota_27',
             'quota_28',
+            'confirmed_20_26',
             'confirmed_27',
             'confirmed_28',
             'total_bookings',
             'distinct_members',
             'member_sets_equal',
+            '2026-08-19 17:00:00',
+            '2026-08-26 17:00:00',
+            '2026-08-27 17:00:00',
+            '2026-08-28 17:00:00',
+            'totalBookings === 111',
+            '$quotaValues === [37, 37, 37]',
+            '$confirmedCounts === [37, 37, 37]',
+            '$memberSets[0] === $memberSets[1]',
+            '$memberSets[1] === $memberSets[2]',
+            'count(array_unique($memberSets[2])) === 37',
         ] as $invariant) {
             $this->assertStringContainsString($invariant, $workflow);
         }
