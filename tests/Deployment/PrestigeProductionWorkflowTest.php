@@ -92,15 +92,27 @@ final class PrestigeProductionWorkflowTest extends TestCase
         $this->assertStringContainsString('BACKUP_VERIFIED reference=', $workflow);
         $this->assertStringContainsString('database backup failed; seeding blocked', $workflow);
 
-        $this->assertStringContainsString('EXPECTED_REVISION="fb013e7657484105bd86c046e687d676fb3d253b"', $workflow);
-        $this->assertSame(1, substr_count($workflow, 'EXPECTED_REVISION="fb013e7657484105bd86c046e687d676fb3d253b"'));
+        $this->assertStringContainsString('EXPECTED_REVISION="827b59dd81516e44c0ec10e7afb9b6b804e81226"', $workflow);
+        $this->assertSame(1, substr_count($workflow, 'EXPECTED_REVISION="827b59dd81516e44c0ec10e7afb9b6b804e81226"'));
         $this->assertStringNotContainsString('4488f37787bc521869a2bb6113507387c5a983c8', $workflow);
         $this->assertStringContainsString('mhcs_core_app', $workflow);
         $this->assertStringContainsString('VERSION-CURRENT', $workflow);
         $this->assertStringContainsString('healthy', $workflow);
-        foreach (['target_schedule_count', 'target_bounds_match', 'target_total_bookings', 'target_distinct_members', 'target_member_sets_equal', 'target_charge_entries', 'old_14_absent', 'old_26_absent', 'old_27_absent', 'old_28_absent'] as $invariant) {
+        foreach (['target_schedule_count', 'target_bounds_match', 'target_total_bookings', 'target_distinct_members', 'target_member_sets_equal', 'target_cohort_match', 'target_charge_entries', 'target_reversal_entries', 'old_14_absent', 'old_26_absent', 'old_27_absent', 'old_28_absent'] as $invariant) {
             $this->assertStringContainsString($invariant, $workflow);
         }
+        foreach (['"quota_27"', '"quota_28"', '"confirmed_27"', '"confirmed_28"'] as $obsoleteAlias) {
+            $this->assertStringNotContainsString($obsoleteAlias, $workflow);
+        }
+        $preResetStart = strpos($workflow, 'PRE_RESET_OUTPUT=');
+        $backupGate = strpos($workflow, 'Run established verified production database backup');
+        $this->assertNotFalse($preResetStart);
+        $this->assertNotFalse($backupGate);
+        $preResetBlock = substr($workflow, $preResetStart, $backupGate - $preResetStart);
+        $this->assertStringContainsString('where("service_offering_id", $offering->id)->get(["id", "starts_at", "ends_at", "quota", "status"])', $preResetBlock);
+        $this->assertStringContainsString('$schedules->count() === 3', $preResetBlock);
+        $this->assertStringContainsString('$actualStarts === $expectedStarts', $preResetBlock);
+        $this->assertStringNotContainsString('whereIn("starts_at", $starts)', $preResetBlock);
 
         $this->assertStringNotContainsString('/etc/madeena-mhcs_core-prestige-employee.csv', $workflow);
         $this->assertStringNotContainsString('PRESTIGE_SOURCE', $workflow);
@@ -217,14 +229,18 @@ final class PrestigeProductionWorkflowTest extends TestCase
             'schedule_count',
             'schedule_bounds_match',
             'quota_20_26',
-            'quota_27',
-            'quota_28',
+            'quota_27_28',
+            'quota_28_29',
             'confirmed_20_26',
-            'confirmed_27',
-            'confirmed_28',
+            'confirmed_27_28',
+            'confirmed_28_29',
             'total_bookings',
             'distinct_members',
             'member_sets_equal',
+            'target_cohort_match',
+            'target_reversal_entries',
+            '$allSchedules->count() === 3',
+            'status" => (string) $row->status',
             '2026-08-19 17:00:00',
             '2026-08-26 17:00:00',
             '2026-08-27 17:00:00',

@@ -82,13 +82,14 @@ final class ProductionVerificationWorkflowTest extends TestCase
 
         $this->assertStringContainsString('if [ -n "$EXPECTED_REVISION" ]; then', $workflow);
         $this->assertStringContainsString('if [ "$REVISION_MATCH" != "true" ]; then', $workflow);
+        $this->assertStringContainsString('EXPECTED_REVISION="827b59dd81516e44c0ec10e7afb9b6b804e81226"', $workflow);
         $this->assertStringNotContainsString('GITHUB_SHA', $workflow);
 
         $this->assertStringContainsString('local_ingress_http_status=', $workflow);
         $this->assertStringContainsString('http://127.0.0.1:8013/up', $workflow);
         $this->assertStringContainsString('LARAVEL_BOOTSTRAP=pass', $workflow);
         $this->assertStringContainsString('DATABASE_READ_ONLY_QUERY=pass', $workflow);
-        foreach (['target_schedule_count', 'target_bounds_match', 'target_total_bookings', 'target_distinct_members', 'target_member_sets_equal', 'target_charge_entries', 'old_14_absent', 'old_26_absent', 'old_27_absent', 'old_28_absent'] as $invariant) {
+        foreach (['target_schedule_count', 'target_bounds_match', 'target_total_bookings', 'target_distinct_members', 'target_member_sets_equal', 'target_cohort_match', 'target_charge_entries', 'target_reversal_entries', 'old_14_absent', 'old_26_absent', 'old_27_absent', 'old_28_absent'] as $invariant) {
             $this->assertStringContainsString($invariant, $workflow);
         }
         $this->assertStringContainsString('select 1', $workflow);
@@ -111,11 +112,11 @@ final class ProductionVerificationWorkflowTest extends TestCase
             'schedule_count',
             'schedule_bounds_match',
             'quota_20_26',
-            'quota_27',
-            'quota_28',
+            'quota_27_28',
+            'quota_28_29',
             'confirmed_20_26',
-            'confirmed_27',
-            'confirmed_28',
+            'confirmed_27_28',
+            'confirmed_28_29',
             'total_bookings',
             'distinct_members',
             'member_sets_equal',
@@ -131,10 +132,16 @@ final class ProductionVerificationWorkflowTest extends TestCase
             '$memberSets[0] === $memberSets[1]',
             '$memberSets[1] === $memberSets[2]',
             'count(array_unique($memberSets[2])) === 37',
+            '$allSchedules->count() === 3',
+            'status" => (string) $row->status',
+            'target_reversal_entries',
             '->pluck("member_id")',
             'PRESTIGE_VERIFICATION=skipped',
         ] as $prestigeCheck) {
             $this->assertStringContainsString($prestigeCheck, $workflow);
+        }
+        foreach (['"quota_27"', '"quota_28"', '"confirmed_27"', '"confirmed_28"'] as $obsoleteAlias) {
+            $this->assertStringNotContainsString($obsoleteAlias, $workflow);
         }
 
         $this->assertStringContainsString(
