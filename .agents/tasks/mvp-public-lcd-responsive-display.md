@@ -1,6 +1,6 @@
 ---
 title: MHCS Public LCD Responsive Display
-document_id: TASK-MVP-PUBLIC-LCD-RESPONSIVE-001
+document_id: MHCS-TASK-PUBLIC-LCD-RESPONSIVE-001
 version: 1.0
 status: validated-published
 language: en-US
@@ -40,8 +40,9 @@ immutable governing SHA is supplied in the Executor handoff.
 ## Objective
 
 **Objective:** Make the public MHCS clinic queue LCD reliably fill and adapt to
-common monitor and TV viewports while preserving queue semantics, privacy,
-Bahasa Indonesia copy, and ticket readability.
+common monitor and TV viewports while preserving existing queue behavior,
+privacy, Bahasa Indonesia copy, simultaneous station calls, and ticket
+readability.
 
 ## Authoritative inputs
 
@@ -170,6 +171,10 @@ Bahasa Indonesia copy, and ticket readability.
       Basic Examination and Radiography calls.
 - [ ] Recent Calls render correctly for zero through five records, including
       legitimate repeated ticket numbers.
+- [ ] Rendered verification covers: no current/no recent calls; one Basic
+      Examination call; one Radiography call; simultaneous Basic Examination
+      and Radiography calls; five recent calls; and a longer ticket identifier
+      supported by the current ticket-number contract.
 - [ ] The disconnected/stale indicator remains visible when refresh fails.
 - [ ] Existing login-free site scoping, public field/privacy boundary,
       destination labels, ordering, polling, and five-record limit remain
@@ -185,6 +190,10 @@ Bahasa Indonesia copy, and ticket readability.
 - [ ] Add and run the focused Browser responsive test
       `tests/Browser/Mvp04PublicQueueResponsiveTest.php` using synthetic queue
       data, the existing browser runtime, and `setViewportSize(width, height)`.
+- [ ] Reproduce the observed `T-002` case at or near `1536x960` and verify
+      rendered geometry: no document overflow; single-line ticket; ticket and
+      destination bounds inside the card; non-colliding header/clock; current
+      and recent panels inside the viewport; and the expected layout mode.
 - [ ] Capture fresh rendered/DOM geometry evidence for every viewport class:
       no horizontal overflow; ticket fit; panel bounds; no header/clock
       collision; visible current/recent panels; and appropriate stacked mode.
