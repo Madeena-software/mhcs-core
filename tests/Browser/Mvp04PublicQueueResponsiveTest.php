@@ -46,6 +46,9 @@ it('keeps public queue states inside their cards across LCD viewports', function
                 const clock = document.querySelector('.lcd-clock').getBoundingClientRect();
                 const current = document.querySelector('.current-hero').getBoundingClientRect();
                 const recent = document.querySelector('.recent-panel').getBoundingClientRect();
+                const primaryCard = document.querySelector('.current-calls .call-card-primary');
+                const primaryTicket = primaryCard?.querySelector('.ticket-number');
+                const primaryDestination = primaryCard?.querySelector('.call-destination');
                 const tickets = [...document.querySelectorAll('.ticket-number')].map((node) => {
                     const card = node.closest('.call-card').getBoundingClientRect();
                     const box = node.getBoundingClientRect();
@@ -61,6 +64,18 @@ it('keeps public queue states inside their cards across LCD viewports', function
                     shellFits: shell.right <= window.innerWidth && shell.bottom <= window.innerHeight,
                     headerSidesDoNotIntersect: brand.right <= clock.left || clock.right <= brand.left || brand.bottom <= clock.top || clock.bottom <= brand.top,
                     panelsFit: current.right <= window.innerWidth && recent.right <= window.innerWidth,
+                    primary: primaryCard && primaryTicket && primaryDestination ? (() => {
+                        const card = primaryCard.getBoundingClientRect();
+                        const ticket = primaryTicket.getBoundingClientRect();
+                        const destination = primaryDestination.getBoundingClientRect();
+                        return {
+                            visibleText: primaryTicket.textContent,
+                            singleLine: primaryTicket.getClientRects().length === 1,
+                            fullTextFits: primaryTicket.scrollWidth <= primaryTicket.clientWidth,
+                            ticketInsideCard: ticket.left >= card.left && ticket.right <= card.right && ticket.top >= card.top && ticket.bottom <= card.bottom,
+                            destinationInsideCard: destination.left >= card.left && destination.right <= card.right && destination.top >= card.top && destination.bottom <= card.bottom,
+                        };
+                    })() : null,
                     tickets,
                     stacked: getComputedStyle(document.querySelector('.queue-layout')).gridTemplateColumns.split(' ').length === 1,
                 };
@@ -70,6 +85,15 @@ it('keeps public queue states inside their cards across LCD viewports', function
 
     $render(['current' => [['ticket_number' => 'T-002', 'destination' => 'PEMERIKSAAN DASAR']], 'recent_calls' => []]);
     $page->assertSee('T-002')->assertSee('PEMERIKSAAN DASAR');
+    $primaryGeometry = $measure(1536, 960);
+    expect($primaryGeometry['primary']['visibleText'])->toBe('T-002');
+    expect($primaryGeometry['primary']['singleLine'])->toBeTrue();
+    expect($primaryGeometry['primary']['fullTextFits'])->toBeTrue();
+    expect($primaryGeometry['primary']['ticketInsideCard'])->toBeTrue();
+    expect($primaryGeometry['primary']['destinationInsideCard'])->toBeTrue();
+    expect($primaryGeometry['noOverflow'])->toBeTrue();
+    expect($primaryGeometry['panelsFit'])->toBeTrue();
+    expect($primaryGeometry['headerSidesDoNotIntersect'])->toBeTrue();
 
     $render(['current' => [['ticket_number' => 'RAD-123456789', 'destination' => 'SESI FOTO RADIOGRAFI']], 'recent_calls' => []]);
     $page->assertSee('RAD-123456789')->assertSee('SESI FOTO RADIOGRAFI');
