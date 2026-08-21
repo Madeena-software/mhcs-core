@@ -4,20 +4,37 @@
 
 The beta objective is to validate a controlled, auditable MHCS service journey with a small set of known users and operators. It is not public, is not production readiness, and does not approve deployment, privacy/legal policy, external contracts, or deferred Work Package requirements.
 
+## Current controlled-MVP context — reconciled 2026-08-21
+
+The current operational period is the controlled 27–28 August Prestige
+rehearsal. A bounded production deployment, fresh three-target fixture, and
+canonical verification now exist. This is bounded operational evidence only:
+
+- MVP completion does not equal full Work Package completion.
+- MVP completion does not equal full production, security, privacy, or release
+  conformance.
+- A bounded deployment does not equal WP-28 completion.
+
+Current observed implementation is broader than the historical pivot: the
+bounded Member and Operator slices are accepted, the clinic-day Operator
+journey reaches X-ray readiness, and Image Gateway capture, queued MPIPS
+processing, DICOM persistence, study viewing, and authenticated download exist.
+Report/external-teleradiology workflow, Member publication, generic B2B
+capability, complete operational administration, and full conformance remain
+open or partial as recorded in the active roadmap, ledger, and gap register.
+
 The initial target user is an adult Member with an existing account and linked Member record. Accounts may be created through controlled development or beta seed data. Operators and administrators are controlled internal users. Teleradiology physicians and reporting services remain external participants.
 
 ## Delivery ownership and final scope
 
-The main workstream owns Member, Member-owned administration, Operator, and
-Operator-owned administration. The Image Gateway workstream owns Image Gateway
-contracts, storage, processing, MPIPS and AI integration, publication behavior,
-and Image Gateway operational administration. This delivery split does not
-remove Image Gateway from the final MVP or change module ownership.
+The current delivery model is sequential on `mhcs-core` `main`. Member,
+Operator, Image Gateway, and shared administration remain modules and ownership
+boundaries within the modular monolith. MPIPS remains a separate repository and
+private processing service; it is the only internal network service boundary.
 
-The final beta is the integrated product scope. It requires the Image Gateway
-branch to merge into `main` and the merged workflow to pass the documented
-integration gate; a workstream-local completion claim is not final beta
-completion.
+The final beta is the integrated product scope. A bounded component or
+deployment result is not final beta completion; the remaining integrated
+verification, security/privacy, release, and Work Package gates still apply.
 
 ## Components
 
@@ -118,7 +135,11 @@ Every exposed beta flow must retain server-derived actor, role, site, case, purp
 
 Expand the beta only after the relevant MVP task has focused tests and evidence, the gap register is updated, ownership and authorization are verified, unresolved approval boundaries are identified, and the owner approves the next scope. Before controlled beta deployment, run the required integration/release verification, resolve critical gaps, approve migration/deployment/privacy/retention decisions, and record the deployment decision. Passing MVP tasks alone is never a production-readiness claim.
 
-## 12 August MVP delivery target — Operator priority — approved 2026-08-10
+## Historical 12 August MVP delivery target — Operator priority — approved 2026-08-10
+
+This section records the approved target at that date, not the current status.
+Its former parallel Image Gateway branch language is superseded by
+MVP-DEC-031; current delivery is sequential on `main`.
 
 Faliq Adlan, CTO, set Wednesday, 12 August as the delivery target for all
 active MVP work. The active priority is a usable Operator site flow; this does

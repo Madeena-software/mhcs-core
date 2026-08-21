@@ -24,3 +24,14 @@ Start the disposable runtime with the commands in
 [the local walkthrough](docs/mvp/local-core-walkthrough.md), then record only
 redacted evidence in
 `docs/mvp/evidence/mvp-local-deployment-readiness.md`.
+
+## Project documentation
+
+The walkthrough above is development/rehearsal guidance, not the current overall repository status. Use the active planning documents for the reconciled delivery state:
+
+- [MVP entry point](docs/mvp/README.md)
+- [Controlled-beta scope](docs/mvp/beta-scope.md)
+- [MVP roadmap](docs/mvp/roadmap.md)
+- [MVP gap register](docs/mvp/beta-gap-register.md)
+- [Work Package status](docs/mvp/work-package-status.md)
+- [Deployment operations](deployment/README.md)

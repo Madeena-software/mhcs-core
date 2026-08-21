@@ -1,23 +1,45 @@
 # Controlled-beta roadmap
 
-This is a dependency-aware parallel-workstream roadmap, not a global linear
-task queue or a date plan. MVP-02 through MVP-09 are provisional and may be
-reprioritized by owner decision. Dependencies and evidence gates remain
-binding. Neither workstream advances solely by MVP number: it selects the
-smallest independently testable slice supported by its current branch evidence.
+This is the active bounded-MVP roadmap, not a global linear task queue or a
+date plan. MVP-02 through MVP-09 remain provisional and may be reprioritized by
+owner decision. Dependencies and evidence gates remain binding. Current
+delivery proceeds sequentially on `mhcs-core` `main`; the historical
+parallel-workstream model is retained only where explicitly labelled.
+
+## CURRENT PLANNING SNAPSHOT — reconciled 2026-08-21
+
+| MVP | Current status |
+|---|---|
+| MVP-01 | Bounded implementation accepted. |
+| MVP-02 | Bounded implementation accepted. |
+| MVP-03 | Bounded implementation accepted. |
+| MVP-04 | Advanced partial implementation: the clinic-day Operator journey is substantially implemented; broader long-term Operator requirements remain open. |
+| MVP-05 | Substantial Image Gateway/MPIPS implementation exists; formal milestone/status reconciliation remains incomplete. |
+| MVP-06 | Open: report and external-teleradiology workflow is not complete. |
+| MVP-07 | Open: Member result publication is not complete. |
+| MVP-08 | Generic B2B capability remains incomplete; Prestige is a bounded operational exception, not generic WP-10 completion. |
+| MVP-09 | Partial: bounded production deployment and verification exist; complete security/privacy/release/conformance remains open. |
+
+The next planning priority is to finish the bounded MVP-04/MVP-05 status
+reconciliation and then select the next evidence-ready MVP-06 or MVP-07 slice;
+generic B2B completion and final conformance remain separate future work.
 
 ## Delivery ownership
 
 | Milestone | Delivery ownership |
 |---|---|
-| MVP-04 | Main workstream |
-| MVP-05 | Image Gateway workstream |
-| MVP-06 | Shared integration: Operator behavior on `main`; Gateway routing and processing on the Image Gateway branch |
-| MVP-07 | Shared integration: Member presentation on `main`; Gateway publication boundary on the Image Gateway branch |
-| MVP-08 | Main workstream |
-| MVP-09 | Integrated verification after the Image Gateway branch merges |
+| MVP-04 | `mhcs-core` `main` — Operator |
+| MVP-05 | `mhcs-core` `main` — Image Gateway |
+| MVP-06 | `mhcs-core` `main` — Operator and Image Gateway integration |
+| MVP-07 | `mhcs-core` `main` — Member and Image Gateway publication boundary |
+| MVP-08 | `mhcs-core` `main` — bounded B2B capability |
+| MVP-09 | `mhcs-core` `main` — integrated verification and deployment readiness |
 
-## Contract-first cross-workstream sequencing
+## Historical contract-first cross-workstream model — superseded
+
+The following records the former delivery model and is retained for traceability
+only. MVP-DEC-031 superseded it on 2026-08-11; current delivery is sequential
+on `mhcs-core` `main`.
 
 1. The Image Gateway workstream owns and versions each Gateway contract and
    its shared fixtures.
@@ -164,9 +186,9 @@ Operator-owned and Image Gateway-owned operational failure visibility. Include
 the Image Gateway operational administration required for this slice: intake
 status, correlation failures, retry visibility, and terminal failures.
 
-This is Image Gateway workstream work. Main-workstream tasks may consume an
-approved Gateway contract only after it has merged into `main`; before then,
-they record the dependency as deferred rather than implement Gateway internals.
+This is Image Gateway work on `mhcs-core` `main`. The module and its workers
+remain the owning implementation boundary; formal milestone reconciliation and
+operational administration are still incomplete.
 
 ## MVP-06 — Operator Teleradiology Workflow
 
@@ -176,17 +198,18 @@ automated report return only when a supported contract exists, and Operator
 review/publication controls. MVP-06 may extend Operator and Image Gateway
 administration only within their existing module ownership.
 
-Operator behavior belongs to the main workstream; Gateway routing, processing,
-AI integration, and publication behavior belong to the Image Gateway
-workstream. The two parts integrate only after the Gateway branch merges.
+Operator behavior, Gateway routing/processing, and the remaining publication
+boundary are now delivered sequentially on `mhcs-core` `main`. External
+teleradiology remains an external participant and the supported report path is
+not complete.
 
 ## MVP-07 — Member Result Visibility
 
 Deliver access to the Member's own published result, strict ownership, safe presentation, publication state, and viewing/download only through approved private-object boundaries where applicable.
 
-Member presentation belongs to the main workstream; the publication boundary
-belongs to the Image Gateway workstream. Main-workstream result work remains
-deferred until the approved Gateway publication contract is merged.
+Member presentation and the Image Gateway publication boundary remain separate
+module responsibilities within `mhcs-core` `main`. Member result publication
+remains open until its approved behavior and evidence are complete.
 
 ## MVP-08 — B2B Account Import
 
@@ -197,8 +220,10 @@ Deliver separately controlled Member and Operator import; validation/rejection r
 Deliver merged cross-MVP regression and integration verification, operational
 runbook, beta monitoring, backup/restore evidence, migration approval
 resolution, critical gap review, and the controlled beta deployment decision.
-The Image Gateway branch must merge before this milestone can complete. MVP
-completion and deployment readiness do not establish production readiness.
+The bounded deployment and verification evidence now exist, but this milestone
+remains partial until the remaining production, security, privacy, release, and
+conformance gates are complete. MVP completion and deployment readiness do not
+establish production readiness.
 
 No roadmap task creates a generic cross-module database editor. Shared
 administrator navigation is presentation; module-owned resources and business
@@ -354,7 +379,10 @@ public/LCD/audio behavior, Member visibility, privacy/retention approval,
 deployment, production readiness, and `MVP-GAP-009`, `MVP-GAP-012`,
 `MVP-GAP-021`, and `MVP-GAP-024` remain open.
 
-## 12 August MVP delivery target — Operator priority — approved scope, not yet executed
+## Historical 12 August MVP delivery target — Operator priority — approved scope, not yet executed
+
+This section preserves the target and sequencing language recorded at the time;
+MVP-DEC-031 superseded its separate Image Gateway branch instructions.
 
 All active MVP work targets the 12 August controlled-deployment candidate. The
 next coherent delivery objective on this branch is the Operator site flow: it

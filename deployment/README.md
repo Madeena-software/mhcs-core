@@ -24,8 +24,7 @@ Source paths reviewed and specialized where applicable:
 - web, queue, scheduler, and dedicated Image Gateway worker roles;
 - one application database and one cache/queue service;
 - an attachment from the Image Gateway worker to the externally managed,
-  private MPIPS network; and
-- validation-only CI/CD policy.
+  private MPIPS network.
 
 The MPIPS service, its image, resource limits, credentials, storage, and
 runtime isolation are not deployed or configured by this repository. The
@@ -33,9 +32,32 @@ runtime isolation are not deployed or configured by this repository. The
 by the MPIPS repository. MHCS exposes no MPIPS public route and defines no
 MPIPS service.
 
-The source deployment workflow was not copied because its SSH and live
-deployment actions are outside WP-02. No production values, hosts, domains,
-certificates, credentials, or keys are stored here.
+## Current operational topology — reconciled 2026-08-21
+
+Development workstation / Codex / WSL is used for the repository, tests, Git,
+and `gh` CLI. It is not the production host. Direct SSH or manual host
+operations from the development workstation are prohibited.
+
+Production runs on `simama-production-server` through the GitHub Actions
+self-hosted runner and Docker Swarm. Versioned workflows provide these
+operational roles:
+
+- deployment and post-deployment health checks;
+- read-only production verification;
+- backup and server setup where applicable; and
+- the bounded Prestige production-data workflow with separate apply and
+  canonical verification steps.
+
+The Image Gateway worker is the only MHCS caller across the private MPIPS
+network boundary. MHCS exposes no public MPIPS route. Workflow implementation,
+host values, credentials, environment secrets, and private data remain outside
+this README.
+
+The current bounded deployment and verification evidence is recorded in
+`docs/mvp/evidence/production-swarm-deployment.md` and
+`docs/mvp/evidence/prestige-production-rehearsal-data.md`; it does not by
+itself establish complete production, security, privacy, or release
+conformance.
 
 Static validation:
 

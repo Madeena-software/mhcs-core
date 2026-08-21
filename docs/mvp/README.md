@@ -7,6 +7,20 @@ Package roadmap.
 
 This is planning documentation. It does not prove that a feature is implemented, that a beta is deployed, or that production readiness has been approved.
 
+## Current synchronization marker
+
+Reconciled against: `841465faac4e8b1dd3670103052a9c4f075bfd04`
+
+Reconciliation date: `2026-08-21`
+
+MVP is the active bounded delivery scope. Work Packages remain the long-term
+authoritative roadmap. Current implementation status comes from current
+observed source, tests, accepted evidence, Git history, and verified runtime
+evidence; older evidence remains historical evidence for its recorded date.
+Delivery now proceeds sequentially on `mhcs-core` `main`, including Member,
+Operator, Image Gateway, and shared administration. MPIPS remains a separate
+private processing repository and the only internal network service boundary.
+
 ## Authority and relationship
 
 Work Packages remain the authoritative long-term capability, architecture, security, privacy, interoperability, and requirement roadmap. They preserve requirement assignments, architectural intent, cross-module ownership, non-MVP obligations, deferred decisions, and historical evidence.
@@ -23,24 +37,29 @@ Authority order for resolving scope and behavior is:
 
 Repository evidence controls implementation status. A task file, route name, class, migration, placeholder, plan, or claim is not proof by itself. Conflicting or stale documentation must be reported, then corrected through the owning documentation workflow; it must not be silently overridden by an MVP task.
 
-## Delivery workstreams and integration gate
+## Current delivery topology and integration gate
 
-Delivery proceeds through two parallel workstreams within the same modular
-`mhcs-core` application:
+All remaining MVP delivery occurs sequentially on `mhcs-core` `main`:
 
-- the main workstream delivers Member, Member-owned administration, Operator,
-  and Operator-owned administration on `main`; and
-- the Image Gateway workstream delivers Image Gateway storage and processing,
-  AI SDK integration, private MPIPS API integration, publication behavior, and
-  Image Gateway operational administration on its feature branch.
+```text
+mhcs-core / main
+  - Member
+  - Operator
+  - Image Gateway
+  - shared administration
 
-This is delivery ownership, not a repository, deployment, service, trust, or
-data-ownership split. The Image Gateway branch must merge into `main` before
-final beta completion. The merged workflow must then pass focused integration
-verification for complete-capture acceptance and retries, MPIPS conversion, AI
-routing and publication, exposed Member and Operator authorization, idempotency
-and failure handling, and compatible migrations, configuration, queues, and
-focused suites.
+MPIPS
+  - separate repository
+  - separate private processing service
+  - only internal network service boundary
+```
+
+This is still one modular monolith; the topology does not create separate
+application services or change module ownership. Final MVP planning still
+requires focused integration verification for capture acceptance and retries,
+MPIPS conversion, authorization, idempotency, failure handling, and the
+remaining report/publication boundaries. MVP completion, Work Package
+completion, production readiness, and release approval remain separate claims.
 
 ## Active controlled-beta components
 
@@ -84,7 +103,7 @@ The task must reconcile its baseline, component, vertical flow, exclusions, Work
 
 Gaps are maintained in \`beta-gap-register.md\`. A gap is not closed because code exists; closure requires repository evidence and the verification required by the owning task. Decisions that affect shared authentication, UUID strategy, module ownership, privacy, deployment, role semantics, interoperability, teleradiology assumptions, requirement assignments, or another active task's shared interface must stop and be reported for owner review.
 
-## Baseline
+## Historical MVP pivot baseline
 
 This pivot uses planning baseline \`bc300e158a790a7311c64eb7b20e8e81d4e3ec41\`. The execution commit that published this task is \`1960585472e13e78c8136280d8a76f7a9ad76a30\` on \`main\`. At the MVP pivot baseline, repository evidence included the WP-01/WP-02 foundations and the then-current WP-04 Member identity foundation. Current implementation status is recorded in `docs/mvp/work-package-status.md` and must be verified from repository evidence; this documentation does not claim long-term Work Package completion.
 
