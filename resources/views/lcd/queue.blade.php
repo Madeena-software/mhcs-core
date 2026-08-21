@@ -17,7 +17,7 @@
 
         * { box-sizing: border-box; }
         body { margin: 0; min-height: 100dvh; background: #dcebea; color: var(--ink); font-family: Arial, sans-serif; }
-        .lcd-shell { width: 100%; height: 100dvh; min-height: 100dvh; margin: 0 auto; padding: clamp(0.75rem, 1.5vw, 2rem); display: grid; grid-template-rows: auto minmax(0, 1fr); gap: clamp(0.75rem, 1.5vw, 1.5rem); }
+        .lcd-shell { width: 100%; height: 100dvh; min-height: 100dvh; margin: 0 auto; padding: clamp(0.75rem, 1.5vw, 2rem); display: flex; flex-direction: column; gap: clamp(0.75rem, 1.5vw, 1.5rem); }
         .lcd-header { display: flex; align-items: center; justify-content: space-between; gap: clamp(1rem, 2vw, 2rem); min-width: 0; padding: clamp(0.75rem, 1.5vw, 1.5rem) clamp(1rem, 2.5vw, 2.5rem); background: var(--teal-dark); color: #fff; border-radius: 1rem; box-shadow: 0 0.75rem 2rem rgb(18 61 73 / 16%); }
         .brand { display: flex; align-items: center; gap: 1rem; }
         .brand-mark { display: grid; place-items: center; width: 3.5rem; height: 3.5rem; border: 0.15rem solid #fff; border-radius: 50%; font-size: 0.7rem; font-weight: 800; letter-spacing: 0.08em; }
@@ -27,7 +27,7 @@
         .lcd-clock { text-align: right; font-size: clamp(1.4rem, 3vw, 2.7rem); font-weight: 800; letter-spacing: 0.04em; white-space: nowrap; }
         .lcd-date { margin-top: 0.3rem; color: #a9d9d4; font-size: clamp(0.75rem, 1.2vw, 1rem); text-transform: capitalize; }
         .status { margin: 0; padding: 0.75rem 1rem; border-radius: 0.6rem; background: #fff2f0; color: #a52a2a; font-size: clamp(0.85rem, 1.4vw, 1.1rem); font-weight: 700; }
-        .queue-layout { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.6fr); gap: clamp(0.75rem, 1.5vw, 1.5rem); min-height: 0; }
+        .queue-layout { display: grid; flex: 1; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.6fr); gap: clamp(0.75rem, 1.5vw, 1.5rem); min-height: 0; }
         .current-hero, .recent-panel { min-width: 0; min-height: 0; padding: clamp(0.75rem, 1.5vw, 1.5rem); border-radius: 1rem; box-shadow: 0 0.75rem 2rem rgb(18 61 73 / 12%); }
         .current-hero { display: flex; flex-direction: column; overflow: hidden; background: var(--surface); }
         .recent-panel { overflow: hidden; background: var(--teal); color: #fff; }
@@ -39,13 +39,13 @@
         .call-card { container-type: inline-size; display: flex; align-items: center; justify-content: space-between; gap: 1rem; min-width: 0; min-height: 0; overflow: hidden; padding: clamp(0.75rem, 1.5vw, 1.5rem); border-radius: 0.75rem; }
         .call-card-primary { flex-direction: column; align-items: flex-start; justify-content: center; background: var(--red); color: #fff; }
         .call-card-secondary { background: var(--yellow); color: var(--ink); }
-        .ticket-number { max-width: 100%; overflow: hidden; font-size: clamp(2.5rem, 12cqw, 8rem); font-weight: 900; line-height: 0.95; letter-spacing: 0.03em; white-space: nowrap; }
-        .call-card-secondary .ticket-number { font-size: clamp(2rem, 10cqw, 3.5rem); }
+        .ticket-number { max-width: 100%; overflow: visible; font-size: clamp(0.75rem, calc(140cqw / var(--ticket-length, 5)), 8rem); font-weight: 900; line-height: 0.95; letter-spacing: 0.03em; white-space: nowrap; }
+        .call-card-secondary .ticket-number { font-size: clamp(0.75rem, calc(100cqw / var(--ticket-length, 5)), 3.5rem); }
         .call-destination { font-size: clamp(0.95rem, 1.8vw, 1.45rem); font-weight: 700; }
         .empty { display: grid; place-items: center; min-height: 10rem; color: var(--muted); text-align: center; font-size: clamp(1rem, 1.8vw, 1.4rem); font-weight: 700; }
         .recent-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: clamp(0.6rem, 1.2vw, 1rem); }
         .recent-grid .call-card { min-height: clamp(7rem, 11vw, 10rem); flex-direction: column; align-items: flex-start; justify-content: space-between; }
-        .recent-grid .ticket-number { font-size: clamp(2rem, 4vw, 3.8rem); }
+        .recent-grid .ticket-number { font-size: clamp(0.75rem, calc(100cqw / var(--ticket-length, 5)), 3.8rem); }
         .recent-grid .call-destination { font-size: clamp(0.75rem, 1.2vw, 1rem); }
         .recent-grid .call-card:nth-child(3n + 1) { background: var(--yellow); color: var(--ink); }
         .recent-grid .call-card:nth-child(3n + 2) { background: #f4f8f6; color: var(--ink); }
@@ -141,6 +141,7 @@
         entries.forEach((entry, index) => {
             const item = document.createElement('article');
             item.className = `call-card ${primary && index === 0 ? 'call-card-primary' : 'call-card-secondary'}`;
+            item.style.setProperty('--ticket-length', String(entry.ticket_number.length));
             item.append(text('ticket-number', entry.ticket_number), text('call-destination', entry.destination));
             element.append(item);
         });
