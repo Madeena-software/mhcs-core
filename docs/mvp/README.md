@@ -1,7 +1,7 @@
 # MHCS Core controlled-beta MVP
 
 This directory is the repository source of truth for active controlled-beta
-delivery workstreams. It records scope, decisions, gaps, roadmap dependencies,
+delivery state. It records scope, decisions, gaps, roadmap dependencies,
 and the evidence-based relationship between MVP tasks and the long-term Work
 Package roadmap.
 
@@ -19,7 +19,8 @@ observed source, tests, accepted evidence, Git history, and verified runtime
 evidence; older evidence remains historical evidence for its recorded date.
 Delivery now proceeds sequentially on `mhcs-core` `main`, including Member,
 Operator, Image Gateway, and shared administration. MPIPS remains a separate
-private processing repository and the only internal network service boundary.
+repository. Its processing service/network boundary is private and is the only
+internal network service boundary.
 
 ## Authority and relationship
 
@@ -50,7 +51,8 @@ mhcs-core / main
 
 MPIPS
   - separate repository
-  - separate private processing service
+  - separate processing service
+  - private runtime/network boundary
   - only internal network service boundary
 ```
 
