@@ -16,9 +16,9 @@
         }
 
         * { box-sizing: border-box; }
-        body { margin: 0; min-height: 100vh; background: #dcebea; color: var(--ink); font-family: Arial, sans-serif; }
-        .lcd-shell { max-width: 1680px; min-height: 100vh; margin: 0 auto; padding: clamp(1rem, 3vw, 3rem); display: grid; gap: clamp(1rem, 2vw, 2rem); }
-        .lcd-header { display: flex; align-items: center; justify-content: space-between; gap: 2rem; padding: clamp(1rem, 2vw, 1.5rem) clamp(1.25rem, 3vw, 2.5rem); background: var(--teal-dark); color: #fff; border-radius: 1rem; box-shadow: 0 0.75rem 2rem rgb(18 61 73 / 16%); }
+        body { margin: 0; min-height: 100dvh; background: #dcebea; color: var(--ink); font-family: Arial, sans-serif; }
+        .lcd-shell { width: 100%; height: 100dvh; min-height: 100dvh; margin: 0 auto; padding: clamp(0.75rem, 1.5vw, 2rem); display: grid; grid-template-rows: auto minmax(0, 1fr); gap: clamp(0.75rem, 1.5vw, 1.5rem); }
+        .lcd-header { display: flex; align-items: center; justify-content: space-between; gap: clamp(1rem, 2vw, 2rem); min-width: 0; padding: clamp(0.75rem, 1.5vw, 1.5rem) clamp(1rem, 2.5vw, 2.5rem); background: var(--teal-dark); color: #fff; border-radius: 1rem; box-shadow: 0 0.75rem 2rem rgb(18 61 73 / 16%); }
         .brand { display: flex; align-items: center; gap: 1rem; }
         .brand-mark { display: grid; place-items: center; width: 3.5rem; height: 3.5rem; border: 0.15rem solid #fff; border-radius: 50%; font-size: 0.7rem; font-weight: 800; letter-spacing: 0.08em; }
         .brand-kicker { margin: 0 0 0.25rem; color: #a9d9d4; font-size: 0.8rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }
@@ -27,20 +27,20 @@
         .lcd-clock { text-align: right; font-size: clamp(1.4rem, 3vw, 2.7rem); font-weight: 800; letter-spacing: 0.04em; white-space: nowrap; }
         .lcd-date { margin-top: 0.3rem; color: #a9d9d4; font-size: clamp(0.75rem, 1.2vw, 1rem); text-transform: capitalize; }
         .status { margin: 0; padding: 0.75rem 1rem; border-radius: 0.6rem; background: #fff2f0; color: #a52a2a; font-size: clamp(0.85rem, 1.4vw, 1.1rem); font-weight: 700; }
-        .queue-layout { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.6fr); gap: clamp(1rem, 2vw, 2rem); min-height: 0; }
-        .current-hero, .recent-panel { padding: clamp(1rem, 2vw, 2rem); border-radius: 1rem; box-shadow: 0 0.75rem 2rem rgb(18 61 73 / 12%); }
-        .current-hero { display: flex; flex-direction: column; background: var(--surface); }
-        .recent-panel { background: var(--teal); color: #fff; }
+        .queue-layout { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.6fr); gap: clamp(0.75rem, 1.5vw, 1.5rem); min-height: 0; }
+        .current-hero, .recent-panel { min-width: 0; min-height: 0; padding: clamp(0.75rem, 1.5vw, 1.5rem); border-radius: 1rem; box-shadow: 0 0.75rem 2rem rgb(18 61 73 / 12%); }
+        .current-hero { display: flex; flex-direction: column; overflow: hidden; background: var(--surface); }
+        .recent-panel { overflow: hidden; background: var(--teal); color: #fff; }
         .section-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
         h2 { font-size: clamp(1rem, 1.8vw, 1.5rem); text-transform: uppercase; letter-spacing: 0.06em; }
         .section-heading::after { content: ''; display: block; width: 3rem; height: 0.35rem; background: var(--yellow); border-radius: 1rem; }
         .current-calls { display: grid; flex: 1; gap: 0.9rem; grid-template-rows: minmax(0, 1fr); }
-        .current-calls:not(:has(.call-card-secondary)) { min-height: clamp(15rem, 34vw, 27rem); }
-        .call-card { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: clamp(1rem, 2vw, 1.5rem); border-radius: 0.75rem; }
-        .call-card-primary { flex-direction: column; align-items: flex-start; justify-content: center; min-height: clamp(15rem, 34vw, 27rem); background: var(--red); color: #fff; }
+        .current-calls:not(:has(.call-card-secondary)) { min-height: 0; }
+        .call-card { container-type: inline-size; display: flex; align-items: center; justify-content: space-between; gap: 1rem; min-width: 0; min-height: 0; overflow: hidden; padding: clamp(0.75rem, 1.5vw, 1.5rem); border-radius: 0.75rem; }
+        .call-card-primary { flex-direction: column; align-items: flex-start; justify-content: center; background: var(--red); color: #fff; }
         .call-card-secondary { background: var(--yellow); color: var(--ink); }
-        .ticket-number { font-size: clamp(3.5rem, 10vw, 8rem); font-weight: 900; line-height: 0.95; letter-spacing: 0.03em; }
-        .call-card-secondary .ticket-number { font-size: clamp(2rem, 4vw, 3.5rem); }
+        .ticket-number { max-width: 100%; overflow: hidden; font-size: clamp(2.5rem, 12cqw, 8rem); font-weight: 900; line-height: 0.95; letter-spacing: 0.03em; white-space: nowrap; }
+        .call-card-secondary .ticket-number { font-size: clamp(2rem, 10cqw, 3.5rem); }
         .call-destination { font-size: clamp(0.95rem, 1.8vw, 1.45rem); font-weight: 700; }
         .empty { display: grid; place-items: center; min-height: 10rem; color: var(--muted); text-align: center; font-size: clamp(1rem, 1.8vw, 1.4rem); font-weight: 700; }
         .recent-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: clamp(0.6rem, 1.2vw, 1rem); }
@@ -54,7 +54,10 @@
 
         @media (max-width: 900px) {
             .queue-layout { grid-template-columns: 1fr; }
-            .current-calls:not(:has(.call-card-secondary)) { min-height: 18rem; }
+        }
+
+        @media (orientation: portrait) {
+            .queue-layout { grid-template-columns: 1fr; overflow: auto; }
         }
 
         @media (max-width: 560px) {
