@@ -80,11 +80,13 @@ final class ProductionS3DiagnosticWorkflowTest extends TestCase
             'docker_port_9000_published=',
             'host_local_minio_confirmed=',
             'container_host_gateway_failure_explained=',
+            'host_listener_inspection=PASS',
+            'host_listener_inspection=FAIL',
             'host_listener_root_boundary=',
             'host_listener_root_class=',
             'host_listener_root_confirmed=',
-            "ss -ltnH 'sport = :9000'",
-            "ss -ltnpH 'sport = :9000'",
+            'ss -ltnH',
+            'ss -ltnpH',
             'docker ps --filter publish=9000',
             '127.0.0.1:9000/minio/health/live',
             '--max-redirs 0',
@@ -145,6 +147,26 @@ final class ProductionS3DiagnosticWorkflowTest extends TestCase
         $this->assertStringContainsString("'credentials'=>['key'=>\$s3Config['key'],'secret'=>\$s3Config['secret']]", $workflow);
         $this->assertStringContainsString("'follow_location'=>0", $workflow);
         $this->assertStringContainsString("\$status === '200'", $workflow);
+        $this->assertStringContainsString('host_local_minio_confirmed=false', $workflow);
+        $this->assertStringContainsString('container_host_gateway_failure_explained=false', $workflow);
+        $this->assertStringContainsString('host_local_minio_confirmed=true', $workflow);
+        $this->assertStringContainsString('container_host_gateway_failure_explained=true', $workflow);
+        $this->assertStringNotContainsString('host_local_minio_confirmed=$host_listener_root_confirmed', $workflow);
+        $this->assertStringNotContainsString('container_host_gateway_failure_explained=$host_listener_root_confirmed', $workflow);
+        $this->assertStringContainsString('host_listener_inspection=FAIL', $workflow);
+        $this->assertStringContainsString('host_listener_root_class=host_listener_inspection_unavailable', $workflow);
+        $this->assertStringContainsString('host_port_9000_owner_class=unknown', $workflow);
+        $this->assertStringContainsString('host_listener_root_class=no_host_port_9000_listener', $workflow);
+        $this->assertStringContainsString('host_listener_root_confirmed=true', $workflow);
+        $this->assertStringContainsString('host_listener_root_class=host_listener_reachable_scope_but_container_connection_failed', $workflow);
+        $this->assertStringContainsString('host_listener_root_confirmed=false', $workflow);
+        $noListener = strpos($workflow, 'host_listener_root_class=no_host_port_9000_listener');
+        $healthBranch = strpos($workflow, 'elif [ "$host_loopback_minio_health" = PASS ]; then');
+        $this->assertNotFalse($noListener);
+        $this->assertNotFalse($healthBranch);
+        $noListenerBlock = substr($workflow, $noListener - 180, $healthBranch - ($noListener - 180));
+        $this->assertStringContainsString('host_local_minio_confirmed=false', $noListenerBlock);
+        $this->assertStringContainsString('container_host_gateway_failure_explained=false', $noListenerBlock);
         $this->assertStringNotContainsString('echo "$listener_address"', $workflow);
         $this->assertStringNotContainsString('echo "$listener_process_lines"', $workflow);
         $this->assertStringNotContainsString('echo "$listener_addresses"', $workflow);
