@@ -65,6 +65,7 @@ final class ProductionS3DiagnosticWorkflowTest extends TestCase
             'current_endpoint_host_class=',
             'current_endpoint_port_is_9000=',
             'current_endpoint_head_bucket=',
+            'container_loopback_endpoint_conflict=',
             'intended_local_endpoint_viable=',
             'configured_endpoint_matches_intended_topology=',
             'root_cause_boundary=',
@@ -73,6 +74,7 @@ final class ProductionS3DiagnosticWorkflowTest extends TestCase
         ] as $required) {
             $this->assertStringContainsString($required, $workflow);
         }
+        $this->assertStringContainsString("\$containerLoopbackEndpointConflict = in_array(\n                  \$currentEndpointHostClass,\n                  ['localhost', 'loopback_ip'],\n                  true,\n              );", $workflow);
 
         foreach ([
             'use Aws\\Exception\\AwsException;',
