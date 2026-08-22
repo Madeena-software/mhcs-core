@@ -76,9 +76,8 @@ separate revision governed by this exact task content.
 ## Objective
 
 Add one manual GitHub Actions workflow and focused static coverage that can,
-after separate Planner review, perform exactly one synthetic private-S3
-Put/Get/Delete round trip through the existing production application storage
-path and report a sanitized failure-boundary classification.
+after separate Planner review, prove read-only reachability and bucket
+authentication from `mhcs_core_app` to the intended host-local MinIO endpoint.
 
 ### Latest diagnostic evidence
 
@@ -104,7 +103,7 @@ differences. The evidence does not establish ACL incompatibility.
 
 ### Requirement traceability
 
-- `S3-DIAG-001` → prove the running production revision before any S3 write.
+- `S3-DIAG-001` → prove the running production revision before any S3 operation.
 - `S3-DIAG-002` → use the actual Laravel S3 configuration and private-object path.
 - `S3-DIAG-003` → perform read-only reachability and local MinIO authentication checks.
 - `S3-DIAG-004` → retain sanitized error classification without creating objects.
@@ -117,7 +116,7 @@ differences. The evidence does not establish ACL incompatibility.
 
 - `.github/workflows/diagnose-production-s3.yml`, manual-only and runnable only on the existing `self-hosted` production runner.
 - `tests/Deployment/ProductionS3DiagnosticWorkflowTest.php` with focused static assertions.
-- A pre-probe revision guard requiring exactly `b6232a158b3f6884fd9823bc875abc432676b781`; mismatch MUST stop before any S3 write and emit only `revision_match=false`.
+- A pre-probe revision guard requiring exactly `b6232a158b3f6884fd9823bc875abc432676b781`; mismatch MUST stop before any S3 operation and emit only `revision_match=false`.
 - The pre-probe revision guard MUST require all of: the app container found,
   `/var/www/html/VERSION-CURRENT` exactly equal to the accepted revision, a
   non-empty service image revision exactly equal to it, and a non-empty running
@@ -135,19 +134,9 @@ differences. The evidence does not establish ACL incompatibility.
   `endpoint_port_is_9000=true|false`; and report
   `container_loopback_endpoint_conflict=true` when the host class is
   `localhost` or `loopback_ip`.
-- If `endpoint_host_class` is `localhost` or `loopback_ip` and
-  `endpoint_port_is_9000=true`, the workflow MUST stop before `HeadBucket`,
-  `GetBucketOwnershipControls`, `PutObject`, `putStreamAsync`, `GetObject`,
-  or `DeleteObject`. It MUST report only the sanitized endpoint classification,
-  `head_bucket=SKIPPED`, `ownership_controls=SKIPPED`,
-  `acl_private_put=SKIPPED`, `private_object_roundtrip=SKIPPED`,
-  `cleanup_primary_object=NOT_REQUIRED`,
-  `cleanup_metadata_object=NOT_REQUIRED`, `cleanup_verified=NOT_REQUIRED`,
-  `root_cause_boundary=s3_endpoint_configuration`,
-  `root_cause_class=container_loopback_endpoint_conflict`,
-  `root_cause_confirmed=true`, and `s3_probe_executed=false`. This is a
-  successful diagnostic stop; no object cleanup is required because no
-  diagnostic object was created.
+- The read-only comparison MUST continue to report the current configured
+  endpoint even when it is a container-loopback conflict; this phase does not
+  perform the old write probe or any cleanup.
 - No synthetic payload, object key, S3 write, object read, object delete, ACL,
   ownership, or application upload.
 - The local diagnostic client MUST be constructed in memory from the effective
@@ -228,7 +217,7 @@ differences. The evidence does not establish ACL incompatibility.
 - [ ] The standalone diagnostic PHP loads Composer autoload before `bootstrap/app.php` and bootstraps Laravel in the same order as `verify-production.yml`.
 - [ ] The workflow uses the actual running Laravel S3 configuration and reports only sanitized booleans/enumerations/error classifications.
 - [ ] The workflow reports the allowed endpoint host class, whether the configured port is `9000`, and `container_loopback_endpoint_conflict=true` for `localhost` or loopback IP endpoints, without exposing `AWS_ENDPOINT`.
-- [ ] A proven `localhost|loopback_ip` endpoint on port `9000` short-circuits successfully before all S3 calls and reports `s3_probe_executed=false` with the specified endpoint-configuration root cause.
+- [ ] The workflow never performs a write probe or cleanup, including when the current endpoint is `localhost` or a loopback IP.
 - [ ] The workflow performs no `putStreamAsync`, S3 write, object read, object delete, ACL, ownership mutation, or application upload.
 - [ ] The workflow reports current endpoint classification and `HeadBucket`, host-gateway resolution, bounded TCP `9000`, MinIO health, and local read-only `HeadBucket` using an in-memory endpoint override.
 - [ ] Root-cause output confirms only a configured endpoint topology mismatch when all intended-local checks pass; it does not claim the NPZ PUT root cause is resolved.
