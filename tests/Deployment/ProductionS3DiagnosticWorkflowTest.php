@@ -208,4 +208,33 @@ final class ProductionS3DiagnosticWorkflowTest extends TestCase
             $this->assertStringNotContainsString($disclosure, $workflow);
         }
     }
+
+    public function test_tcp_root_cause_requires_an_executed_gateway_check(): void
+    {
+        $workflow = file_get_contents(base_path('.github/workflows/diagnose-production-s3.yml'));
+        $this->assertIsString($workflow);
+
+        $this->assertStringContainsString('$hostGatewayPort9000TcpChecked=false', $workflow);
+        $this->assertStringContainsString('host_gateway_port_9000_tcp_checked=', $workflow);
+        $this->assertStringContainsString('host_gateway_port_9000_tcp_checked=false', $workflow);
+
+        $checked = strpos($workflow, '$hostGatewayPort9000TcpChecked=true;');
+        $fsockopen = strpos($workflow, "\$socket=@fsockopen('host.docker.internal',9000");
+        $this->assertNotFalse($checked);
+        $this->assertNotFalse($fsockopen);
+        $this->assertLessThan($fsockopen, $checked);
+        $between = substr($workflow, $checked + strlen('$hostGatewayPort9000TcpChecked=true;'), $fsockopen - ($checked + strlen('$hostGatewayPort9000TcpChecked=true;')));
+        $this->assertSame('', trim($between));
+
+        $this->assertStringNotContainsString('[ -n "$host_gateway_port_9000_tcp" ] || host_gateway_port_9000_tcp=FAIL', $workflow);
+        $this->assertStringContainsString('host_gateway_port_9000_tcp=none', $workflow);
+        $this->assertStringContainsString('host_listener_root_class=container_tcp_check_not_executed', $workflow);
+
+        $loopbackGate = strpos($workflow, 'if [ "$host_local_minio_confirmed" = true ] && [ "$host_port_9000_loopback_only" = true ]');
+        $nonloopbackGate = strpos($workflow, 'elif [ "$host_local_minio_confirmed" = true ] && [ "$host_port_9000_has_nonloopback_bind" = true ]');
+        $this->assertNotFalse($loopbackGate);
+        $this->assertNotFalse($nonloopbackGate);
+        $this->assertStringContainsString('[ "$host_gateway_port_9000_tcp_checked" = true ]', substr($workflow, $loopbackGate, $nonloopbackGate - $loopbackGate));
+        $this->assertStringContainsString('[ "$host_gateway_port_9000_tcp_checked" = true ]', substr($workflow, $nonloopbackGate, 500));
+    }
 }
