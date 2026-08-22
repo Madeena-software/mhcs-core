@@ -17,6 +17,8 @@ final class ProductionS3DiagnosticWorkflowTest extends TestCase
         $this->assertIsString($workflow);
         $objectStore = file_get_contents(base_path('app/Shared/Storage/PlainLocalObjectStore.php'));
         $this->assertIsString($objectStore);
+        $productionVerifier = file_get_contents(base_path('.github/workflows/verify-production.yml'));
+        $this->assertIsString($productionVerifier);
 
         $this->assertStringContainsString("on:\n  workflow_dispatch:", $workflow);
         $this->assertSame(1, substr_count($workflow, 'workflow_dispatch:'));
@@ -53,6 +55,21 @@ final class ProductionS3DiagnosticWorkflowTest extends TestCase
         $this->assertLessThan($phpDiagnostic, $revisionFailure);
         $this->assertLessThan($probe, $revisionFailure);
 
+        $diagnosticAutoload = strpos($workflow, "require 'vendor/autoload.php';");
+        $diagnosticBootstrapApp = strpos($workflow, "require 'bootstrap/app.php';");
+        $diagnosticKernelBootstrap = strpos($workflow, '$app->make(Kernel::class)->bootstrap();');
+        $verifierAutoload = strpos($productionVerifier, 'require "vendor/autoload.php";');
+        $verifierBootstrapApp = strpos($productionVerifier, '$app = require "bootstrap/app.php";');
+        $verifierKernelBootstrap = strpos($productionVerifier, '$app->make(Illuminate\\Contracts\\Console\\Kernel::class)->bootstrap();');
+        foreach ([$diagnosticAutoload, $diagnosticBootstrapApp, $diagnosticKernelBootstrap, $verifierAutoload, $verifierBootstrapApp, $verifierKernelBootstrap] as $bootstrapPosition) {
+            $this->assertNotFalse($bootstrapPosition);
+        }
+        $this->assertLessThan($diagnosticBootstrapApp, $diagnosticAutoload);
+        $this->assertLessThan($diagnosticKernelBootstrap, $diagnosticBootstrapApp);
+        $this->assertLessThan($verifierBootstrapApp, $verifierAutoload);
+        $this->assertLessThan($verifierKernelBootstrap, $verifierBootstrapApp);
+        $this->assertStringContainsString('$bootstrapOk = true;', $workflow);
+
         foreach ([
             'mhcs_core_app',
             "config('mhcs.private_object_disk')",
@@ -83,14 +100,25 @@ final class ProductionS3DiagnosticWorkflowTest extends TestCase
         $this->assertStringContainsString("'ACL' => 'private'", $objectStore);
         $this->assertSame(1, substr_count($workflow, '->putStreamAsync('));
 
-        $endpointClassification = strpos($workflow, 'classifyEndpoint');
+        $endpointClassification = strpos($workflow, '$endpointClassification = classifyEndpoint(');
+        $bootstrapComplete = strpos($workflow, '$bootstrapOk = true;');
         $headBucket = strpos($workflow, '$client->headBucket');
         $this->assertNotFalse($endpointClassification);
+        $this->assertNotFalse($bootstrapComplete);
         $this->assertNotFalse($headBucket);
+        $this->assertLessThan($endpointClassification, $bootstrapComplete);
         $this->assertLessThan($headBucket, $endpointClassification);
 
         $loopbackGuard = strpos($workflow, 'if ($containerLoopbackEndpointConflict && $endpointPortIs9000)');
+        $diskCreation = strpos($workflow, '$disk = Storage::disk($diskName);');
+        $ownershipControls = strpos($workflow, '$client->getBucketOwnershipControls');
+        $objectRead = strpos($workflow, '$objects->get(');
+        $objectDelete = strpos($workflow, '$disk->delete(');
         $this->assertNotFalse($loopbackGuard);
+        foreach ([$diskCreation, $ownershipControls, $objectRead, $objectDelete] as $s3Operation) {
+            $this->assertNotFalse($s3Operation);
+            $this->assertLessThan($s3Operation, $loopbackGuard);
+        }
         $this->assertLessThan($headBucket, $loopbackGuard);
         $this->assertLessThan($probe, $loopbackGuard);
         foreach ([

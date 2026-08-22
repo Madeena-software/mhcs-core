@@ -209,6 +209,7 @@ jobs:
           $cleanupVerified = true;
 
           try {
+              require 'vendor/autoload.php';
               $app = require 'bootstrap/app.php';
               $app->make(Kernel::class)->bootstrap();
               $bootstrapOk = true;
