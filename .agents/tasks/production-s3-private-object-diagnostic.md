@@ -1,7 +1,7 @@
 ---
 title: MHCS Core Production S3 Private-Object Diagnostic
 document_id: MHCS-TASK-PRODUCTION-S3-DIAGNOSTIC-001
-version: 1.7
+version: 1.8
 status: validated-published
 language: en-US
 last_updated: 2026-08-22
@@ -74,6 +74,33 @@ address is not established. A loopback-only host listener at `127.0.0.1:9000`
 is a leading hypothesis. `host.docker.internal:9000` has been proven
 unreachable from `mhcs_core_app`; no endpoint mutation is authorized until the
 host listener topology is proven.
+
+The latest production diagnostic (run `32567847101`) confirmed the running
+production revision, Laravel bootstrap, host-local MinIO through HTTP 200 on
+the host loopback health check, and no Docker-published port `9000`. The host
+gateway name resolved, but container TCP port `9000` failed. The listener
+inspection reported aggregate bind class `multiple`; because the diagnostic
+did not retain per-scope booleans, this does not establish whether the multiple
+listeners were loopback-only or included a non-loopback bind. The root cause
+therefore remains unconfirmed. No production mutation or S3 object operation
+occurred.
+
+### Host bind-scope refinement
+
+The implementation MUST derive sanitized booleans from the captured read-only
+`ss -ltnH` table for loopback IPv4, loopback IPv6, wildcard IPv4, wildcard
+IPv6, and specific non-loopback listeners. It MUST report `loopback_only` only
+when a listener exists and every listener is loopback; `has_nonloopback_bind`
+MUST be true for any wildcard or specific non-loopback listener. Aggregate
+`multiple` MUST NOT determine the root-cause branch by itself.
+
+When host-local MinIO is confirmed and container TCP port `9000` fails,
+loopback-only listeners confirm `minio_host_binding` /
+`minio_bound_to_host_loopback_only` and explain the gateway failure. Any
+non-loopback listener keeps the root cause unconfirmed with boundary
+`docker_host_gateway_connectivity` and class
+`nonloopback_minio_listener_but_container_tcp_failed`. No firewall cause may
+be inferred.
 
 ## Baseline and task revision
 
@@ -159,7 +186,8 @@ imports.
   `HeadBucket` comparison using the effective production credentials and
   bucket only in memory.
 - Host listener inspection using a read-only command such as `ss`, reporting
-  only `host_port_9000_listener_present` and the approved bind class:
+  only sanitized per-scope bind booleans, `host_port_9000_loopback_only`,
+  `host_port_9000_has_nonloopback_bind`, and the approved aggregate bind class:
   `loopback_ipv4`, `loopback_ipv6`, `all_ipv4`, `all_ipv6`,
   `nonloopback_specific`, `multiple`, `none`, or `unknown`.
 - Host loopback MinIO health using a short, no-redirect GET to
@@ -265,7 +293,10 @@ imports.
 - [ ] The workflow performs no `putStreamAsync`, S3 write, object read, object delete, ACL, ownership mutation, or application upload.
 - [ ] The workflow reports current endpoint classification and `HeadBucket`, host-gateway resolution, bounded TCP `9000`, MinIO health, and local read-only `HeadBucket` using an in-memory endpoint override.
 - [ ] The workflow reports the sanitized host listener presence/bind class, loopback MinIO health, listener owner class, and Docker publication status.
-- [ ] The workflow classifies the four host-listener cases without changing MinIO, MHCS, AWS endpoint configuration, secrets, firewall, Docker networks, or services.
+- [ ] The workflow reports per-scope host port `9000` booleans without printing listener addresses, interface names, PIDs, process lines, or raw listener tables.
+- [ ] Multiple loopback listeners derive `host_port_9000_loopback_only=true` and `host_port_9000_has_nonloopback_bind=false`; wildcard or specific non-loopback listeners derive the inverse non-loopback classification.
+- [ ] The workflow classifies loopback-only MinIO plus failed container TCP as `minio_bound_to_host_loopback_only`, while non-loopback MinIO plus failed container TCP remains unconfirmed as `nonloopback_minio_listener_but_container_tcp_failed`.
+- [ ] The workflow classifies the four host-listener cases without changing MinIO, MHCS, AWS endpoint configuration, secrets, firewall, Docker networks, or services, and does not infer firewall as root cause.
 - [ ] Root-cause output confirms only a configured endpoint topology mismatch when all intended-local checks pass; it does not claim the NPZ PUT root cause is resolved.
 - [ ] Focused static tests verify workflow dispatch/runner/revision/read-only checks/sanitization/no-side-effect requirements without a new dependency.
 - [ ] The diagnostic workflow is not dispatched and no production probe is run during this implementation turn.
@@ -276,7 +307,7 @@ imports.
 2. `php artisan test tests/Deployment/ProductionVerificationWorkflowTest.php --no-coverage`
 3. `vendor/bin/pint --test`, as applicable.
 4. `git diff --check`.
-5. Inspect the final diff and status; verify the separate implementation commit with message `ci: add read-only host MinIO listener diagnostic`, push `main`, fetch, and verify the returned remote `origin/main` SHA.
+5. Inspect the final diff and status; verify the separate implementation commit with message `ci: refine MinIO host bind classification`, push `main`, fetch, and verify the returned remote `origin/main` SHA.
 
 Do not dispatch `.github/workflows/diagnose-production-s3.yml`.
 
@@ -289,6 +320,7 @@ Stop and return to Planner/Reviewer if:
 - the app container or actual S3 configuration cannot be used without reconstructing credentials or printing sensitive values;
 - the requested probe requires database, queue, clinical, member, ticket, MPIPS, IAM, bucket-policy, ownership, ACL, credential, deployment, SSH, or application changes;
 - the result cannot be sanitized or the read-only local endpoint comparison cannot be proven;
+- the per-scope bind classification cannot be derived without exposing raw listener data;
 - the implementation would require a new dependency or a second comparison probe; or
 - any test, lint, diff check, commit, or push result is not actually observed.
 
