@@ -1,7 +1,7 @@
 ---
 title: MHCS Core Production S3 Private-Object Diagnostic
 document_id: MHCS-TASK-PRODUCTION-S3-DIAGNOSTIC-001
-version: 1.3
+version: 1.4
 status: validated-published
 language: en-US
 last_updated: 2026-08-22
@@ -80,6 +80,18 @@ after separate Planner review, perform exactly one synthetic private-S3
 Put/Get/Delete round trip through the existing production application storage
 path and report a sanitized failure-boundary classification.
 
+### Latest diagnostic evidence
+
+Run `32562636176` proved the production revision guard and Laravel bootstrap,
+classified the effective endpoint as `other` without an explicit port `9000`,
+and passed `HeadBucket` through the current configured endpoint. One synthetic
+async PUT failed with a sanitized `unknown` error and cleanup passed. The root
+cause remains unconfirmed. The diagnostic key used the isolated
+`diagnostics/production-s3/<random>` prefix, while the Image Gateway NPZ path
+uses `objects/<capture-id>/<radiograph|gain>`; therefore that synthetic PUT is
+not sufficient to rule out prefix-specific S3 authorization or policy
+differences. The evidence does not establish ACL incompatibility.
+
 ## Authoritative inputs
 
 ### Governing authority
@@ -94,8 +106,8 @@ path and report a sanitized failure-boundary classification.
 
 - `S3-DIAG-001` → prove the running production revision before any S3 write.
 - `S3-DIAG-002` → use the actual Laravel S3 configuration and private-object path.
-- `S3-DIAG-003` → perform read-only reachability/ownership checks and one bounded ACL-private round trip.
-- `S3-DIAG-004` → guarantee primary and metadata cleanup with sanitized evidence.
+- `S3-DIAG-003` → perform read-only reachability and local MinIO authentication checks.
+- `S3-DIAG-004` → retain sanitized error classification without creating objects.
 - `S3-DIAG-005` → statically enforce workflow and side-effect safety.
 - `S3-DIAG-006` → classify the configured endpoint host/port and report a container-loopback conflict without exposing `AWS_ENDPOINT`.
 
@@ -113,7 +125,10 @@ path and report a sanitized failure-boundary classification.
   proof MUST emit only `revision_match=false` and exit before the PHP diagnostic
   or any S3/network operation.
 - Running the diagnostic PHP inside the current `mhcs_core_app` container, bootstrapping Laravel, requiring `config('mhcs.private_object_disk') === 's3'`, and using the actual configured S3 adapter/client without printing configuration values. Any standalone PHP executed through `docker exec ... php` MUST first load `require 'vendor/autoload.php';` before `require 'bootstrap/app.php';`, followed by the Kernel bootstrap, using the same ordering proven by `.github/workflows/verify-production.yml`.
-- Sanitized `HeadBucket` and supported `GetBucketOwnershipControls` observations.
+- Sanitized `HeadBucket` observation through the current configured endpoint.
+- Read-only host-gateway resolution, TCP port `9000`, MinIO health, and local
+  `HeadBucket` comparison using the effective production credentials and
+  bucket only in memory.
 - Sanitized endpoint classification from the actual configured endpoint:
   `endpoint_host_class` MUST be one of `localhost`, `loopback_ip`,
   `host_docker_internal`, `docker_service_name`, or `other`; report
@@ -133,12 +148,11 @@ path and report a sanitized failure-boundary classification.
   `root_cause_confirmed=true`, and `s3_probe_executed=false`. This is a
   successful diagnostic stop; no object cleanup is required because no
   diagnostic object was created.
-- Exactly one generated, very small, non-clinical in-memory payload and one unpredictable opaque diagnostic key under an isolated diagnostic prefix; no real NPZ, DICOM, Member, ticket, admission, capture, filename, or clinical content.
-- The existing `PrivateObjectStore::putStreamAsync()` path with exact byte length, SHA-256 checksum, synthetic `AuthenticatedContext`, purpose `image-gateway.capture.submit`, and explicit opaque key. The request MUST retain the existing `ACL => private` behavior.
-- The synthetic S3 roundtrip is required only when the configured endpoint is
-  not already proven to be the container-local loopback conflict above.
-- Promise completion, returned metadata validation, normal grant/get readback, exact byte comparison, sanitized AWS/S3 error classification, root-cause classification, and mandatory cleanup.
-- Finally cleanup of both the primary diagnostic key and its `.meta.json`, followed by absence verification where safely possible. Cleanup failure or unproven cleanup MUST fail the workflow without broad listing/deletion.
+- No synthetic payload, object key, S3 write, object read, object delete, ACL,
+  ownership, or application upload.
+- The local diagnostic client MUST be constructed in memory from the effective
+  production access key, secret key, region, bucket, and path-style behavior,
+  overriding only its endpoint to `http://host.docker.internal:9000`.
 - Repository-only task/workflow/test changes, one task commit, one implementation commit, and the user-authorized pushes to `main`.
 
 ### Out of scope
@@ -172,7 +186,8 @@ path and report a sanitized failure-boundary classification.
 
 - The existing production revision-observability pattern is the authority for locating the running app container and reading its deployed revision.
 - A synthetic in-memory payload is sufficient to exercise the private-object persistence boundary while avoiding clinical content.
-- An ownership-controls read denial is an observation and is not alone a diagnostic failure when the authorized round trip can proceed.
+- The host-gateway endpoint is intended to be host-local MinIO; it must be
+  proven read-only rather than assumed to work.
 
 ### Remaining approval requirements
 
@@ -199,24 +214,25 @@ path and report a sanitized failure-boundary classification.
   port boolean. Never print `AWS_ENDPOINT`, change endpoint configuration, or
   restart MinIO/S3 or MHCS.
 - Report booleans, approved enumerations, sanitized error class/code, and bounded HTTP status only. Never print raw exception messages, request IDs, response headers, or infrastructure identifiers.
-- The single write probe MUST send `ACL => private`, await the application async promise, validate metadata/checksum, and read through the normal grant/get path.
-- Always retain the opaque key internally and attempt deletion of both `<key>` and `<key>.meta.json` in `finally`, including when primary PutObject succeeds but metadata PutObject fails.
+- The diagnostic MUST NOT call `putStreamAsync`, `PutObject`, `GetObject`,
+  `DeleteObject`, `ListObjects`, bucket policy/ACL/ownership mutations, or
+  application upload paths.
 - Never list or broadly delete the bucket. Do not automatically change application code based on the result.
 - No new dependency.
 
 ## Acceptance criteria
 
-- [ ] This task refinement is committed alone with message `docs: refine S3 diagnostic loopback guard`, pushed, and verified as `origin/main` before implementation begins.
+- [ ] This task refinement is committed alone with message `docs: refine S3 local endpoint diagnostic`, pushed, and verified as `origin/main` before implementation begins.
 - [ ] A dedicated manual-only self-hosted workflow exists with the exact production revision guard and no deployment, database, SSH, migration, seeder, Prestige, or application mutation path.
 - [ ] A missing or mismatched app/container/service/image revision proof stops before any PHP/S3/network operation and emits only `revision_match=false`.
 - [ ] The standalone diagnostic PHP loads Composer autoload before `bootstrap/app.php` and bootstraps Laravel in the same order as `verify-production.yml`.
 - [ ] The workflow uses the actual running Laravel S3 configuration and reports only sanitized booleans/enumerations/error classifications.
 - [ ] The workflow reports the allowed endpoint host class, whether the configured port is `9000`, and `container_loopback_endpoint_conflict=true` for `localhost` or loopback IP endpoints, without exposing `AWS_ENDPOINT`.
 - [ ] A proven `localhost|loopback_ip` endpoint on port `9000` short-circuits successfully before all S3 calls and reports `s3_probe_executed=false` with the specified endpoint-configuration root cause.
-- [ ] The workflow performs only one synthetic ACL-private `putStreamAsync()` probe, normal grant/get readback, exact byte/checksum verification, and no comparison probe.
-- [ ] Both primary and `.meta.json` objects are attempted in `finally`; absence is verified where possible; cleanup failure makes the workflow fail.
-- [ ] Root-cause output distinguishes ACL incompatibility, authorization/policy, transport/endpoint, successful roundtrip, and unknown boundaries without auto-fixing the application.
-- [ ] Focused static tests verify workflow dispatch/runner/revision/synthetic/ACL/cleanup/sanitization/no-side-effect requirements without a new dependency.
+- [ ] The workflow performs no `putStreamAsync`, S3 write, object read, object delete, ACL, ownership mutation, or application upload.
+- [ ] The workflow reports current endpoint classification and `HeadBucket`, host-gateway resolution, bounded TCP `9000`, MinIO health, and local read-only `HeadBucket` using an in-memory endpoint override.
+- [ ] Root-cause output confirms only a configured endpoint topology mismatch when all intended-local checks pass; it does not claim the NPZ PUT root cause is resolved.
+- [ ] Focused static tests verify workflow dispatch/runner/revision/read-only checks/sanitization/no-side-effect requirements without a new dependency.
 - [ ] The diagnostic workflow is not dispatched and no production probe is run during this implementation turn.
 
 ## Verification requirements
@@ -237,7 +253,7 @@ Stop and return to Planner/Reviewer if:
 - the running production revision differs from the exact required revision;
 - the app container or actual S3 configuration cannot be used without reconstructing credentials or printing sensitive values;
 - the requested probe requires database, queue, clinical, member, ticket, MPIPS, IAM, bucket-policy, ownership, ACL, credential, deployment, SSH, or application changes;
-- the result cannot be sanitized, the exact single ACL-private round trip cannot be proven, or cleanup cannot be proven;
+- the result cannot be sanitized or the read-only local endpoint comparison cannot be proven;
 - the implementation would require a new dependency or a second comparison probe; or
 - any test, lint, diff check, commit, or push result is not actually observed.
 
