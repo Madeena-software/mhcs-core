@@ -33,11 +33,24 @@ final class ProductionS3DiagnosticWorkflowTest extends TestCase
         $this->assertStringContainsString('revision_match=false', $workflow);
         $this->assertStringContainsString('if [ "$revision_match" != "true" ]; then', $workflow);
         $this->assertStringContainsString('/var/www/html/VERSION-CURRENT', $workflow);
+        $this->assertStringContainsString('if [ -n "$APP_CONTAINER" ]; then', $workflow);
+        $this->assertStringContainsString('&& [ "$VERSION_CURRENT" = "$EXPECTED_REVISION" ]', $workflow);
+        foreach ([
+            '&& [ -n "$SERVICE_REVISION" ]',
+            '&& [ "$SERVICE_REVISION" = "$EXPECTED_REVISION" ]',
+            '&& [ -n "$CONTAINER_REVISION" ]',
+            '&& [ "$CONTAINER_REVISION" = "$EXPECTED_REVISION" ]',
+        ] as $strictRevisionCheck) {
+            $this->assertStringContainsString($strictRevisionCheck, $workflow);
+        }
         $this->assertStringContainsString('exit 1', $workflow);
         $revisionFailure = strpos($workflow, 'revision_match=false');
-        $probe = strpos($workflow, 'putStreamAsync');
+        $phpDiagnostic = strpos($workflow, 'docker exec -i "$APP_CONTAINER" php');
+        $probe = strpos($workflow, '->putStreamAsync(');
         $this->assertNotFalse($revisionFailure);
+        $this->assertNotFalse($phpDiagnostic);
         $this->assertNotFalse($probe);
+        $this->assertLessThan($phpDiagnostic, $revisionFailure);
         $this->assertLessThan($probe, $revisionFailure);
 
         foreach ([
@@ -63,11 +76,46 @@ final class ProductionS3DiagnosticWorkflowTest extends TestCase
             'host.docker.internal',
             'docker_service_name',
             'loopback_ip',
+            's3_probe_executed=',
         ] as $requiredOperation) {
             $this->assertStringContainsString($requiredOperation, $workflow);
         }
         $this->assertStringContainsString("'ACL' => 'private'", $objectStore);
         $this->assertSame(1, substr_count($workflow, '->putStreamAsync('));
+
+        $endpointClassification = strpos($workflow, 'classifyEndpoint');
+        $headBucket = strpos($workflow, '$client->headBucket');
+        $this->assertNotFalse($endpointClassification);
+        $this->assertNotFalse($headBucket);
+        $this->assertLessThan($headBucket, $endpointClassification);
+
+        $loopbackGuard = strpos($workflow, 'if ($containerLoopbackEndpointConflict && $endpointPortIs9000)');
+        $this->assertNotFalse($loopbackGuard);
+        $this->assertLessThan($headBucket, $loopbackGuard);
+        $this->assertLessThan($probe, $loopbackGuard);
+        foreach ([
+            'echo \'endpoint_host_class=\'.$endpointHostClass.PHP_EOL;',
+            'echo \'endpoint_port_is_9000=true\'.PHP_EOL;',
+            'echo \'container_loopback_endpoint_conflict=true\'.PHP_EOL;',
+            'echo \'head_bucket=SKIPPED\'.PHP_EOL;',
+            'echo \'ownership_controls=SKIPPED\'.PHP_EOL;',
+            'echo \'acl_private_put=SKIPPED\'.PHP_EOL;',
+            'echo \'private_object_roundtrip=SKIPPED\'.PHP_EOL;',
+            'echo \'cleanup_primary_object=NOT_REQUIRED\'.PHP_EOL;',
+            'echo \'cleanup_metadata_object=NOT_REQUIRED\'.PHP_EOL;',
+            'echo \'cleanup_verified=NOT_REQUIRED\'.PHP_EOL;',
+            'echo \'root_cause_boundary=s3_endpoint_configuration\'.PHP_EOL;',
+            'echo \'root_cause_class=container_loopback_endpoint_conflict\'.PHP_EOL;',
+            'echo \'root_cause_confirmed=true\'.PHP_EOL;',
+            'echo \'s3_probe_executed=false\'.PHP_EOL;',
+            'exit(0);',
+        ] as $loopbackOutcome) {
+            $this->assertStringContainsString($loopbackOutcome, $workflow);
+        }
+        $loopbackBlock = substr($workflow, $loopbackGuard, $headBucket - $loopbackGuard);
+        $this->assertStringNotContainsString('->delete(', $loopbackBlock);
+        $this->assertStringContainsString('$s3ProbeExecuted = true;', $workflow);
+        $this->assertStringContainsString('production_s3_roundtrip_passed', $workflow);
 
         foreach ([
             'headBucket',
@@ -139,5 +187,8 @@ final class ProductionS3DiagnosticWorkflowTest extends TestCase
         $this->assertStringNotContainsString('echo "key=', strtolower($workflow));
         $this->assertStringNotContainsString('echo "$key', $workflow);
         $this->assertStringNotContainsString('echo "$metadataKey', $workflow);
+        foreach (['putenv(', 'setenv(', 'config([', 'AWS_ENDPOINT'] as $configurationMutation) {
+            $this->assertStringNotContainsString($configurationMutation, $workflow);
+        }
     }
 }

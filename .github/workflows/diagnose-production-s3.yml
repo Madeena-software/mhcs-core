@@ -60,8 +60,10 @@ jobs:
           if [ -n "$APP_CONTAINER" ] \
             && [[ "$VERSION_CURRENT" =~ ^[0-9a-f]{40}$ ]] \
             && [ "$VERSION_CURRENT" = "$EXPECTED_REVISION" ] \
-            && { [ -z "$SERVICE_REVISION" ] || [ "$SERVICE_REVISION" = "$EXPECTED_REVISION" ]; } \
-            && { [ -z "$CONTAINER_REVISION" ] || [ "$CONTAINER_REVISION" = "$EXPECTED_REVISION" ]; }; then
+            && [ -n "$SERVICE_REVISION" ] \
+            && [ "$SERVICE_REVISION" = "$EXPECTED_REVISION" ] \
+            && [ -n "$CONTAINER_REVISION" ] \
+            && [ "$CONTAINER_REVISION" = "$EXPECTED_REVISION" ]; then
             revision_match=true
           fi
 
@@ -174,6 +176,7 @@ jobs:
           $endpointHostClass = 'other';
           $endpointPortIs9000 = false;
           $containerLoopbackEndpointConflict = false;
+          $s3ProbeExecuted = false;
           $disk = null;
           $client = null;
           $bucket = null;
@@ -230,6 +233,26 @@ jobs:
               if (! $diskIsS3 || ! is_string($diskName) || trim($diskName) === '') {
                   throw new \RuntimeException('configured private object disk is not S3');
               }
+
+              if ($containerLoopbackEndpointConflict && $endpointPortIs9000) {
+                  echo 'endpoint_host_class='.$endpointHostClass.PHP_EOL;
+                  echo 'endpoint_port_is_9000=true'.PHP_EOL;
+                  echo 'container_loopback_endpoint_conflict=true'.PHP_EOL;
+                  echo 'head_bucket=SKIPPED'.PHP_EOL;
+                  echo 'ownership_controls=SKIPPED'.PHP_EOL;
+                  echo 'acl_private_put=SKIPPED'.PHP_EOL;
+                  echo 'private_object_roundtrip=SKIPPED'.PHP_EOL;
+                  echo 'cleanup_primary_object=NOT_REQUIRED'.PHP_EOL;
+                  echo 'cleanup_metadata_object=NOT_REQUIRED'.PHP_EOL;
+                  echo 'cleanup_verified=NOT_REQUIRED'.PHP_EOL;
+                  echo 'root_cause_boundary=s3_endpoint_configuration'.PHP_EOL;
+                  echo 'root_cause_class=container_loopback_endpoint_conflict'.PHP_EOL;
+                  echo 'root_cause_confirmed=true'.PHP_EOL;
+                  echo 's3_probe_executed=false'.PHP_EOL;
+                  exit(0);
+              }
+
+              $s3ProbeExecuted = true;
 
               $disk = Storage::disk($diskName);
               if (! $disk instanceof AwsS3V3Adapter || ! $disk instanceof \Illuminate\Contracts\Filesystem\Filesystem) {
@@ -421,6 +444,7 @@ jobs:
           echo 'endpoint_host_class='.$endpointHostClass.PHP_EOL;
           echo 'endpoint_port_is_9000='.($endpointPortIs9000 ? 'true' : 'false').PHP_EOL;
           echo 'container_loopback_endpoint_conflict='.($containerLoopbackEndpointConflict ? 'true' : 'false').PHP_EOL;
+          echo 's3_probe_executed='.($s3ProbeExecuted ? 'true' : 'false').PHP_EOL;
           echo 'head_bucket='.$headBucket.PHP_EOL;
           echo 'head_bucket_error_class='.$headErrorClass.PHP_EOL;
           echo 'head_bucket_error_code='.$headErrorCode.PHP_EOL;
