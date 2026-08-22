@@ -1,7 +1,7 @@
 ---
 title: MHCS Core Production S3 Private-Object Diagnostic
 document_id: MHCS-TASK-PRODUCTION-S3-DIAGNOSTIC-001
-version: 1.5
+version: 1.6
 status: validated-published
 language: en-US
 last_updated: 2026-08-22
@@ -61,6 +61,20 @@ remained defaults. The harness omitted Composer autoload initialization before
 loading `bootstrap/app.php`; the established production verification workflow
 demonstrates the working standalone bootstrap sequence.
 
+The latest production diagnostic (run `32564397066`) proved the production
+revision guard and Laravel bootstrap. It classified the current endpoint as
+`other` without an explicit port `9000` and passed the current configured
+`HeadBucket`. The host gateway resolved, but TCP port `9000`, MinIO health, and
+the host-gateway `HeadBucket` all failed from `mhcs_core_app`. No S3 object
+operation was performed.
+
+This evidence does not prove that MinIO is absent. The intended architecture is
+host-local MinIO on the same physical production server, but its exact bind
+address is not established. A loopback-only host listener at `127.0.0.1:9000`
+is a leading hypothesis. `host.docker.internal:9000` has been proven
+unreachable from `mhcs_core_app`; no endpoint mutation is authorized until the
+host listener topology is proven.
+
 ## Baseline and task revision
 
 **Implementation baseline:**
@@ -78,6 +92,14 @@ separate revision governed by this exact task content.
 Add one manual GitHub Actions workflow and focused static coverage that can,
 after separate Planner review, prove read-only reachability and bucket
 authentication from `mhcs_core_app` to the intended host-local MinIO endpoint.
+
+The host-side phase MUST execute on the production HOST through the existing
+self-hosted GitHub Actions runner. It MUST determine read-only whether host
+port `9000` is listening, its bind scope, whether `127.0.0.1:9000` responds as
+MinIO, and whether the listener is a host process or Docker-published port.
+Output MUST contain only sanitized fields and approved classifications; raw IP
+addresses, PIDs, command lines, container IDs, environments, secrets, and
+configuration contents MUST NOT be printed.
 
 ### Latest diagnostic evidence
 
@@ -136,6 +158,19 @@ imports.
 - Read-only host-gateway resolution, TCP port `9000`, MinIO health, and local
   `HeadBucket` comparison using the effective production credentials and
   bucket only in memory.
+- Host listener inspection using a read-only command such as `ss`, reporting
+  only `host_port_9000_listener_present` and the approved bind class:
+  `loopback_ipv4`, `loopback_ipv6`, `all_ipv4`, `all_ipv6`,
+  `nonloopback_specific`, `multiple`, `none`, or `unknown`.
+- Host loopback MinIO health using a short, no-redirect GET to
+  `http://127.0.0.1:9000/minio/health/live`, reporting only its bounded HTTP
+  status and `PASS|FAIL` classification.
+- Sanitized listener ownership and Docker publication classification:
+  `minio_host_process`, `docker_published`, `other`, or `unknown`, plus
+  `docker_port_9000_published=true|false`.
+- Root-cause classification for loopback-only MinIO, reachable host listeners
+  that remain inaccessible through the container gateway, no host listener, or
+  a non-MinIO listener, without authorizing endpoint mutation.
 - Sanitized endpoint classification from the actual configured endpoint:
   `endpoint_host_class` MUST be one of `localhost`, `loopback_ip`,
   `host_docker_internal`, `docker_service_name`, or `other`; report
@@ -220,7 +255,7 @@ imports.
 
 ## Acceptance criteria
 
-- [ ] This task refinement is committed alone with message `docs: correct read-only S3 diagnostic contract`, pushed, and verified as `origin/main` before implementation begins.
+- [ ] This task refinement is committed alone with message `docs: refine host MinIO listener diagnostic`, pushed, and verified as `origin/main` before implementation begins.
 - [ ] A dedicated manual-only self-hosted workflow exists with the exact production revision guard and no deployment, database, SSH, migration, seeder, Prestige, or application mutation path.
 - [ ] A missing or mismatched app/container/service/image revision proof stops before any PHP/S3/network operation and emits only `revision_match=false`.
 - [ ] The standalone diagnostic PHP loads Composer autoload before `bootstrap/app.php` and bootstraps Laravel in the same order as `verify-production.yml`.
@@ -229,6 +264,8 @@ imports.
 - [ ] The workflow never performs a write probe or cleanup, including when the current endpoint is `localhost` or a loopback IP.
 - [ ] The workflow performs no `putStreamAsync`, S3 write, object read, object delete, ACL, ownership mutation, or application upload.
 - [ ] The workflow reports current endpoint classification and `HeadBucket`, host-gateway resolution, bounded TCP `9000`, MinIO health, and local read-only `HeadBucket` using an in-memory endpoint override.
+- [ ] The workflow reports the sanitized host listener presence/bind class, loopback MinIO health, listener owner class, and Docker publication status.
+- [ ] The workflow classifies the four host-listener cases without changing MinIO, MHCS, AWS endpoint configuration, secrets, firewall, Docker networks, or services.
 - [ ] Root-cause output confirms only a configured endpoint topology mismatch when all intended-local checks pass; it does not claim the NPZ PUT root cause is resolved.
 - [ ] Focused static tests verify workflow dispatch/runner/revision/read-only checks/sanitization/no-side-effect requirements without a new dependency.
 - [ ] The diagnostic workflow is not dispatched and no production probe is run during this implementation turn.
