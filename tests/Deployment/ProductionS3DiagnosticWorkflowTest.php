@@ -74,6 +74,23 @@ final class ProductionS3DiagnosticWorkflowTest extends TestCase
             $this->assertStringContainsString($required, $workflow);
         }
 
+        foreach ([
+            'use Aws\\Exception\\AwsException;',
+            'use Illuminate\\Contracts\\Console\\Kernel;',
+            'use Illuminate\\Filesystem\\AwsS3V3Adapter;',
+            'use Illuminate\\Support\\Facades\\Storage;',
+        ] as $import) {
+            $this->assertStringContainsString($import, $workflow);
+        }
+        foreach ([
+            'use AwsExceptionAwsException;',
+            'use IlluminateContractsConsoleKernel;',
+            'use IlluminateFilesystemAwsS3V3Adapter;',
+            'use IlluminateSupportFacadesStorage;',
+        ] as $brokenImport) {
+            $this->assertStringNotContainsString($brokenImport, $workflow);
+        }
+
         $lowerWorkflow = strtolower($workflow);
         foreach ([
             'putstreamasync', 'putobject', 'getobject', 'deleteobject', 'listobjects',
