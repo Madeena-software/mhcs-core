@@ -43,7 +43,95 @@ jobs:
           if [ -n "$APP_CONTAINER" ] && [[ "$VERSION_CURRENT" =~ ^[0-9a-f]{40}$ ]] && [ "$VERSION_CURRENT" = "$EXPECTED_REVISION" ] && [ -n "$SERVICE_REVISION" ] && [ "$SERVICE_REVISION" = "$EXPECTED_REVISION" ] && [ -n "$CONTAINER_REVISION" ] && [ "$CONTAINER_REVISION" = "$EXPECTED_REVISION" ]; then revision_match=true; fi
           if [ "$revision_match" != "true" ]; then echo "revision_match=false"; exit 1; fi
           echo "revision_match=true"
-          docker exec -i "$APP_CONTAINER" php 2>/dev/null <<'PHP'
+          host_port_9000_listener_present=false
+          host_port_9000_bind_class=unknown
+          host_loopback_minio_health_http_status=none
+          host_loopback_minio_health=FAIL
+          host_port_9000_owner_class=unknown
+          docker_port_9000_published=false
+          host_listener_root_boundary=minio_runtime_topology
+          host_listener_root_class=unknown
+          host_listener_root_confirmed=false
+          listener_addresses=()
+          listener_process_lines=()
+
+          if command -v ss >/dev/null 2>&1; then
+            mapfile -t listener_addresses < <(ss -ltnH 'sport = :9000' 2>/dev/null | awk '$4 ~ /:9000$/ {print $4}')
+            if [ "${#listener_addresses[@]}" -gt 0 ]; then
+              host_port_9000_listener_present=true
+              bind_classes=()
+              for listener_address in "${listener_addresses[@]}"; do
+                case "$listener_address" in
+                  127.*:*) bind_classes+=(loopback_ipv4) ;;
+                  '[::1]:'*|::1:*) bind_classes+=(loopback_ipv6) ;;
+                  0.0.0.0:*|'*:') bind_classes+=(all_ipv4) ;;
+                  '[::]:'*|::*:*) bind_classes+=(all_ipv6) ;;
+                  *) bind_classes+=(nonloopback_specific) ;;
+                esac
+              done
+              unique_bind_classes="$(printf '%s\n' "${bind_classes[@]}" | sort -u | tr '\n' ' ' | xargs)"
+              bind_class_count="$(printf '%s\n' "$unique_bind_classes" | awk '{print NF}')"
+              if [ "${#listener_addresses[@]}" -gt 1 ] || [ "$bind_class_count" -gt 1 ]; then
+                host_port_9000_bind_class=multiple
+              else
+                host_port_9000_bind_class="$unique_bind_classes"
+              fi
+
+              if docker ps --filter publish=9000 --format '{{.Ports}}' 2>/dev/null | grep -q .; then
+                docker_port_9000_published=true
+                host_port_9000_owner_class=docker_published
+              else
+                mapfile -t listener_process_lines < <(ss -ltnpH 'sport = :9000' 2>/dev/null || true)
+                if [ "${#listener_process_lines[@]}" -eq 0 ]; then
+                  host_port_9000_owner_class=unknown
+                elif printf '%s\n' "${listener_process_lines[@]}" | grep -Eiq 'minio'; then
+                  host_port_9000_owner_class=minio_host_process
+                else
+                  host_port_9000_owner_class=other
+                fi
+              fi
+
+              if command -v curl >/dev/null 2>&1; then
+                host_loopback_minio_health_http_status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --connect-timeout 3 --max-time 3 --max-redirs 0 --request GET http://127.0.0.1:9000/minio/health/live 2>/dev/null || true)"
+                if [ "$host_loopback_minio_health_http_status" = 200 ]; then host_loopback_minio_health=PASS; fi
+              fi
+            else
+              host_port_9000_bind_class=none
+              host_port_9000_owner_class=unknown
+            fi
+          fi
+
+          if [ "$host_port_9000_listener_present" = true ] && [ "$host_loopback_minio_health" = PASS ]; then
+            case "$host_port_9000_bind_class" in
+              loopback_ipv4|loopback_ipv6)
+                host_listener_root_boundary=minio_host_binding
+                host_listener_root_class=minio_bound_to_host_loopback_only
+                host_listener_root_confirmed=true
+                ;;
+              all_ipv4|all_ipv6|nonloopback_specific|multiple)
+                host_listener_root_boundary=docker_host_gateway_connectivity
+                host_listener_root_class=host_listener_reachable_scope_but_container_connection_failed
+                ;;
+            esac
+          elif [ "$host_port_9000_listener_present" = false ] && [ "$host_port_9000_bind_class" = none ]; then
+            host_listener_root_boundary=minio_runtime_topology
+            host_listener_root_class=no_host_port_9000_listener
+            host_listener_root_confirmed=true
+          elif [ "$host_port_9000_listener_present" = true ]; then
+            host_listener_root_boundary=minio_runtime_topology
+            host_listener_root_class=port_9000_not_confirmed_as_minio
+          fi
+
+          echo "host_port_9000_listener_present=$host_port_9000_listener_present"
+          echo "host_port_9000_bind_class=$host_port_9000_bind_class"
+          echo "host_loopback_minio_health_http_status=$host_loopback_minio_health_http_status"
+          echo "host_loopback_minio_health=$host_loopback_minio_health"
+          echo "host_port_9000_owner_class=$host_port_9000_owner_class"
+          echo "docker_port_9000_published=$docker_port_9000_published"
+          echo "host_local_minio_confirmed=$host_listener_root_confirmed"
+          echo "container_host_gateway_failure_explained=$host_listener_root_confirmed"
+          diagnostic_exit=0
+          docker exec -i "$APP_CONTAINER" php 2>/dev/null <<'PHP' || diagnostic_exit=$?
           <?php
           declare(strict_types=1);
           use Aws\Exception\AwsException;
@@ -141,6 +229,10 @@ jobs:
           echo 'current_endpoint_host_class='.$currentEndpointHostClass.PHP_EOL; echo 'current_endpoint_port_is_9000='.($currentEndpointPortIs9000?'true':'false').PHP_EOL; echo 'current_endpoint_head_bucket='.$currentEndpointHeadBucket.PHP_EOL; echo 'current_endpoint_head_bucket_error_family='.$currentEndpointHeadBucketErrorFamily.PHP_EOL; echo 'current_endpoint_head_bucket_error_code='.$currentEndpointHeadBucketErrorCode.PHP_EOL; echo 'current_endpoint_head_bucket_http_status='.$currentEndpointHeadBucketHttpStatus.PHP_EOL;
           echo 'container_loopback_endpoint_conflict='.($containerLoopbackEndpointConflict?'true':'false').PHP_EOL;
           echo 'host_gateway_resolves='.($hostGatewayResolves?'true':'false').PHP_EOL; echo 'host_gateway_port_9000_tcp='.$hostGatewayPort9000Tcp.PHP_EOL; echo 'host_gateway_minio_health_http_status='.$hostGatewayMinioHealthHttpStatus.PHP_EOL; echo 'host_gateway_minio_health='.$hostGatewayMinioHealth.PHP_EOL; echo 'host_gateway_head_bucket='.$hostGatewayHeadBucket.PHP_EOL; echo 'host_gateway_head_bucket_error_family='.$hostGatewayHeadBucketErrorFamily.PHP_EOL; echo 'host_gateway_head_bucket_error_code='.$hostGatewayHeadBucketErrorCode.PHP_EOL; echo 'host_gateway_head_bucket_http_status='.$hostGatewayHeadBucketHttpStatus.PHP_EOL;
-          echo 'intended_local_endpoint_viable='.($intendedLocalEndpointViable?'true':'false').PHP_EOL; echo 'configured_endpoint_matches_intended_topology='.($configuredEndpointMatchesIntendedTopology?'true':'false').PHP_EOL; echo 'root_cause_boundary='.$rootBoundary.PHP_EOL; echo 'root_cause_class='.$rootClass.PHP_EOL; echo 'root_cause_confirmed='.($rootConfirmed?'true':'false').PHP_EOL; echo 's3_probe_executed=false'.PHP_EOL; echo 'PRODUCTION_S3_DIAGNOSTIC_STATUS='.($failure?'FAIL':'PASS').PHP_EOL;
+          echo 'intended_local_endpoint_viable='.($intendedLocalEndpointViable?'true':'false').PHP_EOL; echo 'configured_endpoint_matches_intended_topology='.($configuredEndpointMatchesIntendedTopology?'true':'false').PHP_EOL; echo 'configured_endpoint_root_cause_boundary='.$rootBoundary.PHP_EOL; echo 'configured_endpoint_root_cause_class='.$rootClass.PHP_EOL; echo 'configured_endpoint_root_cause_confirmed='.($rootConfirmed?'true':'false').PHP_EOL; echo 's3_probe_executed=false'.PHP_EOL; echo 'PRODUCTION_S3_DIAGNOSTIC_STATUS='.($failure?'FAIL':'PASS').PHP_EOL;
           exit($failure?1:0);
           PHP
+          echo "root_cause_boundary=$host_listener_root_boundary"
+          echo "root_cause_class=$host_listener_root_class"
+          echo "root_cause_confirmed=$host_listener_root_confirmed"
+          exit "$diagnostic_exit"

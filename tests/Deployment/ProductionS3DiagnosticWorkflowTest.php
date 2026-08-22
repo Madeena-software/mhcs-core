@@ -68,9 +68,37 @@ final class ProductionS3DiagnosticWorkflowTest extends TestCase
             'container_loopback_endpoint_conflict=',
             'intended_local_endpoint_viable=',
             'configured_endpoint_matches_intended_topology=',
+            'configured_endpoint_root_cause_boundary=',
             'root_cause_boundary=',
             "\$rootBoundary='s3_endpoint_topology'",
             's3_probe_executed=false',
+            'host_port_9000_listener_present=',
+            'host_port_9000_bind_class=',
+            'host_loopback_minio_health_http_status=',
+            'host_loopback_minio_health=',
+            'host_port_9000_owner_class=',
+            'docker_port_9000_published=',
+            'host_local_minio_confirmed=',
+            'container_host_gateway_failure_explained=',
+            'host_listener_root_boundary=',
+            'host_listener_root_class=',
+            'host_listener_root_confirmed=',
+            "ss -ltnH 'sport = :9000'",
+            "ss -ltnpH 'sport = :9000'",
+            'docker ps --filter publish=9000',
+            '127.0.0.1:9000/minio/health/live',
+            '--max-redirs 0',
+            '--request GET',
+            'loopback_ipv4',
+            'loopback_ipv6',
+            'all_ipv4',
+            'all_ipv6',
+            'nonloopback_specific',
+            'minio_host_process',
+            'docker_published',
+            'no_host_port_9000_listener',
+            'minio_bound_to_host_loopback_only',
+            'port_9000_not_confirmed_as_minio',
         ] as $required) {
             $this->assertStringContainsString($required, $workflow);
         }
@@ -102,6 +130,9 @@ final class ProductionS3DiagnosticWorkflowTest extends TestCase
             'docker compose down', 'php artisan', 'artisan migrate', 'db:seed',
             'ssh ', 'prestige', 'config([', 'putenv(', 'getenv(', '$_server', '$_env',
             'aws_endpoint', 'print_r(', 'var_dump(', 'phpinfo(',
+            'systemctl', 'service restart', 'ufw ', 'iptables', 'firewall-cmd',
+            'docker network connect', 'docker network disconnect', 'docker network rm',
+            'docker restart', 'docker stop', 'docker kill', 'docker rm',
         ] as $forbiddenOperation) {
             $this->assertStringNotContainsString($forbiddenOperation, $lowerWorkflow);
         }
@@ -114,5 +145,8 @@ final class ProductionS3DiagnosticWorkflowTest extends TestCase
         $this->assertStringContainsString("'credentials'=>['key'=>\$s3Config['key'],'secret'=>\$s3Config['secret']]", $workflow);
         $this->assertStringContainsString("'follow_location'=>0", $workflow);
         $this->assertStringContainsString("\$status === '200'", $workflow);
+        $this->assertStringNotContainsString('echo "$listener_address"', $workflow);
+        $this->assertStringNotContainsString('echo "$listener_process_lines"', $workflow);
+        $this->assertStringNotContainsString('echo "$listener_addresses"', $workflow);
     }
 }
