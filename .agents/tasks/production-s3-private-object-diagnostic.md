@@ -1,7 +1,7 @@
 ---
 title: MHCS Core Production S3 Private-Object Diagnostic
 document_id: MHCS-TASK-PRODUCTION-S3-DIAGNOSTIC-001
-version: 1.1
+version: 1.2
 status: validated-published
 language: en-US
 last_updated: 2026-08-22
@@ -99,6 +99,12 @@ path and report a sanitized failure-boundary classification.
 - `.github/workflows/diagnose-production-s3.yml`, manual-only and runnable only on the existing `self-hosted` production runner.
 - `tests/Deployment/ProductionS3DiagnosticWorkflowTest.php` with focused static assertions.
 - A pre-probe revision guard requiring exactly `b6232a158b3f6884fd9823bc875abc432676b781`; mismatch MUST stop before any S3 write and emit only `revision_match=false`.
+- The pre-probe revision guard MUST require all of: the app container found,
+  `/var/www/html/VERSION-CURRENT` exactly equal to the accepted revision, a
+  non-empty service image revision exactly equal to it, and a non-empty running
+  container image revision exactly equal to it. Any missing or mismatched
+  proof MUST emit only `revision_match=false` and exit before the PHP diagnostic
+  or any S3/network operation.
 - Running the diagnostic PHP inside the current `mhcs_core_app` container, bootstrapping Laravel, requiring `config('mhcs.private_object_disk') === 's3'`, and using the actual configured S3 adapter/client without printing configuration values.
 - Sanitized `HeadBucket` and supported `GetBucketOwnershipControls` observations.
 - Sanitized endpoint classification from the actual configured endpoint:
@@ -107,8 +113,23 @@ path and report a sanitized failure-boundary classification.
   `endpoint_port_is_9000=true|false`; and report
   `container_loopback_endpoint_conflict=true` when the host class is
   `localhost` or `loopback_ip`.
+- If `endpoint_host_class` is `localhost` or `loopback_ip` and
+  `endpoint_port_is_9000=true`, the workflow MUST stop before `HeadBucket`,
+  `GetBucketOwnershipControls`, `PutObject`, `putStreamAsync`, `GetObject`,
+  or `DeleteObject`. It MUST report only the sanitized endpoint classification,
+  `head_bucket=SKIPPED`, `ownership_controls=SKIPPED`,
+  `acl_private_put=SKIPPED`, `private_object_roundtrip=SKIPPED`,
+  `cleanup_primary_object=NOT_REQUIRED`,
+  `cleanup_metadata_object=NOT_REQUIRED`, `cleanup_verified=NOT_REQUIRED`,
+  `root_cause_boundary=s3_endpoint_configuration`,
+  `root_cause_class=container_loopback_endpoint_conflict`,
+  `root_cause_confirmed=true`, and `s3_probe_executed=false`. This is a
+  successful diagnostic stop; no object cleanup is required because no
+  diagnostic object was created.
 - Exactly one generated, very small, non-clinical in-memory payload and one unpredictable opaque diagnostic key under an isolated diagnostic prefix; no real NPZ, DICOM, Member, ticket, admission, capture, filename, or clinical content.
 - The existing `PrivateObjectStore::putStreamAsync()` path with exact byte length, SHA-256 checksum, synthetic `AuthenticatedContext`, purpose `image-gateway.capture.submit`, and explicit opaque key. The request MUST retain the existing `ACL => private` behavior.
+- The synthetic S3 roundtrip is required only when the configured endpoint is
+  not already proven to be the container-local loopback conflict above.
 - Promise completion, returned metadata validation, normal grant/get readback, exact byte comparison, sanitized AWS/S3 error classification, root-cause classification, and mandatory cleanup.
 - Finally cleanup of both the primary diagnostic key and its `.meta.json`, followed by absence verification where safely possible. Cleanup failure or unproven cleanup MUST fail the workflow without broad listing/deletion.
 - Repository-only task/workflow/test changes, one task commit, one implementation commit, and the user-authorized pushes to `main`.
@@ -177,11 +198,12 @@ path and report a sanitized failure-boundary classification.
 
 ## Acceptance criteria
 
-- [ ] The task is committed alone with message `docs: publish production S3 diagnostic task`, pushed, and verified as `origin/main` before implementation begins.
+- [ ] This task refinement is committed alone with message `docs: refine S3 diagnostic loopback guard`, pushed, and verified as `origin/main` before implementation begins.
 - [ ] A dedicated manual-only self-hosted workflow exists with the exact production revision guard and no deployment, database, SSH, migration, seeder, Prestige, or application mutation path.
-- [ ] A revision mismatch stops before S3 write and emits only `revision_match=false`.
+- [ ] A missing or mismatched app/container/service/image revision proof stops before any PHP/S3/network operation and emits only `revision_match=false`.
 - [ ] The workflow uses the actual running Laravel S3 configuration and reports only sanitized booleans/enumerations/error classifications.
 - [ ] The workflow reports the allowed endpoint host class, whether the configured port is `9000`, and `container_loopback_endpoint_conflict=true` for `localhost` or loopback IP endpoints, without exposing `AWS_ENDPOINT`.
+- [ ] A proven `localhost|loopback_ip` endpoint on port `9000` short-circuits successfully before all S3 calls and reports `s3_probe_executed=false` with the specified endpoint-configuration root cause.
 - [ ] The workflow performs only one synthetic ACL-private `putStreamAsync()` probe, normal grant/get readback, exact byte/checksum verification, and no comparison probe.
 - [ ] Both primary and `.meta.json` objects are attempted in `finally`; absence is verified where possible; cleanup failure makes the workflow fail.
 - [ ] Root-cause output distinguishes ACL incompatibility, authorization/policy, transport/endpoint, successful roundtrip, and unknown boundaries without auto-fixing the application.
