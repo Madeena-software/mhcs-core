@@ -1,0 +1,449 @@
+name: Diagnose production S3 private objects
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: production-deployment-mhcs_core
+  cancel-in-progress: false
+
+jobs:
+  diagnose:
+    name: Bounded production S3 diagnostic
+    runs-on: self-hosted
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Diagnose the running production app S3 boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          EXPECTED_REVISION="b6232a158b3f6884fd9823bc875abc432676b781"
+          APP_SERVICE="mhcs_core_app"
+          APP_CONTAINER=""
+
+          TASK_ID="$(docker service ps "$APP_SERVICE" --filter desired-state=running --no-trunc --format '{{.ID}}' 2>/dev/null | head -n 1 || true)"
+          if [ -n "$TASK_ID" ]; then
+            while IFS= read -r candidate; do
+              [ -n "$candidate" ] || continue
+              candidate_task="$(docker inspect "$candidate" --format '{{index .Config.Labels "com.docker.swarm.task.id"}}' 2>/dev/null || true)"
+              if [ "$candidate_task" = "$TASK_ID" ] || [[ "$candidate_task" == "$TASK_ID"* ]] || [[ "$TASK_ID" == "$candidate_task"* ]]; then
+                APP_CONTAINER="$candidate"
+                break
+              fi
+            done < <(docker ps -q --filter "label=com.docker.swarm.service.name=${APP_SERVICE}" --filter status=running 2>/dev/null)
+          fi
+
+          SERVICE_IMAGE=""
+          CONTAINER_IMAGE=""
+          VERSION_CURRENT=""
+          if [ -n "$APP_CONTAINER" ]; then
+            SERVICE_IMAGE="$(docker service inspect "$APP_SERVICE" --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 2>/dev/null || true)"
+            CONTAINER_IMAGE="$(docker inspect "$APP_CONTAINER" --format '{{.Config.Image}}' 2>/dev/null || true)"
+            VERSION_CURRENT="$(docker exec "$APP_CONTAINER" cat /var/www/html/VERSION-CURRENT 2>/dev/null || true)"
+          fi
+
+          image_revision() {
+            local image="$1"
+            local revision="${image##*:}"
+            revision="${revision%%@*}"
+            if [[ "$revision" =~ ^[0-9a-f]{40}$ ]]; then
+              printf '%s' "$revision"
+            fi
+          }
+
+          SERVICE_REVISION="$(image_revision "$SERVICE_IMAGE")"
+          CONTAINER_REVISION="$(image_revision "$CONTAINER_IMAGE")"
+          revision_match=false
+          if [ -n "$APP_CONTAINER" ] \
+            && [[ "$VERSION_CURRENT" =~ ^[0-9a-f]{40}$ ]] \
+            && [ "$VERSION_CURRENT" = "$EXPECTED_REVISION" ] \
+            && { [ -z "$SERVICE_REVISION" ] || [ "$SERVICE_REVISION" = "$EXPECTED_REVISION" ]; } \
+            && { [ -z "$CONTAINER_REVISION" ] || [ "$CONTAINER_REVISION" = "$EXPECTED_REVISION" ]; }; then
+            revision_match=true
+          fi
+
+          if [ "$revision_match" != "true" ]; then
+            echo "revision_match=false"
+            exit 1
+          fi
+
+          echo "revision_match=true"
+
+          docker exec -i "$APP_CONTAINER" php 2>/dev/null <<'PHP'
+          <?php
+
+          declare(strict_types=1);
+
+          use App\Shared\Context\AuthenticatedContext;
+          use App\Shared\Context\CorrelationId;
+          use App\Shared\Identity\LocalId;
+          use App\Shared\Storage\PlainLocalObjectStore;
+          use App\Shared\Storage\PrivateObjectStore;
+          use Aws\Exception\AwsException;
+          use Illuminate\Contracts\Console\Kernel;
+          use Illuminate\Filesystem\AwsS3V3Adapter;
+          use Illuminate\Support\Facades\Storage;
+
+          /** @return array{class: string, code: string, status: string} */
+          function safeErrorDetails(Throwable $error): array
+          {
+              while ($error->getPrevious() !== null && ! $error instanceof AwsException) {
+                  $error = $error->getPrevious();
+              }
+
+              $code = $error instanceof AwsException ? (string) $error->getAwsErrorCode() : '';
+              if ($error instanceof \BadMethodCallException) {
+                  $code = 'NotImplemented';
+              }
+              $allowed = [
+                  'AccessControlListNotSupported',
+                  'AccessDenied',
+                  'InvalidAccessKeyId',
+                  'SignatureDoesNotMatch',
+                  'NoSuchBucket',
+                  'NoSuchKey',
+                  'NoSuchOwnershipControls',
+                  'RequestTimeout',
+                  'RequestTimeTooSkewed',
+                  'NetworkingError',
+                  'EndpointConnectionError',
+                  'NotImplemented',
+                  'MethodNotAllowed',
+                  'PermanentRedirect',
+                  'InvalidLocationConstraint',
+              ];
+              if (! in_array($code, $allowed, true)) {
+                  $code = 'unknown';
+              }
+
+              $status = $error instanceof AwsException && is_int($error->getStatusCode())
+                  ? (string) $error->getStatusCode()
+                  : 'none';
+
+              return ['class' => $code, 'code' => $code, 'status' => $status];
+          }
+
+          function isKnownTransportError(string $code): bool
+          {
+              return in_array($code, ['NetworkingError', 'EndpointConnectionError', 'RequestTimeout'], true);
+          }
+
+          /** @return array{host_class: string, port_is_9000: bool} */
+          function classifyEndpoint(?string $endpoint): array
+          {
+              if (! is_string($endpoint) || trim($endpoint) === '') {
+                  return ['host_class' => 'other', 'port_is_9000' => false];
+              }
+
+              $parsed = parse_url(trim($endpoint));
+              if (! is_array($parsed) || ! isset($parsed['host'])) {
+                  $parsed = parse_url('//'.trim($endpoint));
+              }
+              if (! is_array($parsed)) {
+                  return ['host_class' => 'other', 'port_is_9000' => false];
+              }
+
+              $host = strtolower(trim((string) ($parsed['host'] ?? ''), '[]'));
+              $portIs9000 = ($parsed['port'] ?? null) === 9000;
+              if ($host === 'localhost') {
+                  $hostClass = 'localhost';
+              } elseif ($host === '::1' || (filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false && str_starts_with($host, '127.'))) {
+                  $hostClass = 'loopback_ip';
+              } elseif ($host === 'host.docker.internal') {
+                  $hostClass = 'host_docker_internal';
+              } elseif ($host !== '' && ! str_contains($host, '.') && preg_match('/\A[a-z0-9][a-z0-9_-]*\z/i', $host) === 1) {
+                  $hostClass = 'docker_service_name';
+              } else {
+                  $hostClass = 'other';
+              }
+
+              return ['host_class' => $hostClass, 'port_is_9000' => $portIs9000];
+          }
+
+          $failure = false;
+          $bootstrapOk = false;
+          $diskIsS3 = false;
+          $credentialsPresent = false;
+          $bucketPresent = false;
+          $endpointPresent = false;
+          $regionPresent = false;
+          $pathStyleEnabled = false;
+          $endpointHostClass = 'other';
+          $endpointPortIs9000 = false;
+          $containerLoopbackEndpointConflict = false;
+          $disk = null;
+          $client = null;
+          $bucket = null;
+          $objects = null;
+          $stream = null;
+          $key = null;
+          $metadataKey = null;
+          $headBucket = 'UNSUPPORTED';
+          $headErrorClass = 'none';
+          $headErrorCode = 'none';
+          $headHttpStatus = 'none';
+          $ownershipControls = 'UNSUPPORTED';
+          $ownershipMode = 'unknown';
+          $probeAllowed = false;
+          $putStatus = 'SKIPPED';
+          $putErrorClass = 'none';
+          $putErrorCode = 'none';
+          $putHttpStatus = 'none';
+          $roundtripStatus = 'SKIPPED';
+          $getErrorClass = 'none';
+          $getErrorCode = 'none';
+          $getHttpStatus = 'none';
+          $rootBoundary = 's3_private_object_persistence';
+          $rootClass = 'unknown';
+          $rootConfirmed = false;
+          $bucketOwnerEnforced = false;
+          $aclPrivateIncompatible = false;
+          $cleanupPrimary = true;
+          $cleanupMetadata = true;
+          $cleanupVerified = true;
+
+          try {
+              $app = require 'bootstrap/app.php';
+              $app->make(Kernel::class)->bootstrap();
+              $bootstrapOk = true;
+
+              $diskName = config('mhcs.private_object_disk');
+              $diskIsS3 = config('mhcs.private_object_disk') === 's3';
+              $s3Config = config('filesystems.disks.s3');
+              $credentialsPresent = is_array($s3Config)
+                  && is_string($s3Config['key'] ?? null)
+                  && trim($s3Config['key']) !== ''
+                  && is_string($s3Config['secret'] ?? null)
+                  && trim($s3Config['secret']) !== '';
+              $bucketPresent = is_array($s3Config) && is_string($s3Config['bucket'] ?? null) && trim($s3Config['bucket']) !== '';
+              $endpointPresent = is_array($s3Config) && is_string($s3Config['endpoint'] ?? null) && trim($s3Config['endpoint']) !== '';
+              $regionPresent = is_array($s3Config) && is_string($s3Config['region'] ?? null) && trim($s3Config['region']) !== '';
+              $pathStyleEnabled = is_array($s3Config) && ($s3Config['use_path_style_endpoint'] ?? false) === true;
+              $endpointClassification = classifyEndpoint(is_array($s3Config) ? ($s3Config['endpoint'] ?? null) : null);
+              $endpointHostClass = $endpointClassification['host_class'];
+              $endpointPortIs9000 = $endpointClassification['port_is_9000'];
+              $containerLoopbackEndpointConflict = in_array($endpointHostClass, ['localhost', 'loopback_ip'], true);
+
+              if (! $diskIsS3 || ! is_string($diskName) || trim($diskName) === '') {
+                  throw new \RuntimeException('configured private object disk is not S3');
+              }
+
+              $disk = Storage::disk($diskName);
+              if (! $disk instanceof AwsS3V3Adapter || ! $disk instanceof \Illuminate\Contracts\Filesystem\Filesystem) {
+                  throw new \RuntimeException('configured private object disk is not the application S3 adapter');
+              }
+              $client = $disk->getClient();
+              $adapterConfig = $disk->getConfig();
+              $bucket = $adapterConfig['bucket'] ?? ($s3Config['bucket'] ?? null);
+              if (! is_string($bucket) || trim($bucket) === '') {
+                  throw new \RuntimeException('configured S3 bucket is absent');
+              }
+              if (! is_string($s3Config['key'] ?? null) || ! is_string($s3Config['secret'] ?? null)) {
+                  throw new \RuntimeException('configured S3 credentials are absent');
+              }
+
+              try {
+                  $client->headBucket(['Bucket' => $bucket]);
+                  $headBucket = 'PASS';
+                  $probeAllowed = true;
+              } catch (Throwable $error) {
+                  $details = safeErrorDetails($error);
+                  $headErrorClass = $details['class'];
+                  $headErrorCode = $details['code'];
+                  $headHttpStatus = $details['status'];
+                  $headBucket = in_array($headErrorCode, ['NotImplemented', 'MethodNotAllowed'], true) ? 'UNSUPPORTED' : 'FAIL';
+                  $probeAllowed = ! isKnownTransportError($headErrorCode);
+              }
+
+              try {
+                  $result = $client->getBucketOwnershipControls(['Bucket' => $bucket]);
+                  $mode = $result['OwnershipControls']['Rules'][0]['ObjectOwnership'] ?? null;
+                  if (is_string($mode) && in_array($mode, ['BucketOwnerEnforced', 'BucketOwnerPreferred', 'ObjectWriter'], true)) {
+                      $ownershipControls = 'AVAILABLE';
+                      $ownershipMode = $mode;
+                  } else {
+                      $ownershipControls = 'ABSENT';
+                  }
+              } catch (Throwable $error) {
+                  $details = safeErrorDetails($error);
+                  $ownershipControls = match ($details['code']) {
+                      'AccessDenied' => 'DENIED',
+                      'NoSuchOwnershipControls' => 'ABSENT',
+                      'NotImplemented', 'MethodNotAllowed' => 'UNSUPPORTED',
+                      default => 'ERROR',
+                  };
+              }
+
+              $bucketOwnerEnforced = $ownershipMode === 'BucketOwnerEnforced';
+              if (! $probeAllowed) {
+                  $rootClass = 's3_transport_or_endpoint';
+                  $rootConfirmed = true;
+              } else {
+                  $objects = $app->make(PrivateObjectStore::class);
+                  if (! $objects instanceof PlainLocalObjectStore) {
+                      throw new \RuntimeException('configured private object store is not the application implementation');
+                  }
+
+                  $payload = 'mhcs-production-s3-diagnostic:'.bin2hex(random_bytes(16));
+                  $bytes = strlen($payload);
+                  $checksum = hash('sha256', $payload);
+                  $key = \App\Shared\Storage\OpaqueObjectKey::fromString('diagnostics/production-s3/'.bin2hex(random_bytes(16)));
+                  $metadataKey = (string) $key.'.meta.json';
+                  $stream = fopen('php://temp', 'w+b');
+                  if ($stream === false) {
+                      throw new \RuntimeException('diagnostic stream could not be opened');
+                  }
+                  fwrite($stream, $payload);
+                  rewind($stream);
+
+                  $context = new AuthenticatedContext(
+                      actorId: LocalId::fromString('production-s3-diagnostic'),
+                      operationId: CorrelationId::random(),
+                      purpose: 'image-gateway.capture.submit',
+                  );
+                  $purpose = 'image-gateway.capture.submit';
+                  $audience = 'capture-intent';
+
+                  /* PlainLocalObjectStore::putStreamAsync() sends the source request with 'ACL' => 'private'. */
+                  try {
+                      $object = $objects->putStreamAsync(
+                          $stream,
+                          $bytes,
+                          $checksum,
+                          $context,
+                          $purpose,
+                          $key,
+                      )->wait();
+                      $putStatus = 'PASS';
+                  } catch (Throwable $error) {
+                      $details = safeErrorDetails($error);
+                      $putStatus = 'FAIL';
+                      $putErrorClass = $details['class'];
+                      $putErrorCode = $details['code'];
+                      $putHttpStatus = $details['status'];
+                      $rootClass = match ($putErrorCode) {
+                          'AccessControlListNotSupported' => 'acl_not_supported',
+                          'AccessDenied' => 'authorization_or_acl_policy',
+                          'NetworkingError', 'EndpointConnectionError', 'RequestTimeout' => 's3_transport_or_endpoint',
+                          default => 'unknown',
+                      };
+                      $rootConfirmed = $putErrorCode !== 'unknown';
+                      $aclPrivateIncompatible = $bucketOwnerEnforced && $putErrorCode === 'AccessControlListNotSupported';
+                  }
+
+                  if ($putStatus === 'PASS') {
+                      $objectMetadataMatches = $object->bytes === $bytes && hash_equals($checksum, $object->checksum);
+                      if (! $objectMetadataMatches) {
+                          $roundtripStatus = 'FAIL';
+                          $getErrorClass = 'metadata_mismatch';
+                          $getErrorCode = 'metadata_mismatch';
+                          $rootClass = 'unknown';
+                      } else {
+                          try {
+                              $grant = $objects->grant($object, $context, $audience, $purpose, new DateTimeImmutable('+300 seconds'));
+                              $readback = $objects->get($grant, $context, $audience, $purpose);
+                              if ($readback !== $payload || ! hash_equals($checksum, hash('sha256', $readback))) {
+                                  throw new \RuntimeException('diagnostic bytes did not match');
+                              }
+                              $roundtripStatus = 'PASS';
+                              $rootClass = 'production_s3_roundtrip_passed';
+                              $rootConfirmed = false;
+                          } catch (Throwable $error) {
+                              $details = safeErrorDetails($error);
+                              $roundtripStatus = 'FAIL';
+                              $getErrorClass = $details['class'];
+                              $getErrorCode = $details['code'];
+                              $getHttpStatus = $details['status'];
+                              $rootClass = match ($getErrorCode) {
+                                  'AccessDenied' => 'authorization_or_acl_policy',
+                                  'NetworkingError', 'EndpointConnectionError', 'RequestTimeout' => 's3_transport_or_endpoint',
+                                  default => 'unknown',
+                              };
+                              $rootConfirmed = $getErrorCode !== 'unknown';
+                          }
+                      }
+                  }
+              }
+          } catch (Throwable $error) {
+              $failure = true;
+              if (! $bootstrapOk) {
+                  $rootBoundary = 'application_bootstrap';
+                  $rootClass = 'configuration_or_bootstrap';
+                  $rootConfirmed = false;
+              } elseif ($putStatus === 'SKIPPED') {
+                  $rootClass = 'configuration_or_bootstrap';
+                  $rootConfirmed = false;
+                  $putStatus = 'FAIL';
+                  $putErrorClass = 'configuration';
+                  $putErrorCode = 'configuration';
+              }
+          } finally {
+              if (is_resource($stream)) {
+                  fclose($stream);
+              }
+              if ($key !== null && $metadataKey !== null && $disk !== null) {
+                  try {
+                      $disk->delete((string) $key);
+                      $cleanupPrimary = ! $disk->exists((string) $key);
+                  } catch (Throwable) {
+                      $cleanupPrimary = false;
+                  }
+                  try {
+                      $disk->delete((string) $metadataKey);
+                      $cleanupMetadata = ! $disk->exists((string) $metadataKey);
+                  } catch (Throwable) {
+                      $cleanupMetadata = false;
+                  }
+              }
+              $cleanupVerified = $cleanupPrimary && $cleanupMetadata;
+          }
+
+          if (! $bootstrapOk) {
+              $failure = true;
+          }
+          if ($diskIsS3 === false || ! $credentialsPresent || ! $bucketPresent || ! $regionPresent) {
+              $failure = true;
+          }
+          if ($putStatus !== 'PASS' || $roundtripStatus !== 'PASS' || ! $cleanupVerified) {
+              $failure = true;
+          }
+
+          echo 'laravel_bootstrap='.($bootstrapOk ? 'PASS' : 'FAIL').PHP_EOL;
+          echo 'private_object_disk_is_s3='.($diskIsS3 ? 'true' : 'false').PHP_EOL;
+          echo 'credentials_present='.($credentialsPresent ? 'true' : 'false').PHP_EOL;
+          echo 'bucket_present='.($bucketPresent ? 'true' : 'false').PHP_EOL;
+          echo 'endpoint_present='.($endpointPresent ? 'true' : 'false').PHP_EOL;
+          echo 'region_present='.($regionPresent ? 'true' : 'false').PHP_EOL;
+          echo 'path_style_enabled='.($pathStyleEnabled ? 'true' : 'false').PHP_EOL;
+          echo 'endpoint_host_class='.$endpointHostClass.PHP_EOL;
+          echo 'endpoint_port_is_9000='.($endpointPortIs9000 ? 'true' : 'false').PHP_EOL;
+          echo 'container_loopback_endpoint_conflict='.($containerLoopbackEndpointConflict ? 'true' : 'false').PHP_EOL;
+          echo 'head_bucket='.$headBucket.PHP_EOL;
+          echo 'head_bucket_error_class='.$headErrorClass.PHP_EOL;
+          echo 'head_bucket_error_code='.$headErrorCode.PHP_EOL;
+          echo 'head_bucket_http_status='.$headHttpStatus.PHP_EOL;
+          echo 'ownership_controls='.$ownershipControls.PHP_EOL;
+          echo 'object_ownership_mode='.$ownershipMode.PHP_EOL;
+          echo 'acl_private_put='.$putStatus.PHP_EOL;
+          echo 'put_error_class='.$putErrorClass.PHP_EOL;
+          echo 'put_error_code='.$putErrorCode.PHP_EOL;
+          echo 'put_http_status='.$putHttpStatus.PHP_EOL;
+          echo 'private_object_roundtrip='.$roundtripStatus.PHP_EOL;
+          echo 'get_error_class='.$getErrorClass.PHP_EOL;
+          echo 'get_error_code='.$getErrorCode.PHP_EOL;
+          echo 'get_http_status='.$getHttpStatus.PHP_EOL;
+          echo 'cleanup_primary_object='.($cleanupPrimary ? 'PASS' : 'FAIL').PHP_EOL;
+          echo 'cleanup_metadata_object='.($cleanupMetadata ? 'PASS' : 'FAIL').PHP_EOL;
+          echo 'cleanup_verified='.($cleanupVerified ? 'PASS' : 'FAIL').PHP_EOL;
+          echo 'bucket_owner_enforced='.($bucketOwnerEnforced ? 'true' : 'false').PHP_EOL;
+          echo 'acl_private_incompatible='.($aclPrivateIncompatible ? 'true' : 'false').PHP_EOL;
+          echo 'root_cause_boundary='.$rootBoundary.PHP_EOL;
+          echo 'root_cause_class='.$rootClass.PHP_EOL;
+          echo 'root_cause_confirmed='.($rootConfirmed ? 'true' : 'false').PHP_EOL;
+          echo 'PRODUCTION_S3_DIAGNOSTIC_STATUS='.($failure ? 'FAIL' : 'PASS').PHP_EOL;
+
+          exit($failure ? 1 : 0);
+          PHP
