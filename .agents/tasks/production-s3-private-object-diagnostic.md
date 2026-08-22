@@ -1,7 +1,7 @@
 ---
 title: MHCS Core Production S3 Private-Object Diagnostic
 document_id: MHCS-TASK-PRODUCTION-S3-DIAGNOSTIC-001
-version: 1.4
+version: 1.5
 status: validated-published
 language: en-US
 last_updated: 2026-08-22
@@ -91,6 +91,14 @@ uses `objects/<capture-id>/<radiograph|gain>`; therefore that synthetic PUT is
 not sufficient to rule out prefix-specific S3 authorization or policy
 differences. The evidence does not establish ACL incompatibility.
 
+### Remediation finding
+
+Implementation `6c7bcdf2b0264a42b5a93072e50b016d64181c18` is not approved for
+dispatch. Its embedded PHP imports lost namespace separators, and PHP syntax
+parsing alone did not catch the missing or wrong class resolution. The
+read-only diagnostic must use the exact AWS and Laravel fully qualified class
+imports.
+
 ## Authoritative inputs
 
 ### Governing authority
@@ -174,7 +182,8 @@ differences. The evidence does not establish ACL incompatibility.
 ### Approved assumptions
 
 - The existing production revision-observability pattern is the authority for locating the running app container and reading its deployed revision.
-- A synthetic in-memory payload is sufficient to exercise the private-object persistence boundary while avoiding clinical content.
+- The current phase requires only read-only endpoint reachability and
+  `HeadBucket` comparison; no object payload is created.
 - The host-gateway endpoint is intended to be host-local MinIO; it must be
   proven read-only rather than assumed to work.
 
@@ -196,7 +205,7 @@ differences. The evidence does not establish ACL incompatibility.
 
 - Use `workflow_dispatch` only, `runs-on: self-hosted`, `set -euo pipefail`, and no shell xtrace.
 - Do not use SSH, deployment commands, service updates/restarts, database commands, migrations, seeders, Prestige checks, or the existing deployment workflow.
-- The revision guard MUST execute before any S3 write and MUST emit only `revision_match=false` on mismatch.
+- The revision guard MUST execute before any S3 operation and MUST emit only `revision_match=false` on mismatch.
 - Standalone diagnostic Laravel bootstrap MUST use this exact order: `require 'vendor/autoload.php';`, `$app = require 'bootstrap/app.php';`, then `$app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();`.
 - Use the running app container's effective Laravel config and actual S3 client; never hard-code or echo credentials, bucket, endpoint, region, or object key.
 - Parse the effective endpoint only in memory for the sanitized host class and
@@ -211,7 +220,7 @@ differences. The evidence does not establish ACL incompatibility.
 
 ## Acceptance criteria
 
-- [ ] This task refinement is committed alone with message `docs: refine S3 local endpoint diagnostic`, pushed, and verified as `origin/main` before implementation begins.
+- [ ] This task refinement is committed alone with message `docs: correct read-only S3 diagnostic contract`, pushed, and verified as `origin/main` before implementation begins.
 - [ ] A dedicated manual-only self-hosted workflow exists with the exact production revision guard and no deployment, database, SSH, migration, seeder, Prestige, or application mutation path.
 - [ ] A missing or mismatched app/container/service/image revision proof stops before any PHP/S3/network operation and emits only `revision_match=false`.
 - [ ] The standalone diagnostic PHP loads Composer autoload before `bootstrap/app.php` and bootstraps Laravel in the same order as `verify-production.yml`.
@@ -230,7 +239,7 @@ differences. The evidence does not establish ACL incompatibility.
 2. `php artisan test tests/Deployment/ProductionVerificationWorkflowTest.php --no-coverage`
 3. `vendor/bin/pint --test`, as applicable.
 4. `git diff --check`.
-5. Inspect the final diff and status; verify exactly one implementation commit with message `ci: add bounded production S3 diagnostic`, push `main`, fetch, and verify the returned remote `origin/main` SHA.
+5. Inspect the final diff and status; verify exactly one remediation commit with message `ci: fix read-only S3 diagnostic imports`, push `main`, fetch, and verify the returned remote `origin/main` SHA.
 
 Do not dispatch `.github/workflows/diagnose-production-s3.yml`.
 
