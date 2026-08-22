@@ -1,7 +1,7 @@
 ---
 title: MHCS Core Production S3 Private-Object Diagnostic
 document_id: MHCS-TASK-PRODUCTION-S3-DIAGNOSTIC-001
-version: 1.6
+version: 1.7
 status: validated-published
 language: en-US
 last_updated: 2026-08-22
@@ -276,7 +276,7 @@ imports.
 2. `php artisan test tests/Deployment/ProductionVerificationWorkflowTest.php --no-coverage`
 3. `vendor/bin/pint --test`, as applicable.
 4. `git diff --check`.
-5. Inspect the final diff and status; verify exactly one remediation commit with message `ci: fix read-only S3 diagnostic imports`, push `main`, fetch, and verify the returned remote `origin/main` SHA.
+5. Inspect the final diff and status; verify the separate implementation commit with message `ci: add read-only host MinIO listener diagnostic`, push `main`, fetch, and verify the returned remote `origin/main` SHA.
 
 Do not dispatch `.github/workflows/diagnose-production-s3.yml`.
 
