@@ -1,7 +1,7 @@
 ---
 title: MHCS Core Production S3 Private-Object Diagnostic
 document_id: MHCS-TASK-PRODUCTION-S3-DIAGNOSTIC-001
-version: 1.2
+version: 1.3
 status: validated-published
 language: en-US
 last_updated: 2026-08-22
@@ -54,6 +54,13 @@ This task creates a manual, sanitized diagnostic that determines the S3
 private-object boundary without using real NPZ data or changing clinical or
 database state.
 
+The first approved execution of the diagnostic (run `32558225894`) proved the
+production revision guard, but no S3 probe executed because the standalone
+diagnostic PHP failed during Laravel bootstrap. Its endpoint fields therefore
+remained defaults. The harness omitted Composer autoload initialization before
+loading `bootstrap/app.php`; the established production verification workflow
+demonstrates the working standalone bootstrap sequence.
+
 ## Baseline and task revision
 
 **Implementation baseline:**
@@ -105,7 +112,7 @@ path and report a sanitized failure-boundary classification.
   container image revision exactly equal to it. Any missing or mismatched
   proof MUST emit only `revision_match=false` and exit before the PHP diagnostic
   or any S3/network operation.
-- Running the diagnostic PHP inside the current `mhcs_core_app` container, bootstrapping Laravel, requiring `config('mhcs.private_object_disk') === 's3'`, and using the actual configured S3 adapter/client without printing configuration values.
+- Running the diagnostic PHP inside the current `mhcs_core_app` container, bootstrapping Laravel, requiring `config('mhcs.private_object_disk') === 's3'`, and using the actual configured S3 adapter/client without printing configuration values. Any standalone PHP executed through `docker exec ... php` MUST first load `require 'vendor/autoload.php';` before `require 'bootstrap/app.php';`, followed by the Kernel bootstrap, using the same ordering proven by `.github/workflows/verify-production.yml`.
 - Sanitized `HeadBucket` and supported `GetBucketOwnershipControls` observations.
 - Sanitized endpoint classification from the actual configured endpoint:
   `endpoint_host_class` MUST be one of `localhost`, `loopback_ip`,
@@ -186,6 +193,7 @@ path and report a sanitized failure-boundary classification.
 - Use `workflow_dispatch` only, `runs-on: self-hosted`, `set -euo pipefail`, and no shell xtrace.
 - Do not use SSH, deployment commands, service updates/restarts, database commands, migrations, seeders, Prestige checks, or the existing deployment workflow.
 - The revision guard MUST execute before any S3 write and MUST emit only `revision_match=false` on mismatch.
+- Standalone diagnostic Laravel bootstrap MUST use this exact order: `require 'vendor/autoload.php';`, `$app = require 'bootstrap/app.php';`, then `$app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();`.
 - Use the running app container's effective Laravel config and actual S3 client; never hard-code or echo credentials, bucket, endpoint, region, or object key.
 - Parse the effective endpoint only in memory for the sanitized host class and
   port boolean. Never print `AWS_ENDPOINT`, change endpoint configuration, or
@@ -201,6 +209,7 @@ path and report a sanitized failure-boundary classification.
 - [ ] This task refinement is committed alone with message `docs: refine S3 diagnostic loopback guard`, pushed, and verified as `origin/main` before implementation begins.
 - [ ] A dedicated manual-only self-hosted workflow exists with the exact production revision guard and no deployment, database, SSH, migration, seeder, Prestige, or application mutation path.
 - [ ] A missing or mismatched app/container/service/image revision proof stops before any PHP/S3/network operation and emits only `revision_match=false`.
+- [ ] The standalone diagnostic PHP loads Composer autoload before `bootstrap/app.php` and bootstraps Laravel in the same order as `verify-production.yml`.
 - [ ] The workflow uses the actual running Laravel S3 configuration and reports only sanitized booleans/enumerations/error classifications.
 - [ ] The workflow reports the allowed endpoint host class, whether the configured port is `9000`, and `container_loopback_endpoint_conflict=true` for `localhost` or loopback IP endpoints, without exposing `AWS_ENDPOINT`.
 - [ ] A proven `localhost|loopback_ip` endpoint on port `9000` short-circuits successfully before all S3 calls and reports `s3_probe_executed=false` with the specified endpoint-configuration root cause.
