@@ -158,7 +158,7 @@ final class ProductionS3DiagnosticWorkflowTest extends TestCase
         $this->assertStringContainsString('host_port_9000_owner_class=unknown', $workflow);
         $this->assertStringContainsString('host_listener_root_class=no_host_port_9000_listener', $workflow);
         $this->assertStringContainsString('host_listener_root_confirmed=true', $workflow);
-        $this->assertStringContainsString('host_listener_root_class=host_listener_reachable_scope_but_container_connection_failed', $workflow);
+        $this->assertStringContainsString('host_listener_root_class=nonloopback_minio_listener_but_container_tcp_failed', $workflow);
         $this->assertStringContainsString('host_listener_root_confirmed=false', $workflow);
         $noListener = strpos($workflow, 'host_listener_root_class=no_host_port_9000_listener');
         $healthBranch = strpos($workflow, 'elif [ "$host_loopback_minio_health" = PASS ]; then');
@@ -170,5 +170,42 @@ final class ProductionS3DiagnosticWorkflowTest extends TestCase
         $this->assertStringNotContainsString('echo "$listener_address"', $workflow);
         $this->assertStringNotContainsString('echo "$listener_process_lines"', $workflow);
         $this->assertStringNotContainsString('echo "$listener_addresses"', $workflow);
+    }
+
+    public function test_bind_scope_is_derived_before_root_cause_classification(): void
+    {
+        $workflow = file_get_contents(base_path('.github/workflows/diagnose-production-s3.yml'));
+        $this->assertIsString($workflow);
+
+        foreach ([
+            'host_port_9000_has_loopback_ipv4',
+            'host_port_9000_has_loopback_ipv6',
+            'host_port_9000_has_all_ipv4',
+            'host_port_9000_has_all_ipv6',
+            'host_port_9000_has_nonloopback_specific',
+            'host_port_9000_loopback_only',
+            'host_port_9000_has_nonloopback_bind',
+        ] as $output) {
+            $this->assertStringContainsString($output, $workflow);
+        }
+
+        $scopeBlock = substr($workflow, strpos($workflow, 'bind_classes=()'), strpos($workflow, 'unique_bind_classes=') - strpos($workflow, 'bind_classes=()'));
+        $this->assertStringContainsString('loopback_ipv4', $scopeBlock);
+        $this->assertStringContainsString('loopback_ipv6', $scopeBlock);
+        $this->assertStringContainsString('all_ipv4', $scopeBlock);
+        $this->assertStringContainsString('all_ipv6', $scopeBlock);
+        $this->assertStringContainsString('nonloopback_specific', $scopeBlock);
+        $this->assertStringContainsString('host_port_9000_loopback_only=true', $workflow);
+        $this->assertStringContainsString('host_port_9000_has_nonloopback_bind=true', $workflow);
+
+        $classification = substr($workflow, strpos($workflow, 'if [ "$host_local_minio_confirmed" = true ] && [ "$host_port_9000_loopback_only" = true ]'));
+        $this->assertStringContainsString('[ "$host_port_9000_loopback_only" = true ]', $classification);
+        $this->assertStringContainsString('minio_bound_to_host_loopback_only', $classification);
+        $this->assertStringContainsString('nonloopback_minio_listener_but_container_tcp_failed', $classification);
+        $this->assertStringNotContainsString('host_listener_root_class=host_listener_reachable_scope_but_container_connection_failed', $classification);
+
+        foreach (['echo "$listener_address"', 'echo "$listener_process_lines"', 'echo "$listener_addresses"'] as $disclosure) {
+            $this->assertStringNotContainsString($disclosure, $workflow);
+        }
     }
 }

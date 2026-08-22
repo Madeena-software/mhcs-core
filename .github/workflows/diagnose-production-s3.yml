@@ -55,6 +55,14 @@ jobs:
           host_listener_root_boundary=minio_runtime_topology
           host_listener_root_class=unknown
           host_listener_root_confirmed=false
+          host_port_9000_has_loopback_ipv4=false
+          host_port_9000_has_loopback_ipv6=false
+          host_port_9000_has_all_ipv4=false
+          host_port_9000_has_all_ipv6=false
+          host_port_9000_has_nonloopback_specific=false
+          host_port_9000_loopback_only=false
+          host_port_9000_has_nonloopback_bind=false
+          host_gateway_port_9000_tcp=FAIL
           listener_addresses=()
           listener_process_lines=()
 
@@ -67,13 +75,21 @@ jobs:
                 bind_classes=()
                 for listener_address in "${listener_addresses[@]}"; do
                   case "$listener_address" in
-                    127.*:*) bind_classes+=(loopback_ipv4) ;;
-                    '[::1]:'*|::1:*) bind_classes+=(loopback_ipv6) ;;
-                    0.0.0.0:*|'*:') bind_classes+=(all_ipv4) ;;
-                    '[::]:'*|::*:*) bind_classes+=(all_ipv6) ;;
-                    *) bind_classes+=(nonloopback_specific) ;;
+                    127.*:*) bind_classes+=(loopback_ipv4); host_port_9000_has_loopback_ipv4=true ;;
+                    '[::1]:'*|::1:*) bind_classes+=(loopback_ipv6); host_port_9000_has_loopback_ipv6=true ;;
+                    0.0.0.0:*|'*:') bind_classes+=(all_ipv4); host_port_9000_has_all_ipv4=true ;;
+                    '[::]:'*|::*:*) bind_classes+=(all_ipv6); host_port_9000_has_all_ipv6=true ;;
+                    *) bind_classes+=(nonloopback_specific); host_port_9000_has_nonloopback_specific=true ;;
                   esac
                 done
+                if [ "$host_port_9000_has_loopback_ipv4" = true ] || [ "$host_port_9000_has_loopback_ipv6" = true ]; then
+                  if [ "$host_port_9000_has_all_ipv4" = false ] && [ "$host_port_9000_has_all_ipv6" = false ] && [ "$host_port_9000_has_nonloopback_specific" = false ]; then
+                    host_port_9000_loopback_only=true
+                  fi
+                fi
+                if [ "$host_port_9000_has_all_ipv4" = true ] || [ "$host_port_9000_has_all_ipv6" = true ] || [ "$host_port_9000_has_nonloopback_specific" = true ]; then
+                  host_port_9000_has_nonloopback_bind=true
+                fi
                 unique_bind_classes="$(printf '%s\n' "${bind_classes[@]}" | sort -u | tr '\n' ' ' | xargs)"
                 bind_class_count="$(printf '%s\n' "$unique_bind_classes" | awk '{print NF}')"
                 if [ "${#listener_addresses[@]}" -gt 1 ] || [ "$bind_class_count" -gt 1 ]; then
@@ -118,42 +134,18 @@ jobs:
             host_listener_root_boundary=minio_runtime_topology
             host_listener_root_class=no_host_port_9000_listener
             host_listener_root_confirmed=true
-          elif [ "$host_loopback_minio_health" = PASS ]; then
-            host_local_minio_confirmed=true
-            case "$host_port_9000_bind_class" in
-              loopback_ipv4|loopback_ipv6)
-                container_host_gateway_failure_explained=true
-                host_listener_root_boundary=minio_host_binding
-                host_listener_root_class=minio_bound_to_host_loopback_only
-                host_listener_root_confirmed=true
-                ;;
-              all_ipv4|all_ipv6|nonloopback_specific|multiple)
-                host_listener_root_boundary=docker_host_gateway_connectivity
-                host_listener_root_class=host_listener_reachable_scope_but_container_connection_failed
-                ;;
-              *)
-                host_listener_root_boundary=minio_runtime_topology
-                host_listener_root_class=port_9000_not_confirmed_as_minio
-                ;;
-            esac
-          else
+          elif [ "$host_loopback_minio_health" != PASS ]; then
             host_local_minio_confirmed=false
             container_host_gateway_failure_explained=false
             host_listener_root_boundary=minio_runtime_topology
             host_listener_root_class=port_9000_not_confirmed_as_minio
+          elif [ "$host_loopback_minio_health" = PASS ]; then
+            host_local_minio_confirmed=true
           fi
 
-          echo "host_port_9000_listener_present=$host_port_9000_listener_present"
-          echo "host_port_9000_bind_class=$host_port_9000_bind_class"
-          echo "host_loopback_minio_health_http_status=$host_loopback_minio_health_http_status"
-          echo "host_loopback_minio_health=$host_loopback_minio_health"
-          echo "host_port_9000_owner_class=$host_port_9000_owner_class"
-          echo "docker_port_9000_published=$docker_port_9000_published"
-          echo "host_listener_inspection=$host_listener_inspection"
-          echo "host_local_minio_confirmed=$host_local_minio_confirmed"
-          echo "container_host_gateway_failure_explained=$container_host_gateway_failure_explained"
           diagnostic_exit=0
-          docker exec -i "$APP_CONTAINER" php 2>/dev/null <<'PHP' || diagnostic_exit=$?
+          diagnostic_output=""
+          if diagnostic_output="$(docker exec -i "$APP_CONTAINER" php 2>/dev/null <<'PHP'
           <?php
           declare(strict_types=1);
           use Aws\Exception\AwsException;
@@ -254,6 +246,37 @@ jobs:
           echo 'intended_local_endpoint_viable='.($intendedLocalEndpointViable?'true':'false').PHP_EOL; echo 'configured_endpoint_matches_intended_topology='.($configuredEndpointMatchesIntendedTopology?'true':'false').PHP_EOL; echo 'configured_endpoint_root_cause_boundary='.$rootBoundary.PHP_EOL; echo 'configured_endpoint_root_cause_class='.$rootClass.PHP_EOL; echo 'configured_endpoint_root_cause_confirmed='.($rootConfirmed?'true':'false').PHP_EOL; echo 's3_probe_executed=false'.PHP_EOL; echo 'PRODUCTION_S3_DIAGNOSTIC_STATUS='.($failure?'FAIL':'PASS').PHP_EOL;
           exit($failure?1:0);
           PHP
+          )"; then :; else diagnostic_exit=$?; fi
+          printf '%s\n' "$diagnostic_output"
+          host_gateway_port_9000_tcp="$(printf '%s\n' "$diagnostic_output" | awk -F= '$1 == "host_gateway_port_9000_tcp" {print $2; exit}')"
+          [ -n "$host_gateway_port_9000_tcp" ] || host_gateway_port_9000_tcp=FAIL
+          if [ "$host_local_minio_confirmed" = true ] && [ "$host_port_9000_loopback_only" = true ] && [ "$host_gateway_port_9000_tcp" = FAIL ]; then
+            container_host_gateway_failure_explained=true
+            host_listener_root_boundary=minio_host_binding
+            host_listener_root_class=minio_bound_to_host_loopback_only
+            host_listener_root_confirmed=true
+          elif [ "$host_local_minio_confirmed" = true ] && [ "$host_port_9000_has_nonloopback_bind" = true ] && [ "$host_gateway_port_9000_tcp" = FAIL ]; then
+            container_host_gateway_failure_explained=false
+            host_listener_root_boundary=docker_host_gateway_connectivity
+            host_listener_root_class=nonloopback_minio_listener_but_container_tcp_failed
+            host_listener_root_confirmed=false
+          fi
+          echo "host_port_9000_listener_present=$host_port_9000_listener_present"
+          echo "host_port_9000_bind_class=$host_port_9000_bind_class"
+          echo "host_port_9000_has_loopback_ipv4=$host_port_9000_has_loopback_ipv4"
+          echo "host_port_9000_has_loopback_ipv6=$host_port_9000_has_loopback_ipv6"
+          echo "host_port_9000_has_all_ipv4=$host_port_9000_has_all_ipv4"
+          echo "host_port_9000_has_all_ipv6=$host_port_9000_has_all_ipv6"
+          echo "host_port_9000_has_nonloopback_specific=$host_port_9000_has_nonloopback_specific"
+          echo "host_port_9000_loopback_only=$host_port_9000_loopback_only"
+          echo "host_port_9000_has_nonloopback_bind=$host_port_9000_has_nonloopback_bind"
+          echo "host_loopback_minio_health_http_status=$host_loopback_minio_health_http_status"
+          echo "host_loopback_minio_health=$host_loopback_minio_health"
+          echo "host_port_9000_owner_class=$host_port_9000_owner_class"
+          echo "docker_port_9000_published=$docker_port_9000_published"
+          echo "host_listener_inspection=$host_listener_inspection"
+          echo "host_local_minio_confirmed=$host_local_minio_confirmed"
+          echo "container_host_gateway_failure_explained=$container_host_gateway_failure_explained"
           echo "root_cause_boundary=$host_listener_root_boundary"
           echo "root_cause_class=$host_listener_root_class"
           echo "root_cause_confirmed=$host_listener_root_confirmed"
