@@ -61,7 +61,7 @@ The capability MUST stop before booking creation.
 - `.agents/AGENTS.md` and `.agents/software-workflow.md` — delivery, evidence, and side-effect boundaries.
 - `.agents/context/project.md` — module ownership, application boundaries, and security constraints.
 - `.agents/context/modules/member/project.md` — Member and Points ownership.
-- `.agents/tasks/nonclinical-production-validation-context-provisioning.md @ 50e8ff1f3ae1573a3d0d59ffa7aefdfb7286ac` — dependent provisioning objective and Gate B blocker.
+- `.agents/tasks/nonclinical-production-validation-context-provisioning.md @ 50e8ff1f3ae1573a3d0d59ffa7aefdfb7286f6ac` — dependent provisioning objective and Gate B blocker.
 - `.agents/tasks/nonclinical-validation-member-identity-semantics.md @ eaf46358f62c1449995066c4449f94165a720105` — accepted exact validation identity semantics.
 
 ### Observed implementation inputs
