@@ -417,4 +417,64 @@ final class ProductionS3DiagnosticWorkflowTest extends TestCase
             $this->assertStringContainsString('host_gateway_connectivity_root_confirmed=false', substr($workflow, $position - 300, 500));
         }
     }
+
+    public function test_packet_classifier_executes_against_synthetic_tcpdump_lines(): void
+    {
+        $workflow = file_get_contents(base_path('.github/workflows/diagnose-production-s3.yml'));
+        $this->assertIsString($workflow);
+
+        $syn = 'IP 172.18.0.2.40000 > 172.18.0.1.9000: Flags [S], seq 1, win 64240, length 0';
+        $synAck = 'IP 172.18.0.1.9000 > 172.18.0.2.40000: Flags [S.], seq 2, ack 2, win 64240, length 0';
+        $rst = 'IP 172.18.0.1.9000 > 172.18.0.2.40000: Flags [R.], seq 2, win 0, length 0';
+        $ack = 'IP 172.18.0.2.40000 > 172.18.0.1.9000: Flags [.], ack 3, win 64240, length 0';
+        $expected = fn (int $syn, int $synAck, int $rst, int $ack): array => [
+            'syn' => (string) $syn,
+            'synack' => (string) $synAck,
+            'rst' => (string) $rst,
+            'ack' => (string) $ack,
+        ];
+
+        $cases = [
+            'no packets' => ['', $expected(0, 0, 0, 0)],
+            'outbound SYN' => [$syn, $expected(1, 0, 0, 0)],
+            'SYN then SYN-ACK' => [$syn.PHP_EOL.$synAck, $expected(1, 1, 0, 0)],
+            'SYN then RST' => [$syn.PHP_EOL.$rst, $expected(1, 0, 1, 0)],
+            'SYN then SYN-ACK then ACK' => [$syn.PHP_EOL.$synAck.PHP_EOL.$ack, $expected(1, 1, 0, 1)],
+        ];
+
+        foreach ($cases as $name => [$input, $expectedOutput]) {
+            [$exitCode, $actualOutput] = $this->executePacketClassifier($workflow, $input);
+            $this->assertSame(0, $exitCode, $name);
+            $actual = [];
+            foreach ($actualOutput as $line) {
+                [$key, $value] = explode('=', trim($line), 2);
+                $actual[$key] = $value;
+            }
+            $this->assertSame($expectedOutput, $actual, $name);
+        }
+    }
+
+    /** @return array{0:int,1:list<string>} */
+    private function executePacketClassifier(string $workflow, string $input): array
+    {
+        $start = strpos($workflow, "(awk '\n");
+        $endToken = "' <\"\$packet_fifo\"";
+        $end = strpos($workflow, $endToken, $start === false ? 0 : $start);
+        $this->assertNotFalse($start);
+        $this->assertNotFalse($end);
+        $program = substr($workflow, $start + strlen("(awk '\n"), $end - ($start + strlen("(awk '\n")));
+
+        $inputPath = tempnam(sys_get_temp_dir(), 'mhcs-packet-');
+        $this->assertNotFalse($inputPath);
+        file_put_contents($inputPath, $input);
+        $output = [];
+        $exitCode = 0;
+        try {
+            exec('awk '.escapeshellarg($program).' '.escapeshellarg($inputPath), $output, $exitCode);
+        } finally {
+            @unlink($inputPath);
+        }
+
+        return [$exitCode, $output];
+    }
 }

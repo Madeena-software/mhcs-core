@@ -263,14 +263,15 @@ jobs:
             (awk '
               BEGIN { syn=0; synack=0; rst=0; ack=0 }
               {
-                to_port = $0 ~ /> .*\\.9000:/
-                from_port = $0 ~ /\\.9000 >/
-                if (to_port && $0 ~ /Flags \\[S\\]/ && $0 !~ /Flags \\[S\\./) syn=1
-                if (syn && from_port && $0 ~ /Flags \\[S\\./) synack=1
-                if (syn && from_port && $0 ~ /Flags \\[[^]]*R/) rst=1
-                if (syn && synack && to_port && $0 ~ /Flags \\[[^]]*\\./ && $0 !~ /Flags \\[[^]]*S/) ack=1
+                arrow = index($0, " > ")
+                to_port = arrow > 0 && index($0, ".9000:") > arrow
+                from_port = index($0, ".9000 >") > 0 || index($0, ":9000 >") > 0
+                if (to_port && index($0, "Flags [S]") > 0) syn=1
+                if (syn && from_port && index($0, "Flags [S.]") > 0) synack=1
+                if (syn && from_port && index($0, "Flags [R") > 0) rst=1
+                if (syn && synack && to_port && (index($0, "Flags [.]" ) > 0 || index($0, "Flags [P.]" ) > 0 || index($0, "Flags [F.]" ) > 0)) ack=1
               }
-              END { printf "syn=%s\\nsynack=%s\\nrst=%s\\nack=%s\\n", syn, synack, rst, ack }
+              END { printf "syn=%s\nsynack=%s\nrst=%s\nack=%s\n", syn, synack, rst, ack }
             ' <"$packet_fifo" >"$packet_classification_file") &
             packet_classifier_pid=$!
             readiness_attempt=0
