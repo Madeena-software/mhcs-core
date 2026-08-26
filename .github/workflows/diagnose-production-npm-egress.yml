@@ -36,8 +36,16 @@ jobs:
           }
           trap cleanup EXIT
 
-          count_v4="$(getent ahostsv4 "$HOST" 2>/dev/null | awk '!seen[$1]++' | wc -l | tr -d ' ')"
-          count_v6="$(getent ahostsv6 "$HOST" 2>/dev/null | awk '!seen[$1]++' | wc -l | tr -d ' ')"
+          count_v4="$(
+            {
+              getent ahostsv4 "$HOST" 2>/dev/null || true
+            } | awk '!seen[$1]++' | wc -l | tr -d ' '
+          )"
+          count_v6="$(
+            {
+              getent ahostsv6 "$HOST" 2>/dev/null || true
+            } | awk '!seen[$1]++' | wc -l | tr -d ' '
+          )"
           count_v4="${count_v4:-0}"
           count_v6="${count_v6:-0}"
           if [ "$count_v4" -gt 0 ] || [ "$count_v6" -gt 0 ]; then
@@ -87,7 +95,7 @@ jobs:
             fi
             rm -f "$payload"
             echo "host_tarball_probe_$2=$result"
-            [ "$result" = PASS ]
+            return 0
           }
           probe_tarball "$tarball_1" 1; tarball_1_result="$result"
           probe_tarball "$tarball_2" 2; tarball_2_result="$result"
@@ -138,7 +146,8 @@ jobs:
 
           cp package.json package-lock.json "$NPM_WORKSPACE/"
           npm_log="$TMP_ROOT/npm.log"
-          timeout 360s docker run --rm --network bridge \
+          npm_status=0
+          if timeout 360s docker run --rm --network bridge \
             -e NPM_CONFIG_FETCH_RETRIES=5 \
             -e NPM_CONFIG_FETCH_RETRY_FACTOR=2 \
             -e NPM_CONFIG_FETCH_RETRY_MINTIMEOUT=20000 \
@@ -146,7 +155,12 @@ jobs:
             -e NPM_CONFIG_FETCH_TIMEOUT=300000 \
             -v "$NPM_WORKSPACE:/work" -w /work "$IMAGE" \
             npm ci --ignore-scripts --no-audit --no-fund >"$npm_log" 2>&1
-          npm_status=$?
+          then
+            npm_status=0
+          else
+            npm_status=$?
+          fi
+          npm_command_exit_status="$npm_status"
           if [ "$npm_status" -eq 0 ]; then
             npm_reproduction=PASS
             npm_failure_code=NONE
@@ -163,6 +177,7 @@ jobs:
           rm -f "$npm_log"
           echo "npm_reproduction=$npm_reproduction"
           echo "npm_failure_code=$npm_failure_code"
+          echo "npm_command_exit_status=$npm_command_exit_status"
 
           recognized_npm_network_failure=false
           case "$npm_failure_code" in
@@ -186,8 +201,6 @@ jobs:
             classification=HOST_NETWORK_FAILURE
           elif [ "$host_https_ipv4_successes" -ge 2 ] && [ "${docker_default_https_successes:-0}" -lt 2 ] && [ "${docker_hostnet_https_successes:-0}" -ge 2 ]; then
             classification=DOCKER_DEFAULT_NETWORK_FAILURE
-          elif [ "$count_v6" -gt 0 ] && [ "$host_https_ipv4_successes" -ge 2 ] && [ "${host_https_ipv6_successes:-0}" -lt 2 ]; then
-            classification=IPV6_PATH_DEGRADED
           elif [ "$host_https_ipv4_successes" -ge 2 ] && { [ "$tarball_1_result" = FAIL ] 2>/dev/null || [ "$tarball_2_result" = FAIL ] 2>/dev/null || [ "$tarball_3_result" = FAIL ] 2>/dev/null; }; then
             classification=NPM_TARBALL_PATH_FAILURE
           elif [ "$npm_reproduction" = FAIL ] \
@@ -196,6 +209,8 @@ jobs:
             classification=NPM_CI_NETWORK_FAILURE
           elif [ "$npm_reproduction" = FAIL ] || [ "$npm_reproduction" = TIMEOUT ]; then
             classification=UNKNOWN
+          elif [ "$npm_reproduction" = PASS ] && [ "$count_v6" -gt 0 ] && [ "$host_https_ipv4_successes" -ge 2 ] && [ "${host_https_ipv6_successes:-0}" -lt 2 ]; then
+            classification=IPV6_PATH_DEGRADED
           elif [ "$host_https_ipv4_successes" -eq 3 ] && [ "${docker_default_https_successes:-0}" -eq 3 ] && [ "${docker_hostnet_https_successes:-0}" -eq 3 ] && [ "$npm_reproduction" = PASS ]; then
             classification=NO_NETWORK_FAILURE_OBSERVED
           else

@@ -61,6 +61,29 @@ final class ProductionNpmEgressDiagnosticWorkflowTest extends TestCase
         $this->assertStringContainsString('NPM_CONFIG_FETCH_TIMEOUT=300000', $workflow);
         $this->assertStringContainsString('timeout 360s', $workflow);
         $this->assertStringContainsString('trap cleanup EXIT', $workflow);
+        $this->assertStringContainsString('shell: bash', $workflow);
+        $this->assertStringContainsString('npm_command_exit_status=', $workflow);
+        $this->assertStringContainsString('npm_status=0', $workflow);
+        $this->assertStringContainsString('npm_status=$?', $workflow);
+        $this->assertStringContainsString('[ "$npm_status" -eq 124 ] && npm_reproduction=TIMEOUT', $workflow);
+        $this->assertMatchesRegularExpression(
+            '/if timeout 360s docker run .*?npm ci --ignore-scripts.*?then\n\s+npm_status=0\n\s+else\n\s+npm_status=\$\?/s',
+            $workflow,
+        );
+        $this->assertMatchesRegularExpression('/\{\s+getent ahostsv4 "\$HOST" 2>\/dev\/null \|\| true\s+\} \|/', $workflow);
+        $this->assertMatchesRegularExpression('/\{\s+getent ahostsv6 "\$HOST" 2>\/dev\/null \|\| true\s+\} \|/', $workflow);
+        $this->assertStringContainsString('return 0', $workflow);
+        $this->assertStringNotContainsString('[ "$result" = PASS ]\n          }', $workflow);
+        $npmFailureBranch = strpos($workflow, 'classification=NPM_CI_NETWORK_FAILURE');
+        $ipv6Branch = strpos($workflow, 'classification=IPV6_PATH_DEGRADED');
+        $this->assertNotFalse($npmFailureBranch);
+        $this->assertNotFalse($ipv6Branch);
+        $this->assertLessThan($ipv6Branch, $npmFailureBranch);
+        $this->assertStringContainsString('npm_log', $workflow);
+        $this->assertLessThan(
+            strpos($workflow, 'rm -f "$npm_log"'),
+            strpos($workflow, 'if grep -Eqi \'ETIMEDOUT\' "$npm_log"'),
+        );
 
         foreach (['HOST_NETWORK_FAILURE', 'DOCKER_DEFAULT_NETWORK_FAILURE', 'IPV6_PATH_DEGRADED', 'NPM_TARBALL_PATH_FAILURE', 'NPM_CI_NETWORK_FAILURE', 'NETWORK_INTERMITTENT', 'NO_NETWORK_FAILURE_OBSERVED', 'UNKNOWN'] as $classification) {
             $this->assertStringContainsString($classification, $workflow);
