@@ -23,6 +23,7 @@ use App\Shared\Storage\OpaqueObjectKey;
 use App\Shared\Storage\PrivateObject;
 use App\Shared\Time\Clock;
 use App\Shared\Time\FrozenClock;
+use App\Shared\Validation\NonclinicalValidationContext;
 use DateTimeImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -135,6 +136,88 @@ final class NonclinicalValidationMemberIdentityTest extends TestCase
             new VerificationAssetInput(VerificationAssetType::ProfilePhoto, $this->privateObject('validation-photo'), 'image/jpeg'),
             app(AuthenticatedContextProvider::class)->current(),
         );
+    }
+
+    public function test_shared_validation_context_is_canonical_and_member_code_has_no_split_marker(): void
+    {
+        $this->assertSame('real-npz-e2e-v1', NonclinicalValidationContext::KEY);
+        $this->assertSame('mhcs.validation', NonclinicalValidationContext::MARKER_NAMESPACE);
+
+        $source = file_get_contents(app_path('Modules/Member/Application/Services/MemberContextResolver.php'));
+        $this->assertIsString($source);
+        $this->assertStringNotContainsString("'real-n'.'pz", $source);
+        $this->assertStringNotContainsString('real-npz-e2e-v1', $source);
+    }
+
+    public function test_identity_synchronization_preserves_exact_validation_and_rejects_one_sided_signals(): void
+    {
+        $user = User::factory()->create();
+        $this->bindValidationContext($user);
+        $result = app(MemberRegistrationService::class)->registerNonclinicalValidation(new NonclinicalValidationMemberRegistrationData('validation-sync-'.$user->id, (string) $user->id));
+        $sync = new \ReflectionMethod(MemberVerificationAssetService::class, 'syncIdentityStatus');
+        $sync->setAccessible(true);
+
+        $sync->invoke(app(MemberVerificationAssetService::class), $result->memberId);
+        $this->assertDatabaseHas('members', [
+            'id' => $result->memberId,
+            'identity_status' => 'nonclinical_validation',
+            'registration_source' => 'nonclinical_validation',
+        ]);
+
+        foreach ([
+            ['identity_status' => 'verified', 'registration_source' => 'nonclinical_validation'],
+            ['identity_status' => 'pending_verification', 'registration_source' => 'nonclinical_validation'],
+            ['identity_status' => 'nonclinical_validation', 'registration_source' => 'online'],
+        ] as $inconsistent) {
+            DB::table('members')->where('id', $result->memberId)->update($inconsistent);
+
+            try {
+                $sync->invoke(app(MemberVerificationAssetService::class), $result->memberId);
+                $this->fail('Inconsistent validation identity signals must fail closed.');
+            } catch (\ReflectionException $exception) {
+                throw $exception;
+            } catch (MemberIdentityException) {
+                $this->addToAssertionCount(1);
+            }
+
+            DB::table('members')->where('id', $result->memberId)->update([
+                'identity_status' => 'nonclinical_validation',
+                'registration_source' => 'nonclinical_validation',
+            ]);
+        }
+    }
+
+    public function test_booking_identity_policy_rejects_each_genuine_identity_field_and_asset_on_validation_member(): void
+    {
+        $user = User::factory()->create();
+        $this->bindValidationContext($user);
+        $result = app(MemberRegistrationService::class)->registerNonclinicalValidation(new NonclinicalValidationMemberRegistrationData('validation-fields-'.$user->id, (string) $user->id));
+
+        foreach (['identity_document_type', 'encrypted_nik', 'nik_lookup_digest'] as $field) {
+            DB::table('members')->where('id', $result->memberId)->update([$field => 'contradictory']);
+            $this->assertFalse(app(MemberContextResolver::class)->isIdentityEligibleForBooking(Member::query()->findOrFail($result->memberId)));
+            DB::table('members')->where('id', $result->memberId)->update([$field => null]);
+        }
+
+        DB::table('member_verification_assets')->insert([
+            'id' => (string) Str::uuid(),
+            'member_id' => $result->memberId,
+            'type' => 'profile_photo',
+            'private_object_key' => 'objects/contradictory',
+            'checksum' => hash('sha256', 'contradictory'),
+            'bytes' => 1,
+            'format' => 'image/jpeg',
+            'review_status' => 'pending',
+            'is_current' => false,
+            'uploaded_by_user_id' => $user->id,
+            'reviewed_by_user_id' => null,
+            'reviewed_at' => null,
+            'replaces_id' => null,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->assertFalse(app(MemberContextResolver::class)->isIdentityEligibleForBooking(Member::query()->findOrFail($result->memberId)));
     }
 
     private function privateObject(string $label): PrivateObject

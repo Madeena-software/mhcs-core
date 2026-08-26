@@ -18,6 +18,7 @@ use App\Shared\Audit\AuditStore;
 use App\Shared\Context\AuthenticatedContext;
 use App\Shared\Security\ProtectedIdentifierService;
 use App\Shared\Time\Clock;
+use App\Shared\Validation\NonclinicalValidationContext;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -27,10 +28,6 @@ use Throwable;
 
 final readonly class MemberRegistrationService
 {
-    private const NONCLINICAL_CONTEXT = 'real-n'.'pz-e2e-v1';
-
-    private const NONCLINICAL_MARKER_NAMESPACE = 'mhcs.validation';
-
     public function __construct(
         private MemberAuthorization $authorization,
         private ProtectedIdentifierService $identifiers,
@@ -214,7 +211,7 @@ final readonly class MemberRegistrationService
         }
 
         $payloadHash = hash('sha256', json_encode([
-            'context' => self::NONCLINICAL_CONTEXT,
+            'context' => NonclinicalValidationContext::KEY,
             'operation_id' => $data->operationId,
             'user_id' => $data->userId,
         ], JSON_THROW_ON_ERROR));
@@ -256,7 +253,7 @@ final readonly class MemberRegistrationService
                 if (DB::table('members')->where('user_id', $data->userId)->exists()) {
                     throw new MemberIdentityException('The validation account is already linked to a Member.');
                 }
-                if (DB::table('member_external_identifiers')->where('namespace', self::NONCLINICAL_MARKER_NAMESPACE)->where('value', self::NONCLINICAL_CONTEXT)->exists()) {
+                if (DB::table('member_external_identifiers')->where('namespace', NonclinicalValidationContext::MARKER_NAMESPACE)->where('value', NonclinicalValidationContext::KEY)->exists()) {
                     throw new MemberIdentityException('The validation marker already belongs to another Member.');
                 }
 
@@ -298,8 +295,8 @@ final readonly class MemberRegistrationService
                 DB::table('member_external_identifiers')->insert([
                     'id' => (string) Str::uuid(),
                     'member_id' => $memberId,
-                    'namespace' => self::NONCLINICAL_MARKER_NAMESPACE,
-                    'value' => self::NONCLINICAL_CONTEXT,
+                    'namespace' => NonclinicalValidationContext::MARKER_NAMESPACE,
+                    'value' => NonclinicalValidationContext::KEY,
                     'created_at' => $now,
                     'updated_at' => $now,
                 ]);
@@ -320,7 +317,7 @@ final readonly class MemberRegistrationService
                     occurredAt: $now,
                     targetType: Member::class,
                     targetId: $memberId,
-                    metadata: ['validation_context' => self::NONCLINICAL_CONTEXT, 'nonclinical' => true],
+                    metadata: ['validation_context' => NonclinicalValidationContext::KEY, 'nonclinical' => true],
                 ));
                 DB::table('member_operations')
                     ->where('operation_type', 'nonclinical_validation_registration')
@@ -378,8 +375,8 @@ final readonly class MemberRegistrationService
     {
         $member = DB::table('members')->where('id', $memberId)->first();
         $markerCount = DB::table('member_external_identifiers')
-            ->where('namespace', self::NONCLINICAL_MARKER_NAMESPACE)
-            ->where('value', self::NONCLINICAL_CONTEXT)
+            ->where('namespace', NonclinicalValidationContext::MARKER_NAMESPACE)
+            ->where('value', NonclinicalValidationContext::KEY)
             ->count();
 
         if (
@@ -391,7 +388,7 @@ final readonly class MemberRegistrationService
             || $member->encrypted_nik !== null
             || $member->nik_lookup_digest !== null
             || $markerCount !== 1
-            || ! DB::table('member_external_identifiers')->where('member_id', $memberId)->where('namespace', self::NONCLINICAL_MARKER_NAMESPACE)->where('value', self::NONCLINICAL_CONTEXT)->exists()
+            || ! DB::table('member_external_identifiers')->where('member_id', $memberId)->where('namespace', NonclinicalValidationContext::MARKER_NAMESPACE)->where('value', NonclinicalValidationContext::KEY)->exists()
             || DB::table('member_verification_assets')->where('member_id', $memberId)->exists()
         ) {
             throw new MemberIdentityException('The nonclinical validation Member state is inconsistent.');

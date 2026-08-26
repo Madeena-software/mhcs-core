@@ -29,6 +29,7 @@ final readonly class MemberVerificationAssetService
     public function __construct(
         private MemberAuthorization $authorization,
         private TrustedOperatorIdentityVerificationContextResolver $trustedCase,
+        private MemberContextResolver $members,
         private PrivateObjectStore $objects,
         private AuditStore $audit,
         private Clock $clock,
@@ -341,10 +342,14 @@ final readonly class MemberVerificationAssetService
             throw new MemberIdentityException('The Member identity was not found.');
         }
 
-        if (
-            (string) $member->identity_status === IdentityStatus::NonclinicalValidation->value
-            || (string) $member->registration_source === RegistrationSource::NonclinicalValidation->value
-        ) {
+        $statusValidation = (string) $member->identity_status === IdentityStatus::NonclinicalValidation->value;
+        $sourceValidation = (string) $member->registration_source === RegistrationSource::NonclinicalValidation->value;
+        if ($statusValidation !== $sourceValidation) {
+            throw new MemberIdentityException('Nonclinical validation identity signals are inconsistent.');
+        }
+        if ($statusValidation) {
+            $this->members->assertNonclinicalValidationConsistency($memberId);
+
             return;
         }
 

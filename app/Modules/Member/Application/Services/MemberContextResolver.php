@@ -8,6 +8,7 @@ use App\Modules\Member\Domain\Enums\IdentityStatus;
 use App\Modules\Member\Domain\Enums\RegistrationSource;
 use App\Modules\Member\Domain\MemberIdentityException;
 use App\Modules\Member\Domain\Models\Member;
+use App\Shared\Validation\NonclinicalValidationContext;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 
@@ -56,10 +57,18 @@ final class MemberContextResolver
 
     public function isIdentityEligibleForBooking(Member $member): bool
     {
-        if ($member->identity_status === IdentityStatus::Verified->value) {
+        $statusValidation = $member->identity_status === IdentityStatus::NonclinicalValidation->value;
+        $sourceValidation = $member->registration_source === RegistrationSource::NonclinicalValidation->value;
+
+        if (! $statusValidation && ! $sourceValidation && $member->identity_status === IdentityStatus::Verified->value) {
             return true;
         }
 
+        return $statusValidation && $sourceValidation && $this->isExactNonclinicalValidationIdentity($member);
+    }
+
+    public function isExactNonclinicalValidationIdentity(Member $member): bool
+    {
         if (
             $member->identity_status !== IdentityStatus::NonclinicalValidation->value
             || $member->registration_source !== RegistrationSource::NonclinicalValidation->value
@@ -72,9 +81,26 @@ final class MemberContextResolver
 
         return DB::table('member_external_identifiers')
             ->where('member_id', $member->id)
-            ->where('namespace', 'mhcs.validation')
-            ->where('value', 'real-n'.'pz-e2e-v1')
+            ->where('namespace', NonclinicalValidationContext::MARKER_NAMESPACE)
+            ->where('value', NonclinicalValidationContext::KEY)
             ->count() === 1
             && ! DB::table('member_verification_assets')->where('member_id', $member->id)->exists();
+    }
+
+    public function assertNonclinicalValidationConsistency(string $memberId): void
+    {
+        $member = Member::query()->find($memberId);
+        if ($member === null) {
+            throw new MemberIdentityException('The Member identity was not found.');
+        }
+
+        $statusValidation = $member->identity_status === IdentityStatus::NonclinicalValidation->value;
+        $sourceValidation = $member->registration_source === RegistrationSource::NonclinicalValidation->value;
+        if ($statusValidation !== $sourceValidation) {
+            throw new MemberIdentityException('Nonclinical validation identity signals are inconsistent.');
+        }
+        if ($statusValidation && ! $this->isExactNonclinicalValidationIdentity($member)) {
+            throw new MemberIdentityException('The nonclinical validation Member state is inconsistent.');
+        }
     }
 }

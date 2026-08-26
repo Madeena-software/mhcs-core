@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Shared\Security;
 
+use App\Shared\Validation\NonclinicalValidationContext;
 use Illuminate\Support\Str;
 use JsonSerializable;
 
@@ -130,7 +131,7 @@ final class SensitiveDataSanitizer
             return false;
         }
 
-        if ($value === 'real-npz-e2e-v1') {
+        if ($value === NonclinicalValidationContext::KEY) {
             return false;
         }
 
