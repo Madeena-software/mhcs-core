@@ -29,11 +29,29 @@ jobs:
             CONTAINER_IMAGE="$(docker inspect "$APP_CONTAINER" --format '{{.Config.Image}}' 2>/dev/null || true)"
             VERSION_CURRENT="$(docker exec "$APP_CONTAINER" cat /var/www/html/VERSION-CURRENT 2>/dev/null || true)"
           fi
-          image_revision() { local image="$1" revision="${image##*:}"; revision="${revision%%@*}"; [[ "$revision" =~ ^[0-9a-f]{40}$ ]] && printf '%s' "$revision"; }
+          image_revision() {
+            local image="${1-}"
+            local without_digest=""
+            local revision=""
+            if [ -z "$image" ]; then return 0; fi
+            without_digest="${image%%@*}"
+            revision="${without_digest##*:}"
+            if [[ "$revision" =~ ^[0-9a-f]{40}$ ]]; then printf '%s' "$revision"; fi
+            return 0
+          }
           SERVICE_REVISION="$(image_revision "$SERVICE_IMAGE")"
           CONTAINER_REVISION="$(image_revision "$CONTAINER_IMAGE")"
+          app_container_resolved=false; version_current_match=false; service_revision_match=false; container_revision_match=false
+          if [ -n "$APP_CONTAINER" ]; then app_container_resolved=true; fi
+          if [ "$VERSION_CURRENT" = "$EXPECTED_REVISION" ]; then version_current_match=true; fi
+          if [ "$SERVICE_REVISION" = "$EXPECTED_REVISION" ]; then service_revision_match=true; fi
+          if [ "$CONTAINER_REVISION" = "$EXPECTED_REVISION" ]; then container_revision_match=true; fi
           revision_match=false
-          if [ -n "$APP_CONTAINER" ] && [ "$VERSION_CURRENT" = "$EXPECTED_REVISION" ] && [ "$SERVICE_REVISION" = "$EXPECTED_REVISION" ] && [ "$CONTAINER_REVISION" = "$EXPECTED_REVISION" ]; then revision_match=true; fi
+          if [ "$app_container_resolved" = "true" ] && [ "$version_current_match" = "true" ] && [ "$service_revision_match" = "true" ] && [ "$container_revision_match" = "true" ]; then revision_match=true; fi
+          echo "app_container_resolved=$app_container_resolved"
+          echo "version_current_match=$version_current_match"
+          echo "service_revision_match=$service_revision_match"
+          echo "container_revision_match=$container_revision_match"
           if [ "$revision_match" != "true" ]; then echo "revision_match=false"; exit 1; fi
           echo "revision_match=true"
           docker exec -i "$APP_CONTAINER" php <<'PHP'

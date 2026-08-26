@@ -243,4 +243,49 @@ final class ProductionS3WritePathDiagnosticWorkflowTest extends TestCase
         $this->assertStringNotContainsString('DB::', $workflow);
         $this->assertStringContainsString('write_path_root_cause_confirmed=false', $workflow);
     }
+
+    public function test_revision_guard_parser_is_safe_and_digest_aware(): void
+    {
+        $workflow = $this->workflow();
+        $helperStart = strpos($workflow, 'image_revision() {');
+        $helperEnd = strpos($workflow, 'SERVICE_REVISION=', $helperStart);
+        $helper = substr($workflow, $helperStart, $helperEnd - $helperStart);
+
+        $this->assertStringNotContainsString('local image="$1" revision=', $helper);
+        $this->assertStringContainsString('local image="${1-}"', $helper);
+        $this->assertStringContainsString('local without_digest=""', $helper);
+        $this->assertStringContainsString('local revision=""', $helper);
+        $this->assertLessThan(strpos($helper, '"${without_digest##*:}"'), strpos($helper, '"${image%%@*}"'));
+        $this->assertStringContainsString('if [[ "$revision" =~ ^[0-9a-f]{40}$ ]]; then', $helper);
+        $this->assertStringContainsString('return 0', $helper);
+
+        $script = "set -euo pipefail\n".$helper;
+        $script .= <<<'BASH'
+SERVICE_IMAGE='registry/repo:b6232a158b3f6884fd9823bc875abc432676b781'
+CONTAINER_IMAGE='registry/repo:b6232a158b3f6884fd9823bc875abc432676b781@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+SERVICE_REVISION="$(image_revision "$SERVICE_IMAGE")"
+CONTAINER_REVISION="$(image_revision "$CONTAINER_IMAGE")"
+EMPTY_REVISION="$(image_revision '')"
+INVALID_REVISION="$(image_revision 'registry/repo:latest')"
+DIGEST_ONLY_REVISION="$(image_revision 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')"
+printf 'valid=%s\ndigested=%s\nempty=%s\ninvalid=%s\ndigest_only=%s\n' "$SERVICE_REVISION" "$CONTAINER_REVISION" "$EMPTY_REVISION" "$INVALID_REVISION" "$DIGEST_ONLY_REVISION"
+BASH;
+        $pipes = [1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
+        $process = proc_open(['/usr/bin/env', 'bash', '-c', $script], $pipes, $handles);
+        $this->assertIsResource($process);
+        $output = stream_get_contents($handles[1]);
+        $error = stream_get_contents($handles[2]);
+        fclose($handles[1]);
+        fclose($handles[2]);
+        $exitCode = proc_close($process);
+
+        $this->assertSame(0, $exitCode, $error);
+        $this->assertSame("valid=b6232a158b3f6884fd9823bc875abc432676b781\ndigested=b6232a158b3f6884fd9823bc875abc432676b781\nempty=\ninvalid=\ndigest_only=", trim($output));
+        foreach (['app_container_resolved=', 'version_current_match=', 'service_revision_match=', 'container_revision_match=', 'revision_match='] as $safeOutput) {
+            $this->assertStringContainsString($safeOutput, $workflow);
+        }
+        foreach (['echo "$SERVICE_IMAGE"', 'echo "$CONTAINER_IMAGE"', 'echo "$VERSION_CURRENT"', 'echo "$SERVICE_REVISION"', 'echo "$CONTAINER_REVISION"', 'echo "$APP_CONTAINER"', 'echo "$TASK_ID"'] as $forbiddenOutput) {
+            $this->assertStringNotContainsString($forbiddenOutput, $workflow);
+        }
+    }
 }
