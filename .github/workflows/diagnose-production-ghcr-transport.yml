@@ -1,0 +1,91 @@
+name: Diagnose production GHCR transport
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: production-deployment-mhcs_core
+  cancel-in-progress: false
+
+jobs:
+  diagnose:
+    name: Read-only production GHCR transport diagnostic
+    runs-on: self-hosted
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Collect sanitized transport observations
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "===> Host identity and runtime"
+          date -u +%Y-%m-%dT%H:%M:%SZ
+          uname -sr
+          docker info --format 'DockerServer={{.ServerVersion}} Containers={{.Containers}} Images={{.Images}}' 2>/dev/null || true
+          docker system info --format 'DockerServer={{.ServerVersion}} Driver={{.Driver}} Logging={{.LoggingDriver}}' 2>/dev/null || true
+          docker version --format 'DockerClient={{.Client.Version}} DockerServer={{.Server.Version}} Containerd={{.Server.Components}}' 2>/dev/null || true
+
+          echo "===> Docker daemon transfer configuration"
+          docker info --format 'RegistryConfig={{json .RegistryConfig}}' 2>/dev/null || true
+          docker system info --format 'RegistryConfig={{json .RegistryConfig}}' 2>/dev/null || true
+          if [ -r /etc/docker/daemon.json ]; then
+            grep -E 'max-concurrent-downloads|max-download-attempts|registry-mirrors|mtu|dns|proxies' /etc/docker/daemon.json \
+              | sed -E 's#(https?://)[^/@[:space:]]+@#\1[REDACTED]@#g; s#(token|password|secret|key)[^:]*:[[:space:]]*"[^"]*"#\1: "[REDACTED]"#Ig' || true
+          else
+            echo 'daemon.json=unreadable-or-absent'
+          fi
+          systemctl show docker -p Environment -p ExecStart -p FragmentPath 2>/dev/null \
+            | sed -E 's#(https?://)[^/@[:space:]]+@#\1[REDACTED]@#g; s#(token|password|secret|key)[^=]*=[^[:space:]]+#\1=[REDACTED]#Ig' || true
+
+          echo "===> Host network state"
+          ip -4 addr 2>/dev/null || true
+          ip -4 route 2>/dev/null || true
+          ip -s link 2>/dev/null || true
+          ss -s 2>/dev/null || true
+          nstat -az 2>/dev/null || true
+
+          echo "===> GHCR DNS resolution"
+          GHCR_ADDRESSES="$(getent ahostsv4 ghcr.io | awk 'NF {print $1}' | sort -u | head -n 8 || true)"
+          printf '%s\n' "$GHCR_ADDRESSES"
+
+          CURL_CA_ARGS=()
+          if [ -r /etc/ssl/certs/ca-certificates.crt ]; then
+            CURL_CA_ARGS=(--cacert /etc/ssl/certs/ca-certificates.crt)
+          fi
+
+          echo "===> Bounded HTTPS probes"
+          PROBE_ATTEMPTS=5
+          for attempt in $(seq 1 "$PROBE_ATTEMPTS"); do
+            result="$(curl -4 --proto =https "${CURL_CA_ARGS[@]}" --connect-timeout 5 --max-time 15 --silent --show-error \
+              --output /dev/null --write-out 'http_status=%{http_code} remote_ip=%{remote_ip} connect=%{time_connect} tls=%{time_appconnect} start=%{time_starttransfer} total=%{time_total}' \
+              https://ghcr.io/v2/ 2>&1 || true)"
+            printf 'probe=%s %s\n' "$attempt" "$result" \
+              | sed -E 's#(https?://)[^/@[:space:]]+@#\1[REDACTED]@#g'
+          done
+
+          echo "===> Per-address GHCR HTTPS probes"
+          while IFS= read -r address; do
+            [ -n "$address" ] || continue
+            result="$(curl -4 --proto =https "${CURL_CA_ARGS[@]}" --resolve "ghcr.io:443:${address}" \
+              --connect-timeout 5 --max-time 15 --silent --show-error --output /dev/null \
+              --write-out 'http_status=%{http_code} remote_ip=%{remote_ip} connect=%{time_connect} tls=%{time_appconnect} start=%{time_starttransfer} total=%{time_total}' \
+              https://ghcr.io/v2/ 2>&1 || true)"
+            printf 'address=%s %s\n' "$address" "$result" \
+              | sed -E 's#(https?://)[^/@[:space:]]+@#\1[REDACTED]@#g'
+          done <<< "$GHCR_ADDRESSES"
+
+          echo "===> Path MTU information"
+          ip -4 route get 1.1.1.1 2>/dev/null || true
+          if command -v tracepath >/dev/null 2>&1; then
+            tracepath -4 -m 5 -w 5 ghcr.io 2>/dev/null | head -n 20 || true
+          else
+            echo 'tracepath=unavailable'
+          fi
+
+          echo "===> Bounded Docker daemon journal window"
+          journalctl -u docker --since "2026-08-26T23:26:00Z" --until "2026-08-26T23:45:00Z" --no-pager -n 200 2>/dev/null \
+            | grep -Ei 'registry|pull|download|timeout|reset|tls|eof|containerd|network' \
+            | sed -E 's#(https?://)[^/@[:space:]]+@#\1[REDACTED]@#g; s#(token|password|secret|key)[=:][^[:space:]]+#\1=[REDACTED]#Ig' \
+            || true
