@@ -18,11 +18,9 @@ use Throwable;
 
 final readonly class NonclinicalValidationAccountProvisioningService
 {
+    public const OPERATOR_SECRET_NAME = 'MHCS_REAL_NPZ_VALIDATION_OPERATOR_PASSWORD';
+
     private const PURPOSE = 'production.validation-context.account-provision';
-
-    private const MEMBER_EMAIL = 'mhcs-real-npz-e2e-v1-member@invalid';
-
-    private const OPERATOR_EMAIL = 'mhcs-real-npz-e2e-v1-operator@invalid';
 
     private const OPERATOR_ROLE = 'operator';
 
@@ -50,8 +48,8 @@ final readonly class NonclinicalValidationAccountProvisioningService
 
         try {
             return DB::transaction(function () use ($context, $operatorSecret): array {
-                $member = $this->fixedUser(self::MEMBER_EMAIL);
-                $operator = $this->fixedUser(self::OPERATOR_EMAIL);
+                $member = $this->fixedUser($this->memberEmail());
+                $operator = $this->fixedUser($this->operatorEmail());
 
                 if ($member !== null || $operator !== null) {
                     if ($member === null || $operator === null) {
@@ -75,8 +73,8 @@ final readonly class NonclinicalValidationAccountProvisioningService
                 $now = $this->clock->now();
                 $memberId = (string) Str::uuid();
                 $operatorId = (string) Str::uuid();
-                $this->insertUser($memberId, self::MEMBER_EMAIL, Hash::make(bin2hex(random_bytes(32))), $now);
-                $this->insertUser($operatorId, self::OPERATOR_EMAIL, Hash::make($operatorSecret), $now);
+                $this->insertUser($memberId, $this->memberEmail(), Hash::make(bin2hex(random_bytes(32))), $now);
+                $this->insertUser($operatorId, $this->operatorEmail(), Hash::make($operatorSecret), $now);
 
                 foreach (self::OPERATOR_PERMISSIONS as $permission) {
                     DB::table('authorization_permission_assignments')->insert([
@@ -125,6 +123,16 @@ final readonly class NonclinicalValidationAccountProvisioningService
         }
 
         return $context;
+    }
+
+    private function memberEmail(): string
+    {
+        return 'mhcs-'.NonclinicalValidationContext::KEY.'-member@invalid';
+    }
+
+    private function operatorEmail(): string
+    {
+        return 'mhcs-'.NonclinicalValidationContext::KEY.'-operator@invalid';
     }
 
     private function fixedUser(string $email): ?User
