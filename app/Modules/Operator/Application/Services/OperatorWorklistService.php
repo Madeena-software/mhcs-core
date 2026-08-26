@@ -451,6 +451,18 @@ final readonly class OperatorWorklistService
     /** @return array{admission_id: string, state: string, xray_admission_id: string, xray_state: string, completed_at: string} */
     public function completeBasicExamination(string $admissionId, string $operationId): array
     {
+        return $this->completeBasicExaminationForAdmission($admissionId, $operationId, false);
+    }
+
+    /** @return array{admission_id: string, state: string, xray_admission_id: string, xray_state: string, completed_at: string} */
+    public function completeNonclinicalValidationStage(string $admissionId, string $operationId): array
+    {
+        return $this->completeBasicExaminationForAdmission($admissionId, $operationId, true);
+    }
+
+    /** @return array{admission_id: string, state: string, xray_admission_id: string, xray_state: string, completed_at: string} */
+    private function completeBasicExaminationForAdmission(string $admissionId, string $operationId, bool $nonclinical): array
+    {
         $admissionId = trim($admissionId);
         $operationId = trim($operationId);
         if (! Str::isUuid($admissionId) || ! Str::isUuid($operationId)) {
@@ -472,7 +484,7 @@ final readonly class OperatorWorklistService
                 $operationId,
                 self::COMPLETE_PURPOSE,
                 $payload,
-                function () use ($admissionId, $operationId, $profileId, $site, $context): array {
+                function () use ($admissionId, $operationId, $profileId, $site, $context, $nonclinical): array {
                     $transactionPortal = $this->authorization->portal();
                     $transactionSite = $this->authorization->portalSite($transactionPortal);
                     if ((string) $transactionPortal['profile']->getKey() !== $profileId || (string) $transactionSite->getKey() !== (string) $site->getKey()) {
@@ -493,30 +505,43 @@ final readonly class OperatorWorklistService
                         throw new OperatorException('queue_completion_forbidden', 'The queue admission is unavailable.');
                     }
 
-                    $executionCount = DB::table('operator_vital_signs_executions as executions')
-                        ->join('member_vital_signs_assessments as assessments', 'assessments.id', '=', 'executions.member_vital_signs_assessment_id')
-                        ->where('executions.operator_queue_admission_id', $admissionId)
-                        ->where('executions.operator_profile_id', $profileId)
-                        ->where('executions.operator_site_id', $site->getKey())
-                        ->where('assessments.member_id', $admission->member_id)
-                        ->where('assessments.booking_id', $admission->booking_id)
-                        ->where('assessments.member_schedule_id', $admission->member_schedule_id)
-                        ->select('executions.id')
-                        ->lockForUpdate()
-                        ->get()
-                        ->count();
-                    if ($executionCount !== 1) {
+                    if ($nonclinical && (! $this->memberAttendance->isExactNonclinicalValidationMember((string) $admission->member_id)
+                        || ! DB::table('operator_identity_verifications')->where('booking_id', $admission->booking_id)->where('member_schedule_id', $admission->member_schedule_id)->where('state', 'nonclinical_validation')->exists())) {
+                        throw new OperatorException('queue_completion_forbidden', 'The queue admission is unavailable.');
+                    }
+
+                    if ($nonclinical) {
+                        $executionCount = 0;
+                    } else {
+                        $executionCount = DB::table('operator_vital_signs_executions as executions')
+                            ->join('member_vital_signs_assessments as assessments', 'assessments.id', '=', 'executions.member_vital_signs_assessment_id')
+                            ->where('executions.operator_queue_admission_id', $admissionId)
+                            ->where('executions.operator_profile_id', $profileId)
+                            ->where('executions.operator_site_id', $site->getKey())
+                            ->where('assessments.member_id', $admission->member_id)
+                            ->where('assessments.booking_id', $admission->booking_id)
+                            ->where('assessments.member_schedule_id', $admission->member_schedule_id)
+                            ->select('executions.id')
+                            ->lockForUpdate()
+                            ->get()
+                            ->count();
+                    }
+                    if (! $nonclinical && $executionCount !== 1) {
                         throw new OperatorException('queue_completion_conflict', 'The queue admission could not be completed.');
                     }
 
-                    $questionnaireCount = DB::table('member_paper_questionnaires')
-                        ->where('member_id', $admission->member_id)
-                        ->where('booking_id', $admission->booking_id)
-                        ->where('member_schedule_id', $admission->member_schedule_id)
-                        ->where('operator_site_id', $site->operator_site_id)
-                        ->lockForUpdate()
-                        ->count();
-                    if ($questionnaireCount !== 1) {
+                    if ($nonclinical) {
+                        $questionnaireCount = 0;
+                    } else {
+                        $questionnaireCount = DB::table('member_paper_questionnaires')
+                            ->where('member_id', $admission->member_id)
+                            ->where('booking_id', $admission->booking_id)
+                            ->where('member_schedule_id', $admission->member_schedule_id)
+                            ->where('operator_site_id', $site->operator_site_id)
+                            ->lockForUpdate()
+                            ->count();
+                    }
+                    if (! $nonclinical && $questionnaireCount !== 1) {
                         throw new OperatorException('queue_completion_conflict', 'The queue admission could not be completed.');
                     }
 
@@ -578,6 +603,10 @@ final readonly class OperatorWorklistService
                         'previous_state' => 'in_service',
                         'state' => 'completed',
                         'completed_at_utc' => $now->format(DATE_ATOM),
+                        'nonclinical' => $nonclinical,
+                        'clinical_basic_examination_performed' => ! $nonclinical,
+                        'vital_signs_recorded' => ! $nonclinical,
+                        'questionnaire_recorded' => ! $nonclinical,
                     ];
                     $this->audit->append(AuditEvent::fromContext(
                         $context,

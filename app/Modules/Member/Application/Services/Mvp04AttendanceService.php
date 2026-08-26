@@ -34,7 +34,15 @@ final readonly class Mvp04AttendanceService implements OperatorAttendanceContrac
         private TrustedOperatorSiteContextResolver $trustedSite,
         private TrustedOperatorIdentityVerificationContextResolver $trustedCase,
         private Clock $clock,
+        private MemberContextResolver $members,
     ) {}
+
+    public function isExactNonclinicalValidationMember(string $memberId): bool
+    {
+        $member = Member::query()->find($memberId);
+
+        return $member !== null && $this->members->isExactNonclinicalValidationIdentity($member);
+    }
 
     /** @return list<string> */
     public function participatingBookingStatuses(): array
@@ -77,6 +85,7 @@ final readonly class Mvp04AttendanceService implements OperatorAttendanceContrac
             ->get();
 
         $result = $rows->map(function (object $row) use ($schedule, $site): array {
+            $isNonclinical = $row->encrypted_nik === null && $this->isExactNonclinicalValidationMember((string) $row->member_id);
             $nextAction = match ((string) $row->booking_status) {
                 BookingStatus::Confirmed->value => 'Record physical arrival',
                 BookingStatus::Arrived->value => 'Continue identity verification',
@@ -92,8 +101,9 @@ final readonly class Mvp04AttendanceService implements OperatorAttendanceContrac
                 'member_id' => (string) $row->member_id,
                 'member_name' => (string) $row->member_name,
                 'medical_record_number' => (string) $row->medical_record_number,
-                'nik' => $this->identifiers->display((string) $row->encrypted_nik),
+                'nik' => $row->encrypted_nik === null ? null : $this->identifiers->display((string) $row->encrypted_nik),
                 'masked_nik' => $this->maskedIdentifier($row->encrypted_nik),
+                'identity_status' => $isNonclinical ? 'nonclinical_validation' : 'verified',
                 'site' => (string) $site->display_name,
                 'schedule_starts_at' => (string) $schedule->starts_at,
                 'schedule_ends_at' => (string) $schedule->ends_at,

@@ -9,6 +9,7 @@ use App\Modules\Member\Application\Contracts\TrustedOperatorIdentityVerification
 use App\Modules\Member\Domain\Enums\VerificationAssetType;
 use App\Modules\Member\Domain\Enums\VerificationReviewStatus;
 use App\Modules\Member\Domain\MemberIdentityException;
+use App\Modules\Member\Domain\Models\Member;
 use App\Shared\Audit\AuditEvent;
 use App\Shared\Audit\AuditStore;
 use App\Shared\Context\AuthenticatedContext;
@@ -38,6 +39,7 @@ final readonly class Mvp04OperatorIdentityVerificationService implements Operato
         private TrustedOperatorIdentityVerificationContextResolver $trustedCase,
         private AuditStore $audit,
         private Clock $clock,
+        private MemberContextResolver $members,
     ) {}
 
     public function lookupByNik(
@@ -123,9 +125,21 @@ final readonly class Mvp04OperatorIdentityVerificationService implements Operato
     ): array {
         $assertion = $this->assertCase($context, $operatorSiteId, $scheduleId, $bookingId, $caseId, self::VIEW_PURPOSE);
         $booking = $this->booking($operatorSiteId, $scheduleId, $bookingId);
-        $member = DB::table('members')->where('id', $assertion['member_id'])->first();
+        $member = Member::query()->find($assertion['member_id']);
         if ($member === null) {
             throw new MemberIdentityException('Identity verification view is unavailable.');
+        }
+
+        if ($this->members->isExactNonclinicalValidationIdentity($member)) {
+            return ['evidence_status' => 'nonclinical_validation', 'view' => [
+                'booking_id' => $booking->booking_id, 'schedule_id' => $booking->schedule_id,
+                'member_id' => (string) $member->id, 'member_name' => (string) $member->name,
+                'medical_record_number' => (string) $member->medical_record_number,
+                'nik' => null, 'masked_nik' => null, 'booking_status' => (string) $booking->booking_status,
+                'site' => (string) $booking->site_name, 'service_code' => (string) $booking->service_code,
+                'service_name' => (string) $booking->service_name,
+                'identity_document' => null, 'latest_profile_photo' => null,
+            ]];
         }
 
         $expected = $this->expectedDocument((string) $member->birth_date);

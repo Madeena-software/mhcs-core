@@ -346,10 +346,16 @@ final readonly class OperatorCheckInTicketService
             ->where('operator_site_id', $site->getKey())
             ->where('operator_profile_id', $identity['profile']->getKey())
             ->whereNull('active_claim_operator_profile_id')
-            ->where('state', 'matched')
+            ->whereIn('state', ['matched', 'nonclinical_validation'])
             ->first();
         if ($case === null) {
-            throw new OperatorException('ticket_unavailable', 'Only a matched identity case can issue a paper ticket.');
+            throw new OperatorException('ticket_unavailable', 'Only an eligible identity case can issue a paper ticket.');
+        }
+        if ($case->state === 'nonclinical_validation') {
+            $memberId = DB::table('bookings')->where('id', $case->booking_id)->value('member_id');
+            if (! is_string($memberId) || ! $this->memberAttendance->isExactNonclinicalValidationMember($memberId)) {
+                throw new OperatorException('ticket_unavailable', 'Only the canonical validation Member can issue a paper ticket.');
+            }
         }
 
         return [$identity, $site, $case];

@@ -11,6 +11,8 @@ interface OperatorAttendanceContract
     /** @return list<string> */
     public function participatingBookingStatuses(): array;
 
+    public function isExactNonclinicalValidationMember(string $memberId): bool;
+
     /** @return list<array<string, mixed>> */
     public function query(AuthenticatedContext $context, string $operatorSiteId, string $scheduleId, string $at): array;
 

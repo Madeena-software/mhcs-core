@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Modules\Member;
 
+use App\Modules\Member\Application\Contracts\NonclinicalValidationIdentityContract;
 use App\Modules\Member\Application\Contracts\OperatorAttendanceContract;
 use App\Modules\Member\Application\Contracts\OperatorIdentityVerificationContract;
 use App\Modules\Member\Application\Contracts\OperatorPaperConsentContract;
@@ -11,6 +12,7 @@ use App\Modules\Member\Application\Contracts\OperatorPaperQuestionnaireContract;
 use App\Modules\Member\Application\Contracts\OperatorServiceOfferingQuery;
 use App\Modules\Member\Application\Contracts\OperatorSiteReferenceSynchronizer;
 use App\Modules\Member\Application\Contracts\OperatorVitalSignsContract;
+use App\Modules\Member\Application\Services\MemberContextResolver;
 use App\Modules\Member\Application\Services\MemberCredentialIdentifierResolver;
 use App\Modules\Member\Application\Services\Mvp04AttendanceService;
 use App\Modules\Member\Application\Services\Mvp04OperatorIdentityVerificationService;
@@ -34,6 +36,7 @@ final class MemberServiceProvider extends ServiceProvider
     {
         $this->app->make(ModuleRegistry::class)->register('Member');
         $this->app->scoped(OperatorAttendanceContract::class, Mvp04AttendanceService::class);
+        $this->app->scoped(NonclinicalValidationIdentityContract::class, MemberContextResolver::class);
         $this->app->scoped(OperatorIdentityVerificationContract::class, Mvp04OperatorIdentityVerificationService::class);
         $this->app->scoped(OperatorPaperConsentContract::class, Mvp04PaperConsentService::class);
         $this->app->scoped(OperatorPaperQuestionnaireContract::class, Mvp04PaperQuestionnaireService::class);

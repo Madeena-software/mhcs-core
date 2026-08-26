@@ -503,6 +503,27 @@ final class PortalController extends Controller
         }
     }
 
+    public function completeNonclinicalValidationStage(Request $request, string $admission, OperatorWorklistService $worklist): RedirectResponse
+    {
+        $validator = Validator::make($request->all(), ['operation_id' => ['required', 'uuid']]);
+        if ($validator->fails()) {
+            return back()->withErrors($validator);
+        }
+
+        try {
+            $worklist->completeNonclinicalValidationStage($admission, (string) $validator->validated()['operation_id']);
+
+            return redirect()->route('operator.basic-examination-worklist')->with('status', __('Validation stage completed. X-ray is ready.'));
+        } catch (OperatorException $exception) {
+            if ($exception->category === 'queue_completion_conflict') {
+                abort(409);
+            }
+            abort(403);
+        } catch (Throwable) {
+            abort(403);
+        }
+    }
+
     public function startIdentityVerification(Request $request, OperatorIdentityVerificationService $identity): RedirectResponse
     {
         $validator = Validator::make($request->all(), [
@@ -597,7 +618,7 @@ final class PortalController extends Controller
     public function decideIdentity(Request $request, string $case, OperatorIdentityVerificationService $identity): RedirectResponse
     {
         $validator = Validator::make($request->all(), [
-            'state' => ['required', 'in:matched,mismatch_reported,insufficient_evidence'],
+            'state' => ['required', 'in:matched,nonclinical_validation,mismatch_reported,insufficient_evidence'],
             'reason' => ['nullable', 'string', 'max:500'],
             'operation_id' => ['required', 'uuid'],
         ]);

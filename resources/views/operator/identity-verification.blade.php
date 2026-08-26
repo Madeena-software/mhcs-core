@@ -14,7 +14,18 @@
         @if ($case['reason'])<p><strong>{{ __('Reason') }}:</strong> {{ $case['reason'] }}</p>@endif
     </section>
 
-    @if ($view)
+    @if ($evidenceStatus === 'nonclinical_validation')
+        <section class="card">
+            <h2>{{ __('Nonclinical validation') }}</h2>
+            <p class="muted">{{ __('No patient identity evidence or clinical consent is applicable to this validation context.') }}</p>
+            <form method="POST" action="{{ route('operator.identity-verification.decision', $case['case_id']) }}">
+                @csrf
+                <input type="hidden" name="state" value="nonclinical_validation">
+                <input type="hidden" name="operation_id" value="{{ Illuminate\Support\Str::uuid() }}">
+                <button type="submit">{{ __('Confirm nonclinical validation') }}</button>
+            </form>
+        </section>
+    @elseif ($view)
         <section class="card">
             <h2>{{ __('Member summary') }}</h2>
             <p><strong>{{ __('Name') }}:</strong> {{ $view['member_name'] }}</p>

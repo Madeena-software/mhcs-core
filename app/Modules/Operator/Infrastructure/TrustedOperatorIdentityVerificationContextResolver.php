@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Modules\Operator\Infrastructure;
 
+use App\Modules\Member\Application\Contracts\NonclinicalValidationIdentityContract;
 use App\Modules\Member\Application\Contracts\TrustedOperatorIdentityVerificationContextResolver as Contract;
 use App\Shared\Context\AuthenticatedContext;
 use Illuminate\Support\Facades\DB;
@@ -11,6 +12,8 @@ use Illuminate\Support\Str;
 
 final class TrustedOperatorIdentityVerificationContextResolver implements Contract
 {
+    public function __construct(private NonclinicalValidationIdentityContract $members) {}
+
     public function resolve(
         AuthenticatedContext $context,
         string $operatorSiteId,
@@ -215,7 +218,7 @@ final class TrustedOperatorIdentityVerificationContextResolver implements Contra
             ->where('operator_profile_id', $profileId)
             ->where('operator_site_id', $site->id)
             ->whereNull('active_claim_operator_profile_id')
-            ->where('state', 'matched')
+            ->whereIn('state', ['matched', 'nonclinical_validation'])
             ->first();
         if ($case === null || (string) $case->member_schedule_id !== trim($scheduleId) || (string) $case->booking_id !== trim($bookingId)) {
             return null;
@@ -232,6 +235,10 @@ final class TrustedOperatorIdentityVerificationContextResolver implements Contra
             ->select(['bookings.id as booking_id', 'bookings.member_id', 'shift_schedules.id as schedule_id'])
             ->first();
         if ($booking === null || (string) $booking->booking_id !== (string) $case->booking_id) {
+            return null;
+        }
+
+        if ($case->state === 'nonclinical_validation' && ! $this->members->isExactNonclinicalValidationMember((string) $booking->member_id)) {
             return null;
         }
 

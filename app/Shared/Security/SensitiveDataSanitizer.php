@@ -79,7 +79,7 @@ final class SensitiveDataSanitizer
 
     public static function isSensitiveKey(string $key): bool
     {
-        if (in_array($key, ['validation_context', 'nonclinical'], true)) {
+        if (in_array($key, ['validation_context', 'nonclinical', 'clinical_basic_examination_performed', 'vital_signs_recorded', 'questionnaire_recorded'], true)) {
             return false;
         }
 

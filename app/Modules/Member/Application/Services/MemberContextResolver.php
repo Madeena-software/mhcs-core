@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Modules\Member\Application\Services;
 
+use App\Modules\Member\Application\Contracts\NonclinicalValidationIdentityContract;
 use App\Modules\Member\Domain\Enums\IdentityStatus;
 use App\Modules\Member\Domain\Enums\RegistrationSource;
 use App\Modules\Member\Domain\MemberIdentityException;
@@ -12,7 +13,7 @@ use App\Shared\Validation\NonclinicalValidationContext;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 
-final class MemberContextResolver
+final class MemberContextResolver implements NonclinicalValidationIdentityContract
 {
     public function resolveForUserId(string $userId): ?Member
     {
@@ -85,6 +86,13 @@ final class MemberContextResolver
             ->where('value', NonclinicalValidationContext::KEY)
             ->count() === 1
             && ! DB::table('member_verification_assets')->where('member_id', $member->id)->exists();
+    }
+
+    public function isExactNonclinicalValidationMember(string $memberId): bool
+    {
+        $member = Member::query()->find($memberId);
+
+        return $member !== null && $this->isExactNonclinicalValidationIdentity($member);
     }
 
     public function assertNonclinicalValidationConsistency(string $memberId): void

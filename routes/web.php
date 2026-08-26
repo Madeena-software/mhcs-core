@@ -78,6 +78,7 @@ Route::middleware(['auth', EnsureOperatorPortalAccess::class])->group(function (
     Route::get('/operator/basic-examination-worklist/{admission}/questionnaire', [OperatorPortalController::class, 'basicExaminationQuestionnaire'])->name('operator.basic-examination-worklist.questionnaire');
     Route::post('/operator/basic-examination-worklist/{admission}/questionnaire', [OperatorPortalController::class, 'recordBasicExaminationQuestionnaire'])->name('operator.basic-examination-worklist.questionnaire.store');
     Route::post('/operator/basic-examination-worklist/{admission}/complete', [OperatorPortalController::class, 'completeBasicExamination'])->name('operator.basic-examination-worklist.complete');
+    Route::post('/operator/basic-examination-worklist/{admission}/complete-nonclinical', [OperatorPortalController::class, 'completeNonclinicalValidationStage'])->name('operator.basic-examination-worklist.complete-nonclinical');
     Route::post('/operator/identity-verification/start', [OperatorPortalController::class, 'startIdentityVerification'])->name('operator.identity-verification.start');
     Route::get('/operator/identity-verification/{case}', [OperatorPortalController::class, 'identityVerification'])->name('operator.identity-verification.show');
     Route::post('/operator/identity-verification/{case}/lookup', [OperatorPortalController::class, 'lookupIdentity'])->name('operator.identity-verification.lookup');

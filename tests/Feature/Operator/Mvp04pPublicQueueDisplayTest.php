@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Operator;
 
+use App\Shared\Time\Clock;
+use App\Shared\Time\FrozenClock;
+use DateTimeImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -14,6 +17,12 @@ final class Mvp04pPublicQueueDisplayTest extends TestCase
 {
     use Mvp04Fixtures;
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->app->instance(Clock::class, new FrozenClock(new DateTimeImmutable('2040-01-10T03:30:00+00:00')));
+    }
 
     public function test_public_lcd_page_uses_indonesian_labels(): void
     {
