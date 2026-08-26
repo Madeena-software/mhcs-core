@@ -39,20 +39,49 @@ final class NonclinicalValidationContextProvider implements AuthenticatedContext
         );
     }
 
-    public function useSystem(string $purpose): void
+    public function accountProvisioning(): void
     {
         $this->mode = 'system';
-        $this->memberId = null;
-        $this->purpose = $purpose;
+        $this->purpose = 'production.validation-context.account-provision';
     }
 
-    public function useMember(string $memberId): void
+    public function memberRegistration(): void
+    {
+        $this->mode = 'system';
+        $this->purpose = 'member.nonclinical-validation';
+    }
+
+    public function pointFunding(): void
+    {
+        $this->mode = 'system';
+        $this->purpose = 'member.nonclinical-validation.point-funding';
+    }
+
+    public function operatorProvisioning(): void
+    {
+        $this->mode = 'system';
+        $this->purpose = 'production.validation-context.operator-context-provision';
+    }
+
+    public function bindValidationMember(string $memberId): void
     {
         if (! preg_match('/\A[0-9a-f-]{36}\z/i', $memberId)) {
             throw new LogicException('The fixed validation Member identity is invalid.');
         }
+        if ($this->memberId !== null && $this->memberId !== $memberId) {
+            throw new LogicException('The validation Member identity cannot be rebound.');
+        }
+
+        $this->memberId ??= $memberId;
+        $this->mode = 'member';
+    }
+
+    public function memberBooking(): void
+    {
+        if ($this->memberId === null) {
+            throw new LogicException('The validation Member identity must be bound before booking.');
+        }
 
         $this->mode = 'member';
-        $this->memberId = $memberId;
     }
 }

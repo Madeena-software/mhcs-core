@@ -4,17 +4,78 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Validation;
 
+use App\Models\User;
+use App\Modules\Operator\Application\Services\NonclinicalValidationOperatorContextProvisioningService;
+use App\Shared\Context\AuthenticatedContextProvider;
 use App\Shared\Validation\NonclinicalValidationAccountProvisioningService;
 use App\Shared\Validation\NonclinicalValidationContext;
+use App\Shared\Validation\NonclinicalValidationContextProvider;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
+use LogicException;
 use Tests\TestCase;
 
 final class NonclinicalValidationContextProvisioningTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_context_provider_is_closed_and_binds_one_validation_member(): void
+    {
+        $provider = new NonclinicalValidationContextProvider;
+        $this->expectException(LogicException::class);
+        $provider->memberBooking();
+    }
+
+    public function test_context_provider_rejects_rebinding_and_exposes_only_fixed_system_phases(): void
+    {
+        $provider = new NonclinicalValidationContextProvider;
+        $provider->bindValidationMember('11111111-1111-4111-8111-111111111111');
+        $provider->memberBooking();
+        $this->assertSame('11111111-1111-4111-8111-111111111111', (string) $provider->current()->actorId);
+
+        try {
+            $provider->bindValidationMember('22222222-2222-4222-8222-222222222222');
+            $this->fail('The validation Member context was rebound.');
+        } catch (LogicException) {
+            $this->addToAssertionCount(1);
+        }
+
+        $provider->accountProvisioning();
+        $this->assertSame('production.validation-context.account-provision', $provider->current()->purpose);
+        $provider->operatorProvisioning();
+        $this->assertSame('production.validation-context.operator-context-provision', $provider->current()->purpose);
+        $this->assertSame(['system'], $provider->current()->roles);
+    }
+
+    public function test_lookalike_operator_without_phase_c_ownership_is_rejected(): void
+    {
+        $fixture = $this->fixture();
+        $user = User::factory()->create(['email' => 'lookalike@example.test', 'password' => Hash::make('lookalike-secret')]);
+        $now = now();
+        DB::table('authorization_role_assignments')->insert(['id' => (string) Str::uuid(), 'user_id' => $user->id, 'role' => 'operator', 'assigned_by_user_id' => null, 'active' => true, 'created_at' => $now, 'updated_at' => $now]);
+        foreach (['operator.portal.access', 'operator.attendance.read', 'operator.arrival.record', 'operator.identity.verify'] as $permission) {
+            DB::table('authorization_permission_assignments')->insert(['id' => (string) Str::uuid(), 'user_id' => $user->id, 'permission' => $permission, 'assigned_by_user_id' => null, 'active' => true, 'created_at' => $now, 'updated_at' => $now]);
+        }
+        $provider = new NonclinicalValidationContextProvider;
+        $provider->operatorProvisioning();
+        $this->app->instance(AuthenticatedContextProvider::class, $provider);
+
+        $this->expectException(\RuntimeException::class);
+        app(NonclinicalValidationOperatorContextProvisioningService::class)->provision($user->id, $fixture['schedule_id'], 'site-validation', $fixture['eligible_id']);
+    }
+
+    public function test_missing_legitimate_eligible_shift_fails_without_creating_context(): void
+    {
+        $this->fixture(false);
+        putenv(NonclinicalValidationAccountProvisioningService::OPERATOR_SECRET_NAME.'=test-secret-'.Str::random(32));
+        $this->artisan('mhcs:provision-nonclinical-validation-context')->assertExitCode(1);
+        $this->assertSame(0, DB::table('users')->count());
+        $this->assertSame(0, DB::table('members')->count());
+        $this->assertSame(0, DB::table('operator_eligible_shifts')->count());
+    }
 
     public function test_command_boundary_and_missing_secret_are_fail_closed(): void
     {
@@ -106,7 +167,7 @@ final class NonclinicalValidationContextProvisioningTest extends TestCase
     }
 
     /** @return array{schedule_id: string, eligible_id: string} */
-    private function fixture(): array
+    private function fixture(bool $withEligible = true): array
     {
         $now = now()->utc();
         $ids = array_map(fn (): string => (string) Str::uuid(), range(1, 8));
@@ -117,7 +178,9 @@ final class NonclinicalValidationContextProvisioningTest extends TestCase
         DB::table('service_offerings')->insert(['id' => $service, 'code' => 'VAL-CHEST', 'name' => 'Validation service', 'point_price' => '12.5000', 'active' => true, 'created_at' => $now, 'updated_at' => $now]);
         DB::table('point_exchange_rates')->insert(['id' => $rate, 'rupiah_per_point' => 10000, 'status' => 'active', 'effective_at' => $now, 'created_at' => $now, 'updated_at' => $now]);
         DB::table('shift_schedules')->insert(['id' => $schedule, 'examination_site_id' => $siteRef, 'service_offering_id' => $service, 'display_reference' => 'VAL-2026-01', 'starts_at' => $now->copy()->addDays(2), 'ends_at' => $now->copy()->addDays(2)->addHours(4), 'quota' => 10, 'status' => 'open', 'eligible_at' => $now, 'created_at' => $now, 'updated_at' => $now]);
-        DB::table('operator_eligible_shifts')->insert(['id' => $eligible, 'member_schedule_id' => $schedule, 'operator_site_id' => 'site-validation', 'schedule_starts_at' => $now->copy()->addDays(2), 'schedule_ends_at' => $now->copy()->addDays(2)->addHours(4), 'confirmed_count_at_eligibility' => 5, 'quota' => 10, 'event_version' => 1, 'source_event_id' => 'fixture:'.$schedule, 'eligible_at' => $now, 'sync_status' => 'eligible', 'created_at' => $now, 'updated_at' => $now]);
+        if ($withEligible) {
+            DB::table('operator_eligible_shifts')->insert(['id' => $eligible, 'member_schedule_id' => $schedule, 'operator_site_id' => 'site-validation', 'schedule_starts_at' => $now->copy()->addDays(2), 'schedule_ends_at' => $now->copy()->addDays(2)->addHours(4), 'confirmed_count_at_eligibility' => 5, 'quota' => 10, 'event_version' => 1, 'source_event_id' => 'fixture:'.$schedule, 'eligible_at' => $now, 'sync_status' => 'eligible', 'created_at' => $now, 'updated_at' => $now]);
+        }
 
         return ['schedule_id' => $schedule, 'eligible_id' => $eligible];
     }

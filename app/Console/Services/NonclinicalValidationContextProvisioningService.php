@@ -38,9 +38,9 @@ final readonly class NonclinicalValidationContextProvisioningService
         $original = Auth::user();
         try {
             return DB::transaction(function () use ($provider, $secret): array {
-                $provider->useSystem('production.validation-context.account-provision');
+                $provider->accountProvisioning();
                 $accounts = $this->app->make(NonclinicalValidationAccountProvisioningService::class)->provision($secret);
-                $provider->useSystem('member.nonclinical-validation');
+                $provider->memberRegistration();
                 $member = $this->app->make(MemberRegistrationService::class)->registerNonclinicalValidation(new NonclinicalValidationMemberRegistrationData(self::OPERATION, $accounts['member_user_id']));
 
                 $existingBookings = DB::table('bookings')->where('member_id', $member->memberId)->lockForUpdate()->get();
@@ -50,16 +50,18 @@ final readonly class NonclinicalValidationContextProvisioningService
                 $replayedBooking = $existingBookings->isNotEmpty();
                 $candidate = $this->candidate($replayedBooking ? (string) $existingBookings->first()->shift_schedule_id : null);
 
-                $provider->useSystem('member.nonclinical-validation.point-funding');
+                $provider->pointFunding();
                 $funding = $this->app->make(Mvp03PointService::class)->ensureNonclinicalValidationBookingFunding($candidate->id);
 
                 Auth::guard('web')->setUser(User::query()->findOrFail($member->userId));
-                $provider->useMember($member->userId);
+                $provider->bindValidationMember($member->userId);
+                $provider->memberBooking();
                 $booking = $this->app->make(Mvp03BookingService::class)->createForCurrentMember($candidate->id, self::OPERATION.':booking-v1', $funding['point_cost']);
                 Auth::guard('web')->logout();
 
-                $provider->useSystem('production.validation-context.operator-context-provision');
+                $provider->operatorProvisioning();
                 $operator = $this->app->make(NonclinicalValidationOperatorContextProvisioningService::class)->provision($accounts['operator_user_id'], $candidate->id, $candidate->operator_site_id, $candidate->eligible_id);
+                $this->assertFinalState($member->userId, $accounts['operator_user_id'], $candidate, $booking['booking_id']);
 
                 return [
                     'validation_context_key' => NonclinicalValidationContext::KEY,
@@ -110,5 +112,35 @@ final readonly class NonclinicalValidationContextProvisioningService
         }
 
         return $rows;
+    }
+
+    private function assertFinalState(string $memberUserId, string $operatorUserId, object $candidate, string $bookingId): void
+    {
+        $member = DB::table('members')->where('user_id', $memberUserId)->get();
+        $marker = DB::table('member_external_identifiers')->where('namespace', NonclinicalValidationContext::MARKER_NAMESPACE)->where('value', NonclinicalValidationContext::KEY)->get();
+        $booking = DB::table('bookings')->where('id', $bookingId)->where('member_id', $member->first()?->id)->where('shift_schedule_id', $candidate->id)->where('status', 'confirmed')->where('booking_type', 'b2c')->where('funding_source', 'personal')->get();
+        $profile = DB::table('operator_profiles')->where('user_id', $operatorUserId)->where('active', true)->get();
+        $site = DB::table('operator_sites')->where('operator_site_id', $candidate->operator_site_id)->where('active', true)->first();
+
+        if ($member->count() !== 1 || $marker->count() !== 1 || $member->first()->id !== $marker->first()->member_id || $booking->count() !== 1 || $profile->count() !== 1 || $site === null) {
+            throw new RuntimeException('The validation context terminal state is inconsistent.');
+        }
+        if ($member->first()->identity_status !== 'nonclinical_validation' || $member->first()->registration_source !== 'nonclinical_validation' || $member->first()->identity_document_type !== null || $member->first()->encrypted_nik !== null || $member->first()->nik_lookup_digest !== null || DB::table('member_verification_assets')->where('member_id', $member->first()->id)->exists()) {
+            throw new RuntimeException('The validation Member terminal state is inconsistent.');
+        }
+        if (DB::table('point_ledger_entries')->where('member_id', $member->first()->id)->where('entry_type', 'credit')->where('booking_id', null)->count() !== 1 || DB::table('point_ledger_entries')->where('booking_id', $bookingId)->where('entry_type', 'charge')->count() !== 1 || DB::table('local_imaging_orders')->where('booking_id', $bookingId)->count() !== 1) {
+            throw new RuntimeException('The validation booking terminal state is inconsistent.');
+        }
+        if (DB::table('operator_site_assignments')->where('operator_profile_id', $profile->first()->id)->where('operator_site_id', $site->id)->where('active', true)->count() !== 1 || DB::table('operator_shift_assignments')->where('operator_profile_id', $profile->first()->id)->where('operator_eligible_shift_id', $candidate->eligible_id)->where('status', 'active')->whereNull('assigned_by_user_id')->count() !== 1) {
+            throw new RuntimeException('The validation Operator terminal state is inconsistent.');
+        }
+        foreach (['operator_arrivals', 'operator_identity_verifications', 'examination_consents', 'operator_paper_tickets', 'member_vital_signs_assessments', 'member_paper_questionnaires'] as $table) {
+            if (DB::table($table)->where('booking_id', $bookingId)->exists()) {
+                throw new RuntimeException('The validation context progressed beyond provisioning.');
+            }
+        }
+        if (DB::table('operator_queue_admissions')->exists() || DB::table('operator_vital_signs_executions')->exists()) {
+            throw new RuntimeException('The validation context progressed beyond provisioning.');
+        }
     }
 }

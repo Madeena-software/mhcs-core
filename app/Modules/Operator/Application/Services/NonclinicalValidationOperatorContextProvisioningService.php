@@ -67,6 +67,19 @@ final readonly class NonclinicalValidationOperatorContextProvisioningService
         if ($user === null || ! $user->canAuthenticate()) {
             throw new RuntimeException('The validation Operator account is inconsistent.');
         }
+        $ownership = DB::table('audit_events')
+            ->where('action', 'production.validation-context.operator-account.provisioned')
+            ->where('target_type', User::class)
+            ->where('target_id', $userId)
+            ->where('outcome', 'success')
+            ->get();
+        if ($ownership->count() !== 1 || json_decode((string) $ownership->first()->metadata, true) !== [
+            'validation_context' => NonclinicalValidationContext::KEY,
+            'nonclinical' => true,
+            'principal_type' => 'operator',
+        ]) {
+            throw new RuntimeException('The validation Operator ownership is unproven.');
+        }
         $roles = DB::table('authorization_role_assignments')->where('user_id', $userId)->where('active', true)->orderBy('role')->pluck('role')->all();
         $permissions = DB::table('authorization_permission_assignments')->where('user_id', $userId)->where('active', true)->orderBy('permission')->pluck('permission')->all();
         $expected = self::PERMISSIONS;
