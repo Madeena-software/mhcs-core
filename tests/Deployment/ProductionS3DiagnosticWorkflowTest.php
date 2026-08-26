@@ -80,6 +80,8 @@ final class ProductionS3DiagnosticWorkflowTest extends TestCase
             'host_synack_observed=',
             'host_rst_observed=',
             'container_ack_after_synack_observed=',
+            'packet_classifier_completed=',
+            'packet_classification_valid=',
             'host_tcp9000_drop_reject_candidate=',
             'host_tcp9000_accept_candidate=',
             'host_firewall_inspection=',
@@ -363,6 +365,14 @@ final class ProductionS3DiagnosticWorkflowTest extends TestCase
         $this->assertStringContainsString("grep -Fq 'listening on' \"\$packet_status_file\"", $workflow);
         $this->assertStringContainsString('readiness_attempt" -lt 25', $workflow);
         $this->assertStringContainsString('packet_observation_completed=true', $workflow);
+        $this->assertStringContainsString('packet_classifier_completed=false', $workflow);
+        $this->assertStringContainsString('packet_classification_valid=false', $workflow);
+        $this->assertStringContainsString('if wait "$packet_classifier_pid" 2>/dev/null; then', $workflow);
+        $this->assertStringContainsString('line_count != 4', $workflow);
+        foreach (['syn', 'synack', 'rst', 'ack'] as $field) {
+            $this->assertStringContainsString("seen[\"$field\"] != 1", $workflow);
+        }
+        $this->assertStringContainsString('$2 !~ /^[01]$/', $workflow);
         $this->assertStringContainsString('fsockopen("host.docker.internal",9000', $workflow);
         $this->assertStringContainsString('3);', $workflow);
         $this->assertStringContainsString('packet_path_container_tcp_probe_triggered=true', $workflow);
@@ -386,7 +396,7 @@ final class ProductionS3DiagnosticWorkflowTest extends TestCase
         $caseA = strpos($workflow, 'container_syn_not_observed_on_host');
         $this->assertNotFalse($caseA);
         $caseABlock = substr($workflow, $caseA - 900, 1100);
-        foreach (['host_gateway_minio_health" = PASS', 'packet_path_observation_available" = true', 'packet_path_observation_started_before_probe" = true', 'packet_observation_completed" = true', 'packet_path_container_tcp_probe_triggered" = true', 'packet_path_container_tcp_probe_result" = FAIL', 'container_syn_reaches_host" = false', 'host_gateway_connectivity_root_confirmed=true'] as $condition) {
+        foreach (['host_gateway_minio_health" = PASS', 'packet_path_observation_available" = true', 'packet_path_observation_started_before_probe" = true', 'packet_observation_completed" = true', 'packet_classifier_completed" = true', 'packet_classification_valid" = true', 'packet_path_container_tcp_probe_triggered" = true', 'packet_path_container_tcp_probe_result" = FAIL', 'container_syn_reaches_host" = false', 'host_gateway_connectivity_root_confirmed=true'] as $condition) {
             $this->assertStringContainsString($condition, $caseABlock);
         }
 

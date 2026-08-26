@@ -85,6 +85,8 @@ jobs:
           host_rst_observed=unknown
           container_ack_after_synack_observed=unknown
           packet_observation_completed=false
+          packet_classifier_completed=false
+          packet_classification_valid=false
           host_tcp9000_drop_reject_candidate=unknown
           host_tcp9000_accept_candidate=unknown
           host_firewall_inspection=SKIPPED
@@ -301,9 +303,27 @@ jobs:
             packet_observation_completed=true
           fi
           if [ -n "$packet_classifier_pid" ]; then
-            wait "$packet_classifier_pid" 2>/dev/null || true
+            if wait "$packet_classifier_pid" 2>/dev/null; then
+              packet_classifier_completed=true
+            fi
           fi
-          if [ "$packet_path_observation_available" = true ] && [ "$packet_observation_completed" = true ] && [ "$packet_path_container_tcp_probe_triggered" = true ]; then
+          if [ "$packet_classifier_completed" = true ] && [ -r "$packet_classification_file" ]; then
+            classification_validity="$(awk -F= '
+              BEGIN { valid=1; line_count=0 }
+              {
+                line_count++
+                if (NF != 2 || $1 !~ /^(syn|synack|rst|ack)$/ || $2 !~ /^[01]$/) valid=0
+                else if (++seen[$1] > 1) valid=0
+              }
+              END {
+                if (line_count != 4) valid=0
+                if (seen["syn"] != 1 || seen["synack"] != 1 || seen["rst"] != 1 || seen["ack"] != 1) valid=0
+                print valid
+              }
+            ' "$packet_classification_file" 2>/dev/null || true)"
+            if [ "$classification_validity" = 1 ]; then packet_classification_valid=true; fi
+          fi
+          if [ "$packet_path_observation_available" = true ] && [ "$packet_observation_completed" = true ] && [ "$packet_classifier_completed" = true ] && [ "$packet_classification_valid" = true ] && [ "$packet_path_container_tcp_probe_triggered" = true ]; then
             packet_syn="$(awk -F= '$1 == "syn" {print $2; exit}' "$packet_classification_file" 2>/dev/null || true)"
             packet_synack="$(awk -F= '$1 == "synack" {print $2; exit}' "$packet_classification_file" 2>/dev/null || true)"
             packet_rst="$(awk -F= '$1 == "rst" {print $2; exit}' "$packet_classification_file" 2>/dev/null || true)"
@@ -316,7 +336,7 @@ jobs:
               [ "$packet_synack" = 1 ] && host_synack_observed=true
               [ "$packet_rst" = 1 ] && host_rst_observed=true
               [ "$packet_ack" = 1 ] && container_ack_after_synack_observed=true
-            else
+            elif [ "$packet_syn" = 0 ]; then
               container_syn_reaches_host=false
             fi
           fi
@@ -512,7 +532,7 @@ jobs:
             host_gateway_connectivity_root_class=host_reachable_but_container_tcp_failed
           fi
 
-          if [ "$host_gateway_minio_health" = PASS ] && [ "$packet_path_observation_available" = true ] && [ "$packet_path_observation_started_before_probe" = true ] && [ "$packet_observation_completed" = true ] && [ "$packet_path_container_tcp_probe_triggered" = true ] && [ "$packet_path_container_tcp_probe_result" = FAIL ] && [ "$container_syn_reaches_host" = false ]; then
+          if [ "$host_gateway_minio_health" = PASS ] && [ "$packet_path_observation_available" = true ] && [ "$packet_path_observation_started_before_probe" = true ] && [ "$packet_observation_completed" = true ] && [ "$packet_classifier_completed" = true ] && [ "$packet_classification_valid" = true ] && [ "$packet_path_container_tcp_probe_triggered" = true ] && [ "$packet_path_container_tcp_probe_result" = FAIL ] && [ "$container_syn_reaches_host" = false ]; then
             host_gateway_connectivity_root_boundary=container_egress_to_host
             host_gateway_connectivity_root_class=container_syn_not_observed_on_host
             host_gateway_connectivity_root_confirmed=true
@@ -570,6 +590,8 @@ jobs:
           echo "host_synack_observed=$host_synack_observed"
           echo "host_rst_observed=$host_rst_observed"
           echo "container_ack_after_synack_observed=$container_ack_after_synack_observed"
+          echo "packet_classifier_completed=$packet_classifier_completed"
+          echo "packet_classification_valid=$packet_classification_valid"
           echo "host_tcp9000_drop_reject_candidate=$host_tcp9000_drop_reject_candidate"
           echo "host_tcp9000_accept_candidate=$host_tcp9000_accept_candidate"
           echo "host_firewall_inspection=$host_firewall_inspection"
