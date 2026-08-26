@@ -1,7 +1,7 @@
 ---
 title: Production Private Document Storage Verification
 document_id: MHCS-TASK-PRODUCTION-PRIVATE-DOCUMENT-VERIFICATION-001
-version: 1.0
+version: 1.1
 status: validated-published
 language: en-US
 last_updated: 2026-08-26
@@ -59,6 +59,14 @@ baseline and the future diagnostic must require the running revision exactly.
 The task commit is published alone. The Executor must not begin workflow or
 test implementation until the task commit has been pushed and verified as
 `origin/main`, with its full immutable SHA recorded in the handoff.
+
+## Diagnostic execution invariant
+
+Diagnostic infrastructure, Laravel bootstrap, or required database-query
+failure MUST NOT be classified as a member, booking, schedule, linkage, or
+storage defect. The diagnostic MUST fail closed when it cannot obtain valid
+read-only evidence; `db_linkage_incomplete` is reserved for linkage queries
+that successfully prove a required relationship false.
 
 ## Objective
 
@@ -182,6 +190,8 @@ existing informed-consent and paper-questionnaire persistence chains.
   untouched.
 - The diagnostic is fail-closed at the exact revision boundary and remains
   strictly read-only.
+- Laravel bootstrap and required database-read failures are explicit
+  diagnostic execution failures and never production-data findings.
 - Opaque private keys and companion `.meta.json` objects remain private; this
   diagnostic checks existence only.
 - A missing latest DB object key is reported as incomplete metadata rather than
@@ -246,6 +256,7 @@ existing informed-consent and paper-questionnaire persistence chains.
 - [ ] The separate workflow is manual-only, self-hosted, read-only, uses strict shell settings, and contains no automatic trigger or xtrace.
 - [ ] The exact four-part production revision proof occurs before any DB/S3 work; mismatch emits only `revision_match=false` and stops.
 - [ ] Laravel bootstrap order is Composer autoload, `bootstrap/app.php`, then Console Kernel bootstrap.
+- [ ] Bootstrap and required database-read failures emit explicit diagnostic execution failure status, stop before later checks, and never emit `db_linkage_incomplete` as an observed data finding.
 - [ ] At most one latest row per document type is selected with `created_at DESC, id DESC`, without a non-null-key filter.
 - [ ] Consent and questionnaire DB linkage, key-shape, checksum-shape, bytes, and format checks are present with sanitized outputs only.
 - [ ] Only the five expected DB tables are queried, with no DB write operation.
