@@ -180,4 +180,26 @@ final class ProductionS3WritePathDiagnosticWorkflowTest extends TestCase
         $this->assertStringContainsString('realistic_local_temp_cleanup=', $workflow);
         $this->assertStringContainsString("\$probe7Started ? 'realistic_size_stream' : 'unknown'", $workflow);
     }
+
+    public function test_fifth_remediation_separates_cleanup_and_execution_failures(): void
+    {
+        $workflow = $this->workflow();
+        $p6CleanupFailure = strpos($workflow, 'if (! $pairClean)');
+        $p7Block = strpos($workflow, "\$limit = config('mhcs.upload.max_file_bytes')");
+
+        $this->assertNotFalse($p6CleanupFailure);
+        $this->assertNotFalse($p7Block);
+        $this->assertLessThan($p7Block, $p6CleanupFailure);
+        $this->assertStringContainsString("if (! \$pairClean) { if (! \$pairOk) { \$diagnosticBoundary = 'concurrent_async_pair'", $workflow);
+        $this->assertStringContainsString("if (! \$pairClean) { if (! \$pairOk) { \$diagnosticBoundary = 'concurrent_async_pair'; \$diagnosticFailed = true; } \$emitFinalReport(); exit(1); }", $workflow);
+        $this->assertStringContainsString("if (! \$pairOk) { \$diagnosticBoundary = 'concurrent_async_pair'", $workflow);
+        $this->assertStringContainsString("if (! \$pairOk) { \$diagnosticBoundary = \$probe7Started ? 'realistic_size_stream' : 'unknown'; \$diagnosticFailed = true; }", $workflow);
+        $this->assertStringContainsString("if (! \$localCleanup) { \$executionFailed = true; if (! \$diagnosticFailed) \$diagnosticBoundary = 'unknown'; }", $workflow);
+        $this->assertStringNotContainsString('if (! $pairOk || ! $clean || ! $localCleanup)', $workflow);
+        $this->assertStringContainsString('if ($probe7Started && ! $clean) $cleanupFailed = true', $workflow);
+        $this->assertStringContainsString("overall_cleanup=\".(\$cleanupFailed ? 'FAIL' : 'PASS')", $workflow);
+        $this->assertStringContainsString('if ($diagnosticFailed || $cleanupFailed || $executionFailed)', $workflow);
+        $this->assertStringContainsString("\$probe7Cleanup = ! \$probe7Started ? 'SKIPPED'", $workflow);
+        $this->assertStringContainsString('write_path_root_cause_confirmed=false', $workflow);
+    }
 }

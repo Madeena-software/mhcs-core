@@ -128,7 +128,7 @@ jobs:
           $probe1Cleanup = 'SKIPPED'; $probe2Cleanup = 'SKIPPED'; $probe3Cleanup = 'SKIPPED'; $probe4Cleanup = 'SKIPPED'; $probe5Cleanup = 'SKIPPED'; $probe6Cleanup = 'SKIPPED'; $probe7Cleanup = 'SKIPPED';
           // Failure boundaries: async_sdk, private_acl, real_npz_key_shape, concurrent_async_pair, realistic_size_stream. Limit skip: SKIPPED_CONFIG_LIMIT.
           // cleanup_known_keys_only=true; cleanup_on_failure_present=true; cleanup_verification_present=true.
-          $diagnosticBoundary = 'none_observed'; $diagnosticFailed = false; $cleanupFailed = false; $continueProbes = true; $finalized = false;
+          $diagnosticBoundary = 'none_observed'; $diagnosticFailed = false; $cleanupFailed = false; $executionFailed = false; $continueProbes = true; $finalized = false;
           $emitFinalReport = static function () use (&$finalized, &$probe1Cleanup, &$probe2Cleanup, &$probe3Cleanup, &$probe4Cleanup, &$probe5Cleanup, &$probe6Cleanup, &$probe7Cleanup, &$diagnosticBoundary, &$diagnosticFailed, &$cleanupFailed): void { if ($finalized) return; $finalized = true; echo 'probe_1_cleanup='.$probe1Cleanup."\nprobe_2_cleanup=".$probe2Cleanup."\nprobe_3_cleanup=".$probe3Cleanup."\nprobe_4_cleanup=".$probe4Cleanup."\nprobe_5_cleanup=".$probe5Cleanup."\nprobe_6_cleanup=".$probe6Cleanup."\nprobe_7_cleanup=".$probe7Cleanup."\noverall_cleanup=".($cleanupFailed ? 'FAIL' : 'PASS')."\nwrite_path_boundary=".$diagnosticBoundary."\nwrite_path_root_cause_confirmed=false\n"; };
           register_shutdown_function($emitFinalReport);
 
@@ -200,6 +200,7 @@ jobs:
           $rOk = $rState === 'fulfilled' && $rHead[0] && $rMeta[0] && $rSize === true; $gOk = $gState === 'fulfilled' && $gHead[0] && $gMeta[0] && $gSize === true;
           $pairOk = $rOk && $gOk && ! $pairUnexpected; $pairFamily = $rErrorFamily !== 'none' ? $rErrorFamily : $gErrorFamily; $pairStatus = $rErrorStatus !== 'none' ? $rErrorStatus : $gErrorStatus;
           result('async_private_store_pair_small', $pairOk); echo 'pair_small_radiograph='.($rOk ? 'PASS' : 'FAIL')."\npair_small_gain=".($gOk ? 'PASS' : 'FAIL')."\npair_small_radiograph_metadata=".($rMeta[0] ? 'PASS' : 'FAIL')."\npair_small_gain_metadata=".($gMeta[0] ? 'PASS' : 'FAIL')."\npair_small_radiograph_state=".$rState."\npair_small_gain_state=".$gState."\npair_small_radiograph_error_family=".$rErrorFamily."\npair_small_gain_error_family=".$gErrorFamily."\npair_small_radiograph_http_status=".$rErrorStatus."\npair_small_gain_http_status=".$gErrorStatus."\npair_small_error_family=".$pairFamily."\npair_small_http_status=".$pairStatus."\n";
+          if (! $pairClean) { if (! $pairOk) { $diagnosticBoundary = 'concurrent_async_pair'; $diagnosticFailed = true; } $emitFinalReport(); exit(1); }
           if (! $pairOk) { $diagnosticBoundary = 'concurrent_async_pair'; $diagnosticFailed = true; $emitFinalReport(); exit(1); }
 
           $limit = config('mhcs.upload.max_file_bytes'); $withinRadiograph = is_numeric($limit) ? 89660664 <= (int) $limit : null; $withinGain = is_numeric($limit) ? 17713052 <= (int) $limit : null; echo 'representative_radiograph_within_configured_limit='.($withinRadiograph === null ? 'unknown' : boolText($withinRadiograph))."\nrepresentative_gain_within_configured_limit=".($withinGain === null ? 'unknown' : boolText($withinGain))."\n";
@@ -254,7 +255,8 @@ jobs:
               $pairOk = $heads && ! $probe7Unexpected;
               result('async_private_store_pair_realistic', $pairOk);
               echo 'realistic_radiograph_result='.($rHead[0] && $rState === 'fulfilled' ? 'PASS' : 'FAIL')."\nrealistic_gain_result=".($gHead[0] && $gState === 'fulfilled' ? 'PASS' : 'FAIL')."\nrealistic_radiograph_metadata=".($rMeta[0] ? 'PASS' : 'FAIL')."\nrealistic_gain_metadata=".($gMeta[0] ? 'PASS' : 'FAIL')."\nrealistic_radiograph_size_match=".(isset($rSize) ? boolText($rSize) : 'unknown')."\nrealistic_gain_size_match=".(isset($gSize) ? boolText($gSize) : 'unknown')."\nrealistic_radiograph_error_family=".$rErrorFamily."\nrealistic_gain_error_family=".$gErrorFamily."\nrealistic_radiograph_http_status=".$rErrorStatus."\nrealistic_gain_http_status=".$gErrorStatus."\nrealistic_pair_error_family=".$pairFamily."\nrealistic_pair_http_status=".$pairStatus."\nrealistic_local_temp_cleanup=".($localCleanup ? 'PASS' : 'FAIL')."\n";
-              if (! $pairOk || ! $clean || ! $localCleanup) { $diagnosticBoundary = $probe7Started ? 'realistic_size_stream' : 'unknown'; $diagnosticFailed = true; }
+              if (! $pairOk) { $diagnosticBoundary = $probe7Started ? 'realistic_size_stream' : 'unknown'; $diagnosticFailed = true; }
+              if (! $localCleanup) { $executionFailed = true; if (! $diagnosticFailed) $diagnosticBoundary = 'unknown'; }
           }
-          $emitFinalReport(); if ($diagnosticFailed || $cleanupFailed) exit(1); exit(0);
+          $emitFinalReport(); if ($diagnosticFailed || $cleanupFailed || $executionFailed) exit(1); exit(0);
           PHP
