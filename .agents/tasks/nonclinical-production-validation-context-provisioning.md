@@ -37,7 +37,9 @@ The system must not call a direct S3, queue, or MPIPS shortcut and label it full
 
 ## Baseline and task revision
 
-**Current implementation baseline:** `4d6116cd7bfe20b912b59f6a9014a3ca45108118`
+**Current reviewed repository baseline:** `6b046ed73b7ab69f87064f5356479cb226f6e655`
+
+Historical accepted implementation/evidence revisions remain supporting references, including the Phase D child-specification revision `4d6116cd7bfe20b912b59f6a9014a3ca45108118`.
 
 **Accepted implementation prerequisites:** listed in Phase A–C below.
 
@@ -87,8 +89,17 @@ Historical task: `.agents/tasks/nonclinical-validation-account-provisioning.md`
 
 ## Phase D — Operational progression and LCD
 
-**Status:** SPEC_ACCEPTED_IMPLEMENTATION_PENDING
+**Status:** PASS
 **Authoritative child specification:** `.agents/tasks/nonclinical-validation-operational-progression-and-lcd-schedule-projection.md @ 4d6116cd7bfe20b912b59f6a9014a3ca45108118`
+
+Accepted implementation lineage:
+
+- Initial Phase D implementation: `2b9bdb33b53205afdc5463219895a249785801fd`
+- Functional remediation: `7615d56d3f2e779d94f93b28c444e51b25010db5`
+- Focused evidence: `9b2c3b99d6a4d7d43a2966e921b7d8cf70242303`
+- Final acceptance evidence and current reviewed repository baseline: `6b046ed73b7ab69f87064f5356479cb226f6e655`
+
+Phase D proves safe null-NIK attendance; explicit `nonclinical_validation` identity disposition; no fake identity evidence or consent; preserved normal matched-plus-consent behavior; canonical nonclinical check-in without consent; normal ticket/basic waiting admission; explicit nonclinical basic-stage completion; no vital-sign or questionnaire fabrication; X-ray waiting progression; active-schedule-set LCD filtering; future/ended schedule exclusion; overlapping active schedules; site isolation; `Clock`-based schedule transition; retained queue/history; and LCD privacy.
 
 The following semantics are part of this umbrella contract.
 
@@ -112,13 +123,15 @@ Current calls require the requested site, `admission.member_schedule_id` in the 
 
 ## Phase E — Local integrated operational acceptance
 
-**Status:** PENDING
+**Status:** PASS
 
-Add a deterministic local test using the exact validation Member proving booking/domain setup, arrival, nonclinical identity disposition, no fake consent, normal check-in ticket, basic-examination waiting, claim, call, start, explicit nonclinical completion, X-ray waiting, X-ray call, and LCD inclusion while the schedule is active. Advance `FrozenClock` past schedule end and prove LCD current/recent are empty while queue admissions and history remain. No NPZ is used in this phase.
+**Accepted evidence revision:** `6b046ed73b7ab69f87064f5356479cb226f6e655`
+
+The integrated local test proves canonical validation Member → normal arrival → actual identity case → explicit `nonclinical_validation` decision → zero `examination_consents` → normal check-in → `basic_examination` waiting → claim → call → start → explicit nonclinical completion → zero clinical evidence rows → X-ray waiting → X-ray claim → X-ray call → LCD visible while the schedule is active → LCD empty after schedule end → queue/history retained. No NPZ, ImageGateway, MPIPS, or production action was involved.
 
 ## Phase F — Full context provisioner
 
-**Status:** PENDING_AFTER_PHASE_D_E
+**Status:** READY_FOR_IMPLEMENTATION
 
 The original provisioning capability remains the console-only deterministic boundary:
 
@@ -164,13 +177,13 @@ Fail closed on mismatch. Logs use aliases `radiograph_fixture` and `gain_fixture
 | booking_points | PASS |
 | account_principals | PASS |
 | operational_progression_spec | PASS |
-| operational_progression_implementation | PENDING |
+| operational_progression_implementation | PASS |
 | lcd_schedule_projection_spec | PASS |
-| lcd_schedule_projection_implementation | PENDING |
-| local_operational_acceptance | PENDING |
+| lcd_schedule_projection_implementation | PASS |
+| local_operational_acceptance | PASS |
 | schedule_context_feasibility | CONDITIONAL |
 | operator_profile_site_shift_composition | PENDING |
-| full_context_provisioner | PENDING |
+| full_context_provisioner | READY_FOR_IMPLEMENTATION |
 | production_deployment | NOT_AUTHORIZED |
 | production_context_provisioning | NOT_AUTHORIZED |
 | mpips_network_connectivity | PASS |
@@ -182,8 +195,8 @@ Fail closed on mismatch. Logs use aliases `radiograph_fixture` and `gain_fixture
 
 ## Acceptance criteria
 
-- [ ] Phase D semantics are implemented and verified without fake identity evidence, consent, clinical measurements, schema mutation, new broad permission, or normal-workflow weakening.
-- [ ] Phase E local integration proves the complete nonclinical operational path and schedule-bound LCD expiry while retaining queue/history rows.
+- [x] Phase D semantics are implemented and verified without fake identity evidence, consent, clinical measurements, schema mutation, new broad permission, or normal-workflow weakening.
+- [x] Phase E local integration proves the complete nonclinical operational path and schedule-bound LCD expiry while retaining queue/history rows.
 - [ ] Phase F, when selected, provisions exactly one deterministic context through accepted domain primitives, stops before capture, is idempotent/fail closed, and emits sanitized output.
 - [ ] Production deployment/provisioning and Phase I remain separately authorized and are not claimed by this task.
 - [ ] Pinned fixtures fail closed on byte/hash mismatch and are logged only by aliases.
