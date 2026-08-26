@@ -62,9 +62,9 @@ final class ProductionRealNpzEndToEndValidationWorkflowTest extends TestCase
     {
         $workflow = $this->workflow();
         foreach ([
-            'mhcs:provision-nonclinical-validation-context', 'real-npz-e2e-v1',
-            '/operator/login', '/operator/xray-readiness-worklist/', '/claim', '/call',
-            'ImageGatewayController::captureStore()', 'submission_id=', 'radiograph_npz=@', 'gain_npz=@',
+            'real-npz-e2e-v1', 'validation_schedule_window', 'schedule_not_active', 'schedule_expired',
+            '/operator/login', '/operator/xray-readiness-worklist/', 'for action in claim call',
+            '/operator/xray-readiness-worklist/$xray_admission_id/capture', 'submission_id=', 'radiograph_npz=@', 'gain_npz=@',
             'capture_sources_complete=', 'processing_handoff_observed=', 'processing_job_state=',
             'mpips_state=', 'terminal_application_state=', 'failure_family=',
             'application_retention=RETAINED', 'workspace_cleanup=',
@@ -74,7 +74,7 @@ final class ProductionRealNpzEndToEndValidationWorkflowTest extends TestCase
         ] as $required) {
             $this->assertStringContainsString($required, $workflow);
         }
-        foreach (['Storage::', 'S3Client', 'MpipsClient', 'ProcessCaptureSet', 'deleteObject', 'docker service update', 'docker restart', 'workflow_run:', 'retry', 'rerun'] as $forbidden) {
+        foreach (['Storage::', 'S3Client', 'MpipsClient', 'ProcessCaptureSet', 'deleteObject', 'docker service update', 'docker restart', 'workflow_run:', 'rerun'] as $forbidden) {
             $this->assertStringNotContainsString($forbidden, $workflow);
         }
         foreach (['echo "$OPERATOR_PASSWORD"', 'echo "$AUTHORIZATION_MARKER"', 'echo "$APP_CONTAINER"', 'echo "$SERVICE_IMAGE"', 'echo "$CONTAINER_IMAGE"'] as $forbidden) {
@@ -86,15 +86,16 @@ final class ProductionRealNpzEndToEndValidationWorkflowTest extends TestCase
     {
         $workflow = $this->workflow();
         foreach ([
-            'NonclinicalValidationContext::MARKER_NAMESPACE', 'mhcs.validation', 'real-npz-e2e-v1',
-            'member_external_identifiers', 'where(\'status\', \'confirmed\')',
+            'use Illuminate\\Contracts\\Console\\Kernel;', 'use Illuminate\\Support\\Facades\\DB;', 'use App\\Shared\\Validation\\NonclinicalValidationContext;',
+            'NonclinicalValidationContext::MARKER_NAMESPACE', 'NonclinicalValidationContext::KEY', 'real-npz-e2e-v1',
+            'member_external_identifiers', '$booking->status !== \'confirmed\'', 'starts_at', 'ends_at', 'schedule_not_active', 'schedule_expired',
             'operator_arrivals', 'operator_identity_verifications', 'operator_paper_tickets',
             'operator_queue_admissions', 'image_gateway_capture_sets',
             'operator_site_assignments', 'operator_sites', 'RESOLVE_STAGE',
         ] as $required) {
             $this->assertStringContainsString($required, $workflow);
         }
-        foreach (['->insert(', '->update(', '->delete(', 'DB::insert', 'DB::update', 'DB::delete', 'head -n 1'] as $forbidden) {
+        foreach (['->insert(', '->update(', '->delete(', 'DB::insert', 'DB::update', 'DB::delete', 'head -n 1', 'mhcs:provision-nonclinical-validation-context'] as $forbidden) {
             $this->assertStringNotContainsString($forbidden, $workflow);
         }
         foreach ([
@@ -108,6 +109,9 @@ final class ProductionRealNpzEndToEndValidationWorkflowTest extends TestCase
         foreach (['vital-signs', 'questionnaire', 'paper-consent'] as $forbidden) {
             $this->assertStringNotContainsString($forbidden, $workflow);
         }
+        foreach (['-e RESOLVE_STAGE="$stage"', '-e SUBMISSION_ID="${submission_id:-}"', '-e CAPTURE_ID="${capture_id:-}"'] as $required) {
+            $this->assertStringContainsString($required, $workflow);
+        }
     }
 
     public function test_every_operational_post_has_csrf_and_capture_is_single_submission(): void
@@ -119,7 +123,7 @@ final class ProductionRealNpzEndToEndValidationWorkflowTest extends TestCase
             $this->assertStringContainsString('_token=$csrf_token', $post);
         }
         $this->assertSame(1, substr_count($workflow, '/capture"'));
-        $this->assertStringContainsString('max_polls=78', $workflow);
+        $this->assertStringContainsString('max_polls=84', $workflow);
         $this->assertStringContainsString('poll=$((poll + 1))', $workflow);
         $this->assertStringContainsString('sleep 5', $workflow);
         $this->assertStringNotContainsString('resubmit', strtolower($workflow));
@@ -130,9 +134,9 @@ final class ProductionRealNpzEndToEndValidationWorkflowTest extends TestCase
     {
         $workflow = $this->workflow();
         foreach ([
-            'CAPTURE_ID="$capture_id"', 'RESOLVE_STAGE=study', 'image_gateway_studies',
+            '-e CAPTURE_ID="${capture_id:-}"', 'RESOLVE_STAGE="$stage"', 'image_gateway_studies',
             '/operator/studies/$study_id/dicom', 'application/dicom', 'bs=1 skip=128 count=4',
-            'DICM', 'ge 132', 'mpips_state=reached', 'mpips_state=failed',
+            'DICM', 'ge 132', 'mpips_state=success', 'mpips_state=failed',
             'report_failure()', 'radiograph_source_state=NOT_EXECUTED',
             'echo "radiograph_source_state=$radiograph_source_state"',
             'application_retention=RETAINED', 'cleanup_workspace',
@@ -150,9 +154,9 @@ final class ProductionRealNpzEndToEndValidationWorkflowTest extends TestCase
     {
         $workflow = $this->workflow();
         $this->assertStringContainsString('[ "$AUTHORIZATION_MARKER" = AUTHORIZE_ONE_PRODUCTION_REAL_NPZ_RUN ]', $workflow);
-        foreach (['validation_context_key=real-npz-e2e-v1', 'environment_guard=PASS', 'authorization_guard=PASS', 'operator_minimum_permissions=PASS', 'operator_site_assignment=PASS', 'operator_shift_assignment=PASS', 'validation_operator_login_ready=true', 'validation_context_provisioning=PASS'] as $required) {
-            $this->assertStringContainsString($required, $workflow);
-        }
+        $this->assertStringNotContainsString('mhcs:provision-nonclinical-validation-context', $workflow);
+        $this->assertStringContainsString('failure_family=schedule_not_active', $workflow);
+        $this->assertStringContainsString('failure_family=schedule_expired', $workflow);
         foreach (['echo "$booking_id"', 'echo "$arrival_id"', 'echo "$identity_case_id"', 'echo "$ticket_id"', 'echo "$capture_id"', 'echo "$study_id"', 'set -x', 'docker exec "$APP_CONTAINER" php artisan queue:work'] as $forbidden) {
             $this->assertStringNotContainsString($forbidden, $workflow);
         }

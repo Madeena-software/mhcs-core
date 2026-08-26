@@ -1,0 +1,98 @@
+name: Provision production nonclinical validation context
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_application_revision:
+        description: Exact running application revision authorized for this run.
+        required: true
+        type: string
+      authorization_marker:
+        description: Type AUTHORIZE_ONE_PRODUCTION_VALIDATION_CONTEXT_PROVISION exactly.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  provision:
+    runs-on: self-hosted
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      EXPECTED_APPLICATION_REVISION: ${{ inputs.expected_application_revision }}
+      AUTHORIZATION_MARKER: ${{ inputs.authorization_marker }}
+      APP_SERVICE: mhcs_core_app
+      OPERATOR_PASSWORD: ${{ secrets.MHCS_REAL_NPZ_VALIDATION_OPERATOR_PASSWORD }}
+    steps:
+      - name: Provision one future validation context
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$AUTHORIZATION_MARKER" = AUTHORIZE_ONE_PRODUCTION_VALIDATION_CONTEXT_PROVISION ] || exit 1
+          [ -n "$OPERATOR_PASSWORD" ] || exit 1
+
+          APP_CONTAINER=""
+          task_id="$(docker service ps "$APP_SERVICE" --filter desired-state=running --no-trunc --format '{{.ID}}' 2>/dev/null | sed -n '1p' || true)"
+          if [ -n "$task_id" ]; then
+            while IFS= read -r candidate; do
+              candidate_task="$(docker inspect "$candidate" --format '{{index .Config.Labels "com.docker.swarm.task.id"}}' 2>/dev/null || true)"
+              if [ "$candidate_task" = "$task_id" ] || [[ "$candidate_task" == "$task_id"* ]] || [[ "$task_id" == "$candidate_task"* ]]; then APP_CONTAINER="$candidate"; break; fi
+            done < <(docker ps -q --filter "label=com.docker.swarm.service.name=${APP_SERVICE}" --filter status=running 2>/dev/null)
+          fi
+          service_image=""; container_image=""; version_current=""
+          if [ -n "$APP_CONTAINER" ]; then
+            service_image="$(docker service inspect "$APP_SERVICE" --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 2>/dev/null || true)"
+            container_image="$(docker inspect "$APP_CONTAINER" --format '{{.Config.Image}}' 2>/dev/null || true)"
+            version_current="$(docker exec "$APP_CONTAINER" cat /var/www/html/VERSION-CURRENT 2>/dev/null || true)"
+          fi
+          image_revision() { local image="${1-}"; image="${image%%@*}"; image="${image##*:}"; [[ "$image" =~ ^[0-9a-f]{40}$ ]] && printf '%s' "$image"; }
+          app_container_resolved=false; version_current_match=false; service_revision_match=false; container_revision_match=false
+          [ -n "$APP_CONTAINER" ] && app_container_resolved=true
+          [ "$version_current" = "$EXPECTED_APPLICATION_REVISION" ] && version_current_match=true
+          [ "$(image_revision "$service_image")" = "$EXPECTED_APPLICATION_REVISION" ] && service_revision_match=true
+          [ "$(image_revision "$container_image")" = "$EXPECTED_APPLICATION_REVISION" ] && container_revision_match=true
+          revision_match=false
+          if [ "$app_container_resolved" = true ] && [ "$version_current_match" = true ] && [ "$service_revision_match" = true ] && [ "$container_revision_match" = true ]; then revision_match=true; fi
+          echo "app_container_resolved=$app_container_resolved"
+          echo "version_current_match=$version_current_match"
+          echo "service_revision_match=$service_revision_match"
+          echo "container_revision_match=$container_revision_match"
+          echo "revision_match=$revision_match"
+          if [ "$revision_match" != true ]; then exit 1; fi
+
+          resolver="$(mktemp)"; trap 'rm -f "$resolver"' EXIT
+          cat >"$resolver" <<'PHP'
+          <?php
+          declare(strict_types=1);
+          use Illuminate\Contracts\Console\Kernel;
+          use Illuminate\Support\Facades\DB;
+          use App\Shared\Validation\NonclinicalValidationContext;
+          require 'vendor/autoload.php';
+          $app = require 'bootstrap/app.php';
+          $app->make(Kernel::class)->bootstrap();
+          $marker = DB::table('member_external_identifiers')->where('namespace', NonclinicalValidationContext::MARKER_NAMESPACE)->where('value', NonclinicalValidationContext::KEY)->get();
+          if ($marker->count() !== 1) exit(1);
+          $member = DB::table('members')->where('id', $marker->first()->member_id)->get();
+          $bookings = $member->count() === 1 ? DB::table('bookings')->where('member_id', $member->first()->id)->get() : collect();
+          $operator = DB::table('users')->where('email', 'mhcs-'.NonclinicalValidationContext::KEY.'-operator@invalid')->get();
+          $profile = $operator->count() === 1 ? DB::table('operator_profiles')->where('user_id', $operator->first()->id)->where('active', true)->get() : collect();
+          if ($member->count() !== 1 || $bookings->count() !== 1 || $bookings->first()->status !== 'confirmed' || $profile->count() !== 1) exit(1);
+          $site = DB::table('operator_site_assignments as a')->join('operator_sites as s', 's.id', '=', 'a.operator_site_id')->where('a.operator_profile_id', $profile->first()->id)->where('a.active', true)->where('s.active', true)->get();
+          $shift = DB::table('operator_shift_assignments as a')->join('operator_eligible_shifts as e', 'e.id', '=', 'a.operator_eligible_shift_id')->where('a.operator_profile_id', $profile->first()->id)->where('a.status', 'active')->where('e.member_schedule_id', $bookings->first()->shift_schedule_id)->get();
+          if ($site->count() !== 1 || $shift->count() !== 1) exit(1);
+          $schedule = DB::table('shift_schedules')->where('id', $bookings->first()->shift_schedule_id)->where('status', 'open')->first();
+          if ($schedule === null) exit(1);
+          $now = now();
+          $window = $schedule->starts_at > $now ? 'FUTURE' : ($schedule->ends_at <= $now ? 'ENDED' : 'ACTIVE');
+          echo "validation_context_prepared=PASS\n";
+          echo "validation_schedule_window=$window\n";
+          echo 'validation_schedule_starts_at_utc='.gmdate(DATE_ATOM, strtotime($schedule->starts_at))."\n";
+          echo 'validation_schedule_ends_at_utc='.gmdate(DATE_ATOM, strtotime($schedule->ends_at))."\n";
+          PHP
+          provision_output="$(mktemp)"; trap 'rm -f "$resolver" "$provision_output"' EXIT
+          docker exec -e MHCS_REAL_NPZ_VALIDATION_OPERATOR_PASSWORD="$OPERATOR_PASSWORD" "$APP_CONTAINER" php artisan mhcs:provision-nonclinical-validation-context >"$provision_output"
+          for required in validation_context_key=real-npz-e2e-v1 environment_guard=PASS authorization_guard=PASS operator_minimum_permissions=PASS operator_site_assignment=PASS operator_shift_assignment=PASS validation_operator_login_ready=true validation_context_provisioning=PASS; do grep -q "$required" "$provision_output" || exit 1; done
+          docker exec -i "$APP_CONTAINER" php <"$resolver"
