@@ -56,7 +56,10 @@ jobs:
           set -euo pipefail
 
           FAIL=0
-          if [ -z "$EXPECTED_REVISION" ]; then EXPECTED_REVISION="827b59dd81516e44c0ec10e7afb9b6b804e81226"; fi
+          if [ -n "$EXPECTED_REVISION" ] && [[ ! "$EXPECTED_REVISION" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "FATAL: expected_revision must be exactly 40 lowercase hexadecimal characters."
+            exit 1
+          fi
           APP_SERVICE="mhcs_core_app"
           DB_SERVICE="mhcs_core_db"
           QUEUE_SERVICE="mhcs_core_queue"
@@ -201,22 +204,30 @@ jobs:
             FAIL=1
           fi
 
-          image_revision() {
-            local image="$1"
-            local revision=""
-            if [[ "$image" == mhcs_core:* ]]; then
-              revision="${image#mhcs_core:}"
-              revision="${revision%%@sha256:*}"
-            fi
-            printf '%s' "$revision"
-          }
-
-          SERVICE_REVISION="$(image_revision "$SERVICE_IMAGE")"
-          CONTAINER_REVISION="$(image_revision "$CONTAINER_IMAGE")"
+          IMMUTABLE_IMAGE_REGEX='^ghcr\.io/madeena-software/mhcs-core@sha256:[0-9a-f]{64}$'
+          SERVICE_IMAGE_MATCH=false
+          CONTAINER_IMAGE_MATCH=false
+          IMAGE_IDENTITY_CONSISTENT=false
+          OCI_SOURCE_MATCH=false
+          OCI_REVISION_MATCH=false
           REVISION_CONSISTENT=false
-          if [ -n "$SERVICE_REVISION" ] && [ -n "$CONTAINER_REVISION" ] && [ -n "$VERSION_CURRENT" ] \
-            && [ "$SERVICE_REVISION" = "$CONTAINER_REVISION" ] \
-            && [ "$CONTAINER_REVISION" = "$VERSION_CURRENT" ]; then
+          OCI_REVISION=""
+          OCI_SOURCE=""
+          if [[ "$SERVICE_IMAGE" =~ $IMMUTABLE_IMAGE_REGEX ]]; then SERVICE_IMAGE_MATCH=true; fi
+          if [[ "$CONTAINER_IMAGE" =~ $IMMUTABLE_IMAGE_REGEX ]]; then CONTAINER_IMAGE_MATCH=true; fi
+          if [ "$SERVICE_IMAGE_MATCH" = true ] && [ "$SERVICE_IMAGE" = "$CONTAINER_IMAGE" ]; then
+            IMAGE_IDENTITY_CONSISTENT=true
+          fi
+          if [ -n "$APP_CONTAINER" ]; then
+            OCI_REVISION="$(docker inspect "$APP_CONTAINER" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' 2>/dev/null || true)"
+            OCI_SOURCE="$(docker inspect "$APP_CONTAINER" --format '{{index .Config.Labels "org.opencontainers.image.source"}}' 2>/dev/null || true)"
+          fi
+          if [ "$OCI_SOURCE" = "https://github.com/Madeena-software/mhcs-core" ]; then OCI_SOURCE_MATCH=true; fi
+          if [[ "$OCI_REVISION" =~ ^[0-9a-f]{40}$ ]] && [ "$OCI_REVISION" = "$VERSION_CURRENT" ]; then
+            OCI_REVISION_MATCH=true
+          fi
+          if [ "$IMAGE_IDENTITY_CONSISTENT" = true ] && [ "$OCI_SOURCE_MATCH" = true ] \
+            && [ "$OCI_REVISION_MATCH" = true ]; then
             REVISION_CONSISTENT=true
           else
             FAIL=1
@@ -229,6 +240,11 @@ jobs:
           echo "service_image=$SERVICE_IMAGE_SAFE"
           echo "container_image=$CONTAINER_IMAGE_SAFE"
           echo "version_current=$VERSION_CURRENT"
+          echo "service_image_match=$SERVICE_IMAGE_MATCH"
+          echo "container_image_match=$CONTAINER_IMAGE_MATCH"
+          echo "image_identity_consistent=$IMAGE_IDENTITY_CONSISTENT"
+          echo "oci_source_match=$OCI_SOURCE_MATCH"
+          echo "oci_revision_match=$OCI_REVISION_MATCH"
           echo "consistent=${REVISION_CONSISTENT}"
 
           if [ "$SERVICE_REPLICAS" != "1/1" ] || [[ "$TASK_STATE" != Running* ]] || [ "$CONTAINER_HEALTH" != "healthy" ] || [ -z "$APP_CONTAINER" ]; then

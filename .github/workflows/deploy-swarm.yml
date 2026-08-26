@@ -219,6 +219,14 @@ jobs:
           cp "$GITHUB_WORKSPACE/docker-compose.prod.yml" docker-compose.prod.yml
           mkdir -p nginx/conf.d
           cp "$GITHUB_WORKSPACE/docker/nginx.conf" nginx/conf.d/app.conf
+          VERSION_CURRENT_PATH="$REMOTE_PATH/VERSION-CURRENT"
+          if [ -e "$VERSION_CURRENT_PATH" ] && [ ! -f "$VERSION_CURRENT_PATH" ]; then
+            echo "FATAL: VERSION-CURRENT exists but is not a regular file."
+            exit 1
+          fi
+          if [ ! -e "$VERSION_CURRENT_PATH" ]; then
+            : > "$VERSION_CURRENT_PATH"
+          fi
           echo "===> Writing environment file..."
           printf '%s\n' \
             'APP_NAME="MHCS Core"' \

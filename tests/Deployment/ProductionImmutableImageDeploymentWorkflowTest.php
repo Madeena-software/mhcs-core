@@ -34,6 +34,9 @@ final class ProductionImmutableImageDeploymentWorkflowTest extends TestCase
         $this->assertStringContainsString('org.opencontainers.image.source', $workflow);
         $this->assertStringContainsString('docker compose -f docker-compose.prod.yml config', $workflow);
         $this->assertStringContainsString('MHCS_IMAGE="$IMAGE_REF"', $workflow);
+        $this->assertStringContainsString('VERSION_CURRENT_PATH="$REMOTE_PATH/VERSION-CURRENT"', $workflow);
+        $this->assertStringContainsString('[ -e "$VERSION_CURRENT_PATH" ] && [ ! -f "$VERSION_CURRENT_PATH" ]', $workflow);
+        $this->assertStringContainsString(': > "$VERSION_CURRENT_PATH"', $workflow);
         $this->assertLessThan(
             strpos($workflow, 'Preparing persistent host paths'),
             strpos($workflow, 'docker pull "$IMAGE_REF"'),
@@ -53,7 +56,9 @@ final class ProductionImmutableImageDeploymentWorkflowTest extends TestCase
         $this->assertStringNotContainsString('LIVE_VERSION:-unknown', $workflow);
 
         foreach (['app', 'queue', 'scheduler', 'image-worker'] as $service) {
-            $this->assertStringContainsString('${MHCS_IMAGE:?', $compose);
+            $serviceBlock = preg_match('/^  '.preg_quote($service, '/').':\n(.*?)(?=^  [a-z-]+:|\z)/ms', $compose, $matches);
+            $this->assertSame(1, $serviceBlock);
+            $this->assertStringContainsString('${MHCS_IMAGE:?', $matches[1]);
         }
         $this->assertStringContainsString('MHCS_RELEASE_VERSION: "${APP_VERSION:?', $compose);
         $this->assertStringNotContainsString('mhcs_core:latest', $compose);
@@ -64,6 +69,7 @@ final class ProductionImmutableImageDeploymentWorkflowTest extends TestCase
         $this->assertNotFalse($deployPosition);
         $this->assertNotFalse($versionPosition);
         $this->assertGreaterThan($deployPosition, $versionPosition);
+        $this->assertGreaterThan(strpos($workflow, 'if [ "$FAIL" -gt 0 ]; then'), $versionPosition);
 
         foreach (['provision-production-nonclinical-validation-context.yml', 'validate-production-real-npz-end-to-end.yml'] as $workflowName) {
             $this->assertStringNotContainsString("gh workflow run {$workflowName}", $workflow);
