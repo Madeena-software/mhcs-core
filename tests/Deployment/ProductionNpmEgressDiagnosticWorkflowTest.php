@@ -65,6 +65,19 @@ final class ProductionNpmEgressDiagnosticWorkflowTest extends TestCase
         $this->assertStringContainsString('sh -ceu', $workflow);
         $this->assertStringContainsString('cp /input/package.json /input/package-lock.json', $workflow);
         $this->assertStringContainsString('cd /tmp/npm-work', $workflow);
+        $this->assertStringContainsString("sh -ceu '\n              mkdir -p /tmp/npm-work", $workflow);
+        $this->assertStringNotContainsString('\\n+', $workflow);
+        $this->assertDoesNotMatchRegularExpression('/^\s*\+/m', $workflow);
+        $this->assertMatchesRegularExpression(
+            '/sh -ceu \'\n(?<inner>.*?)\n\s*\' >"\$npm_log" 2>&1/s',
+            $workflow,
+        );
+        preg_match('/sh -ceu \'\n(?<inner>.*?)\n\s*\' >"\$npm_log" 2>&1/s', $workflow, $innerMatch);
+        $innerCommands = implode("\n", array_map('trim', explode("\n", $innerMatch['inner'])));
+        $this->assertSame(
+            "mkdir -p /tmp/npm-work\ncp /input/package.json /input/package-lock.json /tmp/npm-work/\ncd /tmp/npm-work\nexec npm ci --ignore-scripts --no-audit --no-fund",
+            $innerCommands,
+        );
         $this->assertStringNotContainsString('$NPM_WORKSPACE:/work', $workflow);
         $this->assertStringNotContainsString('node_modules', $workflow);
         foreach (['sudo ', 'chown ', 'chmod ', '--privileged'] as $forbiddenCleanupOperation) {
