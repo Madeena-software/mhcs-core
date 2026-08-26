@@ -31,13 +31,34 @@ jobs:
           docker info --format 'RegistryConfig={{json .RegistryConfig}}' 2>/dev/null || true
           docker system info --format 'RegistryConfig={{json .RegistryConfig}}' 2>/dev/null || true
           if [ -r /etc/docker/daemon.json ]; then
-            grep -E 'max-concurrent-downloads|max-download-attempts|registry-mirrors|mtu|dns|proxies' /etc/docker/daemon.json \
-              | sed -E 's#(https?://)[^/@[:space:]]+@#\1[REDACTED]@#g; s#(token|password|secret|key)[^:]*:[[:space:]]*"[^"]*"#\1: "[REDACTED]"#Ig' || true
+            for key in max-concurrent-downloads max-download-attempts registry-mirrors mtu dns proxies; do
+              if grep -Eq "^[[:space:]]*\\\"${key}\\\"[[:space:]]*:" /etc/docker/daemon.json; then
+                echo "daemon-${key}=SET"
+              else
+                echo "daemon-${key}=UNSET"
+              fi
+            done
           else
             echo 'daemon.json=unreadable-or-absent'
           fi
-          systemctl show docker -p Environment -p ExecStart -p FragmentPath 2>/dev/null \
-            | sed -E 's#(https?://)[^/@[:space:]]+@#\1[REDACTED]@#g; s#(token|password|secret|key)[^=]*=[^[:space:]]+#\1=[REDACTED]#Ig' || true
+          report_proxy_presence() {
+            for name in HTTP_PROXY http_proxy HTTPS_PROXY https_proxy NO_PROXY no_proxy; do
+              if [ -n "${!name:-}" ]; then
+                echo "${name}=SET"
+              else
+                echo "${name}=UNSET"
+              fi
+            done
+          }
+          report_proxy_presence
+          for flag in http-proxy https-proxy no-proxy; do
+            if systemctl cat docker 2>/dev/null | grep -Eq -- "--${flag}="; then
+              echo "docker-${flag}-flag=SET"
+            else
+              echo "docker-${flag}-flag=UNSET"
+            fi
+          done
+          systemctl show docker -p FragmentPath -p DropInPaths 2>/dev/null || true
 
           echo "===> Host network state"
           ip -4 addr 2>/dev/null || true
@@ -78,10 +99,10 @@ jobs:
 
           echo "===> Path MTU information"
           ip -4 route get 1.1.1.1 2>/dev/null || true
-          if command -v tracepath >/dev/null 2>&1; then
-            tracepath -4 -m 5 -w 5 ghcr.io 2>/dev/null | head -n 20 || true
+          if command -v tracepath >/dev/null 2>&1 && command -v timeout >/dev/null 2>&1; then
+            timeout 10s tracepath -4 -m 5 ghcr.io 2>/dev/null | head -n 20 || true
           else
-            echo 'tracepath=unavailable'
+            echo 'tracepath-or-timeout=unavailable'
           fi
 
           echo "===> Bounded Docker daemon journal window"

@@ -67,5 +67,14 @@ final class ProductionGhcrTransportDiagnosticWorkflowTest extends TestCase
 
         $this->assertStringContainsString('journalctl -u docker --since "2026-08-26T23:26:00Z" --until "2026-08-26T23:45:00Z"', $workflow);
         $this->assertStringContainsString('sed -E', $workflow);
+        $this->assertStringNotContainsString('systemctl show docker -p Environment', $workflow);
+        $this->assertStringNotContainsString('systemctl show docker -p ExecStart', $workflow);
+        $this->assertStringContainsString('report_proxy_presence()', $workflow);
+        foreach (['HTTP_PROXY', 'http_proxy', 'HTTPS_PROXY', 'https_proxy', 'NO_PROXY', 'no_proxy'] as $proxy) {
+            $this->assertStringContainsString($proxy, $workflow);
+        }
+        $this->assertStringContainsString('echo "docker-${flag}-flag=SET"', $workflow);
+        $this->assertStringNotContainsString('tracepath -4 -m 5 -w 5', $workflow);
+        $this->assertStringContainsString('timeout 10s tracepath -4 -m 5 ghcr.io', $workflow);
     }
 }
