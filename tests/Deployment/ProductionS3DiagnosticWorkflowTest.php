@@ -115,6 +115,7 @@ final class ProductionS3DiagnosticWorkflowTest extends TestCase
             'minio_not_bound_to_docker_host_gateway',
             'matching_listener_but_host_tcp_failed',
             'host_reachable_but_container_tcp_failed',
+            'listener_mismatch_but_host_tcp_passed',
         ] as $required) {
             $this->assertStringContainsString($required, $workflow);
         }
@@ -175,6 +176,7 @@ final class ProductionS3DiagnosticWorkflowTest extends TestCase
         $this->assertStringContainsString('host_listener_root_class=minio_not_bound_to_docker_host_gateway', $workflow);
         $this->assertStringContainsString('host_listener_root_class=matching_listener_but_host_tcp_failed', $workflow);
         $this->assertStringContainsString('host_listener_root_class=host_reachable_but_container_tcp_failed', $workflow);
+        $this->assertStringContainsString('host_listener_root_class=listener_mismatch_but_host_tcp_passed', $workflow);
         $noListener = strpos($workflow, 'host_listener_root_class=no_host_port_9000_listener');
         $healthBranch = strpos($workflow, 'elif [ "$host_loopback_minio_health" = PASS ]; then');
         $this->assertNotFalse($noListener);
@@ -250,8 +252,18 @@ final class ProductionS3DiagnosticWorkflowTest extends TestCase
         $caseA = strpos($workflow, 'minio_not_bound_to_docker_host_gateway');
         $this->assertNotFalse($caseA);
         $caseABlock = substr($workflow, $caseA - 700, 900);
-        foreach (['host_gateway_address_resolved" = true', 'host_listener_inspection" = PASS', 'minio_listener_matches_host_gateway" = false', 'host_gateway_port_9000_tcp" = FAIL'] as $condition) {
+        foreach (['host_gateway_address_resolved" = true', 'host_listener_inspection" = PASS', 'minio_listener_matches_host_gateway" = false', 'host_to_host_gateway_9000_tcp_checked" = true', 'host_to_host_gateway_9000_tcp" = FAIL', 'host_gateway_port_9000_tcp_checked" = true', 'host_gateway_port_9000_tcp" = FAIL'] as $condition) {
             $this->assertStringContainsString($condition, $caseABlock);
+        }
+        $this->assertStringContainsString('listener_mismatch_but_host_tcp_passed', $workflow);
+        $this->assertStringContainsString('listener_match_ambiguous=true', $workflow);
+        $this->assertStringContainsString("'*:9000')", $workflow);
+        $this->assertStringContainsString('minio_listener_matches_host_gateway=unknown', $workflow);
+        $passMismatch = strpos($workflow, 'listener_mismatch_but_host_tcp_passed');
+        $this->assertNotFalse($passMismatch);
+        $passMismatchBlock = substr($workflow, $passMismatch - 700, 1400);
+        foreach (['minio_listener_matches_host_gateway" = false', 'host_to_host_gateway_9000_tcp" = PASS', 'host_gateway_port_9000_tcp" = FAIL', 'host_gateway_connectivity_root_confirmed=false'] as $condition) {
+            $this->assertStringContainsString($condition, $passMismatchBlock);
         }
     }
 
@@ -263,8 +275,9 @@ final class ProductionS3DiagnosticWorkflowTest extends TestCase
         $this->assertStringNotContainsString('echo "$host_gateway_address"', $workflow);
         $this->assertStringNotContainsString('echo "$listener_address"', $workflow);
         $this->assertStringContainsString('normalize_listener_address', $workflow);
-        $this->assertStringContainsString('nft -a list ruleset', $workflow);
-        foreach (['iptables', 'echo "$firewall_rules"', 'printf "%s\\n" "$firewall_rules"'] as $forbidden) {
+        $this->assertStringContainsString('docker_gateway_9000_explicit_reject_detected=unknown', $workflow);
+        $this->assertStringContainsString('docker_gateway_9000_explicit_accept_detected=unknown', $workflow);
+        foreach (['iptables', 'nft ', 'echo "$firewall_rules"', 'printf "%s\\n" "$firewall_rules"'] as $forbidden) {
             $this->assertStringNotContainsString($forbidden, strtolower($workflow));
         }
     }

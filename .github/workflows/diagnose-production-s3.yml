@@ -77,6 +77,7 @@ jobs:
           host_gateway_connectivity_root_class=unknown
           host_gateway_connectivity_root_confirmed=false
           host_gateway_address=""
+          listener_match_ambiguous=false
           listener_addresses=()
           listener_process_lines=()
 
@@ -106,6 +107,7 @@ jobs:
                     '[::1]:'*|::1:*) bind_classes+=(loopback_ipv6); host_port_9000_has_loopback_ipv6=true ;;
                     0.0.0.0:*|'*:') bind_classes+=(all_ipv4); host_port_9000_has_all_ipv4=true ;;
                     '[::]:'*|::*:*) bind_classes+=(all_ipv6); host_port_9000_has_all_ipv6=true ;;
+                    '*:9000') bind_classes+=(ambiguous_listener) ;;
                     *) bind_classes+=(nonloopback_specific); host_port_9000_has_nonloopback_specific=true ;;
                   esac
                 done
@@ -138,7 +140,9 @@ jobs:
                   }
                   for listener_address in "${listener_addresses[@]}"; do
                     normalized_listener="$(normalize_listener_address "$listener_address")"
-                    if [ "$normalized_listener" = "$host_gateway_address" ]; then
+                    if [ "$normalized_listener" = '*' ]; then
+                      listener_match_ambiguous=true
+                    elif [ "$normalized_listener" = "$host_gateway_address" ]; then
                       minio_listener_matches_host_gateway=true
                       minio_listener_host_gateway_match_basis=exact_specific
                     elif { [ "$host_gateway_address_family" = ipv4 ] && [ "$normalized_listener" = 0.0.0.0 ]; } || { [ "$host_gateway_address_family" = ipv6 ] && [ "$normalized_listener" = :: ]; }; then
@@ -146,7 +150,10 @@ jobs:
                       minio_listener_host_gateway_match_basis=wildcard
                     fi
                   done
-                  if [ "$minio_listener_matches_host_gateway" = unknown ]; then
+                  if [ "$listener_match_ambiguous" = true ]; then
+                    minio_listener_matches_host_gateway=unknown
+                    minio_listener_host_gateway_match_basis=unknown
+                  elif [ "$minio_listener_matches_host_gateway" = unknown ]; then
                     minio_listener_matches_host_gateway=false
                     minio_listener_host_gateway_match_basis=none
                   fi
@@ -320,22 +327,23 @@ jobs:
           [ -n "$host_gateway_port_9000_tcp" ] || host_gateway_port_9000_tcp=none
           if [ "$minio_listener_matches_host_gateway" = true ] && [ "$host_to_host_gateway_9000_tcp" = PASS ] && [ "$host_gateway_port_9000_tcp_checked" = true ] && [ "$host_gateway_port_9000_tcp" = FAIL ]; then
             host_firewall_inspection=UNAVAILABLE
-            docker_gateway_9000_explicit_reject_detected=false
-            docker_gateway_9000_explicit_accept_detected=false
-            if command -v nft >/dev/null 2>&1 && firewall_rules="$(nft -a list ruleset 2>/dev/null || true)" && [ -n "$firewall_rules" ]; then
-              host_firewall_inspection=PASS
-              docker_gateway_9000_explicit_reject_detected=false
-              docker_gateway_9000_explicit_accept_detected=false
-              if printf '%s\n' "$firewall_rules" | grep -Eiq 'tcp dport 9000.*reject|reject.*tcp dport 9000'; then docker_gateway_9000_explicit_reject_detected=true; fi
-              if printf '%s\n' "$firewall_rules" | grep -Eiq 'tcp dport 9000.*accept|accept.*tcp dport 9000'; then docker_gateway_9000_explicit_accept_detected=true; fi
-            fi
+            docker_gateway_9000_explicit_reject_detected=unknown
+            docker_gateway_9000_explicit_accept_detected=unknown
           fi
           if [ "$host_gateway_port_9000_tcp_checked" != true ]; then
             container_host_gateway_failure_explained=false
             host_listener_root_boundary=docker_host_gateway_connectivity
             host_listener_root_class=container_tcp_check_not_executed
             host_listener_root_confirmed=false
-          elif [ "$host_local_minio_confirmed" = true ] && [ "$host_listener_inspection" = PASS ] && [ "$host_gateway_address_resolved" = true ] && [ "$minio_listener_matches_host_gateway" = false ] && [ "$host_gateway_port_9000_tcp" = FAIL ]; then
+          elif [ "$host_local_minio_confirmed" = true ] && [ "$host_listener_inspection" = PASS ] && [ "$host_gateway_address_resolved" = true ] && [ "$minio_listener_matches_host_gateway" = false ] && [ "$host_to_host_gateway_9000_tcp_checked" = true ] && [ "$host_to_host_gateway_9000_tcp" = PASS ] && [ "$host_gateway_port_9000_tcp_checked" = true ] && [ "$host_gateway_port_9000_tcp" = FAIL ]; then
+            container_host_gateway_failure_explained=false
+            host_listener_root_boundary=listener_classification
+            host_listener_root_class=listener_mismatch_but_host_tcp_passed
+            host_listener_root_confirmed=false
+            host_gateway_connectivity_root_boundary=listener_classification
+            host_gateway_connectivity_root_class=listener_mismatch_but_host_tcp_passed
+            host_gateway_connectivity_root_confirmed=false
+          elif [ "$host_local_minio_confirmed" = true ] && [ "$host_listener_inspection" = PASS ] && [ "$host_gateway_address_resolved" = true ] && [ "$minio_listener_matches_host_gateway" = false ] && [ "$host_to_host_gateway_9000_tcp_checked" = true ] && [ "$host_to_host_gateway_9000_tcp" = FAIL ] && [ "$host_gateway_port_9000_tcp_checked" = true ] && [ "$host_gateway_port_9000_tcp" = FAIL ]; then
             container_host_gateway_failure_explained=true
             host_listener_root_boundary=minio_host_binding
             host_listener_root_class=minio_not_bound_to_docker_host_gateway
