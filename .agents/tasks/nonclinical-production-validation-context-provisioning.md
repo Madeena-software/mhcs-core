@@ -1,7 +1,7 @@
 ---
 title: MHCS Core Nonclinical Production Validation Context Provisioning
 document_id: MHCS-TASK-NONCLINICAL-VALIDATION-CONTEXT-001
-version: 2.0
+version: 2.1
 status: validated-published
 language: en-US
 last_updated: 2026-08-26
@@ -131,7 +131,77 @@ The integrated local test proves canonical validation Member → normal arrival 
 
 ## Phase F — Full context provisioner
 
-**Status:** READY_FOR_IMPLEMENTATION
+**Status:** PLANNING_REQUIRED
+
+**phase_f_blocker:** `SHIFT_ASSIGNMENT_SYSTEM_PROVENANCE`
+
+Source verification found that the current Operator composition cannot safely
+satisfy this phase unchanged:
+
+- `OperatorProfileService::create()` reconciles additional grants
+  (`operator.site.read`, `operator.assignment.read`, `operator.shift.read`,
+  and `operator.audit.read`), so it is not suitable for the validation
+  Operator, whose exact contract remains role `operator` with only
+  `operator.portal.access`, `operator.attendance.read`,
+  `operator.arrival.record`, and `operator.identity.verify`.
+- Normal Operator profile/site/shift administration requires authenticated
+  Administrator manage authorization. The validation Operator must not receive
+  Administrator or manage permissions, and no fabricated `Auth::user()` or
+  Administrator context is allowed.
+- `operator_site_assignments.assigned_by_user_id` is nullable, but
+  `operator_shift_assignments.assigned_by_user_id` is currently required and
+  references `users.id`. The fixed console-only trusted system provisioning
+  context has no truthful application User actor for that required provenance.
+
+### Phase F planning resolution
+
+Plan only the following narrow schema exception: make
+`operator_shift_assignments.assigned_by_user_id` nullable while retaining its
+foreign key to `users.id`. This does not change normal Operator authorization,
+grant a permission, add a public API, introduce an arbitrary context, alter
+normal Administrator assignment provenance, or weaken normal routes. It avoids
+false provenance, a third synthetic User, temporary Administrator grants, and
+fake authentication. No broader schema change is approved.
+
+Normal `OperatorShiftAssignmentService::assign()` continues to write the
+authenticated Administrator user ID. Only the exact fixed nonclinical
+validation system-provisioning boundary may create the validation shift
+assignment with `assigned_by_user_id = null`; that boundary must emit explicit
+audit metadata identifying `validation_context=real-npz-e2e-v1`,
+`nonclinical=true`, `provisioning_actor=system`, and
+`human_assignment_performed=false` (using an existing repository-safe naming
+convention where applicable). NULL represents fixed system provisioning, not
+an unknown human assignment.
+
+Phase F planning must define a validation-specific, system-only Operator-owned
+capability, such as
+`NonclinicalValidationOperatorContextProvisioningService`, or narrowly
+equivalent methods in existing Operator application services. It exposes no
+HTTP route, requires the fixed purpose
+`production.validation-context.operator-context-provision` and role `system`,
+and operates only on the exact Operator User returned and proven by
+`NonclinicalValidationAccountProvisioningService`. Command input must not
+accept arbitrary user, profile, site, schedule, eligible-shift, role,
+permission, email, name, or context-key values; trusted services may pass
+server-resolved IDs internally.
+
+The validation-specific capability may create exactly one profile for the
+accepted validation Operator User, without calling generic `create()` when it
+would reconcile grants and without adding, removing, or reconciling claims.
+After provisioning it must assert exactly role `operator` and only the four
+accepted permissions listed above. It must not adopt an unrelated existing
+profile unless exact audit/marker evidence proves validation ownership.
+
+Resolve the site only from the selected schedule
+(`shift_schedule → examination_site_ref → operator_site_id → active
+operator_sites`), with no caller-supplied site ID. Create or replay exactly
+one validation site assignment and one assignment to an existing legitimate
+`operator_eligible_shifts` projection (`member_schedule_id` equal to the
+selected schedule, stable site, `sync_status=eligible`, and consistent times).
+Fail closed when no eligible candidate exists; do not create catalogue or
+schedule data, invoke `MvpOperatorSeeder`, or manufacture an eligible shift.
+The normal booking contract and normal
+`Mvp03BookingService::createForCurrentMember()` flow remain unchanged.
 
 The original provisioning capability remains the console-only deterministic boundary:
 
@@ -182,8 +252,9 @@ Fail closed on mismatch. Logs use aliases `radiograph_fixture` and `gain_fixture
 | lcd_schedule_projection_implementation | PASS |
 | local_operational_acceptance | PASS |
 | schedule_context_feasibility | CONDITIONAL |
-| operator_profile_site_shift_composition | PENDING |
-| full_context_provisioner | READY_FOR_IMPLEMENTATION |
+| operator_profile_site_shift_composition | PLANNING_REQUIRED |
+| full_context_provisioner | PLANNING_REQUIRED |
+| phase_f_blocker | SHIFT_ASSIGNMENT_SYSTEM_PROVENANCE |
 | production_deployment | NOT_AUTHORIZED |
 | production_context_provisioning | NOT_AUTHORIZED |
 | mpips_network_connectivity | PASS |
@@ -204,12 +275,25 @@ Fail closed on mismatch. Logs use aliases `radiograph_fixture` and `gain_fixture
 ## Verification requirements
 
 - Run focused Member, Operator, LCD, and integrated tests for the selected phase.
-- Run static checks for no schema migration, new broad permission, fake clinical records, direct SQL fabrication, public validation endpoint, secret disclosure, automatic execution, or queue/history deletion.
+- Run static checks for no schema change beyond the single approved nullable
+  `operator_shift_assignments.assigned_by_user_id` migration, no new broad
+  permission, fake clinical records, direct SQL fabrication, public validation
+  endpoint, secret disclosure, automatic execution, or queue/history deletion.
 - Run `git diff --check` and report exact revision, commands, observed results, changed tests, gaps, deviations, and blockers.
 
 ## Stop conditions
 
-Return to Planner if implementation requires a schema migration, new broad permission, fake identity evidence, fake consent, fake clinical measurements, arbitrary validation context/member, production seeder, generic account provisioning, direct SQL replacing owned services, a public validation endpoint, a secret value in source/logs, automatic deployment/provisioning, unsafe schedule ambiguity, or weakened normal safeguards. Also stop for missing/contradictory authority, scope expansion, unsafe production/external mutation, or inability to resolve the active schedule set deterministically.
+Return to Planner if implementation requires any schema change beyond the single
+approved nullable `operator_shift_assignments.assigned_by_user_id` migration,
+new broad permission, Administrator grant to the validation Operator, a third
+validation principal, fake assignment provenance, fake identity evidence,
+fake consent, fake clinical measurements, arbitrary schedule/site/user input,
+fake eligible shift, production seeder, generic system bypass, direct SQL
+replacing owned services, a public validation endpoint, a secret value in
+source/logs, automatic deployment/provisioning, unsafe schedule ambiguity, or
+weakened normal safeguards. Also stop for missing/contradictory authority,
+scope expansion, unsafe production/external mutation, or inability to resolve
+the active schedule set deterministically.
 
 ## Side-effect authorization
 
