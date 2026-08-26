@@ -64,8 +64,34 @@ jobs:
           host_port_9000_has_nonloopback_bind=false
           host_gateway_port_9000_tcp=none
           host_gateway_port_9000_tcp_checked=false
+          host_gateway_address_resolved=false
+          host_gateway_address_family=none
+          minio_listener_matches_host_gateway=unknown
+          minio_listener_host_gateway_match_basis=unknown
+          host_to_host_gateway_9000_tcp_checked=false
+          host_to_host_gateway_9000_tcp=none
+          host_firewall_inspection=SKIPPED
+          docker_gateway_9000_explicit_reject_detected=unknown
+          docker_gateway_9000_explicit_accept_detected=unknown
+          host_gateway_connectivity_root_boundary=docker_host_gateway_connectivity
+          host_gateway_connectivity_root_class=unknown
+          host_gateway_connectivity_root_confirmed=false
+          host_gateway_address=""
           listener_addresses=()
           listener_process_lines=()
+
+          gateway_resolution="$(docker exec "$APP_CONTAINER" getent ahosts host.docker.internal 2>/dev/null || true)"
+          host_gateway_address="$(printf '%s\n' "$gateway_resolution" | awk 'NF && $1 !~ /:/ {print $1; exit}')"
+          if [ -n "$host_gateway_address" ]; then
+            host_gateway_address_resolved=true
+            host_gateway_address_family=ipv4
+          else
+            host_gateway_address="$(printf '%s\n' "$gateway_resolution" | awk 'NF && $1 ~ /:/ {print $1; exit}')"
+            if [ -n "$host_gateway_address" ]; then
+              host_gateway_address_resolved=true
+              host_gateway_address_family=ipv6
+            fi
+          fi
 
           if command -v ss >/dev/null 2>&1; then
             if listener_table="$(ss -ltnH 2>/dev/null)"; then
@@ -99,6 +125,33 @@ jobs:
                   host_port_9000_bind_class="$unique_bind_classes"
                 fi
 
+                if [ "$host_gateway_address_resolved" = true ]; then
+                  normalize_listener_address() {
+                    local address="$1"
+                    if [[ "$address" == \[*\]:* ]]; then
+                      printf '%s' "${address#\[}" | sed 's/\]:[0-9][0-9]*$//'
+                    elif [[ "$address" == *:* ]]; then
+                      printf '%s' "${address%:[0-9][0-9]*}"
+                    else
+                      printf '%s' "$address"
+                    fi
+                  }
+                  for listener_address in "${listener_addresses[@]}"; do
+                    normalized_listener="$(normalize_listener_address "$listener_address")"
+                    if [ "$normalized_listener" = "$host_gateway_address" ]; then
+                      minio_listener_matches_host_gateway=true
+                      minio_listener_host_gateway_match_basis=exact_specific
+                    elif { [ "$host_gateway_address_family" = ipv4 ] && [ "$normalized_listener" = 0.0.0.0 ]; } || { [ "$host_gateway_address_family" = ipv6 ] && [ "$normalized_listener" = :: ]; }; then
+                      minio_listener_matches_host_gateway=true
+                      minio_listener_host_gateway_match_basis=wildcard
+                    fi
+                  done
+                  if [ "$minio_listener_matches_host_gateway" = unknown ]; then
+                    minio_listener_matches_host_gateway=false
+                    minio_listener_host_gateway_match_basis=none
+                  fi
+                fi
+
                 if docker ps --filter publish=9000 --format '{{.Ports}}' 2>/dev/null | grep -q .; then
                   docker_port_9000_published=true
                   host_port_9000_owner_class=docker_published
@@ -120,6 +173,15 @@ jobs:
               else
                 host_port_9000_bind_class=none
               fi
+            fi
+          fi
+
+          if [ "$host_gateway_address_resolved" = true ]; then
+            host_to_host_gateway_9000_tcp_checked=true
+            if timeout 3 bash -c 'exec 3<>/dev/tcp/"$1"/9000' bash "$host_gateway_address" 2>/dev/null; then
+              host_to_host_gateway_9000_tcp=PASS
+            else
+              host_to_host_gateway_9000_tcp=FAIL
             fi
           fi
 
@@ -256,21 +318,45 @@ jobs:
           [ "$host_gateway_port_9000_tcp_checked" = true ] || host_gateway_port_9000_tcp_checked=false
           host_gateway_port_9000_tcp="$(printf '%s\n' "$diagnostic_output" | awk -F= '$1 == "host_gateway_port_9000_tcp" {print $2; exit}')"
           [ -n "$host_gateway_port_9000_tcp" ] || host_gateway_port_9000_tcp=none
+          if [ "$minio_listener_matches_host_gateway" = true ] && [ "$host_to_host_gateway_9000_tcp" = PASS ] && [ "$host_gateway_port_9000_tcp_checked" = true ] && [ "$host_gateway_port_9000_tcp" = FAIL ]; then
+            host_firewall_inspection=UNAVAILABLE
+            docker_gateway_9000_explicit_reject_detected=false
+            docker_gateway_9000_explicit_accept_detected=false
+            if command -v nft >/dev/null 2>&1 && firewall_rules="$(nft -a list ruleset 2>/dev/null || true)" && [ -n "$firewall_rules" ]; then
+              host_firewall_inspection=PASS
+              docker_gateway_9000_explicit_reject_detected=false
+              docker_gateway_9000_explicit_accept_detected=false
+              if printf '%s\n' "$firewall_rules" | grep -Eiq 'tcp dport 9000.*reject|reject.*tcp dport 9000'; then docker_gateway_9000_explicit_reject_detected=true; fi
+              if printf '%s\n' "$firewall_rules" | grep -Eiq 'tcp dport 9000.*accept|accept.*tcp dport 9000'; then docker_gateway_9000_explicit_accept_detected=true; fi
+            fi
+          fi
           if [ "$host_gateway_port_9000_tcp_checked" != true ]; then
             container_host_gateway_failure_explained=false
             host_listener_root_boundary=docker_host_gateway_connectivity
             host_listener_root_class=container_tcp_check_not_executed
             host_listener_root_confirmed=false
-          elif [ "$host_local_minio_confirmed" = true ] && [ "$host_port_9000_loopback_only" = true ] && [ "$host_gateway_port_9000_tcp_checked" = true ] && [ "$host_gateway_port_9000_tcp" = FAIL ]; then
+          elif [ "$host_local_minio_confirmed" = true ] && [ "$host_listener_inspection" = PASS ] && [ "$host_gateway_address_resolved" = true ] && [ "$minio_listener_matches_host_gateway" = false ] && [ "$host_gateway_port_9000_tcp" = FAIL ]; then
             container_host_gateway_failure_explained=true
             host_listener_root_boundary=minio_host_binding
-            host_listener_root_class=minio_bound_to_host_loopback_only
+            host_listener_root_class=minio_not_bound_to_docker_host_gateway
             host_listener_root_confirmed=true
-          elif [ "$host_local_minio_confirmed" = true ] && [ "$host_port_9000_has_nonloopback_bind" = true ] && [ "$host_gateway_port_9000_tcp_checked" = true ] && [ "$host_gateway_port_9000_tcp" = FAIL ]; then
+            host_gateway_connectivity_root_boundary=minio_host_binding
+            host_gateway_connectivity_root_class=minio_not_bound_to_docker_host_gateway
+            host_gateway_connectivity_root_confirmed=true
+          elif [ "$minio_listener_matches_host_gateway" = true ] && [ "$host_to_host_gateway_9000_tcp" = FAIL ]; then
             container_host_gateway_failure_explained=false
-            host_listener_root_boundary=docker_host_gateway_connectivity
-            host_listener_root_class=nonloopback_minio_listener_but_container_tcp_failed
+            host_listener_root_boundary=host_gateway_listener_or_filtering
+            host_listener_root_class=matching_listener_but_host_tcp_failed
             host_listener_root_confirmed=false
+            host_gateway_connectivity_root_boundary=host_gateway_listener_or_filtering
+            host_gateway_connectivity_root_class=matching_listener_but_host_tcp_failed
+          elif [ "$minio_listener_matches_host_gateway" = true ] && [ "$host_to_host_gateway_9000_tcp" = PASS ] && [ "$host_gateway_port_9000_tcp" = FAIL ]; then
+            container_host_gateway_failure_explained=false
+            host_listener_root_boundary=container_to_host_gateway
+            host_listener_root_class=host_reachable_but_container_tcp_failed
+            host_listener_root_confirmed=false
+            host_gateway_connectivity_root_boundary=container_to_host_gateway
+            host_gateway_connectivity_root_class=host_reachable_but_container_tcp_failed
           fi
           echo "host_port_9000_listener_present=$host_port_9000_listener_present"
           echo "host_port_9000_bind_class=$host_port_9000_bind_class"
@@ -289,6 +375,18 @@ jobs:
           echo "host_local_minio_confirmed=$host_local_minio_confirmed"
           echo "container_host_gateway_failure_explained=$container_host_gateway_failure_explained"
           echo "host_gateway_port_9000_tcp_checked=$host_gateway_port_9000_tcp_checked"
+          echo "host_gateway_address_resolved=$host_gateway_address_resolved"
+          echo "host_gateway_address_family=$host_gateway_address_family"
+          echo "minio_listener_matches_host_gateway=$minio_listener_matches_host_gateway"
+          echo "minio_listener_host_gateway_match_basis=$minio_listener_host_gateway_match_basis"
+          echo "host_to_host_gateway_9000_tcp_checked=$host_to_host_gateway_9000_tcp_checked"
+          echo "host_to_host_gateway_9000_tcp=$host_to_host_gateway_9000_tcp"
+          echo "host_firewall_inspection=$host_firewall_inspection"
+          echo "docker_gateway_9000_explicit_reject_detected=$docker_gateway_9000_explicit_reject_detected"
+          echo "docker_gateway_9000_explicit_accept_detected=$docker_gateway_9000_explicit_accept_detected"
+          echo "host_gateway_connectivity_root_boundary=$host_gateway_connectivity_root_boundary"
+          echo "host_gateway_connectivity_root_class=$host_gateway_connectivity_root_class"
+          echo "host_gateway_connectivity_root_confirmed=$host_gateway_connectivity_root_confirmed"
           echo "root_cause_boundary=$host_listener_root_boundary"
           echo "root_cause_class=$host_listener_root_class"
           echo "root_cause_confirmed=$host_listener_root_confirmed"
