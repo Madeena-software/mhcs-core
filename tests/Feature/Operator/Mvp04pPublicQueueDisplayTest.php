@@ -99,5 +99,44 @@ final class Mvp04pPublicQueueDisplayTest extends TestCase
             ->assertJsonPath('recent_calls.0.destination', 'SESI FOTO RADIOGRAFI')
             ->assertJsonMissing(['destination' => 'X-ray'])
             ->assertJsonMissing(['destination' => 'Rontgen']);
+
+        $payload = $this->getJson(route('lcd.queue', $fixture['siteLocalId']))->json();
+        $this->assertSame(['ticket_number', 'destination'], array_keys($payload['current'][0]));
+        $this->assertSame(['ticket_number', 'destination'], array_keys($payload['recent_calls'][0]));
+
+    }
+
+    public function test_lcd_excludes_future_and_ended_schedules_but_includes_an_active_schedule(): void
+    {
+        $fixture = $this->operatorFixture(false);
+        $this->app->instance(Clock::class, new FrozenClock(new DateTimeImmutable('2040-01-10T03:30:00+00:00')));
+
+        DB::table('shift_schedules')->where('id', $fixture['scheduleId'])->update([
+            'starts_at' => '2040-01-10 04:00:00',
+            'ends_at' => '2040-01-10 05:00:00',
+        ]);
+        $this->getJson(route('lcd.queue', $fixture['siteLocalId']))->assertOk()->assertJsonPath('current', [])->assertJsonPath('recent_calls', []);
+
+        DB::table('shift_schedules')->where('id', $fixture['scheduleId'])->update([
+            'starts_at' => '2040-01-10 03:00:00',
+            'ends_at' => '2040-01-10 04:00:00',
+        ]);
+        $this->getJson(route('lcd.queue', $fixture['siteLocalId']))->assertOk()->assertJsonPath('current', [])->assertJsonPath('recent_calls', []);
+
+        DB::table('shift_schedules')->where('id', $fixture['scheduleId'])->update([
+            'starts_at' => '2040-01-10 02:00:00',
+            'ends_at' => '2040-01-10 03:00:00',
+        ]);
+        $this->getJson(route('lcd.queue', $fixture['siteLocalId']))->assertOk()->assertJsonPath('current', [])->assertJsonPath('recent_calls', []);
+    }
+
+    public function test_ended_schedule_hides_existing_current_and_recent_rows(): void
+    {
+        $fixture = $this->operatorFixture(false);
+        DB::table('shift_schedules')->where('id', $fixture['scheduleId'])->update(['starts_at' => '2040-01-10 02:00:00', 'ends_at' => '2040-01-10 03:00:00']);
+        $this->getJson(route('lcd.queue', $fixture['siteLocalId']))
+            ->assertOk()
+            ->assertJsonPath('current', [])
+            ->assertJsonPath('recent_calls', []);
     }
 }

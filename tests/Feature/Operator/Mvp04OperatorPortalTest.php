@@ -6,6 +6,7 @@ namespace Tests\Feature\Operator;
 
 use App\Models\User;
 use App\Shared\Security\ProtectedIdentifierService;
+use App\Shared\Validation\NonclinicalValidationContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -222,6 +223,34 @@ final class Mvp04OperatorPortalTest extends TestCase
             ->assertDontSee('Refresh attendance')
             ->assertDontSee('authorization_permission_assignments')
             ->assertDontSee('point balance');
+    }
+
+    public function test_nonclinical_attendance_query_redacts_nik_and_marks_validation_identity(): void
+    {
+        $fixture = $this->operatorFixture(false);
+        $now = now();
+        DB::table('members')->where('id', $fixture['memberId'])->update([
+            'identity_status' => 'nonclinical_validation',
+            'identity_document_type' => null,
+            'encrypted_nik' => null,
+            'nik_lookup_digest' => null,
+            'registration_source' => 'nonclinical_validation',
+        ]);
+        DB::table('member_external_identifiers')->insert([
+            'id' => (string) Str::uuid(),
+            'member_id' => $fixture['memberId'],
+            'namespace' => NonclinicalValidationContext::MARKER_NAMESPACE,
+            'value' => NonclinicalValidationContext::KEY,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+        $this->actingAs($fixture['operator'])->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
+
+        $this->get(route('operator.attendance', ['schedule' => $fixture['scheduleId'], 'at' => '2040-01-10T10:15:00+07:00']))
+            ->assertOk()
+            ->assertSee('Synthetic Arrival Member')
+            ->assertSee('Identitas tidak ditampilkan')
+            ->assertDontSee('900000000001');
     }
 
     public function test_verification_worklist_redirects_to_site_selection_when_no_site_is_selected(): void

@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace Tests\Feature\Operator;
 
 use App\Models\User;
+use App\Modules\Operator\Application\Services\OperatorWorklistService;
 use App\Shared\Audit\AuditEvent;
 use App\Shared\Audit\AuditStore;
 use App\Shared\Audit\DatabaseAuditStore;
 use App\Shared\Events\DomainEvent;
 use App\Shared\Infrastructure\Outbox\OutboxStore;
+use App\Shared\Validation\NonclinicalValidationContext;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -88,6 +90,61 @@ final class Mvp04kBasicExaminationCompletionTest extends TestCase
             ->assertDontSee($fixture['memberId'])
             ->assertDontSee($fixture['bookingId'])
             ->assertDontSee('120');
+    }
+
+    public function test_nonclinical_admission_exposes_and_completes_its_dedicated_stage_without_clinical_records(): void
+    {
+        [$fixture, $admission] = $this->inServiceFixture('NONCLINICAL-1');
+        $this->makeCanonicalNonclinicalMember($fixture);
+        $this->insertNonclinicalCase($fixture);
+
+        $entries = app(OperatorWorklistService::class)->basicExamination();
+        $entry = collect($entries)->firstWhere('admission_id', $admission->id);
+        $this->assertTrue($entry['is_nonclinical_validation']);
+        $this->assertTrue($entry['can_complete_nonclinical_validation']);
+        $this->get(route('operator.basic-examination-worklist'))
+            ->assertOk()
+            ->assertSee('Complete nonclinical validation stage')
+            ->assertDontSee('Record vital signs')
+            ->assertDontSee('Upload paper questionnaire');
+
+        $this->post(route('operator.basic-examination-worklist.complete-nonclinical', $admission->id), [
+            'operation_id' => (string) Str::uuid(),
+        ])->assertRedirect(route('operator.basic-examination-worklist'));
+
+        $this->assertDatabaseHas('operator_queue_admissions', ['id' => $admission->id, 'state' => 'completed']);
+        $this->assertDatabaseHas('operator_queue_admissions', ['operator_paper_ticket_id' => $admission->operator_paper_ticket_id, 'stage' => 'xray', 'state' => 'waiting']);
+        $this->assertSame(0, DB::table('member_vital_signs_assessments')->where('booking_id', $fixture['bookingId'])->count());
+        $this->assertSame(0, DB::table('operator_vital_signs_executions')->where('operator_queue_admission_id', $admission->id)->count());
+        $this->assertSame(0, DB::table('member_paper_questionnaires')->where('booking_id', $fixture['bookingId'])->count());
+        $metadata = json_decode((string) DB::table('audit_events')->where('action', 'operator.basic-examination.completed')->value('metadata'), true, flags: JSON_THROW_ON_ERROR);
+        $this->assertSame(['nonclinical' => true, 'clinical_basic_examination_performed' => false, 'vital_signs_recorded' => false, 'questionnaire_recorded' => false], array_intersect_key($metadata, array_flip(['nonclinical', 'clinical_basic_examination_performed', 'vital_signs_recorded', 'questionnaire_recorded'])));
+    }
+
+    public function test_normal_admission_cannot_invoke_nonclinical_completion_route(): void
+    {
+        [$fixture, $admission] = $this->inServiceFixture('NORMAL-NONCLINICAL-ROUTE');
+        $this->post(route('operator.basic-examination-worklist.complete-nonclinical', $admission->id), ['operation_id' => (string) Str::uuid()])->assertForbidden();
+        $this->assertDatabaseHas('operator_queue_admissions', ['id' => $admission->id, 'state' => 'in_service']);
+        $this->assertNotNull($fixture['memberId']);
+    }
+
+    /** @param array<string, mixed> $fixture */
+    private function makeCanonicalNonclinicalMember(array $fixture): void
+    {
+        $now = now();
+        DB::table('members')->where('id', $fixture['memberId'])->update(['identity_status' => 'nonclinical_validation', 'identity_document_type' => null, 'encrypted_nik' => null, 'nik_lookup_digest' => null, 'registration_source' => 'nonclinical_validation']);
+        DB::table('member_verification_assets')->where('member_id', $fixture['memberId'])->delete();
+        DB::table('member_external_identifiers')->insert(['id' => (string) Str::uuid(), 'member_id' => $fixture['memberId'], 'namespace' => NonclinicalValidationContext::MARKER_NAMESPACE, 'value' => NonclinicalValidationContext::KEY, 'created_at' => $now, 'updated_at' => $now]);
+    }
+
+    /** @param array<string, mixed> $fixture */
+    private function insertNonclinicalCase(array $fixture): void
+    {
+        $now = now();
+        $arrivalId = (string) Str::uuid();
+        DB::table('operator_arrivals')->insert(['id' => $arrivalId, 'booking_id' => $fixture['bookingId'], 'member_schedule_id' => $fixture['scheduleId'], 'operator_site_id' => $fixture['siteLocalId'], 'operator_profile_id' => $fixture['profileId'], 'occurrence_at' => $now, 'recorded_at' => $now, 'operation_id' => 'test:nonclinical-arrival:'.$arrivalId, 'source' => 'operator.portal', 'status' => 'recorded', 'created_at' => $now, 'updated_at' => $now]);
+        DB::table('operator_identity_verifications')->insert(['id' => (string) Str::uuid(), 'arrival_id' => $arrivalId, 'booking_id' => $fixture['bookingId'], 'member_schedule_id' => $fixture['scheduleId'], 'operator_site_id' => $fixture['siteLocalId'], 'operator_profile_id' => $fixture['profileId'], 'state' => 'nonclinical_validation', 'started_at' => $now, 'decided_at' => $now, 'reason_category' => 'nonclinical_validation', 'reason' => null, 'operation_id' => 'test:nonclinical-case:'.$arrivalId, 'created_at' => $now, 'updated_at' => $now]);
     }
 
     public function test_completion_requires_the_claimants_bound_vital_signs_execution(): void

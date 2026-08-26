@@ -7,6 +7,7 @@ namespace Tests\Feature\Operator;
 use App\Modules\Operator\Application\Services\OperatorArrivalService;
 use App\Modules\Operator\Application\Services\OperatorCheckInTicketService;
 use App\Modules\Operator\Application\Services\OperatorIdentityVerificationService;
+use App\Modules\Operator\Domain\OperatorException;
 use App\Shared\Audit\AuditEvent;
 use App\Shared\Audit\AuditStore;
 use App\Shared\Context\AuthenticatedContext;
@@ -15,6 +16,7 @@ use App\Shared\Events\DomainEvent;
 use App\Shared\Identity\LocalId;
 use App\Shared\Infrastructure\Outbox\OutboxStore;
 use App\Shared\Storage\PrivateObjectStore;
+use App\Shared\Validation\NonclinicalValidationContext;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -80,6 +82,74 @@ final class Mvp04dVerifiedCheckInTicketIssueTest extends TestCase
             ->assertDontSee($fixture['bookingId'])
             ->assertDontSee('Synthetic Arrival Member')
             ->assertDontSee('MRN-');
+    }
+
+    public function test_canonical_nonclinical_member_checks_in_without_consent_and_creates_one_waiting_admission(): void
+    {
+        $fixture = $this->matchedFixture(false, false);
+        $this->makeCanonicalNonclinicalMember($fixture);
+        app(OperatorIdentityVerificationService::class)->decide($fixture['caseId'], 'nonclinical_validation', null, (string) Str::uuid());
+
+        $this->post(route('operator.check-in.store', $fixture['caseId']), [
+            'operation_id' => (string) Str::uuid(),
+        ])->assertRedirect();
+
+        $this->assertSame('checked_in', DB::table('bookings')->where('id', $fixture['bookingId'])->value('status'));
+        $this->assertSame(0, DB::table('examination_consents')->where('booking_id', $fixture['bookingId'])->count());
+        $this->assertSame(1, DB::table('operator_paper_tickets')->where('booking_id', $fixture['bookingId'])->count());
+        $this->assertDatabaseHas('operator_queue_admissions', [
+            'member_schedule_id' => $fixture['scheduleId'],
+            'queue_class' => 'advance',
+            'stage' => 'basic_examination',
+            'state' => 'waiting',
+        ]);
+    }
+
+    public function test_nonclinical_check_in_fails_closed_for_wrong_member_marker_and_contradictory_consent(): void
+    {
+        $normal = $this->matchedFixture(false, true);
+        DB::table('operator_identity_verifications')->where('id', $normal['caseId'])->update(['state' => 'nonclinical_validation']);
+        $this->post(route('operator.check-in.store', $normal['caseId']), ['operation_id' => (string) Str::uuid()])->assertRedirect();
+        $this->assertSame('arrived', DB::table('bookings')->where('id', $normal['bookingId'])->value('status'));
+        $this->assertSame(0, DB::table('operator_paper_tickets')->where('booking_id', $normal['bookingId'])->count());
+
+        $wrongMarker = $this->matchedFixture(false, false);
+        $this->makeCanonicalNonclinicalMember($wrongMarker, 'wrong-context');
+        try {
+            app(OperatorIdentityVerificationService::class)->decide($wrongMarker['caseId'], 'nonclinical_validation', null, (string) Str::uuid());
+            $this->fail('A nonclinical decision accepted a member with the wrong marker.');
+        } catch (OperatorException $exception) {
+            $this->assertSame('identity_evidence_unavailable', $exception->category);
+        }
+
+        $contradictory = $this->matchedFixture(true, true);
+        $this->makeCanonicalNonclinicalMember($contradictory);
+        DB::table('operator_identity_verifications')->where('id', $contradictory['caseId'])->update(['state' => 'nonclinical_validation']);
+        $this->post(route('operator.check-in.store', $contradictory['caseId']), ['operation_id' => (string) Str::uuid()])->assertRedirect();
+        $this->assertSame('arrived', DB::table('bookings')->where('id', $contradictory['bookingId'])->value('status'));
+        $this->assertSame(0, DB::table('operator_paper_tickets')->where('booking_id', $contradictory['bookingId'])->count());
+    }
+
+    /** @param array<string, mixed> $fixture */
+    private function makeCanonicalNonclinicalMember(array $fixture, string $marker = NonclinicalValidationContext::KEY): void
+    {
+        $now = now();
+        DB::table('members')->where('id', $fixture['memberId'])->update([
+            'identity_status' => 'nonclinical_validation',
+            'identity_document_type' => null,
+            'encrypted_nik' => null,
+            'nik_lookup_digest' => null,
+            'registration_source' => 'nonclinical_validation',
+        ]);
+        DB::table('member_verification_assets')->where('member_id', $fixture['memberId'])->delete();
+        DB::table('member_external_identifiers')->insert([
+            'id' => (string) Str::uuid(),
+            'member_id' => $fixture['memberId'],
+            'namespace' => NonclinicalValidationContext::MARKER_NAMESPACE,
+            'value' => $marker,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
     }
 
     public function test_ticket_number_is_generated_when_the_operator_does_not_submit_one(): void
