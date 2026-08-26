@@ -359,6 +359,10 @@ final class ProductionS3DiagnosticWorkflowTest extends TestCase
         $this->assertStringContainsString('timeout 6 tcpdump', $workflow);
         $this->assertStringContainsString('tcp port 9000 and host $host_gateway_address', $workflow);
         $this->assertStringContainsString('packet_path_observation_started_before_probe=true', $workflow);
+        $this->assertStringContainsString('packet_observer_ready=false', $workflow);
+        $this->assertStringContainsString("grep -Fq 'listening on' \"\$packet_status_file\"", $workflow);
+        $this->assertStringContainsString('readiness_attempt" -lt 25', $workflow);
+        $this->assertStringContainsString('packet_observation_completed=true', $workflow);
         $this->assertStringContainsString('fsockopen("host.docker.internal",9000', $workflow);
         $this->assertStringContainsString('3);', $workflow);
         $this->assertStringContainsString('packet_path_container_tcp_probe_triggered=true', $workflow);
@@ -369,7 +373,7 @@ final class ProductionS3DiagnosticWorkflowTest extends TestCase
         $this->assertStringContainsString('host_tcp9000_accept_candidate=unknown', $workflow);
         $this->assertStringContainsString('mkfifo', $workflow);
         $this->assertStringContainsString('rmdir "$packet_temp_dir"', $workflow);
-        foreach (['tcpdump -w', 'upload-artifact', 'echo "$packet_capture', 'echo "$packet_classification', 'echo "$container_route_output"', 'echo "$packet_probe_output"'] as $forbidden) {
+        foreach (['tcpdump -w', 'upload-artifact', 'echo "$packet_capture', 'echo "$packet_classification', 'echo "$packet_status', 'echo "$container_route_output"', 'echo "$packet_probe_output"'] as $forbidden) {
             $this->assertStringNotContainsString($forbidden, $workflow);
         }
 
@@ -382,14 +386,14 @@ final class ProductionS3DiagnosticWorkflowTest extends TestCase
         $caseA = strpos($workflow, 'container_syn_not_observed_on_host');
         $this->assertNotFalse($caseA);
         $caseABlock = substr($workflow, $caseA - 900, 1100);
-        foreach (['host_gateway_minio_health" = PASS', 'packet_path_observation_available" = true', 'packet_path_observation_started_before_probe" = true', 'packet_path_container_tcp_probe_triggered" = true', 'packet_path_container_tcp_probe_result" = FAIL', 'container_syn_reaches_host" = false', 'host_gateway_connectivity_root_confirmed=true'] as $condition) {
+        foreach (['host_gateway_minio_health" = PASS', 'packet_path_observation_available" = true', 'packet_path_observation_started_before_probe" = true', 'packet_observation_completed" = true', 'packet_path_container_tcp_probe_triggered" = true', 'packet_path_container_tcp_probe_result" = FAIL', 'container_syn_reaches_host" = false', 'host_gateway_connectivity_root_confirmed=true'] as $condition) {
             $this->assertStringContainsString($condition, $caseABlock);
         }
 
         $caseB = strpos($workflow, 'container_syn_reached_host_and_rst_returned');
         $this->assertNotFalse($caseB);
         $caseBBlock = substr($workflow, $caseB - 450, 650);
-        foreach (['container_syn_reaches_host" = true', 'host_rst_observed" = true', 'packet_path_container_tcp_probe_result" = FAIL', 'host_gateway_connectivity_root_confirmed=true'] as $condition) {
+        foreach (['container_syn_reaches_host" = true', 'host_rst_observed" = true', 'packet_path_container_tcp_probe_result" = FAIL', 'host_gateway_connectivity_root_confirmed=false'] as $condition) {
             $this->assertStringContainsString($condition, $caseBBlock);
         }
 

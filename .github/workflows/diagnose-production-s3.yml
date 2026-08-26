@@ -242,15 +242,18 @@ jobs:
           packet_temp_dir=""
           packet_fifo=""
           packet_classification_file=""
+          packet_status_file=""
           tcpdump_pid=""
           packet_classifier_pid=""
+          packet_observer_ready=false
           if [ "$host_gateway_address_resolved" = true ] && command -v tcpdump >/dev/null 2>&1 && tcpdump -D >/dev/null 2>&1; then
             packet_path_observation_tool=tcpdump
             packet_temp_dir="$(mktemp -d)"
             packet_fifo="$packet_temp_dir/stream"
             packet_classification_file="$packet_temp_dir/classification"
+            packet_status_file="$packet_temp_dir/status"
             mkfifo "$packet_fifo"
-            (timeout 6 tcpdump -i any -nn -l -s 96 "tcp port 9000 and host $host_gateway_address" >"$packet_fifo" 2>/dev/null) &
+            (timeout 6 tcpdump -i any -nn -l -s 96 "tcp port 9000 and host $host_gateway_address" >"$packet_fifo" 2>"$packet_status_file") &
             tcpdump_pid=$!
             (awk '
               BEGIN { syn=0; synack=0; rst=0; ack=0 }
@@ -265,8 +268,17 @@ jobs:
               END { printf "syn=%s\\nsynack=%s\\nrst=%s\\nack=%s\\n", syn, synack, rst, ack }
             ' <"$packet_fifo" >"$packet_classification_file") &
             packet_classifier_pid=$!
-            sleep 1
-            if kill -0 "$tcpdump_pid" 2>/dev/null; then
+            readiness_attempt=0
+            while [ "$readiness_attempt" -lt 25 ]; do
+              if grep -Fq 'listening on' "$packet_status_file" 2>/dev/null && kill -0 "$tcpdump_pid" 2>/dev/null; then
+                packet_observer_ready=true
+                break
+              fi
+              if ! kill -0 "$tcpdump_pid" 2>/dev/null; then break; fi
+              readiness_attempt=$((readiness_attempt + 1))
+              sleep 0.2
+            done
+            if [ "$packet_observer_ready" = true ]; then
               packet_path_observation_available=true
               packet_path_observation_started_before_probe=true
             fi
@@ -309,7 +321,7 @@ jobs:
             fi
           fi
           if [ -n "$packet_temp_dir" ]; then
-            rm -f "$packet_fifo" "$packet_classification_file"
+            rm -f "$packet_fifo" "$packet_classification_file" "$packet_status_file"
             rmdir "$packet_temp_dir" 2>/dev/null || true
           fi
 
@@ -500,14 +512,14 @@ jobs:
             host_gateway_connectivity_root_class=host_reachable_but_container_tcp_failed
           fi
 
-          if [ "$host_gateway_minio_health" = PASS ] && [ "$packet_path_observation_available" = true ] && [ "$packet_path_observation_started_before_probe" = true ] && [ "$packet_path_container_tcp_probe_triggered" = true ] && [ "$packet_path_container_tcp_probe_result" = FAIL ] && [ "$container_syn_reaches_host" = false ]; then
+          if [ "$host_gateway_minio_health" = PASS ] && [ "$packet_path_observation_available" = true ] && [ "$packet_path_observation_started_before_probe" = true ] && [ "$packet_observation_completed" = true ] && [ "$packet_path_container_tcp_probe_triggered" = true ] && [ "$packet_path_container_tcp_probe_result" = FAIL ] && [ "$container_syn_reaches_host" = false ]; then
             host_gateway_connectivity_root_boundary=container_egress_to_host
             host_gateway_connectivity_root_class=container_syn_not_observed_on_host
             host_gateway_connectivity_root_confirmed=true
           elif [ "$container_syn_reaches_host" = true ] && [ "$host_rst_observed" = true ] && [ "$packet_path_container_tcp_probe_result" = FAIL ]; then
             host_gateway_connectivity_root_boundary=host_tcp_rejection
             host_gateway_connectivity_root_class=container_syn_reached_host_and_rst_returned
-            host_gateway_connectivity_root_confirmed=true
+            host_gateway_connectivity_root_confirmed=false
           elif [ "$container_syn_reaches_host" = true ] && [ "$host_synack_observed" = false ] && [ "$host_rst_observed" = false ] && [ "$packet_path_container_tcp_probe_result" = FAIL ]; then
             host_gateway_connectivity_root_boundary=host_receive_or_filtering
             host_gateway_connectivity_root_class=container_syn_reached_host_without_tcp_response
