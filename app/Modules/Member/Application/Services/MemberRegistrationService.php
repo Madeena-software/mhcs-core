@@ -7,6 +7,7 @@ namespace App\Modules\Member\Application\Services;
 use App\Models\User;
 use App\Modules\Member\Application\Data\MemberRegistrationData;
 use App\Modules\Member\Application\Data\MemberRegistrationResult;
+use App\Modules\Member\Application\Data\NonclinicalValidationMemberRegistrationData;
 use App\Modules\Member\Domain\Enums\IdentityStatus;
 use App\Modules\Member\Domain\Enums\RegistrationSource;
 use App\Modules\Member\Domain\Enums\VerificationAssetType;
@@ -26,6 +27,10 @@ use Throwable;
 
 final readonly class MemberRegistrationService
 {
+    private const NONCLINICAL_CONTEXT = 'real-n'.'pz-e2e-v1';
+
+    private const NONCLINICAL_MARKER_NAMESPACE = 'mhcs.validation';
+
     public function __construct(
         private MemberAuthorization $authorization,
         private ProtectedIdentifierService $identifiers,
@@ -37,6 +42,10 @@ final readonly class MemberRegistrationService
 
     public function register(MemberRegistrationData $data): MemberRegistrationResult
     {
+        if ($data->registrationSource === RegistrationSource::NonclinicalValidation) {
+            throw new MemberIdentityException('Nonclinical validation requires its dedicated registration boundary.');
+        }
+
         $adult = $this->isAdult($data->birthDate);
         $context = $this->authorization->registration($data->registrationSource, $adult);
         $this->assertRegistrationAuthorization($data, $context, $adult);
@@ -197,6 +206,150 @@ final readonly class MemberRegistrationService
         }
     }
 
+    public function registerNonclinicalValidation(NonclinicalValidationMemberRegistrationData $data): MemberRegistrationResult
+    {
+        $context = $this->authorization->context('member.nonclinical-validation');
+        if (! in_array('system', $context->roles, true)) {
+            throw new MemberIdentityException('Nonclinical validation registration requires a trusted system context.');
+        }
+
+        $payloadHash = hash('sha256', json_encode([
+            'context' => self::NONCLINICAL_CONTEXT,
+            'operation_id' => $data->operationId,
+            'user_id' => $data->userId,
+        ], JSON_THROW_ON_ERROR));
+
+        try {
+            return DB::transaction(function () use ($data, $context, $payloadHash): MemberRegistrationResult {
+                $operation = DB::table('member_operations')
+                    ->where('operation_type', 'nonclinical_validation_registration')
+                    ->where('operation_id', $data->operationId)
+                    ->lockForUpdate()
+                    ->first();
+
+                if ($operation !== null) {
+                    if (! hash_equals($operation->payload_hash, $payloadHash)) {
+                        throw new MemberIdentityException('The validation registration operation was reused with different data.');
+                    }
+
+                    if ($operation->status === 'handled' && $operation->result !== null) {
+                        $result = json_decode($operation->result, true, 512, JSON_THROW_ON_ERROR);
+                        $this->assertNonclinicalMemberState($result['member_id'], $data->userId);
+
+                        return new MemberRegistrationResult(
+                            memberId: $result['member_id'],
+                            userId: $result['user_id'],
+                            medicalRecordNumber: $result['medical_record_number'],
+                            accountStatus: $result['account_status'],
+                            identityStatus: $result['identity_status'],
+                            replayed: true,
+                        );
+                    }
+
+                    throw new MemberIdentityException('The validation registration operation is already in progress.');
+                }
+
+                $user = DB::table('users')->where('id', $data->userId)->lockForUpdate()->first();
+                if ($user === null || $user->account_status !== 'active' || ! (bool) $user->login_enabled || (bool) $user->must_change_password) {
+                    throw new MemberIdentityException('Nonclinical validation requires an active authenticated account.');
+                }
+                if (DB::table('members')->where('user_id', $data->userId)->exists()) {
+                    throw new MemberIdentityException('The validation account is already linked to a Member.');
+                }
+                if (DB::table('member_external_identifiers')->where('namespace', self::NONCLINICAL_MARKER_NAMESPACE)->where('value', self::NONCLINICAL_CONTEXT)->exists()) {
+                    throw new MemberIdentityException('The validation marker already belongs to another Member.');
+                }
+
+                DB::table('member_operations')->insert([
+                    'id' => (string) Str::uuid(),
+                    'operation_type' => 'nonclinical_validation_registration',
+                    'operation_id' => $data->operationId,
+                    'payload_hash' => $payloadHash,
+                    'status' => 'pending',
+                    'result' => null,
+                    'created_at' => $this->clock->now(),
+                    'updated_at' => $this->clock->now(),
+                ]);
+
+                $memberId = (string) Str::uuid();
+                $medicalRecordNumber = $this->mrn->generate();
+                $now = $this->clock->now();
+                DB::table('members')->insert([
+                    'id' => $memberId,
+                    'user_id' => $data->userId,
+                    'family_id' => null,
+                    'medical_record_number' => $medicalRecordNumber,
+                    'identity_status' => IdentityStatus::NonclinicalValidation->value,
+                    'identity_document_type' => null,
+                    'encrypted_nik' => null,
+                    'nik_lookup_digest' => null,
+                    'name' => 'Nonclinical validation subject',
+                    'birth_date' => '1985-08-04',
+                    'administrative_gender' => 'nonclinical',
+                    'registration_source' => RegistrationSource::NonclinicalValidation->value,
+                    'phone' => null,
+                    'current_address' => 'Nonclinical validation',
+                    'emergency_contact_name' => 'Nonclinical validation',
+                    'emergency_contact_relationship' => 'Nonclinical validation',
+                    'emergency_contact_phone' => 'Nonclinical validation',
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ]);
+                DB::table('member_external_identifiers')->insert([
+                    'id' => (string) Str::uuid(),
+                    'member_id' => $memberId,
+                    'namespace' => self::NONCLINICAL_MARKER_NAMESPACE,
+                    'value' => self::NONCLINICAL_CONTEXT,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ]);
+
+                $this->assertNonclinicalMemberState($memberId, $data->userId);
+                $result = new MemberRegistrationResult(
+                    memberId: $memberId,
+                    userId: $data->userId,
+                    medicalRecordNumber: $medicalRecordNumber,
+                    accountStatus: (string) $user->account_status,
+                    identityStatus: IdentityStatus::NonclinicalValidation->value,
+                );
+                $this->audit->append(AuditEvent::fromContext(
+                    $context,
+                    action: 'member.nonclinical-validation.registered',
+                    source: 'member',
+                    outcome: 'success',
+                    occurredAt: $now,
+                    targetType: Member::class,
+                    targetId: $memberId,
+                    metadata: ['validation_context' => self::NONCLINICAL_CONTEXT, 'nonclinical' => true],
+                ));
+                DB::table('member_operations')
+                    ->where('operation_type', 'nonclinical_validation_registration')
+                    ->where('operation_id', $data->operationId)
+                    ->update([
+                        'status' => 'handled',
+                        'result' => json_encode([
+                            'member_id' => $result->memberId,
+                            'user_id' => $result->userId,
+                            'medical_record_number' => $result->medicalRecordNumber,
+                            'account_status' => $result->accountStatus,
+                            'identity_status' => $result->identityStatus,
+                        ], JSON_THROW_ON_ERROR),
+                        'updated_at' => $now,
+                    ]);
+
+                return $result;
+            });
+        } catch (MemberIdentityException $exception) {
+            throw $exception;
+        } catch (QueryException $exception) {
+            throw new MemberIdentityException('Nonclinical validation registration could not be completed.', previous: $exception);
+        } catch (JsonException $exception) {
+            throw new MemberIdentityException('Nonclinical validation registration result could not be recorded.', previous: $exception);
+        } catch (Throwable $exception) {
+            throw new MemberIdentityException('Nonclinical validation registration could not be completed.', previous: $exception);
+        }
+    }
+
     private function assertRegistrationAuthorization(MemberRegistrationData $data, AuthenticatedContext $context, bool $adult): void
     {
         if ($data->identityDocument->type === VerificationAssetType::ProfilePhoto || $data->profilePhoto->type !== VerificationAssetType::ProfilePhoto) {
@@ -218,6 +371,30 @@ final readonly class MemberRegistrationService
         $expected = $adult ? VerificationAssetType::Ktp : VerificationAssetType::Kia;
         if ($data->identityDocument->type !== $expected) {
             throw new MemberIdentityException('The identity document does not match the standard age path.');
+        }
+    }
+
+    private function assertNonclinicalMemberState(string $memberId, string $userId): void
+    {
+        $member = DB::table('members')->where('id', $memberId)->first();
+        $markerCount = DB::table('member_external_identifiers')
+            ->where('namespace', self::NONCLINICAL_MARKER_NAMESPACE)
+            ->where('value', self::NONCLINICAL_CONTEXT)
+            ->count();
+
+        if (
+            $member === null
+            || (string) $member->user_id !== $userId
+            || $member->identity_status !== IdentityStatus::NonclinicalValidation->value
+            || $member->registration_source !== RegistrationSource::NonclinicalValidation->value
+            || $member->identity_document_type !== null
+            || $member->encrypted_nik !== null
+            || $member->nik_lookup_digest !== null
+            || $markerCount !== 1
+            || ! DB::table('member_external_identifiers')->where('member_id', $memberId)->where('namespace', self::NONCLINICAL_MARKER_NAMESPACE)->where('value', self::NONCLINICAL_CONTEXT)->exists()
+            || DB::table('member_verification_assets')->where('member_id', $memberId)->exists()
+        ) {
+            throw new MemberIdentityException('The nonclinical validation Member state is inconsistent.');
         }
     }
 

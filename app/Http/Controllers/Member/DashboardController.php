@@ -42,6 +42,7 @@ final class DashboardController extends Controller
     {
         return match ($status) {
             'verified' => __('verified'),
+            'nonclinical_validation' => __('Nonclinical validation'),
             default => __('pending_verification'),
         };
     }

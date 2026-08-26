@@ -121,7 +121,12 @@ final class MemberResource extends Resource
                     ->query(fn (Builder $query, array $data): Builder => $query->when(isset($data['value']) && $data['value'] !== '', fn (Builder $query): Builder => $query->whereHas('user', fn (Builder $user): Builder => $user->where('must_change_password', (bool) $data['value'])))),
                 SelectFilter::make('registration_source')
                     ->label('Sumber pendaftaran')
-                    ->options(['online' => 'Online', 'administrator' => 'Administrator'])
+                    ->options([
+                        'online' => 'Online',
+                        'walk_in' => 'Walk-in',
+                        'administrator' => 'Administrator',
+                        'nonclinical_validation' => 'Nonclinical validation',
+                    ])
                     ->query(fn (Builder $query, array $data): Builder => $query->when($data['value'] ?? null, fn (Builder $query, string $value): Builder => $query->where('registration_source', $value))),
             ])
             ->actions([
@@ -315,6 +320,7 @@ final class MemberResource extends Resource
         return [
             'pending_verification' => 'Menunggu verifikasi',
             'verified' => 'Terverifikasi',
+            'nonclinical_validation' => 'Nonclinical validation',
             'rejected' => 'Ditolak',
         ];
     }
@@ -326,9 +332,11 @@ final class MemberResource extends Resource
             'suspended' => 'Ditangguhkan',
             'pending_verification' => 'Menunggu verifikasi',
             'verified' => 'Terverifikasi',
+            'nonclinical_validation' => 'Nonclinical validation',
             'rejected' => 'Ditolak',
             'administrator' => 'Administrator',
             'online' => 'Online',
+            'walk_in' => 'Walk-in',
             'male' => 'Laki-laki',
             'female' => 'Perempuan',
             'unspecified' => 'Tidak ditentukan',

@@ -39,6 +39,7 @@ final readonly class MemberVerificationAssetService
         VerificationAssetInput $input,
         AuthenticatedContext $callerContext,
     ): string {
+        $this->assertGenuineMember((string) $member->id);
         $context = $this->registrationContext($member);
         $this->assertCallerContextMatchesTrustedContext($callerContext, $context);
 
@@ -68,6 +69,7 @@ final readonly class MemberVerificationAssetService
             if ($member === null) {
                 throw new MemberIdentityException('The Member identity was not found.');
             }
+            $this->assertGenuineMember((string) $member->id);
 
             $asset = DB::table('member_verification_assets')->where('id', $assetId)->lockForUpdate()->first();
             if ($asset === null) {
@@ -113,6 +115,8 @@ final readonly class MemberVerificationAssetService
         ) {
             throw new MemberIdentityException('The requested verification asset is unavailable.');
         }
+
+        $this->assertGenuineMember((string) $asset->member_id);
 
         $context = $this->authorization->assetAccess($asset->member_id, $purpose);
         $this->assertGrantBounds($audience, $expiresAt);
@@ -174,6 +178,8 @@ final readonly class MemberVerificationAssetService
             throw new MemberIdentityException('The requested verification asset is unavailable.');
         }
 
+        $this->assertGenuineMember((string) $member->id);
+
         $context = $this->authorization->operatorIdentityAsset($caller);
         $this->assertGrantBounds($audience, $expiresAt);
 
@@ -201,6 +207,8 @@ final readonly class MemberVerificationAssetService
         if ($lockedMember === null) {
             throw new MemberIdentityException('The Member identity was not found.');
         }
+
+        $this->assertGenuineMember((string) $lockedMember->id);
 
         $this->assertTypeForBirthDate((string) $lockedMember->birth_date, $input->type);
         $this->assertPrivateObject($input);
@@ -333,6 +341,13 @@ final readonly class MemberVerificationAssetService
             throw new MemberIdentityException('The Member identity was not found.');
         }
 
+        if (
+            (string) $member->identity_status === IdentityStatus::NonclinicalValidation->value
+            || (string) $member->registration_source === RegistrationSource::NonclinicalValidation->value
+        ) {
+            return;
+        }
+
         $birthDate ??= (string) $member->birth_date;
         $expected = (new DateTimeImmutable($birthDate))->diff($this->clock->now())->y >= 17 ? 'ktp' : 'kia';
         $verified = DB::table('member_verification_assets')
@@ -364,6 +379,16 @@ final readonly class MemberVerificationAssetService
         }
 
         DB::table('members')->where('id', $memberId)->update($updates);
+    }
+
+    private function assertGenuineMember(string $memberId): void
+    {
+        if (DB::table('members')->where('id', $memberId)->where(function ($query): void {
+            $query->where('identity_status', IdentityStatus::NonclinicalValidation->value)
+                ->orWhere('registration_source', RegistrationSource::NonclinicalValidation->value);
+        })->exists()) {
+            throw new MemberIdentityException('Nonclinical validation Members cannot enter the genuine verification lifecycle.');
+        }
     }
 
     private function registrationContext(Member $member): AuthenticatedContext

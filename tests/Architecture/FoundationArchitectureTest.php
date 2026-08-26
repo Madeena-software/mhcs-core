@@ -147,6 +147,7 @@ final class FoundationArchitectureTest extends TestCase
             '2026_08_13_000001_add_capture_component_state.php',
             '2026_08_13_000002_add_capture_metadata_to_image_gateway_capture_sets.php',
             '2026_08_13_000003_add_operator_display_references.php',
+            '2026_08_26_000001_allow_nonclinical_validation_member_identity.php',
         ];
 
         $this->assertSame([], array_values(array_diff($migrations, $allowed)));

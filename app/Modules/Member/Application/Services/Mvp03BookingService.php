@@ -106,7 +106,7 @@ final readonly class Mvp03BookingService
                     if ($memberModel === null) {
                         $this->fail('member_unavailable', 'Member access is unavailable.');
                     }
-                    if (! $this->members->isEligibleAdult($memberModel) || $member->identity_status !== 'verified' || ! $this->members->isComplete($memberModel)) {
+                    if (! $this->members->isEligibleAdult($memberModel) || ! $this->members->isIdentityEligibleForBooking($memberModel) || ! $this->members->isComplete($memberModel)) {
                         $this->fail('member_ineligible', 'Member booking eligibility is incomplete.');
                     }
 

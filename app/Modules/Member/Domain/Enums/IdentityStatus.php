@@ -8,4 +8,5 @@ enum IdentityStatus: string
 {
     case PendingVerification = 'pending_verification';
     case Verified = 'verified';
+    case NonclinicalValidation = 'nonclinical_validation';
 }
