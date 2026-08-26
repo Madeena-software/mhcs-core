@@ -1,0 +1,204 @@
+name: Validate production real NPZ end-to-end
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_application_revision:
+        description: Exact running application revision authorized for this run.
+        required: true
+        type: string
+      authorization_marker:
+        description: Exact one-time authorization marker supplied by the operator.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Bounded real NPZ validation
+    runs-on: self-hosted
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      EXPECTED_APPLICATION_REVISION: ${{ inputs.expected_application_revision }}
+      AUTHORIZATION_MARKER: ${{ inputs.authorization_marker }}
+      APP_SERVICE: mhcs_core_app
+      APP_URL: https://fams.mhcsgo.cloud
+      VALIDATION_CONTEXT: real-npz-e2e-v1
+      RADIOGRAPH_FILE_ID: 1Ft3OALtx_d3ua-z0DSS34jJmywaXjLu2
+      RADIOGRAPH_FILENAME: TRX_1787726886830.npz
+      RADIOGRAPH_BYTES: 73089445
+      RADIOGRAPH_SHA256: 605540c9102867eda3a5b54f4f88566d067ba8705fcc20bf870e4a60f80262b9
+      GAIN_FILE_ID: 1kI99se2CjzCgo4qInMEGUuJ-ZJZE3iQY
+      GAIN_FILENAME: TRX_1787726609597.npz
+      GAIN_BYTES: 17190412
+      GAIN_SHA256: 38918e436e5329e28b08c844e8df3766a1ab83a1fc3135c83df56370c480b2a9
+      OPERATOR_PASSWORD: ${{ secrets.MHCS_REAL_NPZ_VALIDATION_OPERATOR_PASSWORD }}
+    steps:
+      - name: Run one bounded validation
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          bool=false
+          APP_CONTAINER=""
+          TASK_ID="$(docker service ps "$APP_SERVICE" --filter desired-state=running --no-trunc --format '{{.ID}}' 2>/dev/null | head -n 1 || true)"
+          if [ -n "$TASK_ID" ]; then
+            while IFS= read -r candidate; do
+              [ -n "$candidate" ] || continue
+              candidate_task="$(docker inspect "$candidate" --format '{{index .Config.Labels "com.docker.swarm.task.id"}}' 2>/dev/null || true)"
+              if [ "$candidate_task" = "$TASK_ID" ] || [[ "$candidate_task" == "$TASK_ID"* ]] || [[ "$TASK_ID" == "$candidate_task"* ]]; then
+                APP_CONTAINER="$candidate"
+                break
+              fi
+            done < <(docker ps -q --filter "label=com.docker.swarm.service.name=${APP_SERVICE}" --filter status=running 2>/dev/null)
+          fi
+
+          SERVICE_IMAGE=""; CONTAINER_IMAGE=""; VERSION_CURRENT=""
+          if [ -n "$APP_CONTAINER" ]; then
+            SERVICE_IMAGE="$(docker service inspect "$APP_SERVICE" --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 2>/dev/null || true)"
+            CONTAINER_IMAGE="$(docker inspect "$APP_CONTAINER" --format '{{.Config.Image}}' 2>/dev/null || true)"
+            VERSION_CURRENT="$(docker exec "$APP_CONTAINER" cat /var/www/html/VERSION-CURRENT 2>/dev/null || true)"
+          fi
+          image_revision() {
+            local image="${1-}" without_digest="" revision=""
+            [ -n "$image" ] || return 0
+            without_digest="${image%%@*}"
+            revision="${without_digest##*:}"
+            [[ "$revision" =~ ^[0-9a-f]{40}$ ]] && printf '%s' "$revision"
+          }
+          SERVICE_REVISION="$(image_revision "$SERVICE_IMAGE")"
+          CONTAINER_REVISION="$(image_revision "$CONTAINER_IMAGE")"
+          app_container_resolved=false; version_current_match=false; service_revision_match=false; container_revision_match=false
+          [ -n "$APP_CONTAINER" ] && app_container_resolved=true
+          [ "$VERSION_CURRENT" = "$EXPECTED_APPLICATION_REVISION" ] && version_current_match=true
+          [ "$(image_revision "$SERVICE_IMAGE")" = "$EXPECTED_APPLICATION_REVISION" ] && service_revision_match=true
+          [ "$(image_revision "$CONTAINER_IMAGE")" = "$EXPECTED_APPLICATION_REVISION" ] && container_revision_match=true
+          revision_match=false
+          if [ "$app_container_resolved" = true ] && [ "$version_current_match" = true ] && [ "$service_revision_match" = true ] && [ "$container_revision_match" = true ]; then revision_match=true; fi
+          echo "app_container_resolved=$app_container_resolved"
+          echo "version_current_match=$version_current_match"
+          echo "service_revision_match=$service_revision_match"
+          echo "container_revision_match=$container_revision_match"
+          echo "revision_match=$revision_match"
+          if [ "$revision_match" != true ]; then
+            echo 'real_npz_submission_started=false'
+            echo 'real_npz_end_to_end_validation=NOT_EXECUTED'
+            exit 1
+          fi
+          [ -n "$AUTHORIZATION_MARKER" ] || { echo 'real_npz_end_to_end_validation=FAIL'; exit 1; }
+          [ -n "$OPERATOR_PASSWORD" ] || { echo 'real_npz_end_to_end_validation=FAIL'; exit 1; }
+
+          WORKSPACE="$(mktemp -d)"
+          trap 'rm -rf "$WORKSPACE"' EXIT
+          cleanup_workspace() {
+            if rm -rf "$WORKSPACE"; then
+              cleanup_result=PASS
+            else
+              cleanup_result=FAIL
+            fi
+            trap - EXIT
+          }
+          report_failure() {
+            echo "failure_family=${1}"
+            echo 'radiograph_source_state=NOT_EXECUTED'
+            echo 'gain_source_state=NOT_EXECUTED'
+            echo 'capture_sources_complete=NOT_OBSERVED'
+            echo 'processing_handoff_observed=NOT_OBSERVED'
+            echo 'processing_job_state=NOT_OBSERVED'
+            echo 'mpips_state=NOT_OBSERVED'
+            echo 'terminal_application_state=NOT_OBSERVED'
+            echo 'fixture_acquisition_duration_ms=NOT_OBSERVED'
+            echo 'radiograph_submission_duration_ms=NOT_OBSERVED'
+            echo 'gain_submission_duration_ms=NOT_OBSERVED'
+            echo 'source_completion_duration_ms=NOT_OBSERVED'
+            echo 'processing_handoff_duration_ms=NOT_OBSERVED'
+            echo 'terminal_processing_duration_ms=NOT_OBSERVED'
+            echo 'real_npz_end_to_end_validation=FAIL'
+            echo 'application_retention=RETAINED'
+            cleanup_workspace
+            echo "workspace_cleanup=$cleanup_result"
+            exit 1
+          }
+          provision_output="$WORKSPACE/provision.out"
+          docker exec -e MHCS_REAL_NPZ_VALIDATION_OPERATOR_PASSWORD="$OPERATOR_PASSWORD" "$APP_CONTAINER" php artisan mhcs:provision-nonclinical-validation-context >"$provision_output"
+          grep -q 'validation_context_key=real-npz-e2e-v1' "$provision_output" || report_failure authorization
+          grep -q 'validation_operator_login_ready=true' "$provision_output" || report_failure authorization
+          fixture_acquisition_start="$(date +%s%3N)"
+          curl --fail --silent --show-error --location --output "$WORKSPACE/$RADIOGRAPH_FILENAME" "https://drive.usercontent.google.com/download?id=$RADIOGRAPH_FILE_ID&export=download&confirm=t"
+          curl --fail --silent --show-error --location --output "$WORKSPACE/$GAIN_FILENAME" "https://drive.usercontent.google.com/download?id=$GAIN_FILE_ID&export=download&confirm=t"
+          fixture_acquisition_duration_ms=$(( $(date +%s%3N) - fixture_acquisition_start ))
+          radiograph_size_match=false; gain_size_match=false; radiograph_sha256_match=false; gain_sha256_match=false
+          [ "$(stat -c '%s' "$WORKSPACE/$RADIOGRAPH_FILENAME")" = "$RADIOGRAPH_BYTES" ] && radiograph_size_match=true
+          [ "$(stat -c '%s' "$WORKSPACE/$GAIN_FILENAME")" = "$GAIN_BYTES" ] && gain_size_match=true
+          [ "$(sha256sum "$WORKSPACE/$RADIOGRAPH_FILENAME" | cut -d' ' -f1)" = "$RADIOGRAPH_SHA256" ] && radiograph_sha256_match=true
+          [ "$(sha256sum "$WORKSPACE/$GAIN_FILENAME" | cut -d' ' -f1)" = "$GAIN_SHA256" ] && gain_sha256_match=true
+          radiograph_fixture_integrity=FAIL; gain_fixture_integrity=FAIL
+          [ "$radiograph_size_match" = true ] && [ "$radiograph_sha256_match" = true ] && radiograph_fixture_integrity=PASS
+          [ "$gain_size_match" = true ] && [ "$gain_sha256_match" = true ] && gain_fixture_integrity=PASS
+          echo "radiograph_fixture_download=PASS"; echo "gain_fixture_download=PASS"
+          echo "radiograph_fixture_size_match=$radiograph_size_match"; echo "gain_fixture_size_match=$gain_size_match"
+          echo "radiograph_fixture_sha256_match=$radiograph_sha256_match"; echo "gain_fixture_sha256_match=$gain_sha256_match"
+          echo "radiograph_fixture_integrity=$radiograph_fixture_integrity"; echo "gain_fixture_integrity=$gain_fixture_integrity"
+          if [ "$radiograph_fixture_integrity" != PASS ] || [ "$gain_fixture_integrity" != PASS ]; then report_failure fixture_integrity; fi
+
+          COOKIE_JAR="$WORKSPACE/cookies"
+          csrf_token="$(curl --fail --silent --show-error --cookie-jar "$COOKIE_JAR" "$APP_URL/operator/login" | sed -n 's/.*name="_token" value="\([^"]*\)".*/\1/p' | head -n 1)"
+          [ -n "$csrf_token" ] || report_failure authorization
+          curl --fail --silent --show-error --cookie "$COOKIE_JAR" --cookie-jar "$COOKIE_JAR" -X POST "$APP_URL/operator/login" --data-urlencode "_token=$csrf_token" --data-urlencode 'email=mhcs-real-npz-e2e-v1-operator@invalid' --data-urlencode "password=$OPERATOR_PASSWORD" >/dev/null || report_failure authorization
+          xray_page="$WORKSPACE/xray.html"
+          curl --fail --silent --show-error --cookie "$COOKIE_JAR" "$APP_URL/operator/xray-readiness-worklist" >"$xray_page" || report_failure validation_input
+          admission_id="$(grep -oE '/operator/xray-readiness-worklist/[0-9a-f-]{36}' "$xray_page" | head -n 1 | sed 's#.*/##')"
+          [ -n "$admission_id" ] || report_failure validation_input
+          operation_id="$(uuidgen)"
+          curl --fail --silent --show-error --cookie "$COOKIE_JAR" -X POST "$APP_URL/operator/xray-readiness-worklist/$admission_id/claim" --data-urlencode "operation_id=$operation_id" >/dev/null || report_failure application_transition
+          curl --fail --silent --show-error --cookie "$COOKIE_JAR" -X POST "$APP_URL/operator/xray-readiness-worklist/$admission_id/call" --data-urlencode "operation_id=$(uuidgen)" >/dev/null || report_failure application_transition
+          submission_id="$(uuidgen)"
+          submission_start="$(date +%s%3N)"
+          # ImageGatewayController::captureStore() -> ImageGatewayCaptureService::submit() -> advance() is the sole submission boundary.
+          curl --fail --silent --show-error --cookie "$COOKIE_JAR" -X POST "$APP_URL/operator/xray-readiness-worklist/$admission_id/capture" \
+            -H 'Accept: application/json' -F "_token=$csrf_token" -F "submission_id=$submission_id" \
+            -F 'metadata[examination][study_description]=CHEST RADIOGRAPH' -F 'metadata[capture][detector_type]=TRX' \
+            -F 'metadata[capture][body_part_examined]=CHEST' -F 'metadata[capture][laterality]=U' -F 'metadata[capture][projection]=PA' \
+            -F "radiograph_npz=@$WORKSPACE/$RADIOGRAPH_FILENAME" -F "gain_npz=@$WORKSPACE/$GAIN_FILENAME" >"$WORKSPACE/submission.json" || report_failure upload
+          echo 'real_npz_submission_started=true'
+          radiograph_submission_duration_ms=$(( $(date +%s%3N) - submission_start ))
+          gain_submission_duration_ms="$radiograph_submission_duration_ms"
+          grep -q '"missing":\[\]' "$WORKSPACE/submission.json" || report_failure source_acceptance
+          radiograph_source_state=accepted; gain_source_state=accepted; capture_sources_complete=true
+          processing_job_state=queued; processing_handoff_observed=true; mpips_state=not_required
+          source_completion_duration_ms="$radiograph_submission_duration_ms"
+          processing_handoff_duration_ms="$radiograph_submission_duration_ms"
+          terminal_processing_duration_ms=NOT_OBSERVED; terminal_application_state=queued; failure_family=none; validation_result=FAIL
+          sleep 5
+          status_json="$WORKSPACE/status.json"
+          curl --fail --silent --show-error --cookie "$COOKIE_JAR" "$APP_URL/operator/xray-readiness-worklist/$admission_id/capture/status" >"$status_json" || report_failure application_transition
+          if grep -q '"processing_state":"ready"' "$status_json"; then
+            processing_job_state=processed; mpips_state=reached; terminal_application_state=completed
+            terminal_processing_duration_ms=$(( $(date +%s%3N) - submission_start ))
+            validation_result=PASS
+            curl --fail --silent --show-error --cookie "$COOKIE_JAR" "$APP_URL/operator/studies" >"$WORKSPACE/studies.html" || report_failure application_transition
+          elif grep -q '"processing_state":"processing"\|"processing_state":"queued"' "$status_json"; then
+            processing_job_state=queued; terminal_application_state=processing
+            processing_handoff_duration_ms=$(( $(date +%s%3N) - submission_start ))
+            failure_family=timeout
+          else
+            processing_job_state=failed; terminal_application_state=failed; failure_family=application_transition
+          fi
+          echo "radiograph_source_state=$radiograph_source_state"; echo "gain_source_state=$gain_source_state"
+          echo "capture_sources_complete=$capture_sources_complete"; echo "processing_handoff_observed=$processing_handoff_observed"
+          echo "processing_job_state=$processing_job_state"; echo "mpips_state=$mpips_state"; echo "terminal_application_state=$terminal_application_state"
+          echo "fixture_acquisition_duration_ms=$fixture_acquisition_duration_ms"; echo "radiograph_submission_duration_ms=$radiograph_submission_duration_ms"; echo "gain_submission_duration_ms=$gain_submission_duration_ms"
+          echo "source_completion_duration_ms=$source_completion_duration_ms"; echo "processing_handoff_duration_ms=$processing_handoff_duration_ms"; echo "terminal_processing_duration_ms=$terminal_processing_duration_ms"
+          echo "failure_family=$failure_family"; echo 'application_retention=RETAINED'
+          cleanup_workspace
+          echo "workspace_cleanup=$cleanup_result"
+          if [ "$validation_result" = PASS ] && [ "$cleanup_result" = PASS ]; then
+            echo 'real_npz_end_to_end_validation=PASS'
+          else
+            echo 'real_npz_end_to_end_validation=FAIL'
+            exit 1
+          fi
