@@ -16,6 +16,7 @@ use App\Shared\Context\AuthenticatedContext;
 use App\Shared\Context\CorrelationId;
 use App\Shared\Identity\LocalId;
 use App\Shared\Storage\PrivateObjectStore;
+use App\Shared\Validation\NonclinicalValidationContext;
 use DateTimeImmutable;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -177,6 +178,53 @@ final class Mvp04bIdentityVerificationTest extends TestCase
             $this->assertSame('identity_terminal', $exception->category);
         }
         $this->assertSame(1, DB::table('operator_identity_verification_events')->where('verification_id', $case['case_id'])->where('event_type', 'decision')->count());
+    }
+
+    public function test_nonclinical_validation_decision_requires_canonical_evidence_but_no_free_text_reason(): void
+    {
+        $fixture = $this->identityFixture();
+        $this->startSession();
+        $this->actingAs($fixture['operator']);
+        $this->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
+        $case = $this->arriveAndStart($fixture);
+        $now = now();
+        DB::table('members')->where('id', $fixture['memberId'])->update([
+            'identity_status' => 'nonclinical_validation',
+            'identity_document_type' => null,
+            'encrypted_nik' => null,
+            'nik_lookup_digest' => null,
+            'registration_source' => 'nonclinical_validation',
+        ]);
+        DB::table('member_verification_assets')->where('member_id', $fixture['memberId'])->delete();
+        DB::table('member_external_identifiers')->insert([
+            'id' => (string) Str::uuid(),
+            'member_id' => $fixture['memberId'],
+            'namespace' => NonclinicalValidationContext::MARKER_NAMESPACE,
+            'value' => NonclinicalValidationContext::KEY,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        $this->get(route('operator.identity-verification.show', $case['case_id']))
+            ->assertOk()
+            ->assertSee('Nonclinical validation')
+            ->assertDontSee('900000000001')
+            ->assertDontSee('Tampilkan foto sebelumnya');
+        app(OperatorIdentityVerificationService::class)->decide(
+            $case['case_id'],
+            OperatorIdentityVerificationService::NONCLINICAL_VALIDATION,
+            null,
+            (string) Str::uuid(),
+        );
+
+        $this->assertDatabaseHas('operator_identity_verifications', [
+            'id' => $case['case_id'],
+            'state' => OperatorIdentityVerificationService::NONCLINICAL_VALIDATION,
+        ]);
+        $this->assertDatabaseHas('audit_events', [
+            'action' => 'operator.identity-verification.nonclinical-validation',
+            'reason' => 'nonclinical_validation_confirmed',
+        ]);
     }
 
     public function test_matched_revalidates_current_evidence_before_mutation(): void

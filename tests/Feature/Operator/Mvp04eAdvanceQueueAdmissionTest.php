@@ -168,7 +168,7 @@ final class Mvp04eAdvanceQueueAdmissionTest extends TestCase
 
         $this->assertSame($expected, array_column($entries, 'ticket_number'));
         $this->assertCount(2, $entries);
-        $this->assertSame(['admission_id', 'ticket_number', 'site_name', 'schedule_starts_at', 'schedule_ends_at', 'stage', 'state', 'ready_at', 'claimed_by_current_operator', 'has_vital_signs_execution', 'has_questionnaire', 'can_complete'], array_keys($entries[0]));
+        $this->assertSame(['admission_id', 'ticket_number', 'site_name', 'schedule_starts_at', 'schedule_ends_at', 'stage', 'state', 'ready_at', 'claimed_by_current_operator', 'has_vital_signs_execution', 'has_questionnaire', 'can_complete', 'is_nonclinical_validation', 'can_complete_nonclinical_validation'], array_keys($entries[0]));
     }
 
     public function test_queue_audit_failure_rolls_back_check_in_ticket_queue_history_and_idempotency(): void

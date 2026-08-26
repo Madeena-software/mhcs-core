@@ -100,6 +100,7 @@ final readonly class OperatorWorklistService
 
         return DB::table('operator_queue_admissions as admissions')
             ->join('operator_paper_tickets as tickets', 'tickets.id', '=', 'admissions.operator_paper_ticket_id')
+            ->join('bookings', 'bookings.id', '=', 'tickets.booking_id')
             ->join('operator_sites as sites', 'sites.id', '=', 'admissions.operator_site_id')
             ->join('shift_schedules as schedules', 'schedules.id', '=', 'admissions.member_schedule_id')
             ->join('examination_site_refs as member_sites', 'member_sites.id', '=', 'schedules.examination_site_id')
@@ -124,6 +125,9 @@ final readonly class OperatorWorklistService
             })
             ->select([
                 'admissions.id as admission_id',
+                'tickets.booking_id',
+                'bookings.member_id',
+                'admissions.member_schedule_id as schedule_id',
                 'admissions.operator_profile_id as claim_operator_profile_id',
                 'tickets.ticket_number',
                 'sites.display_name as site_name',
@@ -138,23 +142,36 @@ final readonly class OperatorWorklistService
             ->orderBy('admissions.ready_at')
             ->orderBy('admissions.id')
             ->get()
-            ->map(static fn (object $row): array => [
-                'admission_id' => (string) $row->admission_id,
-                'ticket_number' => (string) $row->ticket_number,
-                'site_name' => (string) $row->site_name,
-                'schedule_starts_at' => (string) $row->schedule_starts_at,
-                'schedule_ends_at' => (string) $row->schedule_ends_at,
-                'stage' => (string) $row->stage,
-                'state' => (string) $row->state,
-                'ready_at' => (string) $row->ready_at,
-                'claimed_by_current_operator' => $row->claim_operator_profile_id !== null,
-                'has_vital_signs_execution' => (bool) $row->has_vital_signs_execution,
-                'has_questionnaire' => (bool) $row->has_questionnaire,
-                'can_complete' => $row->claim_operator_profile_id !== null
-                    && $row->state === 'in_service'
-                    && (bool) $row->has_vital_signs_execution
-                    && (bool) $row->has_questionnaire,
-            ])->all();
+            ->map(function (object $row): array {
+                $isNonclinical = $this->memberAttendance->isExactNonclinicalValidationMember((string) $row->member_id)
+                    && DB::table('operator_identity_verifications')
+                        ->where('booking_id', (string) $row->booking_id)
+                        ->where('member_schedule_id', (string) $row->schedule_id)
+                        ->where('state', 'nonclinical_validation')
+                        ->exists();
+
+                return [
+                    'admission_id' => (string) $row->admission_id,
+                    'ticket_number' => (string) $row->ticket_number,
+                    'site_name' => (string) $row->site_name,
+                    'schedule_starts_at' => (string) $row->schedule_starts_at,
+                    'schedule_ends_at' => (string) $row->schedule_ends_at,
+                    'stage' => (string) $row->stage,
+                    'state' => (string) $row->state,
+                    'ready_at' => (string) $row->ready_at,
+                    'claimed_by_current_operator' => $row->claim_operator_profile_id !== null,
+                    'has_vital_signs_execution' => (bool) $row->has_vital_signs_execution,
+                    'has_questionnaire' => (bool) $row->has_questionnaire,
+                    'can_complete' => $row->claim_operator_profile_id !== null
+                        && $row->state === 'in_service'
+                        && (bool) $row->has_vital_signs_execution
+                        && (bool) $row->has_questionnaire,
+                    'is_nonclinical_validation' => $isNonclinical,
+                    'can_complete_nonclinical_validation' => $isNonclinical
+                        && $row->claim_operator_profile_id !== null
+                        && $row->state === 'in_service',
+                ];
+            })->all();
     }
 
     /** @return list<array<string, mixed>> */

@@ -131,7 +131,7 @@ final class SensitiveDataSanitizer
             return false;
         }
 
-        if ($value === NonclinicalValidationContext::KEY) {
+        if (in_array($value, [NonclinicalValidationContext::KEY, 'nonclinical_validation_confirmed'], true)) {
             return false;
         }
 

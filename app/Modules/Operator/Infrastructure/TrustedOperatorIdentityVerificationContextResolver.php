@@ -162,6 +162,17 @@ final class TrustedOperatorIdentityVerificationContextResolver implements Contra
         string $bookingId,
         string $caseId,
     ): ?array {
+        return $this->resolveForConsentOrCheckIn($context, $operatorSiteId, $scheduleId, $bookingId, $caseId, false);
+    }
+
+    private function resolveForConsentOrCheckIn(
+        AuthenticatedContext $context,
+        string $operatorSiteId,
+        string $scheduleId,
+        string $bookingId,
+        string $caseId,
+        bool $allowNonclinical,
+    ): ?array {
         if (
             $context->actorId === null
             || $context->operationId === null
@@ -218,7 +229,7 @@ final class TrustedOperatorIdentityVerificationContextResolver implements Contra
             ->where('operator_profile_id', $profileId)
             ->where('operator_site_id', $site->id)
             ->whereNull('active_claim_operator_profile_id')
-            ->whereIn('state', ['matched', 'nonclinical_validation'])
+            ->whereIn('state', $allowNonclinical ? ['matched', 'nonclinical_validation'] : ['matched'])
             ->first();
         if ($case === null || (string) $case->member_schedule_id !== trim($scheduleId) || (string) $case->booking_id !== trim($bookingId)) {
             return null;
@@ -238,7 +249,7 @@ final class TrustedOperatorIdentityVerificationContextResolver implements Contra
             return null;
         }
 
-        if ($case->state === 'nonclinical_validation' && ! $this->members->isExactNonclinicalValidationMember((string) $booking->member_id)) {
+        if ($allowNonclinical && $case->state === 'nonclinical_validation' && ! $this->members->isExactNonclinicalValidationMember((string) $booking->member_id)) {
             return null;
         }
 
@@ -285,6 +296,6 @@ final class TrustedOperatorIdentityVerificationContextResolver implements Contra
         string $bookingId,
         string $caseId,
     ): ?array {
-        return $this->resolveForConsent($context, $operatorSiteId, $scheduleId, $bookingId, $caseId);
+        return $this->resolveForConsentOrCheckIn($context, $operatorSiteId, $scheduleId, $bookingId, $caseId, true);
     }
 }

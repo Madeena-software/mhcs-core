@@ -39,9 +39,7 @@ final readonly class Mvp04AttendanceService implements OperatorAttendanceContrac
 
     public function isExactNonclinicalValidationMember(string $memberId): bool
     {
-        $member = Member::query()->find($memberId);
-
-        return $member !== null && $this->members->isExactNonclinicalValidationIdentity($member);
+        return $this->members->isExactNonclinicalValidationMember($memberId);
     }
 
     /** @return list<string> */
@@ -290,9 +288,14 @@ final readonly class Mvp04AttendanceService implements OperatorAttendanceContrac
             ->lockForUpdate()
             ->first();
 
+        $isNonclinical = $case?->state === 'nonclinical_validation';
+        $validIdentityPath = $isNonclinical
+            ? $member !== null && $this->members->isExactNonclinicalValidationMember((string) $member->id) && $consent === null
+            : $case?->state === 'matched' && $consent !== null;
+
         if (
             $case === null
-            || $case->state !== 'matched'
+            || ! $validIdentityPath
             || (string) $case->member_schedule_id !== $scheduleId
             || (string) $case->booking_id !== $bookingId
             || (string) $case->operator_profile_id !== $assertion['operator_profile_id']
@@ -302,7 +305,6 @@ final readonly class Mvp04AttendanceService implements OperatorAttendanceContrac
             || (string) $schedule->examination_site_id !== (string) $booking->examination_site_id_snapshot
             || $site === null
             || $member === null
-            || $consent === null
         ) {
             throw new Mvp03Exception('The verified, consent-confirmed booking is unavailable.');
         }

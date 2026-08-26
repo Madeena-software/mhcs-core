@@ -324,7 +324,7 @@ final readonly class OperatorIdentityVerificationService
         $site = $this->authorization->portalSite($identity);
         $operationId = $this->operation($operationId);
         $reason = $reason === null ? null : $this->reason($reason);
-        if ($state !== self::MATCHED && $reason === null) {
+        if (in_array($state, [self::MISMATCH_REPORTED, self::INSUFFICIENT_EVIDENCE], true) && $reason === null) {
             throw new OperatorException('identity_reason_required', 'A reason is required for this verification decision.');
         }
 

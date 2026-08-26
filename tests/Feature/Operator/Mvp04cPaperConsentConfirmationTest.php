@@ -12,6 +12,7 @@ use App\Shared\Context\AuthenticatedContext;
 use App\Shared\Context\CorrelationId;
 use App\Shared\Identity\LocalId;
 use App\Shared\Storage\PrivateObjectStore;
+use App\Shared\Validation\NonclinicalValidationContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
@@ -195,6 +196,37 @@ final class Mvp04cPaperConsentConfirmationTest extends TestCase
         $this->assertDatabaseCount('examination_consents', 0);
         $this->assertSame(0, DB::table('outbox_messages')->where('event_name', 'member.paper-consent-confirmed')->count());
         $this->assertSame($filesBeforeFailure, Storage::disk('local')->allFiles());
+    }
+
+    public function test_nonclinical_validation_case_cannot_use_paper_consent_route(): void
+    {
+        $fixture = $this->matchedFixture();
+        $now = now();
+        DB::table('members')->where('id', $fixture['memberId'])->update([
+            'identity_status' => 'nonclinical_validation',
+            'identity_document_type' => null,
+            'encrypted_nik' => null,
+            'nik_lookup_digest' => null,
+            'registration_source' => 'nonclinical_validation',
+        ]);
+        DB::table('member_verification_assets')->where('member_id', $fixture['memberId'])->delete();
+        DB::table('member_external_identifiers')->insert([
+            'id' => (string) Str::uuid(),
+            'member_id' => $fixture['memberId'],
+            'namespace' => NonclinicalValidationContext::MARKER_NAMESPACE,
+            'value' => NonclinicalValidationContext::KEY,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+        DB::table('operator_identity_verifications')->where('id', $fixture['caseId'])->update([
+            'state' => 'nonclinical_validation',
+            'reason' => 'nonclinical_validation_confirmed',
+        ]);
+        DB::table('examination_consents')->where('booking_id', $fixture['bookingId'])->delete();
+
+        $this->post(route('operator.paper-consent.store', $fixture['caseId']), $this->payload((string) Str::uuid()))
+            ->assertRedirect();
+        $this->assertSame(0, DB::table('examination_consents')->where('booking_id', $fixture['bookingId'])->count());
     }
 
     /** @return array<string, mixed> */
