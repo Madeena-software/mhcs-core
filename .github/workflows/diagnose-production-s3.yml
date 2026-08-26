@@ -75,6 +75,18 @@ jobs:
           host_gateway_minio_health=none
           container_host_gateway_route_checked=false
           container_host_gateway_route=unavailable
+          packet_path_container_tcp_probe_triggered=false
+          packet_path_container_tcp_probe_result=none
+          packet_path_observation_available=false
+          packet_path_observation_tool=unavailable
+          packet_path_observation_started_before_probe=false
+          container_syn_reaches_host=unknown
+          host_synack_observed=unknown
+          host_rst_observed=unknown
+          container_ack_after_synack_observed=unknown
+          packet_observation_completed=false
+          host_tcp9000_drop_reject_candidate=unknown
+          host_tcp9000_accept_candidate=unknown
           host_firewall_inspection=SKIPPED
           docker_gateway_9000_explicit_reject_detected=unknown
           docker_gateway_9000_explicit_accept_detected=unknown
@@ -225,6 +237,80 @@ jobs:
                 *) container_host_gateway_route=unknown ;;
               esac
             fi
+          fi
+
+          packet_temp_dir=""
+          packet_fifo=""
+          packet_classification_file=""
+          tcpdump_pid=""
+          packet_classifier_pid=""
+          if [ "$host_gateway_address_resolved" = true ] && command -v tcpdump >/dev/null 2>&1 && tcpdump -D >/dev/null 2>&1; then
+            packet_path_observation_tool=tcpdump
+            packet_temp_dir="$(mktemp -d)"
+            packet_fifo="$packet_temp_dir/stream"
+            packet_classification_file="$packet_temp_dir/classification"
+            mkfifo "$packet_fifo"
+            (timeout 6 tcpdump -i any -nn -l -s 96 "tcp port 9000 and host $host_gateway_address" >"$packet_fifo" 2>/dev/null) &
+            tcpdump_pid=$!
+            (awk '
+              BEGIN { syn=0; synack=0; rst=0; ack=0 }
+              {
+                to_port = $0 ~ /> .*\\.9000:/
+                from_port = $0 ~ /\\.9000 >/
+                if (to_port && $0 ~ /Flags \\[S\\]/ && $0 !~ /Flags \\[S\\./) syn=1
+                if (syn && from_port && $0 ~ /Flags \\[S\\./) synack=1
+                if (syn && from_port && $0 ~ /Flags \\[[^]]*R/) rst=1
+                if (syn && synack && to_port && $0 ~ /Flags \\[[^]]*\\./ && $0 !~ /Flags \\[[^]]*S/) ack=1
+              }
+              END { printf "syn=%s\\nsynack=%s\\nrst=%s\\nack=%s\\n", syn, synack, rst, ack }
+            ' <"$packet_fifo" >"$packet_classification_file") &
+            packet_classifier_pid=$!
+            sleep 1
+            if kill -0 "$tcpdump_pid" 2>/dev/null; then
+              packet_path_observation_available=true
+              packet_path_observation_started_before_probe=true
+            fi
+          fi
+
+          packet_probe_output=""
+          if packet_probe_output="$(docker exec "$APP_CONTAINER" php -r '$socket=@fsockopen("host.docker.internal",9000,$errno,$errorMessage,3); if (is_resource($socket)) { fclose($socket); echo "PASS"; } else { echo "FAIL"; }' 2>/dev/null)"; then
+            packet_path_container_tcp_probe_triggered=true
+            case "$packet_probe_output" in
+              PASS) packet_path_container_tcp_probe_result=PASS ;;
+              FAIL) packet_path_container_tcp_probe_result=FAIL ;;
+              *) packet_path_container_tcp_probe_result=none ;;
+            esac
+          fi
+
+          if [ -n "$tcpdump_pid" ]; then
+            sleep 1
+            kill "$tcpdump_pid" 2>/dev/null || true
+            wait "$tcpdump_pid" 2>/dev/null || true
+            packet_observation_completed=true
+          fi
+          if [ -n "$packet_classifier_pid" ]; then
+            wait "$packet_classifier_pid" 2>/dev/null || true
+          fi
+          if [ "$packet_path_observation_available" = true ] && [ "$packet_observation_completed" = true ] && [ "$packet_path_container_tcp_probe_triggered" = true ]; then
+            packet_syn="$(awk -F= '$1 == "syn" {print $2; exit}' "$packet_classification_file" 2>/dev/null || true)"
+            packet_synack="$(awk -F= '$1 == "synack" {print $2; exit}' "$packet_classification_file" 2>/dev/null || true)"
+            packet_rst="$(awk -F= '$1 == "rst" {print $2; exit}' "$packet_classification_file" 2>/dev/null || true)"
+            packet_ack="$(awk -F= '$1 == "ack" {print $2; exit}' "$packet_classification_file" 2>/dev/null || true)"
+            if [ "$packet_syn" = 1 ]; then
+              container_syn_reaches_host=true
+              host_synack_observed=false
+              host_rst_observed=false
+              container_ack_after_synack_observed=false
+              [ "$packet_synack" = 1 ] && host_synack_observed=true
+              [ "$packet_rst" = 1 ] && host_rst_observed=true
+              [ "$packet_ack" = 1 ] && container_ack_after_synack_observed=true
+            else
+              container_syn_reaches_host=false
+            fi
+          fi
+          if [ -n "$packet_temp_dir" ]; then
+            rm -f "$packet_fifo" "$packet_classification_file"
+            rmdir "$packet_temp_dir" 2>/dev/null || true
           fi
 
           if [ "$host_listener_inspection" != PASS ]; then
@@ -413,6 +499,28 @@ jobs:
             host_gateway_connectivity_root_boundary=container_to_host_gateway
             host_gateway_connectivity_root_class=host_reachable_but_container_tcp_failed
           fi
+
+          if [ "$host_gateway_minio_health" = PASS ] && [ "$packet_path_observation_available" = true ] && [ "$packet_path_observation_started_before_probe" = true ] && [ "$packet_path_container_tcp_probe_triggered" = true ] && [ "$packet_path_container_tcp_probe_result" = FAIL ] && [ "$container_syn_reaches_host" = false ]; then
+            host_gateway_connectivity_root_boundary=container_egress_to_host
+            host_gateway_connectivity_root_class=container_syn_not_observed_on_host
+            host_gateway_connectivity_root_confirmed=true
+          elif [ "$container_syn_reaches_host" = true ] && [ "$host_rst_observed" = true ] && [ "$packet_path_container_tcp_probe_result" = FAIL ]; then
+            host_gateway_connectivity_root_boundary=host_tcp_rejection
+            host_gateway_connectivity_root_class=container_syn_reached_host_and_rst_returned
+            host_gateway_connectivity_root_confirmed=true
+          elif [ "$container_syn_reaches_host" = true ] && [ "$host_synack_observed" = false ] && [ "$host_rst_observed" = false ] && [ "$packet_path_container_tcp_probe_result" = FAIL ]; then
+            host_gateway_connectivity_root_boundary=host_receive_or_filtering
+            host_gateway_connectivity_root_class=container_syn_reached_host_without_tcp_response
+            host_gateway_connectivity_root_confirmed=false
+          elif [ "$container_syn_reaches_host" = true ] && [ "$host_synack_observed" = true ] && [ "$container_ack_after_synack_observed" = false ] && [ "$packet_path_container_tcp_probe_result" = FAIL ]; then
+            host_gateway_connectivity_root_boundary=container_return_path
+            host_gateway_connectivity_root_class=host_synack_observed_without_container_ack
+            host_gateway_connectivity_root_confirmed=false
+          elif [ "$container_syn_reaches_host" = true ] && [ "$host_synack_observed" = true ] && [ "$container_ack_after_synack_observed" = true ] && [ "$packet_path_container_tcp_probe_result" = FAIL ]; then
+            host_gateway_connectivity_root_boundary=tcp_probe_correlation
+            host_gateway_connectivity_root_class=tcp_handshake_observed_but_probe_failed
+            host_gateway_connectivity_root_confirmed=false
+          fi
           echo "host_port_9000_listener_present=$host_port_9000_listener_present"
           echo "host_port_9000_bind_class=$host_port_9000_bind_class"
           echo "host_port_9000_has_loopback_ipv4=$host_port_9000_has_loopback_ipv4"
@@ -441,6 +549,17 @@ jobs:
           echo "host_gateway_minio_health=$host_gateway_minio_health"
           echo "container_host_gateway_route_checked=$container_host_gateway_route_checked"
           echo "container_host_gateway_route=$container_host_gateway_route"
+          echo "packet_path_container_tcp_probe_triggered=$packet_path_container_tcp_probe_triggered"
+          echo "packet_path_container_tcp_probe_result=$packet_path_container_tcp_probe_result"
+          echo "packet_path_observation_available=$packet_path_observation_available"
+          echo "packet_path_observation_tool=$packet_path_observation_tool"
+          echo "packet_path_observation_started_before_probe=$packet_path_observation_started_before_probe"
+          echo "container_syn_reaches_host=$container_syn_reaches_host"
+          echo "host_synack_observed=$host_synack_observed"
+          echo "host_rst_observed=$host_rst_observed"
+          echo "container_ack_after_synack_observed=$container_ack_after_synack_observed"
+          echo "host_tcp9000_drop_reject_candidate=$host_tcp9000_drop_reject_candidate"
+          echo "host_tcp9000_accept_candidate=$host_tcp9000_accept_candidate"
           echo "host_firewall_inspection=$host_firewall_inspection"
           echo "docker_gateway_9000_explicit_reject_detected=$docker_gateway_9000_explicit_reject_detected"
           echo "docker_gateway_9000_explicit_accept_detected=$docker_gateway_9000_explicit_accept_detected"
