@@ -1,0 +1,540 @@
+name: Verify production private documents
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Read-only private-document persistence verification
+    runs-on: self-hosted
+    timeout-minutes: 15
+    steps:
+      - name: Verify selected production document chains
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          EXPECTED_REVISION="b6232a158b3f6884fd9823bc875abc432676b781"
+          APP_SERVICE="mhcs_core_app"
+          APP_CONTAINER=""
+          TASK_ID="$(docker service ps "$APP_SERVICE" --filter desired-state=running --no-trunc --format '{{.ID}}' 2>/dev/null | head -n 1 || true)"
+          if [ -n "$TASK_ID" ]; then
+            while IFS= read -r candidate; do
+              [ -n "$candidate" ] || continue
+              candidate_task="$(docker inspect "$candidate" --format '{{index .Config.Labels "com.docker.swarm.task.id"}}' 2>/dev/null || true)"
+              if [ "$candidate_task" = "$TASK_ID" ] || [[ "$candidate_task" == "$TASK_ID"* ]] || [[ "$TASK_ID" == "$candidate_task"* ]]; then
+                APP_CONTAINER="$candidate"
+                break
+              fi
+            done < <(docker ps -q --filter "label=com.docker.swarm.service.name=${APP_SERVICE}" --filter status=running 2>/dev/null)
+          fi
+
+          SERVICE_IMAGE=""
+          CONTAINER_IMAGE=""
+          VERSION_CURRENT=""
+          if [ -n "$APP_CONTAINER" ]; then
+            SERVICE_IMAGE="$(docker service inspect "$APP_SERVICE" --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 2>/dev/null || true)"
+            CONTAINER_IMAGE="$(docker inspect "$APP_CONTAINER" --format '{{.Config.Image}}' 2>/dev/null || true)"
+            VERSION_CURRENT="$(docker exec "$APP_CONTAINER" cat /var/www/html/VERSION-CURRENT 2>/dev/null || true)"
+          fi
+
+          image_revision() {
+            local image="$1"
+            local revision="${image##*:}"
+            revision="${revision%%@*}"
+            if [[ "$revision" =~ ^[0-9a-f]{40}$ ]]; then
+              printf '%s' "$revision"
+            fi
+          }
+
+          SERVICE_REVISION="$(image_revision "$SERVICE_IMAGE")"
+          CONTAINER_REVISION="$(image_revision "$CONTAINER_IMAGE")"
+          revision_match=false
+          if [ -n "$APP_CONTAINER" ] \
+            && [ "$VERSION_CURRENT" = "$EXPECTED_REVISION" ] \
+            && [ "$SERVICE_REVISION" = "$EXPECTED_REVISION" ] \
+            && [ "$CONTAINER_REVISION" = "$EXPECTED_REVISION" ]; then
+            revision_match=true
+          fi
+          if [ "$revision_match" != "true" ]; then
+            echo "revision_match=false"
+            exit 1
+          fi
+          echo "revision_match=true"
+
+          diagnostic_exit=0
+          diagnostic_output=""
+          if diagnostic_output="$(docker exec -i "$APP_CONTAINER" php 2>/dev/null <<'PHP'
+          <?php
+          declare(strict_types=1);
+
+          use App\Shared\Storage\OpaqueObjectKey;
+          use Aws\Exception\AwsException;
+          use Illuminate\Filesystem\AwsS3V3Adapter;
+          use Illuminate\Support\Facades\DB;
+          use Illuminate\Support\Facades\Storage;
+
+          /** @return array{family:string,http_status:string} */
+          function safeErrorDetails(Throwable $error): array
+          {
+              $code = '';
+              $status = null;
+              if ($error instanceof AwsException) {
+                  $code = strtolower((string) $error->getAwsErrorCode());
+                  $status = $error->getStatusCode();
+              }
+
+              $httpStatus = is_int($status) && $status >= 100 && $status <= 599
+                  ? (string) $status
+                  : 'none';
+              $family = match (true) {
+                  in_array($code, ['accessdenied', 'invalidaccesskeyid', 'signaturedoesnotmatch', 'expiredtoken', 'invalidtoken'], true),
+                  in_array($status, [401, 403], true) => 'authorization',
+                  in_array($code, ['nosuchbucket', 'nosuchkey', 'notfound'], true),
+                  $status === 404 => 'not_found',
+                  in_array($code, ['notimplemented', 'methodnotallowed', 'permanentredirect'], true),
+                  in_array($status, [405, 501], true) => 'unsupported',
+                  in_array($code, ['networkingerror', 'endpointconnectionerror', 'requesttimeout'], true),
+                  $status === 408 => 'transport',
+                  default => 'unknown',
+              };
+
+              return ['family' => $family, 'http_status' => $httpStatus];
+          }
+
+          function boolText(bool $value): string
+          {
+              return $value ? 'true' : 'false';
+          }
+
+          function integerValue(mixed $value, bool $positive): ?int
+          {
+              if (is_int($value)) {
+                  return $value >= ($positive ? 1 : 0) ? $value : null;
+              }
+              if (! is_string($value) || preg_match('/\A\d+\z/', $value) !== 1) {
+                  return null;
+              }
+
+              $integer = filter_var($value, FILTER_VALIDATE_INT, ['options' => ['min_range' => 0]]);
+              if (! is_int($integer) || ($positive && $integer < 1)) {
+                  return null;
+              }
+
+              return $integer;
+          }
+
+          function validChecksum(mixed $value): bool
+          {
+              return is_string($value) && preg_match('/\A[0-9a-f]{64}\z/i', $value) === 1;
+          }
+
+          function validBytes(mixed $value): bool
+          {
+              return integerValue($value, true) !== null;
+          }
+
+          function validFormat(mixed $value, array $formats): bool
+          {
+              return is_string($value) && in_array($value, $formats, true);
+          }
+
+          function validObjectKey(mixed $value): bool
+          {
+              if (! is_string($value) || $value === '') {
+                  return false;
+              }
+
+              try {
+                  OpaqueObjectKey::fromString($value);
+                  return true;
+              } catch (Throwable) {
+                  return false;
+              }
+          }
+
+          /** @return array{status:string,family:string,http_status:string,content_length:int|string|null} */
+          function skippedHead(): array
+          {
+              return ['status' => 'SKIPPED', 'family' => 'none', 'http_status' => 'none', 'content_length' => null];
+          }
+
+          // HeadObject checks object existence without reading its body.
+          /** @return array{status:string,family:string,http_status:string,content_length:int|string|null} */
+          function headObjectSafely(object $client, string $bucket, string $key): array
+          {
+              try {
+                  $response = $client->headObject(['Bucket' => $bucket, 'Key' => $key]);
+                  $contentLength = $response['ContentLength'] ?? null;
+
+                  return [
+                      'status' => 'PASS',
+                      'family' => 'none',
+                      'http_status' => 'none',
+                      'content_length' => $contentLength,
+                  ];
+              } catch (Throwable $error) {
+                  $details = safeErrorDetails($error);
+
+                  return [
+                      'status' => 'FAIL',
+                      'family' => $details['family'],
+                      'http_status' => $details['http_status'],
+                      'content_length' => null,
+                  ];
+              }
+          }
+
+          function compareBytes(mixed $contentLength, mixed $dbBytes): string
+          {
+              $content = integerValue($contentLength, false);
+              $stored = integerValue($dbBytes, true);
+              if ($content === null || $stored === null) {
+                  return 'unknown';
+              }
+
+              return $content === $stored ? 'true' : 'false';
+          }
+
+          function classifyDocument(
+              bool $selectionSucceeded,
+              bool $recordFound,
+              bool $dbLinkValid,
+              bool $dbMetadataValid,
+              string $headBucketStatus,
+              array $objectHead,
+              array $metadataHead,
+              string $bytesMatch,
+          ): string {
+              if (! $selectionSucceeded) {
+                  return 'db_linkage_incomplete';
+              }
+              if (! $recordFound) {
+                  return 'no_existing_record';
+              }
+              if (! $dbLinkValid) {
+                  return 'db_linkage_incomplete';
+              }
+              if (! $dbMetadataValid) {
+                  return 'db_object_metadata_incomplete';
+              }
+              if ($headBucketStatus !== 'PASS') {
+                  return 's3_access_unavailable';
+              }
+              if ($objectHead['status'] !== 'PASS') {
+                  return $objectHead['family'] === 'not_found' ? 's3_object_missing' : 's3_access_unavailable';
+              }
+              if ($metadataHead['status'] !== 'PASS') {
+                  return $metadataHead['family'] === 'not_found' ? 's3_metadata_missing' : 's3_access_unavailable';
+              }
+              if ($bytesMatch === 'false') {
+                  return 's3_size_mismatch';
+              }
+              if ($bytesMatch !== 'true') {
+                  return 's3_access_unavailable';
+              }
+
+              return 'complete_persistence_evidence';
+          }
+
+          $bootstrapOk = false;
+          $s3Ready = false;
+          $selectionSucceeded = false;
+          $dbQueryFailed = false;
+          $s3Client = null;
+          $s3Bucket = null;
+          $consent = null;
+          $questionnaire = null;
+
+          try {
+              require 'vendor/autoload.php';
+              $app = require 'bootstrap/app.php';
+              $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+              $bootstrapOk = true;
+          } catch (Throwable) {
+              $bootstrapOk = false;
+          }
+
+          if ($bootstrapOk) {
+              try {
+                  $privateDiskName = config('mhcs.private_object_disk');
+                  $s3Config = config('filesystems.disks.s3');
+                  if (! is_string($privateDiskName) || ! is_array($s3Config)) {
+                      throw new RuntimeException('configured storage unavailable');
+                  }
+
+                  $configuredDisk = Storage::disk($privateDiskName);
+                  if (! $configuredDisk instanceof AwsS3V3Adapter) {
+                      throw new RuntimeException('configured storage is not S3');
+                  }
+
+                  $s3Client = $configuredDisk->getClient();
+                  $configuredValues = $configuredDisk->getConfig();
+                  $s3Bucket = $configuredValues['bucket'] ?? ($s3Config['bucket'] ?? null);
+                  if (! is_string($s3Bucket) || $s3Bucket === '') {
+                      throw new RuntimeException('configured bucket unavailable');
+                  }
+                  $s3Ready = true;
+              } catch (Throwable) {
+                  $s3Ready = false;
+              }
+          }
+
+          $consentRecordFound = false;
+          $consentMemberRecordExists = false;
+          $consentBookingRecordExists = false;
+          $consentBookingMemberMatch = false;
+          $consentSignerMemberMatch = false;
+          $consentObjectKeyPresent = false;
+          $consentObjectKeyValid = false;
+          $consentDbChecksumPresent = false;
+          $consentDbChecksumValid = false;
+          $consentDbBytesValid = false;
+          $consentDbFormatValid = false;
+
+          $questionnaireRecordFound = false;
+          $questionnaireMemberRecordExists = false;
+          $questionnaireBookingRecordExists = false;
+          $questionnaireBookingMemberMatch = false;
+          $questionnaireScheduleRecordExists = false;
+          $questionnaireBookingScheduleMatch = false;
+          $questionnaireObjectKeyPresent = false;
+          $questionnaireObjectKeyValid = false;
+          $questionnaireDbChecksumPresent = false;
+          $questionnaireDbChecksumValid = false;
+          $questionnaireDbBytesValid = false;
+          $questionnaireDbFormatValid = false;
+
+          if ($bootstrapOk) {
+              try {
+                  $consent = DB::table('examination_consents')
+                      ->select([
+                          'member_id',
+                          'booking_id',
+                          'signer_member_id',
+                          'private_scan_object_key',
+                          'private_scan_checksum',
+                          'private_scan_bytes',
+                          'private_scan_format',
+                      ])
+                      ->orderByDesc('created_at')
+                      ->orderByDesc('id')
+                      ->first();
+
+                  $questionnaire = DB::table('member_paper_questionnaires')
+                      ->select([
+                          'member_id',
+                          'booking_id',
+                          'member_schedule_id',
+                          'private_photo_object_key',
+                          'private_photo_checksum',
+                          'private_photo_bytes',
+                          'private_photo_format',
+                      ])
+                      ->orderByDesc('created_at')
+                      ->orderByDesc('id')
+                      ->first();
+                  $selectionSucceeded = true;
+              } catch (Throwable) {
+                  $dbQueryFailed = true;
+              }
+          }
+
+          try {
+          if ($consent !== null) {
+              $consentRecordFound = true;
+              $consentMemberRecordExists = DB::table('members')->where('id', $consent->member_id)->exists();
+              $consentBooking = DB::table('bookings')
+                  ->select(['id', 'member_id'])
+                  ->where('id', $consent->booking_id)
+                  ->first();
+              $consentBookingRecordExists = $consentBooking !== null;
+              $consentBookingMemberMatch = $consentBookingRecordExists
+                  && (string) $consentBooking->member_id === (string) $consent->member_id;
+              $consentSignerMemberMatch = (string) $consent->signer_member_id === (string) $consent->member_id;
+              $consentObjectKeyPresent = is_string($consent->private_scan_object_key) && $consent->private_scan_object_key !== '';
+              $consentObjectKeyValid = validObjectKey($consent->private_scan_object_key);
+              $consentDbChecksumPresent = is_string($consent->private_scan_checksum) && $consent->private_scan_checksum !== '';
+              $consentDbChecksumValid = validChecksum($consent->private_scan_checksum);
+              $consentDbBytesValid = validBytes($consent->private_scan_bytes);
+              $consentDbFormatValid = validFormat($consent->private_scan_format, ['image/jpeg', 'image/png', 'application/pdf']);
+          }
+
+          if ($questionnaire !== null) {
+              $questionnaireRecordFound = true;
+              $questionnaireMemberRecordExists = DB::table('members')->where('id', $questionnaire->member_id)->exists();
+              $questionnaireBooking = DB::table('bookings')
+                  ->select(['id', 'member_id', 'shift_schedule_id'])
+                  ->where('id', $questionnaire->booking_id)
+                  ->first();
+              $questionnaireBookingRecordExists = $questionnaireBooking !== null;
+              $questionnaireBookingMemberMatch = $questionnaireBookingRecordExists
+                  && (string) $questionnaireBooking->member_id === (string) $questionnaire->member_id;
+              $questionnaireScheduleRecordExists = DB::table('shift_schedules')
+                  ->where('id', $questionnaire->member_schedule_id)
+                  ->exists();
+              $questionnaireBookingScheduleMatch = $questionnaireBookingRecordExists
+                  && (string) $questionnaireBooking->shift_schedule_id === (string) $questionnaire->member_schedule_id;
+              $questionnaireObjectKeyPresent = is_string($questionnaire->private_photo_object_key) && $questionnaire->private_photo_object_key !== '';
+              $questionnaireObjectKeyValid = validObjectKey($questionnaire->private_photo_object_key);
+              $questionnaireDbChecksumPresent = is_string($questionnaire->private_photo_checksum) && $questionnaire->private_photo_checksum !== '';
+              $questionnaireDbChecksumValid = validChecksum($questionnaire->private_photo_checksum);
+              $questionnaireDbBytesValid = validBytes($questionnaire->private_photo_bytes);
+              $questionnaireDbFormatValid = validFormat($questionnaire->private_photo_format, ['image/jpeg', 'image/png']);
+          }
+          } catch (Throwable) {
+              $dbQueryFailed = true;
+          }
+
+          $consentDbLinkValid = $consentRecordFound
+              && $consentMemberRecordExists
+              && $consentBookingRecordExists
+              && $consentBookingMemberMatch
+              && $consentSignerMemberMatch;
+          $consentDbMetadataValid = $consentRecordFound
+              && $consentObjectKeyPresent
+              && $consentObjectKeyValid
+              && $consentDbChecksumPresent
+              && $consentDbChecksumValid
+              && $consentDbBytesValid
+              && $consentDbFormatValid;
+          $consentDbChainValid = $consentDbLinkValid && $consentDbMetadataValid;
+
+          $questionnaireDbLinkValid = $questionnaireRecordFound
+              && $questionnaireMemberRecordExists
+              && $questionnaireBookingRecordExists
+              && $questionnaireBookingMemberMatch
+              && $questionnaireScheduleRecordExists
+              && $questionnaireBookingScheduleMatch;
+          $questionnaireDbMetadataValid = $questionnaireRecordFound
+              && $questionnaireObjectKeyPresent
+              && $questionnaireObjectKeyValid
+              && $questionnaireDbChecksumPresent
+              && $questionnaireDbChecksumValid
+              && $questionnaireDbBytesValid
+              && $questionnaireDbFormatValid;
+          $questionnaireDbChainValid = $questionnaireDbLinkValid && $questionnaireDbMetadataValid;
+
+          $headBucketStatus = 'FAIL';
+          $headBucketFamily = 'none';
+          $headBucketHttpStatus = 'none';
+          if ($s3Ready && is_object($s3Client) && is_string($s3Bucket)) {
+              try {
+                  // HeadBucket is the only bucket operation in this diagnostic.
+                  $s3Client->headBucket(['Bucket' => $s3Bucket]);
+                  $headBucketStatus = 'PASS';
+              } catch (Throwable $error) {
+                  $details = safeErrorDetails($error);
+                  $headBucketFamily = $details['family'];
+                  $headBucketHttpStatus = $details['http_status'];
+              }
+          }
+
+          $consentObjectHead = skippedHead();
+          $consentMetadataHead = skippedHead();
+          $questionnaireObjectHead = skippedHead();
+          $questionnaireMetadataHead = skippedHead();
+          if ($headBucketStatus === 'PASS' && $s3Client !== null && is_string($s3Bucket)) {
+              if ($consentObjectKeyPresent && $consentObjectKeyValid) {
+                  $consentObjectHead = headObjectSafely($s3Client, $s3Bucket, (string) $consent->private_scan_object_key);
+                  $consentMetadataHead = headObjectSafely($s3Client, $s3Bucket, (string) $consent->private_scan_object_key.'.meta.json');
+              }
+              if ($questionnaireObjectKeyPresent && $questionnaireObjectKeyValid) {
+                  $questionnaireObjectHead = headObjectSafely($s3Client, $s3Bucket, (string) $questionnaire->private_photo_object_key);
+                  $questionnaireMetadataHead = headObjectSafely($s3Client, $s3Bucket, (string) $questionnaire->private_photo_object_key.'.meta.json');
+              }
+          }
+
+          $consentDbBytesMatchS3 = compareBytes($consentObjectHead['content_length'], $consent?->private_scan_bytes);
+          $questionnaireDbBytesMatchS3 = compareBytes($questionnaireObjectHead['content_length'], $questionnaire?->private_photo_bytes);
+          $consentS3ChainValid = $headBucketStatus === 'PASS'
+              && $consentObjectHead['status'] === 'PASS'
+              && $consentMetadataHead['status'] === 'PASS'
+              && $consentDbBytesMatchS3 === 'true';
+          $questionnaireS3ChainValid = $headBucketStatus === 'PASS'
+              && $questionnaireObjectHead['status'] === 'PASS'
+              && $questionnaireMetadataHead['status'] === 'PASS'
+              && $questionnaireDbBytesMatchS3 === 'true';
+          $consentCompletePersistenceEvidence = $consentDbChainValid && $consentS3ChainValid;
+          $questionnaireCompletePersistenceEvidence = $questionnaireDbChainValid && $questionnaireS3ChainValid;
+
+          $consentInterpretation = classifyDocument(
+              $selectionSucceeded && ! $dbQueryFailed,
+              $consentRecordFound,
+              $consentDbLinkValid,
+              $consentDbMetadataValid,
+              $headBucketStatus,
+              $consentObjectHead,
+              $consentMetadataHead,
+              $consentDbBytesMatchS3,
+          );
+          $questionnaireInterpretation = classifyDocument(
+              $selectionSucceeded && ! $dbQueryFailed,
+              $questionnaireRecordFound,
+              $questionnaireDbLinkValid,
+              $questionnaireDbMetadataValid,
+              $headBucketStatus,
+              $questionnaireObjectHead,
+              $questionnaireMetadataHead,
+              $questionnaireDbBytesMatchS3,
+          );
+
+          echo 'consent_record_found='.boolText($consentRecordFound).PHP_EOL;
+          echo 'consent_member_record_exists='.boolText($consentMemberRecordExists).PHP_EOL;
+          echo 'consent_booking_record_exists='.boolText($consentBookingRecordExists).PHP_EOL;
+          echo 'consent_booking_member_match='.boolText($consentBookingMemberMatch).PHP_EOL;
+          echo 'consent_signer_member_match='.boolText($consentSignerMemberMatch).PHP_EOL;
+          echo 'consent_object_key_present='.boolText($consentObjectKeyPresent).PHP_EOL;
+          echo 'consent_object_key_valid='.boolText($consentObjectKeyValid).PHP_EOL;
+          echo 'consent_db_checksum_present='.boolText($consentDbChecksumPresent).PHP_EOL;
+          echo 'consent_db_checksum_valid='.boolText($consentDbChecksumValid).PHP_EOL;
+          echo 'consent_db_bytes_valid='.boolText($consentDbBytesValid).PHP_EOL;
+          echo 'consent_db_format_valid='.boolText($consentDbFormatValid).PHP_EOL;
+          echo 'questionnaire_record_found='.boolText($questionnaireRecordFound).PHP_EOL;
+          echo 'questionnaire_member_record_exists='.boolText($questionnaireMemberRecordExists).PHP_EOL;
+          echo 'questionnaire_booking_record_exists='.boolText($questionnaireBookingRecordExists).PHP_EOL;
+          echo 'questionnaire_booking_member_match='.boolText($questionnaireBookingMemberMatch).PHP_EOL;
+          echo 'questionnaire_schedule_record_exists='.boolText($questionnaireScheduleRecordExists).PHP_EOL;
+          echo 'questionnaire_booking_schedule_match='.boolText($questionnaireBookingScheduleMatch).PHP_EOL;
+          echo 'questionnaire_object_key_present='.boolText($questionnaireObjectKeyPresent).PHP_EOL;
+          echo 'questionnaire_object_key_valid='.boolText($questionnaireObjectKeyValid).PHP_EOL;
+          echo 'questionnaire_db_checksum_present='.boolText($questionnaireDbChecksumPresent).PHP_EOL;
+          echo 'questionnaire_db_checksum_valid='.boolText($questionnaireDbChecksumValid).PHP_EOL;
+          echo 'questionnaire_db_bytes_valid='.boolText($questionnaireDbBytesValid).PHP_EOL;
+          echo 'questionnaire_db_format_valid='.boolText($questionnaireDbFormatValid).PHP_EOL;
+          echo 'configured_private_s3_head_bucket='.$headBucketStatus.PHP_EOL;
+          echo 'configured_private_s3_head_bucket_error_family='.$headBucketFamily.PHP_EOL;
+          echo 'configured_private_s3_head_bucket_http_status='.$headBucketHttpStatus.PHP_EOL;
+          echo 'consent_s3_object_head='.$consentObjectHead['status'].PHP_EOL;
+          echo 'consent_s3_object_error_family='.$consentObjectHead['family'].PHP_EOL;
+          echo 'consent_s3_object_http_status='.$consentObjectHead['http_status'].PHP_EOL;
+          echo 'consent_s3_metadata_head='.$consentMetadataHead['status'].PHP_EOL;
+          echo 'consent_s3_metadata_error_family='.$consentMetadataHead['family'].PHP_EOL;
+          echo 'consent_s3_metadata_http_status='.$consentMetadataHead['http_status'].PHP_EOL;
+          echo 'questionnaire_s3_object_head='.$questionnaireObjectHead['status'].PHP_EOL;
+          echo 'questionnaire_s3_object_error_family='.$questionnaireObjectHead['family'].PHP_EOL;
+          echo 'questionnaire_s3_object_http_status='.$questionnaireObjectHead['http_status'].PHP_EOL;
+          echo 'questionnaire_s3_metadata_head='.$questionnaireMetadataHead['status'].PHP_EOL;
+          echo 'questionnaire_s3_metadata_error_family='.$questionnaireMetadataHead['family'].PHP_EOL;
+          echo 'questionnaire_s3_metadata_http_status='.$questionnaireMetadataHead['http_status'].PHP_EOL;
+          echo 'consent_db_bytes_match_s3='.$consentDbBytesMatchS3.PHP_EOL;
+          echo 'questionnaire_db_bytes_match_s3='.$questionnaireDbBytesMatchS3.PHP_EOL;
+          echo 'consent_db_chain_valid='.boolText($consentDbChainValid).PHP_EOL;
+          echo 'consent_s3_chain_valid='.boolText($consentS3ChainValid).PHP_EOL;
+          echo 'consent_complete_persistence_evidence='.boolText($consentCompletePersistenceEvidence).PHP_EOL;
+          echo 'questionnaire_db_chain_valid='.boolText($questionnaireDbChainValid).PHP_EOL;
+          echo 'questionnaire_s3_chain_valid='.boolText($questionnaireS3ChainValid).PHP_EOL;
+          echo 'questionnaire_complete_persistence_evidence='.boolText($questionnaireCompletePersistenceEvidence).PHP_EOL;
+          echo 'consent_interpretation='.$consentInterpretation.PHP_EOL;
+          echo 'questionnaire_interpretation='.$questionnaireInterpretation.PHP_EOL;
+          PHP
+          )"; then
+            :
+          else
+            diagnostic_exit=$?
+          fi
+          printf '%s\n' "$diagnostic_output"
+          exit "$diagnostic_exit"
