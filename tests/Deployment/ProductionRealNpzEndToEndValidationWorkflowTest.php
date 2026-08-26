@@ -175,4 +175,42 @@ final class ProductionRealNpzEndToEndValidationWorkflowTest extends TestCase
             $this->assertStringContainsString($required, $workflow);
         }
     }
+
+    public function test_submission_attempt_is_marked_before_the_single_capture_post(): void
+    {
+        $workflow = $this->workflow();
+        $started = strpos($workflow, "echo 'real_npz_submission_started=true'");
+        $capture = strpos($workflow, ' -X POST "$APP_URL/operator/xray-readiness-worklist/$xray_admission_id/capture"');
+        $this->assertNotFalse($started);
+        $this->assertNotFalse($capture);
+        $this->assertLessThan($capture, $started);
+        $this->assertSame(1, substr_count($workflow, ' -X POST "$APP_URL/operator/xray-readiness-worklist/$xray_admission_id/capture"'));
+        $this->assertStringNotContainsString('resubmit', strtolower($workflow));
+        $this->assertSame(1, substr_count($workflow, 'submission_id="$(uuidgen)"'));
+    }
+
+    public function test_terminal_state_and_dicom_evidence_are_emitted_truthfully_and_in_order(): void
+    {
+        $workflow = $this->workflow();
+        foreach (['terminal_application_state=queued', 'terminal_application_state=processing', 'terminal_application_state=failed', 'terminal_application_state=completed', 'break;;', 'failure_family=dicom_validation'] as $required) {
+            $this->assertStringContainsString($required, $workflow);
+        }
+        $get = strpos($workflow, '/operator/studies/$study_id/dicom');
+        $http = strpos($workflow, 'dicom_http_boundary_verified=true');
+        $content = strpos($workflow, 'dicom_content_type_verified=true');
+        $magic = strpos($workflow, 'dicm_magic_verified=true');
+        $emitted = strrpos($workflow, 'echo "dicom_http_boundary_verified=$dicom_http_boundary_verified"');
+        $pass = strpos($workflow, 'real_npz_end_to_end_validation=PASS');
+        foreach ([$get, $http, $content, $magic, $emitted, $pass] as $position) {
+            $this->assertNotFalse($position);
+        }
+        $this->assertTrue($get < $http);
+        $this->assertTrue($http < $content);
+        $this->assertTrue($content < $magic);
+        $this->assertTrue($magic < $emitted);
+        $this->assertTrue($emitted < $pass);
+        $this->assertStringNotContainsString('echo "dicom_http_boundary_verified=false"', $workflow);
+        $this->assertStringNotContainsString('echo "dicom_content_type_verified=false"', $workflow);
+        $this->assertStringNotContainsString('echo "dicm_magic_verified=false"', $workflow);
+    }
 }

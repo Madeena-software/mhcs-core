@@ -16,6 +16,7 @@ permissions:
 jobs:
   provision:
     runs-on: self-hosted
+    timeout-minutes: 10
     permissions:
       contents: read
     env:
@@ -65,7 +66,7 @@ jobs:
           $booking = $bookings->first(); $profile = $profiles->first(); $schedule = DB::table('shift_schedules')->where('id', $booking->shift_schedule_id)->where('status', 'open')->first(); if ($schedule === null) exit(1); $startsAt = new DateTimeImmutable((string) $schedule->starts_at, $utc); $endsAt = new DateTimeImmutable((string) $schedule->ends_at, $utc); if (!($endsAt > $startsAt)) exit(1);
           $sites = DB::table('operator_site_assignments as a')->join('operator_sites as s', 's.id', '=', 'a.operator_site_id')->where('a.operator_profile_id', $profile->id)->where('a.active', true)->where('s.active', true)->select('s.id as local_site_id', 's.operator_site_id as stable_operator_site_id', 'a.id as assignment_id')->get();
           $eligible = DB::table('operator_eligible_shifts as e')->where('e.member_schedule_id', $booking->shift_schedule_id)->where('e.sync_status', 'eligible')->where('e.operator_site_id', $sites->count() === 1 ? $sites->first()->stable_operator_site_id : '')->where('e.schedule_starts_at', $schedule->starts_at)->where('e.schedule_ends_at', $schedule->ends_at)->where('e.quota', $schedule->quota)->get(); $shift = DB::table('operator_shift_assignments')->where('operator_profile_id', $profile->id)->where('status', 'active')->whereIn('operator_eligible_shift_id', $eligible->pluck('id'))->get(); if ($sites->count() !== 1 || $eligible->count() !== 1 || $shift->count() !== 1) exit(1);
-          $window = $now < $startsAt ? 'FUTURE' : ($now >= $endsAt ? 'ENDED' : 'ACTIVE'); echo "validation_context_prepared=PASS\nvalidation_schedule_window=$window\nvalidation_schedule_starts_at_utc=".$startsAt->format(DATE_ATOM)."\nvalidation_schedule_ends_at_utc=".$endsAt->format(DATE_ATOM)."\n";
+          if (!($booking->status === 'confirmed')) exit(1); $window = $now < $startsAt ? 'FUTURE' : ($now >= $endsAt ? 'ENDED' : 'ACTIVE'); echo "validation_context_prepared=PASS\nvalidation_schedule_window=$window\nvalidation_schedule_starts_at_utc=".$startsAt->format(DATE_ATOM)."\nvalidation_schedule_ends_at_utc=".$endsAt->format(DATE_ATOM)."\n";
           PHP
           provision_output="$(mktemp)"; trap 'rm -f "$resolver" "$provision_output"' EXIT
           docker exec -e MHCS_REAL_NPZ_VALIDATION_OPERATOR_PASSWORD="$OPERATOR_PASSWORD" "$APP_CONTAINER" php artisan mhcs:provision-nonclinical-validation-context >"$provision_output"

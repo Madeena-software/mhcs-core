@@ -74,4 +74,15 @@ final class ProductionNonclinicalValidationContextProvisioningWorkflowTest exten
             $this->assertStringNotContainsString($forbidden, $workflow);
         }
     }
+
+    public function test_phase_h_is_time_bounded_and_rechecks_confirmed_booking_before_success(): void
+    {
+        $workflow = $this->workflow();
+        $this->assertStringContainsString('timeout-minutes: 10', $workflow);
+        $confirmed = strpos($workflow, '$booking->status === \'confirmed\'');
+        $success = strpos($workflow, 'validation_context_prepared=PASS');
+        $this->assertNotFalse($confirmed);
+        $this->assertNotFalse($success);
+        $this->assertLessThan($success, $confirmed);
+    }
 }
