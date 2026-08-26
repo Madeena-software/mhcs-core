@@ -122,4 +122,24 @@ final class ProductionS3WritePathDiagnosticWorkflowTest extends TestCase
         $this->assertStringContainsString('realistic_gain_size_match=', $workflow);
         $this->assertStringNotContainsString('overall_cleanup=PASS', substr($workflow, strpos($workflow, 'overall_cleanup=FAIL')));
     }
+
+    public function test_remediation_keeps_probe_state_and_finalization_truthful(): void
+    {
+        $workflow = $this->workflow();
+
+        foreach (['startAsync(static fn', '$radiographPromise', '$gainPromise', 'Utils::settle([$radiographPromise, $gainPromise])->wait()', "['reason']", 'sanitizeThrowableChain'] as $required) {
+            $this->assertStringContainsString($required, $workflow);
+        }
+        foreach (['$probe1Cleanup', '$probe2Cleanup', '$probe3Cleanup', '$probe4Cleanup', '$probe5Cleanup', '$probe6Cleanup', '$probe7Cleanup', '$diagnosticBoundary', '$diagnosticFailed', '$continueProbes', '$emitFinalReport'] as $state) {
+            $this->assertStringContainsString($state, $workflow);
+        }
+        foreach (['async_sdk', 'private_acl', 'real_npz_key_shape', 'concurrent_async_pair', 'realistic_size_stream', 'SKIPPED_CONFIG_LIMIT'] as $boundary) {
+            $this->assertStringContainsString($boundary, $workflow);
+        }
+        $final = strpos($workflow, '$emitFinalReport');
+        $this->assertNotFalse($final);
+        $this->assertStringNotContainsString('overall_cleanup=PASS', substr($workflow, $final));
+        $this->assertStringContainsString('$main[1] === 65536', $workflow);
+        $this->assertStringContainsString('realistic_pair_error_family=none', $workflow);
+    }
 }
