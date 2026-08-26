@@ -82,8 +82,8 @@ final class ProductionS3WritePathDiagnosticWorkflowTest extends TestCase
         $this->assertNotFalse($noAcl);
         $this->assertNotFalse($acl);
         $this->assertStringContainsString("'ACL'=>'private'", $workflow);
-        $this->assertStringContainsString('objects/$uuid/radiograph', $workflow);
-        $this->assertStringContainsString('objects/$uuid/gain', $workflow);
+        $this->assertStringContainsString("\$radiographKey = 'objects/'.\$captureUuid.'/radiograph'", $workflow);
+        $this->assertStringContainsString("\$gainKey = 'objects/'.\$captureUuid.'/gain'", $workflow);
         $this->assertStringContainsString('Utils::settle([$radiographPromise, $gainPromise])->wait()', $workflow);
         $this->assertStringContainsString('cleanup_known_keys_only=true', $workflow);
         $this->assertStringContainsString('cleanup_on_failure_present=true', $workflow);
@@ -141,5 +141,43 @@ final class ProductionS3WritePathDiagnosticWorkflowTest extends TestCase
         $this->assertStringNotContainsString('overall_cleanup=PASS', substr($workflow, $final));
         $this->assertStringContainsString('$main[1] === 65536', $workflow);
         $this->assertStringContainsString('realistic_pair_error_family=none', $workflow);
+    }
+
+    public function test_fourth_remediation_guarantees_pair_cleanup_and_shared_realistic_namespace(): void
+    {
+        $workflow = $this->workflow();
+        $pairKeys = strpos($workflow, '$pairKeys =');
+        $pairWrite = strpos($workflow, '$store->putStreamAsync($r[0]', $pairKeys);
+        $pairFinally = strpos($workflow, 'finally {', $pairWrite);
+
+        $this->assertStringContainsString("\$rFamily = 'none'", $workflow);
+        $this->assertStringContainsString("\$gFamily = 'none'", $workflow);
+        $this->assertStringContainsString("\$rStatus = 'none'", $workflow);
+        $this->assertStringContainsString("\$gStatus = 'none'", $workflow);
+        $this->assertNotFalse($pairKeys);
+        $this->assertNotFalse($pairWrite);
+        $this->assertNotFalse($pairFinally);
+        $this->assertLessThan($pairWrite, $pairKeys);
+        $this->assertLessThan($pairFinally, $pairWrite);
+        $this->assertStringContainsString("\$pairKeys = [\$radiographKey, \$radiographKey.'.meta.json', \$gainKey, \$gainKey.'.meta.json']", $workflow);
+        $this->assertStringContainsString("\$probe6Cleanup = \$pairClean ? 'PASS' : 'FAIL'", $workflow);
+        $this->assertStringContainsString('if (! $pairClean) $cleanupFailed = true', $workflow);
+
+        $realistic = strpos($workflow, '$realistic =');
+        $capture = strpos($workflow, '$captureUuid =', $realistic);
+        $radiograph = strpos($workflow, "\$rk = 'objects/'.\$captureUuid.'/radiograph'", $capture);
+        $gain = strpos($workflow, "\$gk = 'objects/'.\$captureUuid.'/gain'", $capture);
+        $this->assertNotFalse($capture);
+        $this->assertNotFalse($radiograph);
+        $this->assertNotFalse($gain);
+        $this->assertLessThan($radiograph, $capture);
+        $this->assertLessThan($gain, $radiograph);
+        $this->assertStringNotContainsString("Str::uuid().'/radiograph'", $workflow);
+        $this->assertStringNotContainsString("Str::uuid().'/gain'", $workflow);
+        $this->assertStringContainsString("\$probe7Cleanup = ! \$probe7Started ? 'SKIPPED'", $workflow);
+        $this->assertStringContainsString('if ($probe7Started && ! $clean) $cleanupFailed = true', $workflow);
+        $this->assertStringContainsString('$pairOk = $heads && ! $probe7Unexpected', $workflow);
+        $this->assertStringContainsString('realistic_local_temp_cleanup=', $workflow);
+        $this->assertStringContainsString("\$probe7Started ? 'realistic_size_stream' : 'unknown'", $workflow);
     }
 }
