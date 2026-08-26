@@ -481,6 +481,65 @@ final class ProductionS3DiagnosticWorkflowTest extends TestCase
         $this->assertStringContainsString('host_gateway_connectivity_root_confirmed=false', $workflow);
     }
 
+    public function test_packet_observer_readiness_decision_executes_against_synthetic_state(): void
+    {
+        $workflow = file_get_contents(base_path('.github/workflows/diagnose-production-s3.yml'));
+        $this->assertIsString($workflow);
+
+        $decisionStart = strpos($workflow, '          if [ "$packet_observer_ready" = true ]; then');
+        $decisionEnd = strpos($workflow, "\n            fi\n          fi\n\n          packet_probe_output", $decisionStart === false ? 0 : $decisionStart);
+        $classifierStart = strpos($workflow, '          classify_packet_observer_status() {');
+        $classifierEnd = strpos($workflow, "\n          if [ \"\$host_gateway_address_resolved\"", $classifierStart === false ? 0 : $classifierStart);
+        $this->assertNotFalse($decisionStart);
+        $this->assertNotFalse($decisionEnd);
+        $this->assertNotFalse($classifierStart);
+        $this->assertNotFalse($classifierEnd);
+        $decisionEnd += strlen("\n            fi");
+
+        $decision = preg_replace('/^ {10}/m', '', substr($workflow, $decisionStart, $decisionEnd - $decisionStart));
+        $classifier = preg_replace('/^ {10}/m', '', substr($workflow, $classifierStart, $classifierEnd - $classifierStart));
+        $this->assertIsString($decision);
+        $this->assertIsString($classifier);
+
+        $cases = [
+            'ready' => [true, true, '', 'ready', true, true, false],
+            'readiness timeout' => [false, true, '', 'readiness_timeout', false, false, false],
+            'permission early exit' => [false, false, "permission denied\n", 'permission_denied', false, false, true],
+            'interface early exit' => [false, false, "No such device\n", 'interface_unavailable', false, false, true],
+            'filter early exit' => [false, false, "syntax error in filter expression\n", 'filter_error', false, false, true],
+            'unknown early exit' => [false, false, "capture startup failed\n", 'early_exit', false, false, true],
+        ];
+
+        foreach ($cases as $name => [$ready, $alive, $status, $expectedClass, $available, $started, $exited]) {
+            $statusPath = tempnam(sys_get_temp_dir(), 'mhcs-readiness-status-');
+            $this->assertNotFalse($statusPath);
+            file_put_contents($statusPath, $status);
+            $script = implode("\n", [
+                'packet_observer_ready='.($ready ? 'true' : 'false'),
+                'process_alive='.($alive ? 'true' : 'false'),
+                'packet_observer_start_class=unknown',
+                'packet_path_observation_available=false',
+                'packet_path_observation_started_before_probe=false',
+                'packet_observer_exited_before_ready=false',
+                'packet_status_file="$1"',
+                'tcpdump_pid=123',
+                'kill() { [ "$process_alive" = true ]; }',
+                $classifier,
+                $decision,
+                'printf "%s\\n" "$packet_observer_start_class" "$packet_path_observation_available" "$packet_path_observation_started_before_probe" "$packet_observer_exited_before_ready"',
+            ]);
+            $output = [];
+            $exitCode = 0;
+            try {
+                exec('bash -c '.escapeshellarg($script).' -- '.escapeshellarg($statusPath), $output, $exitCode);
+            } finally {
+                @unlink($statusPath);
+            }
+            $this->assertSame(0, $exitCode, $name);
+            $this->assertSame([$expectedClass, $available ? 'true' : 'false', $started ? 'true' : 'false', $exited ? 'true' : 'false'], $output, $name);
+        }
+    }
+
     public function test_packet_classifier_executes_against_synthetic_tcpdump_lines(): void
     {
         $workflow = file_get_contents(base_path('.github/workflows/diagnose-production-s3.yml'));
