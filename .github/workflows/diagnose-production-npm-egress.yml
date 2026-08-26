@@ -78,7 +78,7 @@ jobs:
             url="$1"
             payload="$TMP_ROOT/payload-$2"
             # Maximum retained bytes per package: 64 KiB.
-            if curl -4 --fail --silent --show-error --connect-timeout 10 --max-time 20 --range 0-65535 -o "$payload" "$url" 2>/dev/null \
+            if curl -4 --fail --silent --show-error --connect-timeout 10 --max-time 20 --range 0-65535 --max-filesize 65536 -o "$payload" "$url" 2>/dev/null \
               && [ "$(wc -c < "$payload")" -gt 0 ] \
               && [ "$(wc -c < "$payload")" -le 65536 ]; then
               result=PASS
@@ -164,6 +164,23 @@ jobs:
           echo "npm_reproduction=$npm_reproduction"
           echo "npm_failure_code=$npm_failure_code"
 
+          recognized_npm_network_failure=false
+          case "$npm_failure_code" in
+            ETIMEDOUT|ECONNRESET|EAI_AGAIN|ENETUNREACH)
+              recognized_npm_network_failure=true
+              ;;
+          esac
+
+          lightweight_network_healthy=false
+          if [ "$host_https_ipv4_successes" -ge 2 ] \
+            && [ "$tarball_1_result" = PASS ] \
+            && [ "$tarball_2_result" = PASS ] \
+            && [ "$tarball_3_result" = PASS ] \
+            && [ "${docker_default_https_successes:-0}" -ge 2 ] \
+            && [ "${docker_hostnet_https_successes:-0}" -ge 2 ]; then
+            lightweight_network_healthy=true
+          fi
+
           classification=UNKNOWN
           if [ "$host_https_ipv4_successes" -lt 2 ] && [ "${docker_default_https_successes:-0}" -lt 2 ] && [ "${docker_hostnet_https_successes:-0}" -lt 2 ]; then
             classification=HOST_NETWORK_FAILURE
@@ -173,8 +190,12 @@ jobs:
             classification=IPV6_PATH_DEGRADED
           elif [ "$host_https_ipv4_successes" -ge 2 ] && { [ "$tarball_1_result" = FAIL ] 2>/dev/null || [ "$tarball_2_result" = FAIL ] 2>/dev/null || [ "$tarball_3_result" = FAIL ] 2>/dev/null; }; then
             classification=NPM_TARBALL_PATH_FAILURE
-          elif [ "$npm_reproduction" = FAIL ] || [ "$npm_reproduction" = TIMEOUT ]; then
+          elif [ "$npm_reproduction" = FAIL ] \
+            && [ "$recognized_npm_network_failure" = true ] \
+            && [ "$lightweight_network_healthy" = true ]; then
             classification=NPM_CI_NETWORK_FAILURE
+          elif [ "$npm_reproduction" = FAIL ] || [ "$npm_reproduction" = TIMEOUT ]; then
+            classification=UNKNOWN
           elif [ "$host_https_ipv4_successes" -eq 3 ] && [ "${docker_default_https_successes:-0}" -eq 3 ] && [ "${docker_hostnet_https_successes:-0}" -eq 3 ] && [ "$npm_reproduction" = PASS ]; then
             classification=NO_NETWORK_FAILURE_OBSERVED
           else

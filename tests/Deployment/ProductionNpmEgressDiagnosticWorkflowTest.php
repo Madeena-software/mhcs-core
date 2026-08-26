@@ -46,6 +46,7 @@ final class ProductionNpmEgressDiagnosticWorkflowTest extends TestCase
         $this->assertStringContainsString('--max-time 20', $workflow);
         $this->assertStringContainsString('64 KiB', $workflow);
         $this->assertStringContainsString('--range 0-65535', $workflow);
+        $this->assertStringContainsString('--max-filesize 65536', $workflow);
         $this->assertStringContainsString('node:24-alpine@sha256:d32cdf619f63fe0471182d08996dd516c6275bb5fd31ae06e55a570bd9e1ad43', $workflow);
         $this->assertSame(1, substr_count($workflow, '--network host'));
         $this->assertGreaterThanOrEqual(2, substr_count($workflow, '--rm'));
@@ -67,5 +68,27 @@ final class ProductionNpmEgressDiagnosticWorkflowTest extends TestCase
         foreach (['NONE', 'ETIMEDOUT', 'ECONNRESET', 'EAI_AGAIN', 'ENETUNREACH', 'OTHER'] as $failureCode) {
             $this->assertStringContainsString($failureCode, $workflow);
         }
+        $this->assertStringContainsString('recognized_npm_network_failure=false', $workflow);
+        $this->assertStringContainsString('case "$npm_failure_code" in'."\n".'            ETIMEDOUT|ECONNRESET|EAI_AGAIN|ENETUNREACH)', $workflow);
+        $this->assertStringContainsString('recognized_npm_network_failure=true', $workflow);
+        $this->assertStringNotContainsString('OTHER|', $workflow);
+        $this->assertMatchesRegularExpression(
+            '/recognized_npm_network_failure=false.*case "\$npm_failure_code" in.*ETIMEDOUT\|ECONNRESET\|EAI_AGAIN\|ENETUNREACH\).*recognized_npm_network_failure=true/s',
+            $workflow,
+        );
+        $this->assertMatchesRegularExpression(
+            '/\[ "\$npm_reproduction" = FAIL \].*\[ "\$recognized_npm_network_failure" = true \].*\[ "\$lightweight_network_healthy" = true \].*classification=NPM_CI_NETWORK_FAILURE/s',
+            $workflow,
+        );
+        $this->assertStringContainsString('[ "$host_https_ipv4_successes" -ge 2 ]', $workflow);
+        $this->assertStringContainsString('[ "$tarball_1_result" = PASS ]', $workflow);
+        $this->assertStringContainsString('[ "$tarball_2_result" = PASS ]', $workflow);
+        $this->assertStringContainsString('[ "$tarball_3_result" = PASS ]', $workflow);
+        $this->assertStringContainsString('[ "${docker_default_https_successes:-0}" -ge 2 ]', $workflow);
+        $this->assertStringContainsString('[ "${docker_hostnet_https_successes:-0}" -ge 2 ]', $workflow);
+        $this->assertStringNotContainsString(
+            'elif [ "$npm_reproduction" = FAIL ] || [ "$npm_reproduction" = TIMEOUT ]; then\n            classification=NPM_CI_NETWORK_FAILURE',
+            $workflow,
+        );
     }
 }
