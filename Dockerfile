@@ -18,11 +18,19 @@ RUN composer install --no-dev --no-interaction --prefer-dist --no-scripts --opti
 
 FROM node:24-alpine AS node-builder
 
+ENV NPM_CONFIG_FETCH_RETRIES=5 \
+    NPM_CONFIG_FETCH_RETRY_FACTOR=2 \
+    NPM_CONFIG_FETCH_RETRY_MINTIMEOUT=20000 \
+    NPM_CONFIG_FETCH_RETRY_MAXTIMEOUT=120000 \
+    NPM_CONFIG_FETCH_TIMEOUT=300000
+
 WORKDIR /app
 COPY package.json package-lock.json vite.config.js ./
 COPY resources/ ./resources/
 COPY tests/JavaScript/ ./tests/JavaScript/
-RUN npm ci --no-audit --no-fund && npm run build
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci --no-audit --no-fund --prefer-offline \
+    && npm run build
 
 FROM php:8.4-fpm AS app
 
