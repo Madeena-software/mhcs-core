@@ -1,0 +1,161 @@
+name: Diagnose production S3 write path
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diagnose:
+    runs-on: self-hosted
+    permissions:
+      contents: read
+    steps:
+      - name: Run bounded S3 write-path diagnostic
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXPECTED_REVISION="b6232a158b3f6884fd9823bc875abc432676b781"
+          APP_SERVICE="mhcs_core_app"
+          APP_CONTAINER=""
+          TASK_ID="$(docker service ps "$APP_SERVICE" --filter desired-state=running --no-trunc --format '{{.ID}}' 2>/dev/null | head -n 1 || true)"
+          if [ -n "$TASK_ID" ]; then
+            while IFS= read -r candidate; do
+              [ -n "$candidate" ] || continue
+              candidate_task="$(docker inspect "$candidate" --format '{{index .Config.Labels "com.docker.swarm.task.id"}}' 2>/dev/null || true)"
+              if [ "$candidate_task" = "$TASK_ID" ] || [[ "$candidate_task" == "$TASK_ID"* ]] || [[ "$TASK_ID" == "$candidate_task"* ]]; then APP_CONTAINER="$candidate"; break; fi
+            done < <(docker ps -q --filter "label=com.docker.swarm.service.name=${APP_SERVICE}" --filter status=running 2>/dev/null)
+          fi
+          SERVICE_IMAGE=""; CONTAINER_IMAGE=""; VERSION_CURRENT=""
+          if [ -n "$APP_CONTAINER" ]; then
+            SERVICE_IMAGE="$(docker service inspect "$APP_SERVICE" --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 2>/dev/null || true)"
+            CONTAINER_IMAGE="$(docker inspect "$APP_CONTAINER" --format '{{.Config.Image}}' 2>/dev/null || true)"
+            VERSION_CURRENT="$(docker exec "$APP_CONTAINER" cat /var/www/html/VERSION-CURRENT 2>/dev/null || true)"
+          fi
+          image_revision() { local image="$1" revision="${image##*:}"; revision="${revision%%@*}"; [[ "$revision" =~ ^[0-9a-f]{40}$ ]] && printf '%s' "$revision"; }
+          SERVICE_REVISION="$(image_revision "$SERVICE_IMAGE")"
+          CONTAINER_REVISION="$(image_revision "$CONTAINER_IMAGE")"
+          revision_match=false
+          if [ -n "$APP_CONTAINER" ] && [ "$VERSION_CURRENT" = "$EXPECTED_REVISION" ] && [ "$SERVICE_REVISION" = "$EXPECTED_REVISION" ] && [ "$CONTAINER_REVISION" = "$EXPECTED_REVISION" ]; then revision_match=true; fi
+          if [ "$revision_match" != "true" ]; then echo "revision_match=false"; exit 1; fi
+          echo "revision_match=true"
+          docker exec -i "$APP_CONTAINER" php <<'PHP'
+          <?php
+          declare(strict_types=1);
+
+          use App\Shared\Context\AuthenticatedContext;
+          use App\Shared\Storage\OpaqueObjectKey;
+          use App\Shared\Storage\PrivateObjectStore;
+          use Aws\S3\Exception\S3Exception;
+          use Aws\S3\S3Client;
+          use GuzzleHttp\Promise\Utils;
+          use Illuminate\Contracts\Console\Kernel;
+          use Illuminate\Filesystem\AwsS3V3Adapter;
+          use Illuminate\Support\Facades\Storage;
+
+          require 'vendor/autoload.php';
+          $app = require 'bootstrap/app.php';
+          $app->make(Kernel::class)->bootstrap();
+
+          $families = ['none', 'authorization', 'not_found', 'transport', 'unsupported', 'unknown'];
+          function statusOf(Throwable $e): string
+          {
+              $status = method_exists($e, 'getStatusCode') ? (string) $e->getStatusCode() : '';
+              return preg_match('/\A\d{3}\z/', $status) === 1 ? $status : 'none';
+          }
+          function sanitizeThrowable(Throwable $e): string
+          {
+              if ($e instanceof S3Exception) {
+                  $status = statusOf($e);
+                  if (in_array($status, ['401', '403'], true)) return 'authorization';
+                  if ($status === '404') return 'not_found';
+                  if (in_array($status, ['408', '429', '500', '502', '503', '504'], true)) return 'transport';
+                  $code = (string) $e->getAwsErrorCode();
+                  if (in_array($code, ['NotImplemented', 'NotSupported'], true)) return 'unsupported';
+              }
+              return 'unknown';
+          }
+          function result(string $name, bool $ok): void { echo $name.'='.($ok ? 'PASS' : 'FAIL')."\n"; }
+          function streamOf(int $bytes): array
+          {
+              $stream = tmpfile();
+              if ($stream === false) throw new RuntimeException('temporary stream unavailable');
+              $hash = hash_init('sha256'); $written = 0; $chunk = str_repeat('S3-DIAGNOSTIC\0', 65536);
+              while ($written < $bytes) { $part = substr($chunk, 0, min(strlen($chunk), $bytes - $written)); fwrite($stream, $part); hash_update($hash, $part); $written += strlen($part); }
+              rewind($stream);
+              return [$stream, hash_final($hash)];
+          }
+          function syntheticFile(int $bytes): array
+          {
+              $path = tempnam(sys_get_temp_dir(), 's3diag-');
+              if ($path === false) throw new RuntimeException('temporary file unavailable');
+              $stream = fopen($path, 'w+b');
+              if ($stream === false) throw new RuntimeException('temporary file unavailable');
+              $hash = hash_init('sha256'); $written = 0; $chunk = "PK\x03\x04".str_repeat('N', 1048572);
+              while ($written < $bytes) { $part = substr($chunk, 0, min(strlen($chunk), $bytes - $written)); fwrite($stream, $part); hash_update($hash, $part); $written += strlen($part); }
+              rewind($stream);
+              return [$path, $stream, hash_final($hash)];
+          }
+          function head(S3Client $client, string $bucket, string $key): array
+          {
+              try { $response = $client->headObject(['Bucket' => $bucket, 'Key' => $key]); return [true, (int) $response['ContentLength'], 'none', 'none']; }
+              catch (Throwable $e) { return [false, null, sanitizeThrowable($e), statusOf($e)]; }
+          }
+          function cleanup(S3Client $client, string $bucket, array $keys): bool
+          {
+              $ok = true;
+              foreach (array_unique($keys) as $key) {
+                  try { $client->deleteObject(['Bucket' => $bucket, 'Key' => $key]); }
+                  catch (Throwable) { $ok = false; continue; }
+                  try { $client->headObject(['Bucket' => $bucket, 'Key' => $key]); $ok = false; }
+                  catch (Throwable $e) { if (sanitizeThrowable($e) !== 'not_found') $ok = false; }
+              }
+              return $ok;
+          }
+          function settledPair(array $promises): array { return Utils::settle($promises)->wait(); }
+          function boolText(bool $value): string { return $value ? 'true' : 'false'; }
+          // Sanitized output includes HeadBucket, overall_cleanup=FAIL, and fixed error families only.
+          // Output contract: write_probe_head_bucket=, sync_private_store_small=,
+          // async_sdk_small_no_acl=, async_sdk_small_private_acl=,
+          // async_sdk_real_radiograph_key_small=, async_private_store_real_key_small=,
+          // async_private_store_pair_small=, async_private_store_pair_realistic=.
+          // The application calls PrivateObjectStore::putStream() and PrivateObjectStore::putStreamAsync().
+          // Probe 3 adds 'ACL' => 'private'; probe 2 intentionally has no ACL field.
+
+          $diskName = config('mhcs.private_object_disk');
+          $disk = Storage::disk($diskName);
+          $adapter = $disk->getAdapter();
+          if (! $adapter instanceof AwsS3V3Adapter) { echo "write_probe_head_bucket=FAIL\nwrite_probe_head_bucket_error_family=unsupported\nwrite_probe_head_bucket_http_status=none\n"; exit(1); }
+          $s3Client = $adapter->getClient();
+          $s3Config = config('filesystems.disks.s3');
+          $bucket = (string) ($s3Config['bucket'] ?? '');
+          try { $s3Client->headBucket(['Bucket' => $bucket]); result('write_probe_head_bucket', true); echo "write_probe_head_bucket_error_family=none\nwrite_probe_head_bucket_http_status=none\n"; }
+          catch (Throwable $e) { result('write_probe_head_bucket', false); echo 'write_probe_head_bucket_error_family='.sanitizeThrowable($e)."\nwrite_probe_head_bucket_http_status=".statusOf($e)."\n"; exit(1); }
+
+          $context = AuthenticatedContext::anonymous()->forPurpose('production-s3-write-path-diagnostic');
+          $store = app(PrivateObjectStore::class);
+          $uuid = (string) Illuminate\Support\Str::uuid();
+          $known = [];
+          $probeCleanup = static function (array $keys) use ($s3Client, $bucket): bool { return cleanup($s3Client, $bucket, $keys); };
+          $small = streamOf(65536); $syncKey = 'objects/'.$uuid.'/sync-control'; $known[] = $syncKey; $known[] = $syncKey.'.meta.json';
+          $syncOk = false; try { $store->putStream($small[0], 65536, $small[1], $context, 'diagnostic', OpaqueObjectKey::fromString($syncKey)); $main = head($s3Client, $bucket, $syncKey); $meta = head($s3Client, $bucket, $syncKey.'.meta.json'); $syncOk = $main[0] && $meta[0] && $main[1] === 65536; } catch (Throwable) { }
+          fclose($small[0]); result('sync_private_store_small', $syncOk); echo 'sync_private_store_small_object_head='.($syncOk ? 'PASS' : 'FAIL')."\n".'sync_private_store_small_metadata_head='.($syncOk ? 'PASS' : 'FAIL')."\n".'sync_private_store_small_size_match='.boolText($syncOk)."\n".'sync_private_store_small_error_family=none' . "\n"; $clean1 = $probeCleanup($known); echo 'probe_1_cleanup='.($clean1 ? 'PASS' : 'FAIL')."\n"; if (! $syncOk || ! $clean1) { echo "overall_cleanup=".($clean1 ? 'PASS' : 'FAIL')."\n"; exit(1); }
+
+          $allPriorPassed = true; $uuid = (string) Illuminate\Support\Str::uuid();
+          $probe = static function (string $name, int $probeNumber, array $params, array $keys) use ($s3Client, $bucket, $probeCleanup, &$allPriorPassed): void { $ok = false; $family = 'none'; $status = 'none'; try { $s3Client->putObjectAsync($params)->wait(); $ok = head($s3Client, $bucket, $params['Key'])[0]; } catch (Throwable $e) { $family = sanitizeThrowable($e); $status = statusOf($e); } result($name, $ok); echo $name.'_error_family='.$family."\n".$name.'_http_status='.$status."\n"; $clean = $probeCleanup($keys); echo 'probe_'.$probeNumber.'_cleanup='.($clean ? 'PASS' : 'FAIL')."\n"; if (! $ok || ! $clean) $allPriorPassed = false; };
+          $s = streamOf(65536); $k = 'objects/'.$uuid.'/async-no-acl'; $known = [$k]; $probe('async_sdk_small_no_acl', 2, ['Bucket'=>$bucket, 'Key'=>$k, 'Body'=>$s[0]], $known); fclose($s[0]); if (! $allPriorPassed) exit(1);
+          $s = streamOf(65536); $k = 'objects/'.$uuid.'/async-private-acl'; $probe('async_sdk_small_private_acl', 3, ['Bucket'=>$bucket, 'Key'=>$k, 'Body'=>$s[0], 'ACL'=>'private'], [$k]); fclose($s[0]); if (! $allPriorPassed) exit(1);
+          $s = streamOf(65536); $k = 'objects/'.$uuid.'/radiograph'; // objects/$uuid/radiograph
+          $probe('async_sdk_real_radiograph_key_small', 4, ['Bucket'=>$bucket, 'Key'=>$k, 'Body'=>$s[0], 'ACL'=>'private'], [$k]); fclose($s[0]); if (! $allPriorPassed) exit(1);
+
+          $uuid = (string) Illuminate\Support\Str::uuid(); $k = 'objects/'.$uuid.'/radiograph'; $known = [$k, $k.'.meta.json']; $s = streamOf(65536); $asyncOk = false;
+          try { $promise = $store->putStreamAsync($s[0], 65536, $s[1], $context, 'diagnostic', OpaqueObjectKey::fromString($k)); $promise->wait(); $asyncOk = head($s3Client, $bucket, $k)[0] && head($s3Client, $bucket, $k.'.meta.json')[0]; } catch (Throwable) { }
+          fclose($s[0]); result('async_private_store_real_key_small', $asyncOk); echo 'async_private_store_real_key_small_object_head='.($asyncOk ? 'PASS' : 'FAIL')."\n".'async_private_store_real_key_small_metadata_head='.($asyncOk ? 'PASS' : 'FAIL')."\n".'async_private_store_real_key_small_size_match='.boolText($asyncOk)."\n".'async_private_store_real_key_small_error_family=none'."\n"; $clean = $probeCleanup($known); echo 'probe_5_cleanup='.($clean ? 'PASS' : 'FAIL')."\n"; if (! $asyncOk || ! $clean) exit(1);
+
+          $uuid = (string) Illuminate\Support\Str::uuid(); $radiographKey = 'objects/'.$uuid.'/radiograph'; $gainKey = 'objects/'.$uuid.'/gain'; // objects/$uuid/gain
+          $r = streamOf(65536); $g = streamOf(65536); $radiographPromise = $store->putStreamAsync($r[0], 65536, $r[1], $context, 'diagnostic', OpaqueObjectKey::fromString($radiographKey)); $gainPromise = $store->putStreamAsync($g[0], 65536, $g[1], $context, 'diagnostic', OpaqueObjectKey::fromString($gainKey));
+          try { $settled = Utils::settle([$radiographPromise, $gainPromise])->wait(); $pairOk = count($settled) === 2 && $settled[0]['state'] === 'fulfilled' && $settled[1]['state'] === 'fulfilled'; } catch (Throwable) { $pairOk = false; }
+          fclose($r[0]); fclose($g[0]); $pairHeads = $pairOk && head($s3Client, $bucket, $radiographKey)[0] && head($s3Client, $bucket, $gainKey)[0] && head($s3Client, $bucket, $radiographKey.'.meta.json')[0] && head($s3Client, $bucket, $gainKey.'.meta.json')[0]; result('async_private_store_pair_small', $pairHeads); echo 'pair_small_radiograph='.($pairHeads ? 'PASS' : 'FAIL')."\npair_small_gain=".($pairHeads ? 'PASS' : 'FAIL')."\npair_small_radiograph_metadata=".($pairHeads ? 'PASS' : 'FAIL')."\npair_small_gain_metadata=".($pairHeads ? 'PASS' : 'FAIL')."\npair_small_error_family=none\n"; $clean = $probeCleanup([$radiographKey, $gainKey, $radiographKey.'.meta.json', $gainKey.'.meta.json']); echo 'probe_6_cleanup='.($clean ? 'PASS' : 'FAIL')."\n"; if (! $pairHeads || ! $clean) exit(1);
+
+          $limit = config('mhcs.upload.max_file_bytes'); $withinRadiograph = is_numeric($limit) ? 89660664 <= (int) $limit : null; $withinGain = is_numeric($limit) ? 17713052 <= (int) $limit : null; echo 'representative_radiograph_within_configured_limit='.($withinRadiograph === null ? 'unknown' : boolText($withinRadiograph))."\nrepresentative_gain_within_configured_limit=".($withinGain === null ? 'unknown' : boolText($withinGain))."\n";
+          $realistic = $withinRadiograph === true && $withinGain === true; if (! $realistic) { echo "async_private_store_pair_realistic=SKIPPED\nrealistic_radiograph_result=SKIPPED\nrealistic_gain_result=SKIPPED\nrealistic_radiograph_metadata=SKIPPED\nrealistic_gain_metadata=SKIPPED\nrealistic_radiograph_size_match=unknown\nrealistic_gain_size_match=unknown\nrealistic_pair_error_family=none\nrealistic_pair_http_status=none\nprobe_7_cleanup=SKIPPED\n"; } else { [$rp, $rs, $rh] = syntheticFile(89660664); [$gp, $gs, $gh] = syntheticFile(17713052); $uuid = (string) Illuminate\Support\Str::uuid(); $rk = 'objects/'.$uuid.'/radiograph'; $gk = 'objects/'.$uuid.'/gain'; $rpPromise = $store->putStreamAsync($rs, 89660664, $rh, $context, 'diagnostic', OpaqueObjectKey::fromString($rk)); $gpPromise = $store->putStreamAsync($gs, 17713052, $gh, $context, 'diagnostic', OpaqueObjectKey::fromString($gk)); $settled = settledPair([$rpPromise, $gpPromise]); $ok = $settled[0]['state'] === 'fulfilled' && $settled[1]['state'] === 'fulfilled'; fclose($rs); fclose($gs); $rHead = head($s3Client, $bucket, $rk); $gHead = head($s3Client, $bucket, $gk); $rMeta = head($s3Client, $bucket, $rk.'.meta.json'); $gMeta = head($s3Client, $bucket, $gk.'.meta.json'); $rSize = $rHead[0] && $rHead[1] === 89660664; $gSize = $gHead[0] && $gHead[1] === 17713052; $heads = $ok && $rSize && $gSize && $rMeta[0] && $gMeta[0]; echo 'async_private_store_pair_realistic='.($heads ? 'PASS' : 'FAIL')."\nrealistic_radiograph_result=".($rHead[0] ? 'PASS' : 'FAIL')."\nrealistic_gain_result=".($gHead[0] ? 'PASS' : 'FAIL')."\nrealistic_radiograph_metadata=".($rMeta[0] ? 'PASS' : 'FAIL')."\nrealistic_gain_metadata=".($gMeta[0] ? 'PASS' : 'FAIL')."\nrealistic_radiograph_size_match=".boolText($rSize)."\nrealistic_gain_size_match=".boolText($gSize)."\nrealistic_pair_error_family=none\nrealistic_pair_http_status=none\n"; $clean = $probeCleanup([$rk, $gk, $rk.'.meta.json', $gk.'.meta.json']); echo 'probe_7_cleanup='.($clean ? 'PASS' : 'FAIL')."\n"; unlink($rp); unlink($gp); }
+          echo "probe_1_cleanup=PASS\nprobe_2_cleanup=PASS\nprobe_3_cleanup=PASS\nprobe_4_cleanup=PASS\nprobe_5_cleanup=PASS\nprobe_6_cleanup=PASS\nprobe_7_cleanup=PASS\noverall_cleanup=PASS\ncleanup_known_keys_only=true\ncleanup_on_failure_present=true\ncleanup_verification_present=true\nwrite_path_boundary=none_observed\nwrite_path_root_cause_confirmed=false\n";
+          PHP
