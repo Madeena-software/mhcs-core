@@ -1,5 +1,4 @@
 name: Diagnose production S3 write path
-
 on:
   workflow_dispatch:
 
@@ -117,6 +116,7 @@ jobs:
           function settledPair(array $promises): array { return Utils::settle($promises)->wait(); }
           function startAsync(callable $operation): object { try { return $operation(); } catch (Throwable $e) { return new RejectedPromise($e); } }
           function rejectedDetails(array $settled, int $index): array { $reason = $settled[$index]['reason'] ?? null; return $reason instanceof Throwable ? [sanitizeThrowableChain($reason), statusOf($reason)] : ['unknown', 'none']; }
+          function componentFailure(string $state, string $family, string $status, array $head, array $meta, ?bool $sizeMatch = null): array { $evidence = []; if ($state === 'rejected') $evidence[] = [$family, $status]; if (! $head[0] && $head[2] !== 'none') $evidence[] = [$head[2], $head[3]]; if (! $meta[0] && $meta[2] !== 'none') $evidence[] = [$meta[2], $meta[3]]; if ($sizeMatch === false) $evidence[] = ['unknown', 'none']; return $evidence[0] ?? ['none', 'none']; }
           function boolText(bool $value): string { return $value ? 'true' : 'false'; }
           // Sanitized output includes HeadBucket, overall_cleanup=FAIL, and fixed error families only.
           // Output contract: write_probe_head_bucket=, sync_private_store_small=,
@@ -166,7 +166,7 @@ jobs:
           $uuid = (string) Illuminate\Support\Str::uuid(); $k = 'objects/'.$uuid.'/radiograph'; $known = [$k, $k.'.meta.json']; $s = streamOf(65536); $asyncOk = false; $asyncFamily = 'none'; $asyncStatus = 'none';
           try { $promise = $store->putStreamAsync($s[0], 65536, $s[1], $context, $purpose, OpaqueObjectKey::fromString($k)); $promise->wait(); } catch (Throwable $e) { $asyncFamily = sanitizeThrowableChain($e); $asyncStatus = statusOf($e); }
           $main = head($s3Client, $bucket, $k); $meta = head($s3Client, $bucket, $k.'.meta.json'); $asyncOk = $main[0] && $meta[0]; if (! $asyncOk && $asyncFamily === 'none') { $asyncFamily = $main[2] !== 'none' ? $main[2] : $meta[2]; $asyncStatus = $main[3] !== 'none' ? $main[3] : $meta[3]; }
-          fclose($s[0]); $mainSizeMatch = $main[0] ? $main[1] === 65536 : null; result('async_private_store_real_key_small', $asyncOk && $mainSizeMatch === true); echo 'async_private_store_real_key_small_object_head='.($main[0] ? 'PASS' : 'FAIL')."\n".'async_private_store_real_key_small_metadata_head='.($meta[0] ? 'PASS' : 'FAIL')."\n".'async_private_store_real_key_small_size_match='.($mainSizeMatch === null ? 'unknown' : boolText($mainSizeMatch))."\n".'async_private_store_real_key_small_error_family='.$asyncFamily."\n".'async_private_store_real_key_small_http_status='.$asyncStatus."\n"; $clean = $probeCleanup($known); $probe5Cleanup = $clean ? 'PASS' : 'FAIL'; if (! $asyncOk || ! $clean) { $diagnosticBoundary = $asyncFamily === 'unknown' ? 'unknown' : 'async_private_store_metadata'; $diagnosticFailed = true; $cleanupFailed = ! $clean; $emitFinalReport(); exit(1); }
+          fclose($s[0]); $mainSizeMatch = $main[0] ? $main[1] === 65536 : null; $probe5Ok = $asyncOk && $main[0] && $meta[0] && $mainSizeMatch === true; result('async_private_store_real_key_small', $probe5Ok); echo 'async_private_store_real_key_small_object_head='.($main[0] ? 'PASS' : 'FAIL')."\n".'async_private_store_real_key_small_metadata_head='.($meta[0] ? 'PASS' : 'FAIL')."\n".'async_private_store_real_key_small_size_match='.($mainSizeMatch === null ? 'unknown' : boolText($mainSizeMatch))."\n".'async_private_store_real_key_small_error_family='.$asyncFamily."\n".'async_private_store_real_key_small_http_status='.$asyncStatus."\n"; $clean = $probeCleanup($known); $probe5Cleanup = $clean ? 'PASS' : 'FAIL'; if (! $probe5Ok || ! $clean) { $diagnosticBoundary = $asyncFamily !== 'none' ? 'async_private_store_metadata' : 'unknown'; $diagnosticFailed = true; $cleanupFailed = ! $clean; $emitFinalReport(); exit(1); }
 
           $uuid = (string) Illuminate\Support\Str::uuid(); $radiographKey = 'objects/'.$uuid.'/radiograph'; $gainKey = 'objects/'.$uuid.'/gain'; // objects/$uuid/gain
           $pairKeys = [$radiographKey, $radiographKey.'.meta.json', $gainKey, $gainKey.'.meta.json'];
@@ -181,41 +181,63 @@ jobs:
               $pairFamily = $rState === 'rejected' ? $rFamily : ($gState === 'rejected' ? $gFamily : 'none');
               $pairStatus = $rState === 'rejected' ? $rStatus : ($gState === 'rejected' ? $gStatus : 'none');
           } catch (Throwable $e) { $pairFamily = sanitizeThrowableChain($e); $pairStatus = statusOf($e); }
-          finally { fclose($r[0]); fclose($g[0]); }
           $rHead = head($s3Client, $bucket, $radiographKey); $gHead = head($s3Client, $bucket, $gainKey); $rMeta = head($s3Client, $bucket, $radiographKey.'.meta.json'); $gMeta = head($s3Client, $bucket, $gainKey.'.meta.json');
-          $rOk = $rState === 'fulfilled' && $rHead[0]; $gOk = $gState === 'fulfilled' && $gHead[0]; $rMetaOk = $rMeta[0]; $gMetaOk = $gMeta[0]; $pairOk = $rOk && $gOk && $rMetaOk && $gMetaOk; result('async_private_store_pair_small', $pairOk); echo 'pair_small_radiograph='.($rOk ? 'PASS' : 'FAIL')."\npair_small_gain=".($gOk ? 'PASS' : 'FAIL')."\npair_small_radiograph_metadata=".($rMetaOk ? 'PASS' : 'FAIL')."\npair_small_gain_metadata=".($gMetaOk ? 'PASS' : 'FAIL')."\npair_small_radiograph_state=".$rState."\npair_small_gain_state=".$gState."\npair_small_radiograph_error_family=".($rState === 'rejected' ? $rFamily : 'none')."\npair_small_gain_error_family=".($gState === 'rejected' ? $gFamily : 'none')."\npair_small_radiograph_http_status=".($rState === 'rejected' ? $rStatus : 'none')."\npair_small_gain_http_status=".($gState === 'rejected' ? $gStatus : 'none')."\npair_small_error_family=".$pairFamily."\npair_small_http_status=".$pairStatus."\n"; $clean = $probeCleanup($pairKeys); $probe6Cleanup = $clean ? 'PASS' : 'FAIL'; if (! $pairOk || ! $clean) { $diagnosticBoundary = 'concurrent_async_pair'; $diagnosticFailed = true; $cleanupFailed = ! $clean; $emitFinalReport(); exit(1); }
+          $rOk = $rState === 'fulfilled' && $rHead[0]; $gOk = $gState === 'fulfilled' && $gHead[0]; $rMetaOk = $rMeta[0]; $gMetaOk = $gMeta[0];
+          [$rErrorFamily, $rErrorStatus] = componentFailure($rState, $rFamily, $rStatus, $rHead, $rMeta);
+          [$gErrorFamily, $gErrorStatus] = componentFailure($gState, $gFamily, $gStatus, $gHead, $gMeta);
+          $pairOk = $rOk && $gOk && $rMetaOk && $gMetaOk; $pairFamily = $rErrorFamily !== 'none' ? $rErrorFamily : $gErrorFamily; $pairStatus = $rErrorStatus !== 'none' ? $rErrorStatus : $gErrorStatus;
+          result('async_private_store_pair_small', $pairOk); echo 'pair_small_radiograph='.($rOk ? 'PASS' : 'FAIL')."\npair_small_gain=".($gOk ? 'PASS' : 'FAIL')."\npair_small_radiograph_metadata=".($rMetaOk ? 'PASS' : 'FAIL')."\npair_small_gain_metadata=".($gMetaOk ? 'PASS' : 'FAIL')."\npair_small_radiograph_state=".$rState."\npair_small_gain_state=".$gState."\npair_small_radiograph_error_family=".$rErrorFamily."\npair_small_gain_error_family=".$gErrorFamily."\npair_small_radiograph_http_status=".$rErrorStatus."\npair_small_gain_http_status=".$gErrorStatus."\npair_small_error_family=".$pairFamily."\npair_small_http_status=".$pairStatus."\n"; $clean = $probeCleanup($pairKeys); $probe6Cleanup = $clean ? 'PASS' : 'FAIL'; if (! $pairOk || ! $clean) { $diagnosticBoundary = 'concurrent_async_pair'; $diagnosticFailed = true; $cleanupFailed = ! $clean; $emitFinalReport(); exit(1); }
 
           $limit = config('mhcs.upload.max_file_bytes'); $withinRadiograph = is_numeric($limit) ? 89660664 <= (int) $limit : null; $withinGain = is_numeric($limit) ? 17713052 <= (int) $limit : null; echo 'representative_radiograph_within_configured_limit='.($withinRadiograph === null ? 'unknown' : boolText($withinRadiograph))."\nrepresentative_gain_within_configured_limit=".($withinGain === null ? 'unknown' : boolText($withinGain))."\n";
-          $probe7Cleanup = ($withinRadiograph === true && $withinGain === true) ? 'PASS' : 'SKIPPED';
           $realistic = $withinRadiograph === true && $withinGain === true;
           if (! $realistic) {
               echo "async_private_store_pair_realistic=SKIPPED\nrealistic_radiograph_result=SKIPPED\nrealistic_gain_result=SKIPPED\nrealistic_radiograph_metadata=SKIPPED\nrealistic_gain_metadata=SKIPPED\nrealistic_radiograph_size_match=unknown\nrealistic_gain_size_match=unknown\nrealistic_pair_error_family=none\nrealistic_pair_http_status=none\nrealistic_limit_skip=SKIPPED_CONFIG_LIMIT\n";
           } else {
-              [$rp, $rs, $rh] = syntheticFile(89660664);
-              [$gp, $gs, $gh] = syntheticFile(17713052);
-              $uuid = (string) Illuminate\Support\Str::uuid();
-              $rk = 'objects/'.$uuid.'/radiograph';
-              $gk = 'objects/'.$uuid.'/gain';
-              $rpPromise = startAsync(static fn (): object => $store->putStreamAsync($rs, 89660664, $rh, $context, $purpose, OpaqueObjectKey::fromString($rk)));
-              $gpPromise = startAsync(static fn (): object => $store->putStreamAsync($gs, 17713052, $gh, $context, $purpose, OpaqueObjectKey::fromString($gk)));
-              $settled = settledPair([$rpPromise, $gpPromise]);
-              $rFamily = $settled[0]['state'] === 'rejected' ? rejectedDetails($settled, 0)[0] : 'none';
-              $gFamily = $settled[1]['state'] === 'rejected' ? rejectedDetails($settled, 1)[0] : 'none';
-              $rStatus = $settled[0]['state'] === 'rejected' ? rejectedDetails($settled, 0)[1] : 'none';
-              $gStatus = $settled[1]['state'] === 'rejected' ? rejectedDetails($settled, 1)[1] : 'none';
-              $ok = $settled[0]['state'] === 'fulfilled' && $settled[1]['state'] === 'fulfilled';
-              fclose($rs); fclose($gs);
-              $rHead = head($s3Client, $bucket, $rk); $gHead = head($s3Client, $bucket, $gk);
-              $rMeta = head($s3Client, $bucket, $rk.'.meta.json'); $gMeta = head($s3Client, $bucket, $gk.'.meta.json');
-              $rSize = $rHead[0] && $rHead[1] === 89660664; $gSize = $gHead[0] && $gHead[1] === 17713052;
-              $heads = $ok && $rSize && $gSize && $rMeta[0] && $gMeta[0];
-              echo 'async_private_store_pair_realistic='.($heads ? 'PASS' : 'FAIL')."\nrealistic_radiograph_result=".($rHead[0] ? 'PASS' : 'FAIL')."\nrealistic_gain_result=".($gHead[0] ? 'PASS' : 'FAIL')."\nrealistic_radiograph_metadata=".($rMeta[0] ? 'PASS' : 'FAIL')."\nrealistic_gain_metadata=".($gMeta[0] ? 'PASS' : 'FAIL')."\nrealistic_radiograph_size_match=".boolText($rSize)."\nrealistic_gain_size_match=".boolText($gSize)."\nrealistic_radiograph_error_family=".$rFamily."\nrealistic_gain_error_family=".$gFamily."\nrealistic_radiograph_http_status=".$rStatus."\nrealistic_gain_http_status=".$gStatus."\nrealistic_pair_error_family=".($rFamily !== 'none' ? $rFamily : $gFamily)."\nrealistic_pair_http_status=".($rStatus !== 'none' ? $rStatus : $gStatus)."\n";
-              $clean = $probeCleanup([$rk, $gk, $rk.'.meta.json', $gk.'.meta.json']);
-              $probe7Cleanup = $clean ? 'PASS' : 'FAIL';
-              unlink($rp); unlink($gp);
-              if (! $heads || ! $clean) {
-                  $diagnosticBoundary = 'realistic_size_stream'; $diagnosticFailed = true; $cleanupFailed = ! $clean;
+              $rk = 'objects/'.Illuminate\Support\Str::uuid().'/radiograph';
+              $gk = 'objects/'.Illuminate\Support\Str::uuid().'/gain';
+              $probe7Keys = [$rk, $rk.'.meta.json', $gk, $gk.'.meta.json'];
+              $probe7Started = true; $rp = null; $gp = null; $rs = null; $gs = null;
+              $rState = 'rejected'; $gState = 'rejected'; $rFamily = 'unknown'; $gFamily = 'unknown'; $rStatus = 'none'; $gStatus = 'none';
+              $rHead = [false, null, 'unknown', 'none']; $gHead = [false, null, 'unknown', 'none']; $rMeta = [false, null, 'unknown', 'none']; $gMeta = [false, null, 'unknown', 'none'];
+              $heads = false; $localCleanup = true; $probe7Unexpected = false;
+              try {
+                  [$rp, $rs, $rh] = syntheticFile(89660664);
+                  [$gp, $gs, $gh] = syntheticFile(17713052);
+                  $rpPromise = startAsync(static fn (): object => $store->putStreamAsync($rs, 89660664, $rh, $context, $purpose, OpaqueObjectKey::fromString($rk)));
+                  $gpPromise = startAsync(static fn (): object => $store->putStreamAsync($gs, 17713052, $gh, $context, $purpose, OpaqueObjectKey::fromString($gk)));
+                  $settled = settledPair([$rpPromise, $gpPromise]);
+                  $rState = $settled[0]['state']; $gState = $settled[1]['state'];
+                  if ($rState === 'rejected') [$rFamily, $rStatus] = rejectedDetails($settled, 0);
+                  if ($gState === 'rejected') [$gFamily, $gStatus] = rejectedDetails($settled, 1);
+                  $rHead = head($s3Client, $bucket, $rk); $gHead = head($s3Client, $bucket, $gk);
+                  $rMeta = head($s3Client, $bucket, $rk.'.meta.json'); $gMeta = head($s3Client, $bucket, $gk.'.meta.json');
+                  $rSize = $rHead[0] && $rHead[1] === 89660664; $gSize = $gHead[0] && $gHead[1] === 17713052;
+                  $rError = componentFailure($rState, $rFamily, $rStatus, $rHead, $rMeta, $rSize);
+                  $gError = componentFailure($gState, $gFamily, $gStatus, $gHead, $gMeta, $gSize);
+                  $rOk = $rState === 'fulfilled' && $rHead[0] && $rMeta[0] && $rSize;
+                  $gOk = $gState === 'fulfilled' && $gHead[0] && $gMeta[0] && $gSize;
+                  $heads = $rOk && $gOk;
+              } catch (Throwable $e) {
+                  $probe7Unexpected = true; $rFamily = sanitizeThrowableChain($e); $gFamily = $rFamily; $rStatus = statusOf($e); $gStatus = $rStatus;
+              } finally {
+                  if (is_resource($rs)) fclose($rs);
+                  if (is_resource($gs)) fclose($gs);
+                  $clean = false;
+                  try { $clean = $probe7Started ? $probeCleanup($probe7Keys) : true; } catch (Throwable) { $clean = false; }
+                  $probe7Cleanup = $clean ? 'PASS' : 'FAIL';
+                  if (is_string($rp) && is_file($rp) && ! unlink($rp)) $localCleanup = false;
+                  if (is_string($gp) && is_file($gp) && ! unlink($gp)) $localCleanup = false;
               }
+              $rError = componentFailure($rState, $rFamily, $rStatus, $rHead, $rMeta, isset($rSize) ? $rSize : null);
+              $gError = componentFailure($gState, $gFamily, $gStatus, $gHead, $gMeta, isset($gSize) ? $gSize : null);
+              $rErrorFamily = $rError[0]; $gErrorFamily = $gError[0];
+              $rErrorStatus = $rError[1]; $gErrorStatus = $gError[1];
+              $pairFamily = $rErrorFamily !== 'none' ? $rErrorFamily : $gErrorFamily;
+              $pairStatus = $rErrorStatus !== 'none' ? $rErrorStatus : $gErrorStatus;
+              $pairOk = $heads && ! $probe7Unexpected && $localCleanup;
+              result('async_private_store_pair_realistic', $pairOk);
+              echo 'realistic_radiograph_result='.($rHead[0] && $rState === 'fulfilled' ? 'PASS' : 'FAIL')."\nrealistic_gain_result=".($gHead[0] && $gState === 'fulfilled' ? 'PASS' : 'FAIL')."\nrealistic_radiograph_metadata=".($rMeta[0] ? 'PASS' : 'FAIL')."\nrealistic_gain_metadata=".($gMeta[0] ? 'PASS' : 'FAIL')."\nrealistic_radiograph_size_match=".(isset($rSize) ? boolText($rSize) : 'unknown')."\nrealistic_gain_size_match=".(isset($gSize) ? boolText($gSize) : 'unknown')."\nrealistic_radiograph_error_family=".$rErrorFamily."\nrealistic_gain_error_family=".$gErrorFamily."\nrealistic_radiograph_http_status=".$rErrorStatus."\nrealistic_gain_http_status=".$gErrorStatus."\nrealistic_pair_error_family=".$pairFamily."\nrealistic_pair_http_status=".$pairStatus."\n";
+              if (! $pairOk || ! $clean) { $diagnosticBoundary = 'realistic_size_stream'; $diagnosticFailed = true; }
           }
           $emitFinalReport(); if ($diagnosticFailed || $cleanupFailed) exit(1); exit(0);
           PHP
