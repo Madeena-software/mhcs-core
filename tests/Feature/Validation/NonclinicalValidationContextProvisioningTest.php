@@ -20,6 +20,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use LogicException;
+use Symfony\Component\Console\Output\BufferedOutput;
 use Tests\TestCase;
 
 final class NonclinicalValidationContextProvisioningTest extends TestCase
@@ -224,6 +225,99 @@ final class NonclinicalValidationContextProvisioningTest extends TestCase
         $created = app(OperatorShiftAssignmentService::class)->assign((string) $assignment->operator_eligible_shift_id, (string) $assignment->operator_profile_id);
         $this->assertSame($admin->id, $created->assigned_by_user_id);
         $this->assertNotNull($created->assigned_by_user_id);
+    }
+
+    public function test_unrelated_operational_rows_are_preserved_during_provisioning(): void
+    {
+        $fixture = $this->fixture();
+        $now = now()->utc();
+        $otherUser = User::factory()->create(['email' => 'unrelated-member@example.test']);
+        $otherMember = (string) Str::uuid();
+        $otherSchedule = (string) Str::uuid();
+        $otherBooking = (string) Str::uuid();
+        $ticket = (string) Str::uuid();
+        $admission = (string) Str::uuid();
+        $assessment = (string) Str::uuid();
+        $execution = (string) Str::uuid();
+        $otherOperator = User::factory()->create(['email' => 'unrelated-operator@example.test']);
+        $otherProfile = (string) Str::uuid();
+        $site = DB::table('operator_sites')->where('operator_site_id', 'site-validation')->first();
+        $siteRef = DB::table('examination_site_refs')->first();
+        $service = DB::table('service_offerings')->first();
+        $rate = DB::table('point_exchange_rates')->first();
+        DB::table('members')->insert(['id' => $otherMember, 'user_id' => $otherUser->id, 'family_id' => null, 'medical_record_number' => (string) Str::uuid(), 'identity_status' => 'nonclinical_validation', 'identity_document_type' => null, 'encrypted_nik' => null, 'nik_lookup_digest' => null, 'name' => 'Unrelated Member', 'birth_date' => '1990-01-01', 'administrative_gender' => 'unknown', 'registration_source' => 'test', 'phone' => null, 'created_at' => $now, 'updated_at' => $now]);
+        DB::table('shift_schedules')->insert(['id' => $otherSchedule, 'examination_site_id' => $siteRef->id, 'service_offering_id' => $service->id, 'display_reference' => 'ENDED-UNRELATED', 'starts_at' => $now->copy()->subDays(2), 'ends_at' => $now->copy()->subDay(), 'quota' => 10, 'status' => 'closed', 'eligible_at' => $now->copy()->subDays(3), 'created_at' => $now, 'updated_at' => $now]);
+        DB::table('bookings')->insert(['id' => $otherBooking, 'member_id' => $otherMember, 'shift_schedule_id' => $otherSchedule, 'service_offering_id' => $service->id, 'examination_site_id_snapshot' => $siteRef->id, 'booking_type' => 'b2c', 'funding_source' => 'personal', 'status' => 'confirmed', 'service_code_snapshot' => $service->code, 'point_cost_snapshot' => $service->point_price, 'point_exchange_rate_id' => $rate->id, 'includes_ai_snapshot' => false, 'includes_doctor_snapshot' => false, 'site_code_snapshot' => $siteRef->code, 'site_name_snapshot' => $siteRef->display_name, 'site_timezone_snapshot' => $siteRef->timezone, 'created_at' => $now, 'confirmed_at' => $now, 'updated_at' => $now]);
+        DB::table('operator_profiles')->insert(['id' => $otherProfile, 'user_id' => $otherOperator->id, 'display_name' => 'Unrelated Operator', 'employee_code' => 'UNRELATED-1', 'active' => true, 'created_at' => $now, 'updated_at' => $now]);
+        DB::table('operator_paper_tickets')->insert(['id' => $ticket, 'booking_id' => $otherBooking, 'member_schedule_id' => $otherSchedule, 'operator_site_id' => $site->id, 'operator_profile_id' => $otherProfile, 'ticket_number' => 'UNRELATED-1', 'issued_at' => $now, 'created_at' => $now, 'updated_at' => $now]);
+        DB::table('operator_queue_admissions')->insert(['id' => $admission, 'operator_paper_ticket_id' => $ticket, 'operator_site_id' => $site->id, 'member_schedule_id' => $otherSchedule, 'queue_class' => 'standard', 'stage' => 'arrival', 'state' => 'waiting', 'ready_at' => $now, 'created_at' => $now, 'updated_at' => $now]);
+        DB::table('member_vital_signs_assessments')->insert(['id' => $assessment, 'member_id' => $otherMember, 'booking_id' => $otherBooking, 'member_schedule_id' => $otherSchedule, 'systolic_bp_value' => null, 'systolic_bp_unit' => 'mmHg', 'systolic_bp_missing_reason' => 'not_taken', 'diastolic_bp_value' => null, 'diastolic_bp_unit' => 'mmHg', 'diastolic_bp_missing_reason' => 'not_taken', 'temperature_value' => null, 'temperature_unit' => 'C', 'temperature_missing_reason' => 'not_taken', 'height_value' => null, 'height_unit' => 'cm', 'height_missing_reason' => 'not_taken', 'weight_value' => null, 'weight_unit' => 'kg', 'weight_missing_reason' => 'not_taken', 'bmi_value' => null, 'bmi_unit' => 'kg/m2', 'bmi_missing_reason' => 'not_taken', 'effective_at' => $now, 'created_at' => $now, 'updated_at' => $now]);
+        DB::table('operator_vital_signs_executions')->insert(['id' => $execution, 'member_vital_signs_assessment_id' => $assessment, 'operator_queue_admission_id' => $admission, 'operator_profile_id' => $otherProfile, 'operator_site_id' => $site->id, 'occurred_at' => $now, 'operation_id' => 'unrelated-vitals-'.$execution, 'created_at' => $now, 'updated_at' => $now]);
+
+        $counts = array_map(fn (string $table): int => DB::table($table)->count(), ['operator_paper_tickets', 'operator_queue_admissions', 'member_vital_signs_assessments', 'operator_vital_signs_executions']);
+        $secret = 'test-secret-'.Str::random(32);
+        putenv(NonclinicalValidationAccountProvisioningService::OPERATOR_SECRET_NAME.'='.$secret);
+        $this->artisan('mhcs:provision-nonclinical-validation-context')->assertExitCode(0);
+        $this->assertSame($ticket, DB::table('operator_paper_tickets')->where('id', $ticket)->value('id'));
+        $this->assertSame($admission, DB::table('operator_queue_admissions')->where('id', $admission)->value('id'));
+        $this->assertSame($assessment, DB::table('member_vital_signs_assessments')->where('id', $assessment)->value('id'));
+        $this->assertSame($execution, DB::table('operator_vital_signs_executions')->where('id', $execution)->value('id'));
+        $this->assertSame($counts, array_map(fn (string $table): int => DB::table($table)->count(), ['operator_paper_tickets', 'operator_queue_admissions', 'member_vital_signs_assessments', 'operator_vital_signs_executions']));
+    }
+
+    public function test_late_unowned_profile_failure_rolls_back_command_state(): void
+    {
+        $this->fixture();
+        $secret = 'test-secret-'.Str::random(32);
+        $provider = new NonclinicalValidationContextProvider;
+        $provider->accountProvisioning();
+        $this->app->instance(AuthenticatedContextProvider::class, $provider);
+        $accounts = app(NonclinicalValidationAccountProvisioningService::class)->provision($secret);
+        $profile = (string) Str::uuid();
+        DB::table('operator_profiles')->insert(['id' => $profile, 'user_id' => $accounts['operator_user_id'], 'display_name' => 'Pre-existing unowned', 'employee_code' => 'PREEXISTING-1', 'active' => true, 'created_at' => now(), 'updated_at' => now()]);
+        putenv(NonclinicalValidationAccountProvisioningService::OPERATOR_SECRET_NAME.'='.$secret);
+        $this->artisan('mhcs:provision-nonclinical-validation-context')->assertExitCode(1);
+        $this->assertSame(2, DB::table('users')->count());
+        $this->assertSame(1, DB::table('operator_profiles')->where('id', $profile)->count());
+        $this->assertSame(0, DB::table('members')->count());
+        $this->assertSame(0, DB::table('member_external_identifiers')->count());
+        $this->assertSame(0, DB::table('point_ledger_entries')->count());
+        $this->assertSame(0, DB::table('bookings')->count());
+        $this->assertSame(0, DB::table('local_imaging_orders')->count());
+        $this->assertSame(0, DB::table('operator_site_assignments')->count());
+        $this->assertSame(0, DB::table('operator_shift_assignments')->count());
+        $this->assertSame(2, DB::table('audit_events')->whereIn('action', ['production.validation-context.member-account.provisioned', 'production.validation-context.operator-account.provisioned'])->count());
+    }
+
+    public function test_command_output_contains_no_generated_identifiers_or_secret(): void
+    {
+        $fixture = $this->fixture();
+        $secret = 'test-secret-'.Str::random(32);
+        putenv(NonclinicalValidationAccountProvisioningService::OPERATOR_SECRET_NAME.'='.$secret);
+        $outputBuffer = new BufferedOutput;
+        $this->assertSame(0, $this->app->make(Kernel::class)->call('mhcs:provision-nonclinical-validation-context', [], $outputBuffer));
+        $output = $outputBuffer->fetch();
+        $member = DB::table('members')->first();
+        $operator = DB::table('users')->where('email', 'like', '%-operator@invalid')->first();
+        $values = [$member->user_id, $operator->id, $member->id, $member->medical_record_number, DB::table('bookings')->value('id'), $fixture['schedule_id'], DB::table('operator_sites')->value('id'), 'site-validation', DB::table('operator_profiles')->value('id'), $fixture['eligible_id'], DB::table('operator_site_assignments')->value('id'), DB::table('operator_shift_assignments')->value('id'), $operator->email, DB::table('users')->where('id', $operator->id)->value('password'), $secret];
+        foreach (array_filter($values, fn (mixed $value): bool => is_string($value) && $value !== '') as $value) {
+            $this->assertStringNotContainsString($value, $output);
+        }
+        foreach (['validation_context_key='.NonclinicalValidationContext::KEY, 'environment_guard=PASS', 'authorization_guard=PASS', 'operator_minimum_permissions=PASS', 'operator_site_assignment=PASS', 'operator_shift_assignment=PASS', 'arrival_state=NOT_EXECUTED', 'ticket_state=NOT_EXECUTED', 'basic_examination_state=NOT_EXECUTED', 'xray_admission_state=NOT_EXECUTED', 'capture_present=false', 'validation_operator_login_ready=true', 'audit_marker=PASS', 'application_records_retention=RETAINED', 'validation_context_provisioning=PASS'] as $field) {
+            $this->assertStringContainsString($field, $output);
+        }
+    }
+
+    public function test_command_failure_output_is_bounded(): void
+    {
+        putenv(NonclinicalValidationAccountProvisioningService::OPERATOR_SECRET_NAME);
+        $outputBuffer = new BufferedOutput;
+        $this->assertSame(1, $this->app->make(Kernel::class)->call('mhcs:provision-nonclinical-validation-context', [], $outputBuffer));
+        $output = $outputBuffer->fetch();
+        $this->assertStringContainsString('validation_context_provisioning=FAIL', $output);
+        $this->assertStringContainsString('failure_category=SECRET_REQUIRED', $output);
+        $this->assertStringNotContainsString('stack trace', strtolower($output));
+        $this->assertStringNotContainsString('SQLSTATE', $output);
     }
 
     public function test_command_boundary_and_missing_secret_are_fail_closed(): void
