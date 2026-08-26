@@ -136,7 +136,7 @@ final class ProductionRealNpzEndToEndValidationWorkflowTest extends TestCase
         foreach ([
             '-e CAPTURE_ID="${capture_id:-}"', 'RESOLVE_STAGE="$stage"', 'image_gateway_studies',
             '/operator/studies/$study_id/dicom', 'application/dicom', 'bs=1 skip=128 count=4',
-            'DICM', 'ge 132', 'mpips_state=success', 'mpips_state=failed',
+            'DICM', 'ge 132', 'mpips_state=reached', 'mpips_state=failed',
             'report_failure()', 'radiograph_source_state=NOT_EXECUTED',
             'echo "radiograph_source_state=$radiograph_source_state"',
             'application_retention=RETAINED', 'cleanup_workspace',
@@ -159,6 +159,20 @@ final class ProductionRealNpzEndToEndValidationWorkflowTest extends TestCase
         $this->assertStringContainsString('failure_family=schedule_expired', $workflow);
         foreach (['echo "$booking_id"', 'echo "$arrival_id"', 'echo "$identity_case_id"', 'echo "$ticket_id"', 'echo "$capture_id"', 'echo "$study_id"', 'set -x', 'docker exec "$APP_CONTAINER" php artisan queue:work'] as $forbidden) {
             $this->assertStringNotContainsString($forbidden, $workflow);
+        }
+    }
+
+    public function test_runtime_contract_uses_utc_preflight_and_public_processing_state(): void
+    {
+        $workflow = $this->workflow();
+        foreach (['use DateTimeImmutable;', 'use DateTimeZone;', 'new DateTimeImmutable', 'new DateTimeZone', '$endsAt > $startsAt', 'local_site_id', 'stable_operator_site_id', 'sync_status', 'schedule_starts_at', 'schedule_ends_at', 'quota', 'capture_state', 'processing_state', '.status', '.missing'] as $required) {
+            $this->assertStringContainsString($required, $workflow);
+        }
+        foreach (['$schedule->starts_at > now()', '$schedule->ends_at <= now()', 'strtotime(', 'gmdate(', '.processing_status', '.mpips_status', '.dicom_status', '.last_error_code'] as $forbidden) {
+            $this->assertStringNotContainsString($forbidden, $workflow);
+        }
+        foreach (['exactly_one_$name', 'stage === \'arrival\'', 'stage === \'identity\'', 'stage === \'ticket\'', 'stage === \'basic\'', 'stage === \'xray\'', 'stage === \'capture\'', 'stage === \'study\'', 'failure_family=timeout', 'dicom_http_boundary_verified=true', 'dicom_content_type_verified=true', 'dicm_magic_verified=true'] as $required) {
+            $this->assertStringContainsString($required, $workflow);
         }
     }
 }

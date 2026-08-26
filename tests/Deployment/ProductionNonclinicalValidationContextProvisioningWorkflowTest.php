@@ -63,4 +63,15 @@ final class ProductionNonclinicalValidationContextProvisioningWorkflowTest exten
         $this->assertStringNotContainsString('sleep ', $workflow);
         $this->assertStringNotContainsString('/operator/', $workflow);
     }
+
+    public function test_phase_h_uses_utc_instants_and_checks_the_exact_site_schedule_projection(): void
+    {
+        $workflow = $this->workflow();
+        foreach (['use DateTimeImmutable;', 'use DateTimeZone;', 'new DateTimeImmutable', 'new DateTimeZone', '$endsAt > $startsAt', 'local_site_id', 'stable_operator_site_id', 'sync_status', 'eligible', 'schedule_starts_at', 'schedule_ends_at', 'quota'] as $required) {
+            $this->assertStringContainsString($required, $workflow);
+        }
+        foreach (['$schedule->starts_at > now()', '$schedule->ends_at <= now()', 'strtotime(', 'gmdate('] as $forbidden) {
+            $this->assertStringNotContainsString($forbidden, $workflow);
+        }
+    }
 }
