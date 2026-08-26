@@ -6,6 +6,7 @@ namespace App\Modules\Member\Application\Services;
 
 use App\Modules\Member\Domain\Enums\PointEntryType;
 use App\Modules\Member\Domain\Enums\PointRateStatus;
+use App\Modules\Member\Domain\MemberIdentityException;
 use App\Modules\Member\Domain\Models\Member;
 use App\Modules\Member\Domain\Mvp03Exception;
 use App\Modules\Member\Domain\PointAmount;
@@ -21,6 +22,7 @@ final readonly class Mvp03PointService
 {
     public function __construct(
         private AuditStore $audit,
+        private MemberAuthorization $authorization,
         private AuthenticatedContextProvider $context,
         private Clock $clock,
         private MemberContextResolver $members,
@@ -118,8 +120,12 @@ final readonly class Mvp03PointService
     /** @return array{ledger_entry_id: string, point_cost: string, replayed: bool} */
     public function ensureNonclinicalValidationBookingFunding(string $scheduleId): array
     {
-        $context = $this->context->current();
-        if (! in_array('system', $context->roles, true) || $context->purpose !== 'member.nonclinical-validation.point-funding') {
+        try {
+            $context = $this->authorization->context('member.nonclinical-validation.point-funding');
+        } catch (MemberIdentityException $exception) {
+            throw new Mvp03Exception('Nonclinical validation point funding requires trusted authorization.', previous: $exception);
+        }
+        if (! in_array('system', $context->roles, true)) {
             throw new Mvp03Exception('Nonclinical validation point funding requires a trusted purpose.');
         }
         if (! Str::isUuid(trim($scheduleId))) {
@@ -176,6 +182,18 @@ final readonly class Mvp03PointService
                 ->get();
             if ($sourceEntries->count() > 1 || ($sourceEntries->isNotEmpty() && (string) $sourceEntries->first()->member_id !== $memberId)) {
                 throw new Mvp03Exception('The validation funding ledger state is inconsistent.');
+            }
+
+            if ($sourceEntries->isNotEmpty()) {
+                $sourceEntry = $sourceEntries->first();
+                if (
+                    $sourceEntry->booking_id !== null
+                    || $sourceEntry->funding_source !== 'personal'
+                    || $sourceEntry->entry_type !== PointEntryType::Credit->value
+                    || PointAmount::fromString((string) $sourceEntry->point_delta)->compare($cost) !== 0
+                ) {
+                    throw new Mvp03Exception('The validation funding ledger state is inconsistent.');
+                }
             }
 
             $entries = DB::table('point_ledger_entries')
@@ -269,6 +287,7 @@ final readonly class Mvp03PointService
                 $charge->entry_type !== PointEntryType::Charge->value
                 || $charge->funding_source !== 'personal'
                 || $charge->booking_id === null
+                || (string) $charge->source_reference !== 'booking:'.$charge->booking_id.':personal-charge'
                 || PointAmount::fromString((string) $charge->point_delta)->compare($expectedCharge) !== 0
             ) {
                 throw new Mvp03Exception('The validation booking charge is inconsistent.');
