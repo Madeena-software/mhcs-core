@@ -5,6 +5,10 @@ declare(strict_types=1);
 namespace Tests\Feature\Operator;
 
 use App\Models\User;
+use App\Modules\Member\Application\Services\Mvp04AttendanceService;
+use App\Shared\Context\AuthenticatedContext;
+use App\Shared\Context\CorrelationId;
+use App\Shared\Identity\LocalId;
 use App\Shared\Security\ProtectedIdentifierService;
 use App\Shared\Validation\NonclinicalValidationContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -251,6 +255,18 @@ final class Mvp04OperatorPortalTest extends TestCase
             ->assertSee('Synthetic Arrival Member')
             ->assertSee('Identitas tidak ditampilkan')
             ->assertDontSee('900000000001');
+
+        $rows = app(Mvp04AttendanceService::class)->query(new AuthenticatedContext(
+            actorId: LocalId::fromString((string) $fixture['operator']->id),
+            operationId: CorrelationId::random(),
+            roles: ['operator'],
+            permissions: ['operator.attendance.read'],
+            siteId: LocalId::fromString($fixture['siteLocalId']),
+            purpose: 'operator.attendance.read',
+        ), $fixture['siteStableId'], $fixture['scheduleId'], '2040-01-10T03:30:00+00:00');
+        $this->assertSame(null, $rows[0]['nik']);
+        $this->assertSame(null, $rows[0]['masked_nik']);
+        $this->assertSame('nonclinical_validation', $rows[0]['identity_status']);
     }
 
     public function test_verification_worklist_redirects_to_site_selection_when_no_site_is_selected(): void

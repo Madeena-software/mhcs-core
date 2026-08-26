@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Operator;
 
+use App\Http\Controllers\PublicQueueDisplayController;
 use App\Modules\Operator\Application\Services\OperatorArrivalService;
 use App\Modules\Operator\Application\Services\OperatorCheckInTicketService;
 use App\Modules\Operator\Application\Services\OperatorIdentityVerificationService;
@@ -16,7 +17,10 @@ use App\Shared\Events\DomainEvent;
 use App\Shared\Identity\LocalId;
 use App\Shared\Infrastructure\Outbox\OutboxStore;
 use App\Shared\Storage\PrivateObjectStore;
+use App\Shared\Time\Clock;
+use App\Shared\Time\FrozenClock;
 use App\Shared\Validation\NonclinicalValidationContext;
+use DateTimeImmutable;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -128,6 +132,42 @@ final class Mvp04dVerifiedCheckInTicketIssueTest extends TestCase
         $this->post(route('operator.check-in.store', $contradictory['caseId']), ['operation_id' => (string) Str::uuid()])->assertRedirect();
         $this->assertSame('arrived', DB::table('bookings')->where('id', $contradictory['bookingId'])->value('status'));
         $this->assertSame(0, DB::table('operator_paper_tickets')->where('booking_id', $contradictory['bookingId'])->count());
+    }
+
+    public function test_nonclinical_member_completes_the_local_operation_through_xray_and_lcd_expiry(): void
+    {
+        $fixture = $this->matchedFixture(false, false);
+        $this->makeCanonicalNonclinicalMember($fixture);
+        app(OperatorIdentityVerificationService::class)->decide($fixture['caseId'], 'nonclinical_validation', null, (string) Str::uuid());
+        $this->assertSame(0, DB::table('examination_consents')->where('booking_id', $fixture['bookingId'])->count());
+
+        $this->post(route('operator.check-in.store', $fixture['caseId']), ['operation_id' => (string) Str::uuid()])->assertRedirect();
+        $basic = DB::table('operator_queue_admissions')->where('member_schedule_id', $fixture['scheduleId'])->where('stage', 'basic_examination')->first();
+        $this->post(route('operator.basic-examination-worklist.claim', $basic->id), ['operation_id' => (string) Str::uuid()])->assertRedirect();
+        $this->post(route('operator.basic-examination-worklist.call', $basic->id), ['operation_id' => (string) Str::uuid()])->assertRedirect();
+        $this->post(route('operator.basic-examination-worklist.start', $basic->id), ['operation_id' => (string) Str::uuid()])->assertRedirect();
+        $this->post(route('operator.basic-examination-worklist.complete-nonclinical', $basic->id), ['operation_id' => (string) Str::uuid()])->assertRedirect();
+
+        $xray = DB::table('operator_queue_admissions')->where('member_schedule_id', $fixture['scheduleId'])->where('stage', 'xray')->first();
+        $this->assertSame('completed', DB::table('operator_queue_admissions')->where('id', $basic->id)->value('state'));
+        $this->assertSame('waiting', $xray->state);
+        $this->assertSame(0, DB::table('member_vital_signs_assessments')->where('booking_id', $fixture['bookingId'])->count());
+        $this->assertSame(0, DB::table('operator_vital_signs_executions')->where('operator_queue_admission_id', $basic->id)->count());
+        $this->assertSame(0, DB::table('member_paper_questionnaires')->where('booking_id', $fixture['bookingId'])->count());
+
+        $this->post(route('operator.xray-readiness-worklist.claim', $xray->id), ['operation_id' => (string) Str::uuid()])->assertRedirect();
+        $this->post(route('operator.xray-readiness-worklist.call', $xray->id), ['operation_id' => (string) Str::uuid()])->assertRedirect();
+        $this->app->instance(Clock::class, new FrozenClock(new DateTimeImmutable('2040-01-10T03:30:00+00:00')));
+        $lcd = new PublicQueueDisplayController(app(Clock::class));
+        $active = $lcd->queue($fixture['siteLocalId'])->getData(true);
+        $this->assertSame('T-001', $active['current'][0]['ticket_number']);
+        $this->assertSame(['ticket_number', 'destination'], array_keys($active['current'][0]));
+        $expired = (new PublicQueueDisplayController(new FrozenClock(new DateTimeImmutable('2040-01-10T04:00:00+00:00'))))->queue($fixture['siteLocalId'])->getData(true);
+        $this->assertSame([], $expired['current']);
+        $this->assertSame([], $expired['recent_calls']);
+        $this->assertDatabaseHas('operator_queue_admissions', ['id' => $xray->id]);
+        $this->assertDatabaseHas('operator_queue_admission_history', ['operator_queue_admission_id' => $xray->id]);
+        $this->assertDatabaseHas('operator_paper_tickets', ['booking_id' => $fixture['bookingId']]);
     }
 
     /** @param array<string, mixed> $fixture */
