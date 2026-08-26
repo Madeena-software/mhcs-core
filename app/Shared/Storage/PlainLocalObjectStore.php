@@ -92,7 +92,7 @@ final readonly class PlainLocalObjectStore implements PrivateObjectStore
             'ACL' => 'private',
         ]);
 
-        return $object->then(function () use ($client, $config, $key, $metadata, $checksum, $bytes, $createdAt): PrivateObject {
+        return $object->then(function () use ($client, $config, $key, $metadata, $checksum, $bytes, $createdAt) {
             return $client->putObjectAsync([
                 'Bucket' => $config['bucket'],
                 'Key' => (string) $key.'.meta.json',
