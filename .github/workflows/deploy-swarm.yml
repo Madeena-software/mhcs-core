@@ -113,7 +113,23 @@ jobs:
           fi
 
           echo "===> Pulling and verifying authorized immutable image..."
-          docker pull "$IMAGE_REF" >/dev/null
+          PULL_MAX_ATTEMPTS=3
+          PULL_ATTEMPT=1
+          while true; do
+            echo "===> Pulling authorized immutable image (attempt ${PULL_ATTEMPT}/${PULL_MAX_ATTEMPTS})..."
+            if docker pull "$IMAGE_REF" >/dev/null; then
+              echo "✅ Authorized immutable image pull succeeded on attempt ${PULL_ATTEMPT}."
+              break
+            fi
+            if [ "$PULL_ATTEMPT" -ge "$PULL_MAX_ATTEMPTS" ]; then
+              echo "FATAL: authorized immutable image pull failed after ${PULL_MAX_ATTEMPTS} attempts."
+              exit 1
+            fi
+            PULL_DELAY=$((PULL_ATTEMPT * 10))
+            echo "Image pull failed; retrying in ${PULL_DELAY}s..."
+            sleep "$PULL_DELAY"
+            PULL_ATTEMPT=$((PULL_ATTEMPT + 1))
+          done
           if ! docker image inspect "$IMAGE_REF" --format '{{range .RepoDigests}}{{println .}}{{end}}' | grep -Fxq "${IMAGE_REPOSITORY}@${IMAGE_DIGEST}"; then
             echo "FATAL: pulled image does not resolve to the authorized repository digest."
             exit 1

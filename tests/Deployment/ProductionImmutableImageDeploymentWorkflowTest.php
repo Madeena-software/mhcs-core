@@ -29,6 +29,13 @@ final class ProductionImmutableImageDeploymentWorkflowTest extends TestCase
         $this->assertStringContainsString('GHCR_READ_TOKEN', $workflow);
         $this->assertStringContainsString('docker login ghcr.io -u "$GHCR_READ_USERNAME" --password-stdin', $workflow);
         $this->assertStringContainsString('docker pull "$IMAGE_REF"', $workflow);
+        $this->assertSame(1, substr_count($workflow, 'PULL_MAX_ATTEMPTS=3'));
+        $this->assertStringContainsString('PULL_ATTEMPT=1', $workflow);
+        $this->assertStringContainsString('while true; do', $workflow);
+        $this->assertStringContainsString('if [ "$PULL_ATTEMPT" -ge "$PULL_MAX_ATTEMPTS" ]; then', $workflow);
+        $this->assertStringContainsString('PULL_DELAY=$((PULL_ATTEMPT * 10))', $workflow);
+        $this->assertStringContainsString('sleep "$PULL_DELAY"', $workflow);
+        $this->assertStringContainsString('PULL_ATTEMPT=$((PULL_ATTEMPT + 1))', $workflow);
         $this->assertStringContainsString('RepoDigests', $workflow);
         $this->assertStringContainsString('org.opencontainers.image.revision', $workflow);
         $this->assertStringContainsString('org.opencontainers.image.source', $workflow);
@@ -47,6 +54,18 @@ final class ProductionImmutableImageDeploymentWorkflowTest extends TestCase
         }
         $this->assertStringContainsString('--with-registry-auth', $workflow);
         $this->assertStringContainsString('docker stack deploy', $workflow);
+
+        $pullSuccessPosition = strpos($workflow, 'Authorized immutable image pull succeeded');
+        $repoDigestPosition = strpos($workflow, 'RepoDigests');
+        $composePosition = strpos($workflow, 'docker compose -f docker-compose.prod.yml config');
+        $deployPosition = strpos($workflow, 'docker stack deploy');
+        $this->assertNotFalse($pullSuccessPosition);
+        $this->assertNotFalse($repoDigestPosition);
+        $this->assertNotFalse($composePosition);
+        $this->assertNotFalse($deployPosition);
+        $this->assertLessThan($repoDigestPosition, $pullSuccessPosition);
+        $this->assertLessThan($composePosition, $repoDigestPosition);
+        $this->assertLessThan($deployPosition, $composePosition);
 
         foreach (['docker build', 'mhcs_core:latest', 'npm ci', 'npm run build', 'composer install'] as $forbidden) {
             $this->assertStringNotContainsString($forbidden, $workflow);
