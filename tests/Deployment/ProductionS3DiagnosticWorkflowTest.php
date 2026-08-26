@@ -354,6 +354,112 @@ final class ProductionS3DiagnosticWorkflowTest extends TestCase
         }
     }
 
+    public function test_swarm_topology_fields_and_helpers_are_runtime_safe(): void
+    {
+        $workflow = file_get_contents(base_path('.github/workflows/diagnose-production-s3.yml'));
+        $this->assertIsString($workflow);
+
+        foreach ([
+            'host_gateway_matches_default_bridge=',
+            'host_gateway_matches_docker_gwbridge=',
+            'host_gateway_matches_container_attached_gateway=',
+            'container_network_overlay_present=',
+            'container_network_bridge_present=',
+            'container_network_host_mode=',
+            'container_proc_route_inspection=',
+            'container_route_to_host_gateway=',
+            'container_attached_network_gateway_inspection=',
+        ] as $field) {
+            $this->assertStringContainsString($field, $workflow);
+        }
+
+        foreach ([
+            'default bridge' => ['10.0.0.2', '10.0.0.2', 'true'],
+            'docker gwbridge' => ['10.0.0.2', '10.0.0.3', 'false'],
+            'attached gateway' => ['10.0.0.2', '10.0.0.4', 'false'],
+            'attached gateway unknown' => ['10.0.0.2', null, 'unknown'],
+        ] as $name => [$resolved, $candidate, $expected]) {
+            $this->assertSame([$expected], $this->executeTopologyMatchHelper(
+                $workflow,
+                sprintf("printf '%%s\\n' \"$(classify_gateway_match %s %s)\"", escapeshellarg($resolved), $candidate === null ? "''" : escapeshellarg($candidate)),
+            ), $name);
+        }
+
+        $direct = "Iface Destination Gateway Flags RefCnt Use Metric Mask MTU Window IRTT\neth0 0001A8C0 00000000 0001 0 0 0 00FFFFFF 0 0 0\n";
+        $default = "Iface Destination Gateway Flags RefCnt Use Metric Mask MTU Window IRTT\neth0 00000000 0101A8C0 0001 0 0 0 00000000 0 0 0\n";
+        $ambiguous = "Iface Destination Gateway Flags RefCnt Use Metric Mask MTU Window IRTT\nmalformed\n";
+        $missing = '/path/that/does/not/exist';
+
+        $this->assertSame(['PASS', 'direct'], $this->executeTopologyRouteHelper($workflow, sprintf(
+            '$r=classifyProcRoute(%s, %s); echo $r[\'inspection\']."\\n".$r[\'route\'];', var_export($direct, true), var_export('192.168.1.42', true),
+        )), 'direct route');
+        $this->assertSame(['PASS', 'via_default'], $this->executeTopologyRouteHelper($workflow, sprintf(
+            '$r=classifyProcRoute(%s, %s); echo $r[\'inspection\']."\\n".$r[\'route\'];', var_export($default, true), var_export('192.168.1.42', true),
+        )), 'default route');
+        $this->assertSame(['PASS', 'unknown'], $this->executeTopologyRouteHelper($workflow, sprintf(
+            '$r=classifyProcRoute(%s, %s); echo $r[\'inspection\']."\\n".$r[\'route\'];', var_export($ambiguous, true), var_export('192.168.1.42', true),
+        )), 'ambiguous route');
+        $this->assertSame(['UNAVAILABLE', 'unavailable'], $this->executeTopologyRouteHelper($workflow, sprintf(
+            '$r=classifyProcRouteFile(%s, %s); echo $r[\'inspection\']."\\n".$r[\'route\'];', var_export($missing, true), var_export('192.168.1.42', true),
+        )), 'unavailable route');
+
+        $this->assertStringNotContainsString('host_gateway_connectivity_root_confirmed=true', substr(
+            $workflow,
+            strpos($workflow, '# TOPOLOGY_MATCH_HELPER_BEGIN'),
+            strpos($workflow, '# TOPOLOGY_MATCH_HELPER_END') - strpos($workflow, '# TOPOLOGY_MATCH_HELPER_BEGIN'),
+        ));
+        foreach (['echo "$host_gateway_address"', 'echo "$route_table"', 'echo "$network_inspect"', 'echo "$container_networks"'] as $disclosure) {
+            $this->assertStringNotContainsString($disclosure, $workflow);
+        }
+    }
+
+    /** @return list<string> */
+    private function executeTopologyMatchHelper(string $workflow, string $invocation): array
+    {
+        $start = strpos($workflow, '# TOPOLOGY_MATCH_HELPER_BEGIN');
+        $end = strpos($workflow, '# TOPOLOGY_MATCH_HELPER_END', $start === false ? 0 : $start);
+        $this->assertNotFalse($start);
+        $this->assertNotFalse($end);
+        $helpers = preg_replace('/^ {10}/m', '', substr($workflow, $start, $end - $start));
+        $this->assertIsString($helpers);
+        $scriptPath = tempnam(sys_get_temp_dir(), 'mhcs-topology-match-');
+        $this->assertNotFalse($scriptPath);
+        file_put_contents($scriptPath, $helpers."\n".$invocation."\n");
+        $output = [];
+        $exitCode = 0;
+        try {
+            exec('bash '.escapeshellarg($scriptPath), $output, $exitCode);
+        } finally {
+            @unlink($scriptPath);
+        }
+        $this->assertSame(0, $exitCode, implode(PHP_EOL, $output));
+
+        return $output;
+    }
+
+    /** @return list<string> */
+    private function executeTopologyRouteHelper(string $workflow, string $invocation): array
+    {
+        $start = strpos($workflow, '// TOPOLOGY_ROUTE_HELPER_BEGIN');
+        $end = strpos($workflow, '// TOPOLOGY_ROUTE_HELPER_END', $start === false ? 0 : $start);
+        $this->assertNotFalse($start);
+        $this->assertNotFalse($end);
+        $helpers = substr($workflow, $start, $end - $start);
+        $scriptPath = tempnam(sys_get_temp_dir(), 'mhcs-topology-');
+        $this->assertNotFalse($scriptPath);
+        file_put_contents($scriptPath, "<?php\n".$helpers."\n".$invocation."\n");
+        $output = [];
+        $exitCode = 0;
+        try {
+            exec('php '.escapeshellarg($scriptPath).' 2>&1', $output, $exitCode);
+        } finally {
+            @unlink($scriptPath);
+        }
+        $this->assertSame(0, $exitCode, implode(PHP_EOL, $output));
+
+        return $output;
+    }
+
     public function test_packet_path_probe_is_optional_bounded_and_conservative(): void
     {
         $workflow = file_get_contents(base_path('.github/workflows/diagnose-production-s3.yml'));

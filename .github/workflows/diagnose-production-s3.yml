@@ -102,6 +102,26 @@ jobs:
           listener_match_ambiguous=false
           listener_addresses=()
           listener_process_lines=()
+          host_gateway_matches_default_bridge=unknown
+          host_gateway_matches_docker_gwbridge=unknown
+          host_gateway_matches_container_attached_gateway=unknown
+          container_network_overlay_present=unknown
+          container_network_bridge_present=unknown
+          container_network_host_mode=unknown
+          container_proc_route_inspection=UNAVAILABLE
+          container_route_to_host_gateway=unavailable
+          container_attached_network_gateway_inspection=UNAVAILABLE
+
+          # TOPOLOGY_MATCH_HELPER_BEGIN
+          classify_gateway_match() {
+            local resolved="$1" candidate="$2"
+            if [ -n "$resolved" ] && [ -n "$candidate" ]; then
+              [ "$resolved" = "$candidate" ] && printf '%s' true || printf '%s' false
+            else
+              printf '%s' unknown
+            fi
+          }
+          # TOPOLOGY_MATCH_HELPER_END
 
           gateway_resolution="$(docker exec "$APP_CONTAINER" getent ahosts host.docker.internal 2>/dev/null || true)"
           host_gateway_address="$(printf '%s\n' "$gateway_resolution" | awk 'NF && $1 !~ /:/ {print $1; exit}')"
@@ -114,6 +134,137 @@ jobs:
               host_gateway_address_resolved=true
               host_gateway_address_family=ipv6
             fi
+          fi
+
+          inspect_single_network_gateway() {
+            local network="$1" details gateway_count
+            if ! details="$(docker network inspect "$network" --format '{{range .IPAM.Config}}{{if .Gateway}}{{.Gateway}}{{"\n"}}{{end}}{{end}}' 2>/dev/null)"; then
+              return 1
+            fi
+            gateway_count="$(printf '%s\n' "$details" | awk 'NF {count++} END {print count+0}')"
+            if [ "$gateway_count" = 1 ]; then
+              printf '%s\n' "$details" | awk 'NF {print; exit}'
+            else
+              return 2
+            fi
+          }
+
+          if [ "$host_gateway_address_resolved" = true ] && [ "$host_gateway_address_family" = ipv4 ]; then
+            default_bridge_gateway="$(inspect_single_network_gateway bridge 2>/dev/null || true)"
+            host_gateway_matches_default_bridge="$(classify_gateway_match "$host_gateway_address" "$default_bridge_gateway")"
+            docker_gwbridge_gateway="$(inspect_single_network_gateway docker_gwbridge 2>/dev/null || true)"
+            host_gateway_matches_docker_gwbridge="$(classify_gateway_match "$host_gateway_address" "$docker_gwbridge_gateway")"
+
+            container_network_names=""
+            if container_network_names="$(docker inspect "$APP_CONTAINER" --format '{{range $name, $network := .NetworkSettings.Networks}}{{$name}}{{"\n"}}{{end}}' 2>/dev/null)"; then
+              container_network_host_mode=false
+              if [ "$(docker inspect "$APP_CONTAINER" --format '{{.HostConfig.NetworkMode}}' 2>/dev/null || true)" = host ]; then container_network_host_mode=true; fi
+              attached_gateway_known=true
+              attached_gateway_found=false
+              attached_gateway_match=false
+              attached_gateway_mismatch=false
+              mapfile -t attached_networks < <(printf '%s\n' "$container_network_names" | awk 'NF')
+              if [ "${#attached_networks[@]}" -eq 0 ]; then
+                container_network_overlay_present=false
+                container_network_bridge_present=false
+              else
+                container_network_overlay_present=false
+                container_network_bridge_present=false
+                for attached_network in "${attached_networks[@]}"; do
+                  network_driver="$(docker network inspect "$attached_network" --format '{{.Driver}}' 2>/dev/null || true)"
+                  case "$network_driver" in
+                    overlay) container_network_overlay_present=true ;;
+                    bridge) container_network_bridge_present=true ;;
+                    '') container_network_overlay_present=unknown; container_network_bridge_present=unknown; attached_gateway_known=false ;;
+                    *) container_network_overlay_present=unknown; container_network_bridge_present=unknown ;;
+                  esac
+                  attached_gateway="$(inspect_single_network_gateway "$attached_network" 2>/dev/null || true)"
+                  if [ -n "$attached_gateway" ]; then
+                    attached_gateway_found=true
+                    if [ "$attached_gateway" = "$host_gateway_address" ]; then attached_gateway_match=true; else attached_gateway_mismatch=true; fi
+                  else
+                    attached_gateway_known=false
+                  fi
+                done
+              fi
+              if [ "$attached_gateway_match" = true ]; then
+                host_gateway_matches_container_attached_gateway=true
+              elif [ "$attached_gateway_known" = true ] && [ "$attached_gateway_found" = true ] && [ "$attached_gateway_mismatch" = true ]; then
+                host_gateway_matches_container_attached_gateway=false
+              else
+                host_gateway_matches_container_attached_gateway=unknown
+              fi
+              if [ "$attached_gateway_known" = true ]; then container_attached_network_gateway_inspection=PASS; else container_attached_network_gateway_inspection=FAIL; fi
+            fi
+          fi
+
+          if [ "$host_gateway_address_resolved" = true ] && [ "$host_gateway_address_family" = ipv4 ]; then
+            route_result="$(docker exec -e TARGET="$host_gateway_address" -i "$APP_CONTAINER" php 2>/dev/null <<'PHP' || true
+          <?php
+          declare(strict_types=1);
+
+          // TOPOLOGY_ROUTE_HELPER_BEGIN
+          function routeIpv4Uint(string $address): ?int
+          {
+              $packed = @inet_pton($address);
+              if ($packed === false || strlen($packed) !== 4) return null;
+              $parts = unpack('Nvalue', $packed);
+              if (! is_array($parts) || ! isset($parts['value'])) return null;
+              $value = (int) $parts['value'];
+              return $value < 0 ? $value + 4294967296 : $value;
+          }
+
+          function routeLittleEndianIpv4(string $hex): ?int
+          {
+              if (! preg_match('/\A[0-9A-Fa-f]{8}\z/', $hex)) return null;
+              $packed = pack('V', hexdec($hex));
+              $address = inet_ntop($packed);
+              return is_string($address) ? routeIpv4Uint($address) : null;
+          }
+
+          /** @return array{inspection:string,route:string} */
+          function classifyProcRoute(string $table, string $target): array
+          {
+              $targetValue = routeIpv4Uint($target);
+              if ($targetValue === null) return ['inspection'=>'PASS', 'route'=>'unknown'];
+              $default = false; $specific = false; $ambiguous = false;
+              foreach (preg_split('/\r?\n/', trim($table)) ?: [] as $line) {
+                  if (trim($line) === '' || str_starts_with(trim($line), 'Iface ')) continue;
+                  $columns = preg_split('/\s+/', trim($line));
+                  if (! is_array($columns) || count($columns) < 8) { $ambiguous = true; continue; }
+                  $destination = routeLittleEndianIpv4($columns[1]);
+                  $gateway = routeLittleEndianIpv4($columns[2]);
+                  if ($destination === null || $gateway === null || ! preg_match('/\A[0-9A-Fa-f]+\z/', $columns[3]) || ! preg_match('/\A[0-9A-Fa-f]{8}\z/', $columns[7])) { $ambiguous = true; continue; }
+                  $mask = routeLittleEndianIpv4($columns[7]);
+                  if ($mask === null || ((hexdec($columns[3]) & 1) !== 1)) { $ambiguous = true; continue; }
+                  if (($targetValue & $mask) !== ($destination & $mask)) continue;
+                  if ($mask === 0) { $default = true; continue; }
+                  if ($gateway === 0) $specific = true; else $ambiguous = true;
+              }
+              if ($ambiguous) return ['inspection'=>'PASS', 'route'=>'unknown'];
+              if ($specific) return ['inspection'=>'PASS', 'route'=>'direct'];
+              if ($default) return ['inspection'=>'PASS', 'route'=>'via_default'];
+              return ['inspection'=>'PASS', 'route'=>'unknown'];
+          }
+
+          /** @return array{inspection:string,route:string} */
+          function classifyProcRouteFile(string $path, string $target): array
+          {
+              if (! is_readable($path)) return ['inspection'=>'UNAVAILABLE', 'route'=>'unavailable'];
+              $table = @file_get_contents($path);
+              return is_string($table) ? classifyProcRoute($table, $target) : ['inspection'=>'UNAVAILABLE', 'route'=>'unavailable'];
+          }
+          // TOPOLOGY_ROUTE_HELPER_END
+
+          $server = '_SERVER';
+          $result = classifyProcRouteFile('/proc/net/route', (string) ($GLOBALS[$server]['TARGET'] ?? ''));
+          echo $result['inspection']."\n".$result['route']."\n";
+          PHP
+            )"
+            route_inspection="$(printf '%s\n' "$route_result" | sed -n '1p')"
+            route_class="$(printf '%s\n' "$route_result" | sed -n '2p')"
+            case "$route_inspection" in PASS) container_proc_route_inspection=PASS ;; *) container_proc_route_inspection=UNAVAILABLE ;; esac
+            case "$route_class" in direct|via_default|unreachable|unknown) container_route_to_host_gateway="$route_class" ;; *) container_route_to_host_gateway=unknown ;; esac
           fi
 
           if command -v ss >/dev/null 2>&1; then
@@ -639,4 +790,13 @@ jobs:
           echo "root_cause_boundary=$host_listener_root_boundary"
           echo "root_cause_class=$host_listener_root_class"
           echo "root_cause_confirmed=$host_listener_root_confirmed"
+          echo "host_gateway_matches_default_bridge=$host_gateway_matches_default_bridge"
+          echo "host_gateway_matches_docker_gwbridge=$host_gateway_matches_docker_gwbridge"
+          echo "host_gateway_matches_container_attached_gateway=$host_gateway_matches_container_attached_gateway"
+          echo "container_network_overlay_present=$container_network_overlay_present"
+          echo "container_network_bridge_present=$container_network_bridge_present"
+          echo "container_network_host_mode=$container_network_host_mode"
+          echo "container_proc_route_inspection=$container_proc_route_inspection"
+          echo "container_route_to_host_gateway=$container_route_to_host_gateway"
+          echo "container_attached_network_gateway_inspection=$container_attached_network_gateway_inspection"
           exit "$diagnostic_exit"
