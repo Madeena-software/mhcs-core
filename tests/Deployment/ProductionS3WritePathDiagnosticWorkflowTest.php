@@ -202,4 +202,45 @@ final class ProductionS3WritePathDiagnosticWorkflowTest extends TestCase
         $this->assertStringContainsString("\$probe7Cleanup = ! \$probe7Started ? 'SKIPPED'", $workflow);
         $this->assertStringContainsString('write_path_root_cause_confirmed=false', $workflow);
     }
+
+    public function test_synthetic_generators_reject_partial_writes_and_clean_up_failures(): void
+    {
+        $workflow = $this->workflow();
+        $streamStart = strpos($workflow, 'function streamOf(');
+        $fileStart = strpos($workflow, 'function syntheticFile(');
+        $headStart = strpos($workflow, 'function head(');
+        $stream = substr($workflow, $streamStart, $fileStart - $streamStart);
+        $file = substr($workflow, $fileStart, $headStart - $fileStart);
+
+        foreach ([$stream, $file] as $helper) {
+            $write = strpos($helper, '$actual = fwrite(');
+            $validate = strpos($helper, '$actual === false || $actual !== $expected');
+            $hash = strpos($helper, 'hash_update($hash, $part)');
+            $increment = strpos($helper, '$written += $actual');
+            $this->assertNotFalse($write);
+            $this->assertNotFalse($validate);
+            $this->assertNotFalse($hash);
+            $this->assertNotFalse($increment);
+            $this->assertLessThan($validate, $write);
+            $this->assertLessThan($hash, $validate);
+            $this->assertLessThan($increment, $hash);
+            $this->assertStringNotContainsString('$written += strlen($part)', $helper);
+            $this->assertStringContainsString('$written !== $bytes', $helper);
+        }
+
+        $this->assertStringContainsString('catch (Throwable $e) { fclose($stream); throw $e; }', $stream);
+        $this->assertStringContainsString('if (is_resource($stream)) fclose($stream); if (is_file($path)) @unlink($path); throw $e;', $file);
+        $this->assertStringContainsString('if ($stream === false) throw new RuntimeException(\'synthetic file open failed\')', $file);
+        $this->assertStringContainsString('PK\\x03\\x04', $file);
+        $this->assertStringContainsString("str_repeat('N', 1048572)", $file);
+        $this->assertStringContainsString('if (rewind($stream) === false)', $stream);
+        $this->assertStringContainsString('if (rewind($stream) === false)', $file);
+        $this->assertStringContainsString('89660664', $workflow);
+        $this->assertStringContainsString('17713052', $workflow);
+        $this->assertSame(1, substr_count($workflow, 'workflow_dispatch:'));
+        $this->assertStringNotContainsString('GetObject', $workflow);
+        $this->assertStringNotContainsString('ListObjects', $workflow);
+        $this->assertStringNotContainsString('DB::', $workflow);
+        $this->assertStringContainsString('write_path_root_cause_confirmed=false', $workflow);
+    }
 }

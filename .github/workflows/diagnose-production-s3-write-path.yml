@@ -80,22 +80,29 @@ jobs:
           function streamOf(int $bytes): array
           {
               $stream = tmpfile();
-              if ($stream === false) throw new RuntimeException('temporary stream unavailable');
-              $hash = hash_init('sha256'); $written = 0; $chunk = str_repeat('S3-DIAGNOSTIC\0', 65536);
-              while ($written < $bytes) { $part = substr($chunk, 0, min(strlen($chunk), $bytes - $written)); fwrite($stream, $part); hash_update($hash, $part); $written += strlen($part); }
-              rewind($stream);
-              return [$stream, hash_final($hash)];
+              if ($stream === false) throw new RuntimeException('synthetic stream creation failed');
+              try {
+                  $hash = hash_init('sha256'); $written = 0; $chunk = str_repeat('S3-DIAGNOSTIC\0', 65536);
+                  while ($written < $bytes) { $part = substr($chunk, 0, min(strlen($chunk), $bytes - $written)); $expected = strlen($part); $actual = fwrite($stream, $part); if ($actual === false || $actual !== $expected) throw new RuntimeException('synthetic stream write failed'); hash_update($hash, $part); $written += $actual; }
+                  if ($written !== $bytes) throw new RuntimeException('synthetic stream generation failed');
+                  if (rewind($stream) === false) throw new RuntimeException('synthetic stream rewind failed');
+                  return [$stream, hash_final($hash)];
+              } catch (Throwable $e) { fclose($stream); throw $e; }
           }
           function syntheticFile(int $bytes): array
           {
               $path = tempnam(sys_get_temp_dir(), 's3diag-');
-              if ($path === false) throw new RuntimeException('temporary file unavailable');
-              $stream = fopen($path, 'w+b');
-              if ($stream === false) throw new RuntimeException('temporary file unavailable');
-              $hash = hash_init('sha256'); $written = 0; $chunk = "PK\x03\x04".str_repeat('N', 1048572);
-              while ($written < $bytes) { $part = substr($chunk, 0, min(strlen($chunk), $bytes - $written)); fwrite($stream, $part); hash_update($hash, $part); $written += strlen($part); }
-              rewind($stream);
-              return [$path, $stream, hash_final($hash)];
+              if ($path === false) throw new RuntimeException('synthetic file creation failed');
+              $stream = null;
+              try {
+                  $stream = fopen($path, 'w+b');
+                  if ($stream === false) throw new RuntimeException('synthetic file open failed');
+                  $hash = hash_init('sha256'); $written = 0; $chunk = "PK\x03\x04".str_repeat('N', 1048572);
+                  while ($written < $bytes) { $part = substr($chunk, 0, min(strlen($chunk), $bytes - $written)); $expected = strlen($part); $actual = fwrite($stream, $part); if ($actual === false || $actual !== $expected) throw new RuntimeException('synthetic file write failed'); hash_update($hash, $part); $written += $actual; }
+                  if ($written !== $bytes) throw new RuntimeException('synthetic file generation failed');
+                  if (rewind($stream) === false) throw new RuntimeException('synthetic file rewind failed');
+                  return [$path, $stream, hash_final($hash)];
+              } catch (Throwable $e) { if (is_resource($stream)) fclose($stream); if (is_file($path)) @unlink($path); throw $e; }
           }
           function head(S3Client $client, string $bucket, string $key): array
           {
