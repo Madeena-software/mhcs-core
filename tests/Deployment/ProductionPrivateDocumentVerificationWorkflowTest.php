@@ -8,6 +8,63 @@ use Tests\TestCase;
 
 final class ProductionPrivateDocumentVerificationWorkflowTest extends TestCase
 {
+    public function test_private_document_diagnostic_status_boundaries_fail_closed(): void
+    {
+        $workflow = file_get_contents(base_path('.github/workflows/verify-production-private-documents.yml'));
+        $this->assertIsString($workflow);
+
+        foreach ([
+            'laravel_bootstrap=PASS',
+            'laravel_bootstrap=FAIL',
+            'database_read_status=PASS',
+            'database_read_status=FAIL',
+            'diagnostic_execution=PASS',
+            'diagnostic_execution=FAIL',
+            'diagnostic_failure_boundary=laravel_bootstrap',
+            'diagnostic_failure_boundary=database_read',
+        ] as $status) {
+            $this->assertStringContainsString($status, $workflow);
+        }
+
+        $bootstrapFailure = strpos($workflow, 'diagnostic_failure_boundary=laravel_bootstrap');
+        $dbQuery = strpos($workflow, "DB::table('examination_consents')");
+        $headBucket = strpos($workflow, '->headBucket(');
+        $this->assertNotFalse($bootstrapFailure);
+        $this->assertNotFalse($dbQuery);
+        $this->assertNotFalse($headBucket);
+        $this->assertLessThan($dbQuery, $bootstrapFailure);
+        $this->assertLessThan($headBucket, $bootstrapFailure);
+        $this->assertStringContainsString('if (! $bootstrapOk) {', $workflow);
+        $this->assertStringContainsString('if ($dbQueryFailed) {', $workflow);
+
+        $databaseFailure = strpos($workflow, 'diagnostic_failure_boundary=database_read');
+        $this->assertNotFalse($databaseFailure);
+        $this->assertLessThan($headBucket, $databaseFailure);
+        $this->assertStringContainsString('exit(1);', $workflow);
+    }
+
+    public function test_private_document_diagnostic_classifies_only_observed_linkage_failures(): void
+    {
+        $workflow = file_get_contents(base_path('.github/workflows/verify-production-private-documents.yml'));
+        $this->assertIsString($workflow);
+
+        $this->assertStringContainsString('bool $databaseReadSucceeded,', $workflow);
+        $this->assertStringContainsString("return 'diagnostic_execution_failed';", $workflow);
+        $this->assertStringNotContainsString("if (! \$selectionSucceeded) {\n                  return 'db_linkage_incomplete';", $workflow);
+
+        $databasePass = strpos($workflow, 'database_read_status=PASS');
+        $headBucket = strpos($workflow, '->headBucket(');
+        $diagnosticPass = strpos($workflow, 'diagnostic_execution=PASS');
+        $this->assertNotFalse($databasePass);
+        $this->assertNotFalse($headBucket);
+        $this->assertNotFalse($diagnosticPass);
+        $this->assertLessThan($headBucket, $databasePass);
+        $this->assertLessThan($diagnosticPass, $databasePass);
+
+        $this->assertStringContainsString("return 's3_access_unavailable';", $workflow);
+        $this->assertStringContainsString("\$headBucketStatus !== 'PASS'", $workflow);
+    }
+
     public function test_private_document_verification_workflow_is_manual_fail_closed_and_read_only(): void
     {
         $workflowPath = base_path('.github/workflows/verify-production-private-documents.yml');

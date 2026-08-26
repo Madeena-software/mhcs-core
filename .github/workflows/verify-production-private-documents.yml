@@ -200,7 +200,7 @@ jobs:
           }
 
           function classifyDocument(
-              bool $selectionSucceeded,
+              bool $databaseReadSucceeded,
               bool $recordFound,
               bool $dbLinkValid,
               bool $dbMetadataValid,
@@ -209,8 +209,8 @@ jobs:
               array $metadataHead,
               string $bytesMatch,
           ): string {
-              if (! $selectionSucceeded) {
-                  return 'db_linkage_incomplete';
+              if (! $databaseReadSucceeded) {
+                  return 'diagnostic_execution_failed';
               }
               if (! $recordFound) {
                   return 'no_existing_record';
@@ -258,6 +258,14 @@ jobs:
               $bootstrapOk = false;
           }
 
+          if (! $bootstrapOk) {
+              echo 'laravel_bootstrap=FAIL'.PHP_EOL;
+              echo 'diagnostic_execution=FAIL'.PHP_EOL;
+              echo 'diagnostic_failure_boundary=laravel_bootstrap'.PHP_EOL;
+              exit(1);
+          }
+          echo 'laravel_bootstrap=PASS'.PHP_EOL;
+
           if ($bootstrapOk) {
               try {
                   $privateDiskName = config('mhcs.private_object_disk');
@@ -281,6 +289,12 @@ jobs:
               } catch (Throwable) {
                   $s3Ready = false;
               }
+          }
+
+          if (! $s3Ready) {
+              echo 'diagnostic_execution=FAIL'.PHP_EOL;
+              echo 'diagnostic_failure_boundary=s3_configuration'.PHP_EOL;
+              exit(1);
           }
 
           $consentRecordFound = false;
@@ -388,6 +402,15 @@ jobs:
           } catch (Throwable) {
               $dbQueryFailed = true;
           }
+
+          if ($dbQueryFailed) {
+              echo 'database_read_status=FAIL'.PHP_EOL;
+              echo 'diagnostic_execution=FAIL'.PHP_EOL;
+              echo 'diagnostic_failure_boundary=database_read'.PHP_EOL;
+              exit(1);
+          }
+          echo 'database_read_status=PASS'.PHP_EOL;
+          echo 'diagnostic_execution=PASS'.PHP_EOL;
 
           $consentDbLinkValid = $consentRecordFound
               && $consentMemberRecordExists
