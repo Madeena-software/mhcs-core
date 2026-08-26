@@ -8,6 +8,7 @@ use App\Shared\Context\AuthenticatedContext;
 use App\Shared\Context\AuthenticatedContextProvider;
 use App\Shared\Context\CorrelationId;
 use App\Shared\Identity\LocalId;
+use Illuminate\Support\Facades\DB;
 use LogicException;
 
 /** Fixed, short-lived context switch owned by the nonclinical console boundary. */
@@ -71,6 +72,9 @@ final class NonclinicalValidationContextProvider implements AuthenticatedContext
         if ($this->memberId !== null && $this->memberId !== $memberId) {
             throw new LogicException('The validation Member identity cannot be rebound.');
         }
+        if ($this->memberId === null && ! $this->ownedMember($memberId)) {
+            throw new LogicException('The validation Member identity is not an owned validation principal.');
+        }
 
         $this->memberId ??= $memberId;
         $this->mode = 'member';
@@ -83,5 +87,21 @@ final class NonclinicalValidationContextProvider implements AuthenticatedContext
         }
 
         $this->mode = 'member';
+    }
+
+    private function ownedMember(string $memberId): bool
+    {
+        $events = DB::table('audit_events')
+            ->where('action', 'production.validation-context.member-account.provisioned')
+            ->where('target_type', 'App\\Models\\User')
+            ->where('target_id', $memberId)
+            ->where('outcome', 'success')
+            ->get();
+
+        return $events->count() === 1 && json_decode((string) $events->first()->metadata, true) === [
+            'validation_context' => NonclinicalValidationContext::KEY,
+            'nonclinical' => true,
+            'principal_type' => 'member',
+        ];
     }
 }

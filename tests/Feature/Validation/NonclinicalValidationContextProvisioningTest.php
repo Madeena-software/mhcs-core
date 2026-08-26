@@ -32,9 +32,17 @@ final class NonclinicalValidationContextProvisioningTest extends TestCase
     public function test_context_provider_rejects_rebinding_and_exposes_only_fixed_system_phases(): void
     {
         $provider = new NonclinicalValidationContextProvider;
-        $provider->bindValidationMember('11111111-1111-4111-8111-111111111111');
+        $memberId = '11111111-1111-4111-8111-111111111111';
+        DB::table('audit_events')->insert([
+            'event_id' => (string) Str::uuid(), 'event_version' => 1, 'actor_id' => '00000000-0000-4000-8000-000000000000',
+            'roles' => json_encode(['system']), 'permissions' => json_encode([]), 'target_type' => 'App\\Models\\User', 'target_id' => $memberId,
+            'action' => 'production.validation-context.member-account.provisioned', 'occurred_at' => now(), 'recorded_at' => now(),
+            'source' => 'validation', 'outcome' => 'success', 'metadata' => json_encode(['validation_context' => NonclinicalValidationContext::KEY, 'nonclinical' => true, 'principal_type' => 'member']),
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+        $provider->bindValidationMember($memberId);
         $provider->memberBooking();
-        $this->assertSame('11111111-1111-4111-8111-111111111111', (string) $provider->current()->actorId);
+        $this->assertSame($memberId, (string) $provider->current()->actorId);
 
         try {
             $provider->bindValidationMember('22222222-2222-4222-8222-222222222222');
@@ -75,6 +83,46 @@ final class NonclinicalValidationContextProvisioningTest extends TestCase
         $this->assertSame(0, DB::table('users')->count());
         $this->assertSame(0, DB::table('members')->count());
         $this->assertSame(0, DB::table('operator_eligible_shifts')->count());
+    }
+
+    public function test_replay_fails_closed_when_local_imaging_order_is_removed(): void
+    {
+        $this->fixture();
+        $secret = 'test-secret-'.Str::random(32);
+        putenv(NonclinicalValidationAccountProvisioningService::OPERATOR_SECRET_NAME.'='.$secret);
+        $this->artisan('mhcs:provision-nonclinical-validation-context')->assertExitCode(0);
+        DB::table('local_imaging_orders')->delete();
+
+        $this->artisan('mhcs:provision-nonclinical-validation-context')->assertExitCode(1);
+        $this->assertSame(1, DB::table('bookings')->count());
+        $this->assertSame(0, DB::table('local_imaging_orders')->count());
+    }
+
+    public function test_replay_fails_closed_on_an_unexpected_operator_permission(): void
+    {
+        $this->fixture();
+        $secret = 'test-secret-'.Str::random(32);
+        putenv(NonclinicalValidationAccountProvisioningService::OPERATOR_SECRET_NAME.'='.$secret);
+        $this->artisan('mhcs:provision-nonclinical-validation-context')->assertExitCode(0);
+        $operatorId = DB::table('operator_profiles')->value('user_id');
+        DB::table('authorization_permission_assignments')->insert(['id' => (string) Str::uuid(), 'user_id' => $operatorId, 'permission' => 'operator.shift.manage', 'assigned_by_user_id' => null, 'active' => true, 'created_at' => now(), 'updated_at' => now()]);
+
+        $this->artisan('mhcs:provision-nonclinical-validation-context')->assertExitCode(1);
+        $this->assertSame(1, DB::table('bookings')->count());
+        $this->assertSame(1, DB::table('operator_profiles')->count());
+    }
+
+    public function test_replay_fails_closed_when_profile_ownership_is_removed(): void
+    {
+        $this->fixture();
+        $secret = 'test-secret-'.Str::random(32);
+        putenv(NonclinicalValidationAccountProvisioningService::OPERATOR_SECRET_NAME.'='.$secret);
+        $this->artisan('mhcs:provision-nonclinical-validation-context')->assertExitCode(0);
+        DB::table('audit_events')->where('action', 'production.validation-context.operator-profile.provisioned')->delete();
+
+        $this->artisan('mhcs:provision-nonclinical-validation-context')->assertExitCode(1);
+        $this->assertSame(1, DB::table('bookings')->count());
+        $this->assertSame(1, DB::table('operator_profiles')->count());
     }
 
     public function test_command_boundary_and_missing_secret_are_fail_closed(): void
