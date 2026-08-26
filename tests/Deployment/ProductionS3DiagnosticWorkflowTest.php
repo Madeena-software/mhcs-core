@@ -77,6 +77,8 @@ final class ProductionS3DiagnosticWorkflowTest extends TestCase
             'packet_path_observation_tool=',
             'packet_path_observation_started_before_probe=',
             'packet_observer_covered_probe=',
+            'packet_observer_start_class=',
+            'packet_observer_exited_before_ready=',
             'container_syn_reaches_host=',
             'host_synack_observed=',
             'host_rst_observed=',
@@ -371,6 +373,12 @@ final class ProductionS3DiagnosticWorkflowTest extends TestCase
         $this->assertStringContainsString('packet_observer_alive_after_probe=true', $workflow);
         $this->assertStringContainsString('packet_classifier_completed=false', $workflow);
         $this->assertStringContainsString('packet_classification_valid=false', $workflow);
+        $this->assertStringContainsString('packet_observer_start_class=unknown', $workflow);
+        $this->assertStringContainsString('packet_observer_exited_before_ready=false', $workflow);
+        $this->assertStringContainsString('classify_packet_observer_status()', $workflow);
+        $this->assertStringContainsString('packet_observer_start_class=ready', $workflow);
+        $this->assertStringContainsString('packet_observer_start_class=readiness_timeout', $workflow);
+        $this->assertStringContainsString('packet_observer_exited_before_ready=true', $workflow);
         $this->assertStringContainsString('if wait "$packet_classifier_pid" 2>/dev/null; then', $workflow);
         $this->assertStringContainsString('line_count != 4', $workflow);
         foreach (['syn', 'synack', 'rst', 'ack'] as $field) {
@@ -416,6 +424,61 @@ final class ProductionS3DiagnosticWorkflowTest extends TestCase
             $this->assertNotFalse($position);
             $this->assertStringContainsString('host_gateway_connectivity_root_confirmed=false', substr($workflow, $position - 300, 500));
         }
+
+        foreach (['permission_denied', 'interface_unavailable', 'filter_error', 'early_exit'] as $startupClass) {
+            $this->assertStringContainsString($startupClass, $workflow);
+            $this->assertStringNotContainsString("packet_observer_start_class=$startupClass\n              host_gateway_connectivity_root_confirmed=true", $workflow);
+        }
+    }
+
+    public function test_packet_observer_start_classifier_executes_against_synthetic_status(): void
+    {
+        $workflow = file_get_contents(base_path('.github/workflows/diagnose-production-s3.yml'));
+        $this->assertIsString($workflow);
+
+        $start = strpos($workflow, '          classify_packet_observer_status() {');
+        $end = strpos($workflow, "\n          if [ \"\$host_gateway_address_resolved\"", $start === false ? 0 : $start);
+        $this->assertNotFalse($start);
+        $this->assertNotFalse($end);
+        $function = substr($workflow, $start, $end - $start);
+        $function = preg_replace('/^ {10}/m', '', $function);
+        $this->assertIsString($function);
+
+        $cases = [
+            'permission' => ["tcpdump: permission denied\n", 'permission_denied'],
+            'interface' => ["tcpdump: eth9: No such device\n", 'interface_unavailable'],
+            'filter' => ["tcpdump: syntax error in filter expression\n", 'filter_error'],
+            'unknown exit' => ["tcpdump: capture startup failed\n", 'early_exit'],
+        ];
+
+        foreach ($cases as $name => [$status, $expected]) {
+            $statusPath = tempnam(sys_get_temp_dir(), 'mhcs-tcpdump-status-');
+            $this->assertNotFalse($statusPath);
+            file_put_contents($statusPath, $status);
+            $output = [];
+            $exitCode = 0;
+            try {
+                exec('bash -c '.escapeshellarg($function.'; classify_packet_observer_status "$1"').' -- '.escapeshellarg($statusPath), $output, $exitCode);
+            } finally {
+                @unlink($statusPath);
+            }
+            $this->assertSame(0, $exitCode, $name);
+            $this->assertSame([$expected], $output, $name);
+            $this->assertNotContains($status, $output, $name);
+        }
+    }
+
+    public function test_packet_observer_status_remains_private_and_startup_class_cannot_confirm_network_root(): void
+    {
+        $workflow = file_get_contents(base_path('.github/workflows/diagnose-production-s3.yml'));
+        $this->assertIsString($workflow);
+
+        foreach (['cat "$packet_status_file"', 'tail "$packet_status_file"', 'head "$packet_status_file"', 'sed .*"$packet_status_file"', 'echo "$packet_status_file"'] as $forbidden) {
+            $this->assertDoesNotMatchRegularExpression('/'.preg_quote($forbidden, '/').'/', $workflow);
+        }
+        $this->assertStringContainsString('packet_observer_start_class=ready', $workflow);
+        $this->assertStringContainsString('packet_observer_start_class=readiness_timeout', $workflow);
+        $this->assertStringContainsString('host_gateway_connectivity_root_confirmed=false', $workflow);
     }
 
     public function test_packet_classifier_executes_against_synthetic_tcpdump_lines(): void

@@ -88,6 +88,8 @@ jobs:
           packet_observer_covered_probe=false
           packet_classifier_completed=false
           packet_classification_valid=false
+          packet_observer_start_class=unknown
+          packet_observer_exited_before_ready=false
           host_tcp9000_drop_reject_candidate=unknown
           host_tcp9000_accept_candidate=unknown
           host_firewall_inspection=SKIPPED
@@ -251,6 +253,18 @@ jobs:
           packet_observer_ready=false
           packet_observer_alive_before_probe=false
           packet_observer_alive_after_probe=false
+          classify_packet_observer_status() {
+            local status_file="$1"
+            if grep -Eiq 'permission denied|operation not permitted|insufficient privileges|permission.*(capture|interface|device)|cap_(net_raw|net_admin)' "$status_file" 2>/dev/null; then
+              printf '%s' permission_denied
+            elif grep -Eiq 'no such device|device .*not found|interface .*does not exist|cannot open .*((capture )?interface|device)' "$status_file" 2>/dev/null; then
+              printf '%s' interface_unavailable
+            elif grep -Eiq 'syntax error|cannot (parse|compile)|can.t (parse|compile)|invalid filter|filter expression' "$status_file" 2>/dev/null; then
+              printf '%s' filter_error
+            else
+              printf '%s' early_exit
+            fi
+          }
           if [ "$host_gateway_address_resolved" = true ] && command -v tcpdump >/dev/null 2>&1 && tcpdump -D >/dev/null 2>&1; then
             packet_path_observation_tool=tcpdump
             packet_temp_dir="$(mktemp -d)"
@@ -285,8 +299,14 @@ jobs:
               sleep 0.2
             done
             if [ "$packet_observer_ready" = true ]; then
+              packet_observer_start_class=ready
               packet_path_observation_available=true
               packet_path_observation_started_before_probe=true
+            elif ! kill -0 "$tcpdump_pid" 2>/dev/null; then
+              packet_observer_exited_before_ready=true
+              packet_observer_start_class="$(classify_packet_observer_status "$packet_status_file")"
+            else
+              packet_observer_start_class=readiness_timeout
             fi
           fi
 
@@ -600,6 +620,8 @@ jobs:
           echo "packet_path_observation_tool=$packet_path_observation_tool"
           echo "packet_path_observation_started_before_probe=$packet_path_observation_started_before_probe"
           echo "packet_observer_covered_probe=$packet_observer_covered_probe"
+          echo "packet_observer_start_class=$packet_observer_start_class"
+          echo "packet_observer_exited_before_ready=$packet_observer_exited_before_ready"
           echo "container_syn_reaches_host=$container_syn_reaches_host"
           echo "host_synack_observed=$host_synack_observed"
           echo "host_rst_observed=$host_rst_observed"
