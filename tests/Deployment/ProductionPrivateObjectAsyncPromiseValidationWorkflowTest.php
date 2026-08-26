@@ -151,4 +151,66 @@ BASH;
         $this->assertNotFalse($cleanup);
         $this->assertLessThan($pass, $cleanup);
     }
+
+    public function test_p1_failure_is_a_fail_closed_gate_before_any_pair_probe(): void
+    {
+        $workflow = $this->workflow();
+        $singleGate = strpos($workflow, '$singlePassed =');
+        $pairStart = strpos($workflow, '$radiographPromise =');
+        $pairOutput = strpos($workflow, 'radiograph_async_state=NOT_EXECUTED', $singleGate);
+
+        $this->assertNotFalse($singleGate);
+        $this->assertNotFalse($pairStart);
+        $this->assertNotFalse($pairOutput);
+        $this->assertLessThan($pairStart, $singleGate);
+        $this->assertLessThan($pairOutput, $singleGate);
+        $this->assertStringContainsString('$singlePassed = $singleState === \'fulfilled\'', $workflow);
+        $this->assertStringContainsString('if (! $singlePassed)', $workflow);
+        $this->assertStringContainsString('$singleValue instanceof PrivateObject', $workflow);
+        $this->assertStringContainsString('$singleCleanup === \'PASS\'', $workflow);
+
+        $gate = substr($workflow, $singleGate, $pairStart - $singleGate);
+        foreach ([
+            'radiograph_async_state=NOT_EXECUTED',
+            'gain_async_state=NOT_EXECUTED',
+            'radiograph_value_private_object=NOT_EXECUTED',
+            'gain_value_private_object=NOT_EXECUTED',
+            'radiograph_object_head=NOT_EXECUTED',
+            'gain_object_head=NOT_EXECUTED',
+            'radiograph_metadata_head=NOT_EXECUTED',
+            'gain_metadata_head=NOT_EXECUTED',
+            'radiograph_size_match=NOT_EXECUTED',
+            'gain_size_match=NOT_EXECUTED',
+            'pair_result=NOT_EXECUTED',
+            'pair_cleanup=NOT_EXECUTED',
+            'promise_fix_runtime_validation=FAIL',
+            'exit(1)',
+        ] as $required) {
+            $this->assertStringContainsString($required, $gate);
+        }
+    }
+
+    public function test_cleanup_stabilizes_exact_keys_and_does_not_retry_probes(): void
+    {
+        $workflow = $this->workflow();
+        $cleanupStart = strpos($workflow, 'function cleanup(');
+        $cleanupEnd = strpos($workflow, 'function startAsync(', $cleanupStart);
+        $cleanup = substr($workflow, $cleanupStart, $cleanupEnd - $cleanupStart);
+
+        $this->assertStringContainsString('for ($round = 0; $round < 3; $round++)', $cleanup);
+        $this->assertStringContainsString('$stableChecks', $cleanup);
+        $this->assertStringContainsString('usleep(100000)', $cleanup);
+        $this->assertStringContainsString('deleteObject(', $cleanup);
+        $this->assertStringContainsString('$stableChecks >= 2', $cleanup);
+        $this->assertStringContainsString('headObject(', $cleanup);
+        $this->assertStringContainsString('if ($exists) {', $cleanup);
+        $this->assertStringContainsString('continue 2', $cleanup);
+        $this->assertStringContainsString('return false;', $cleanup);
+
+        $this->assertSame(3, substr_count($workflow, 'putStreamAsync('));
+        $this->assertStringNotContainsString('putStreamAsync(', $cleanup);
+        foreach (['ListObjects', 'ListObjectsV2', 'GetObject', 'deleteMatching', 'deletePrefix'] as $forbidden) {
+            $this->assertStringNotContainsString($forbidden, $cleanup);
+        }
+    }
 }

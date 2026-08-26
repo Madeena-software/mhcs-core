@@ -135,13 +135,20 @@ jobs:
           }
           function cleanup(Aws\S3\S3Client $client, string $bucket, array $keys): bool
           {
-              $ok = true;
-              foreach (array_unique($keys) as $key) {
-                  try { $client->deleteObject(['Bucket' => $bucket, 'Key' => $key]); } catch (Throwable) { $ok = false; continue; }
-                  try { $client->headObject(['Bucket' => $bucket, 'Key' => $key]); $ok = false; }
-                  catch (Throwable $e) { if (sanitizeThrowableChain($e) !== 'not_found') $ok = false; }
+              $stableChecks = 0;
+              for ($round = 0; $round < 3; $round++) {
+                  foreach (array_unique($keys) as $key) {
+                      try { $client->deleteObject(['Bucket' => $bucket, 'Key' => $key]); } catch (Throwable) { return false; }
+                      $exists = false;
+                      try { $client->headObject(['Bucket' => $bucket, 'Key' => $key]); $exists = true; }
+                      catch (Throwable $e) { if (sanitizeThrowableChain($e) !== 'not_found') return false; }
+                      if ($exists) { $stableChecks = 0; usleep(100000); continue 2; }
+                  }
+                  $stableChecks++;
+                  if ($stableChecks >= 2) return true;
+                  usleep(100000);
               }
-              return $ok;
+              return false;
           }
           function startAsync(callable $operation): object
           {
@@ -198,6 +205,32 @@ jobs:
           echo 'single_metadata_head='.($singleMeta[0] ? 'PASS' : 'FAIL')."\n";
           echo 'single_size_match='.boolText($singleSize)."\n";
           echo 'single_error_family='.$singleFamily."\n";
+
+          $singlePassed = $singleState === 'fulfilled'
+              && $singleValue instanceof PrivateObject
+              && $singleHead[0]
+              && $singleMeta[0]
+              && $singleSize
+              && $singleCleanup === 'PASS'
+              && ! $cleanupIncident;
+          if (! $singlePassed) {
+              echo "radiograph_async_state=NOT_EXECUTED\n";
+              echo "gain_async_state=NOT_EXECUTED\n";
+              echo "radiograph_value_private_object=NOT_EXECUTED\n";
+              echo "gain_value_private_object=NOT_EXECUTED\n";
+              echo "radiograph_object_head=NOT_EXECUTED\n";
+              echo "gain_object_head=NOT_EXECUTED\n";
+              echo "radiograph_metadata_head=NOT_EXECUTED\n";
+              echo "gain_metadata_head=NOT_EXECUTED\n";
+              echo "radiograph_size_match=NOT_EXECUTED\n";
+              echo "gain_size_match=NOT_EXECUTED\n";
+              echo "pair_result=NOT_EXECUTED\n";
+              echo "pair_cleanup=NOT_EXECUTED\n";
+              echo 'overall_cleanup='.($singleCleanup === 'PASS' && ! $cleanupIncident ? 'PASS' : 'FAIL')."\n";
+              echo 'cleanup_incident='.boolText($cleanupIncident)."\n";
+              echo "promise_fix_runtime_validation=FAIL\n";
+              exit(1);
+          }
 
           $radiographKey = 'diagnostics/'.$run.'/radiograph';
           $gainKey = 'diagnostics/'.$run.'/gain';
