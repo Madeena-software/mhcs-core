@@ -96,7 +96,9 @@ final readonly class NonclinicalValidationContextProvisioningService
                 $join->on('os.operator_site_id', '=', 'r.operator_site_id')->where('os.active', true);
             })
             ->join('operator_eligible_shifts as e', function ($join): void {
-                $join->on('e.member_schedule_id', '=', 's.id')->on('e.operator_site_id', '=', 'r.operator_site_id')->where('e.sync_status', 'eligible')->whereColumn('e.quota', 's.quota');
+                $join->on('e.member_schedule_id', '=', 's.id')->on('e.operator_site_id', '=', 'r.operator_site_id')
+                    ->where('e.sync_status', 'eligible')->whereColumn('e.quota', 's.quota')
+                    ->whereColumn('e.schedule_starts_at', 's.starts_at')->whereColumn('e.schedule_ends_at', 's.ends_at');
             })
             ->when($scheduleId === null, fn ($query) => $query->where('s.status', 'open')->where('s.starts_at', '>', $now))
             ->whereColumn('s.ends_at', '>', 's.starts_at')
@@ -122,6 +124,11 @@ final readonly class NonclinicalValidationContextProvisioningService
         $operator = DB::table('users')->where('id', $operatorUserId)->first();
         if ($operator === null || $operator->account_status !== 'active' || ! (bool) $operator->login_enabled || (bool) $operator->must_change_password || ! Hash::check($secret, (string) $operator->password)) {
             throw new RuntimeException('The validation Operator login state is inconsistent.');
+        }
+        $roles = DB::table('authorization_role_assignments')->where('user_id', $operatorUserId)->where('active', true)->pluck('role')->all();
+        $permissions = DB::table('authorization_permission_assignments')->where('user_id', $operatorUserId)->where('active', true)->pluck('permission')->sort()->values()->all();
+        if ($roles !== ['operator'] || $permissions !== ['operator.arrival.record', 'operator.attendance.read', 'operator.identity.verify', 'operator.portal.access']) {
+            throw new RuntimeException('The validation Operator grants are inconsistent.');
         }
         $member = DB::table('members')->where('user_id', $memberUserId)->get();
         $marker = DB::table('member_external_identifiers')->where('namespace', NonclinicalValidationContext::MARKER_NAMESPACE)->where('value', NonclinicalValidationContext::KEY)->get();

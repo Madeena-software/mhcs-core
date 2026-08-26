@@ -6,11 +6,15 @@ namespace Tests\Feature\Validation;
 
 use App\Models\User;
 use App\Modules\Operator\Application\Services\NonclinicalValidationOperatorContextProvisioningService;
+use App\Modules\Operator\Application\Services\OperatorShiftAssignmentService;
+use App\Shared\Authorization\ActiveSiteResolver;
 use App\Shared\Context\AuthenticatedContextProvider;
+use App\Shared\Context\LaravelAuthenticatedContextProvider;
 use App\Shared\Validation\NonclinicalValidationAccountProvisioningService;
 use App\Shared\Validation\NonclinicalValidationContext;
 use App\Shared\Validation\NonclinicalValidationContextProvider;
 use Illuminate\Contracts\Console\Kernel;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -125,6 +129,103 @@ final class NonclinicalValidationContextProvisioningTest extends TestCase
         $this->assertSame(1, DB::table('operator_profiles')->count());
     }
 
+    public function test_inconsistent_earliest_projection_is_skipped(): void
+    {
+        $fixture = $this->fixture();
+        $schedule = DB::table('shift_schedules')->where('id', $fixture['schedule_id'])->first();
+        $badSchedule = (string) Str::uuid();
+        $badEligible = (string) Str::uuid();
+        $this->insertCandidate($schedule, $badSchedule, $badEligible, now()->utc()->addDay(), now()->utc()->addDay()->addHours(4), now()->utc()->addDays(3));
+
+        $secret = 'test-secret-'.Str::random(32);
+        putenv(NonclinicalValidationAccountProvisioningService::OPERATOR_SECRET_NAME.'='.$secret);
+        $this->artisan('mhcs:provision-nonclinical-validation-context')->assertExitCode(0);
+        $this->assertSame($fixture['schedule_id'], DB::table('bookings')->value('shift_schedule_id'));
+    }
+
+    public function test_identical_start_times_use_schedule_id_tiebreak(): void
+    {
+        $fixture = $this->fixture();
+        DB::table('shift_schedules')->where('id', $fixture['schedule_id'])->update(['status' => 'closed']);
+        $source = DB::table('shift_schedules')->where('id', $fixture['schedule_id'])->first();
+        $starts = now()->utc()->addDays(2);
+        $first = '00000000-0000-4000-8000-000000000001';
+        $second = '00000000-0000-4000-8000-000000000002';
+        $this->insertCandidate($source, $first, (string) Str::uuid(), $starts, $starts->copy()->addHours(4), $starts);
+        $this->insertCandidate($source, $second, (string) Str::uuid(), $starts, $starts->copy()->addHours(4), $starts);
+
+        $secret = 'test-secret-'.Str::random(32);
+        putenv(NonclinicalValidationAccountProvisioningService::OPERATOR_SECRET_NAME.'='.$secret);
+        $this->artisan('mhcs:provision-nonclinical-validation-context')->assertExitCode(0);
+        $this->assertSame($first, DB::table('bookings')->value('shift_schedule_id'));
+    }
+
+    public function test_site_and_shift_ownership_markers_are_required_on_replay(): void
+    {
+        $this->fixture();
+        $secret = 'test-secret-'.Str::random(32);
+        putenv(NonclinicalValidationAccountProvisioningService::OPERATOR_SECRET_NAME.'='.$secret);
+        $this->artisan('mhcs:provision-nonclinical-validation-context')->assertExitCode(0);
+
+        DB::table('audit_events')->where('action', 'production.validation-context.site-assignment.provisioned')->delete();
+        $this->artisan('mhcs:provision-nonclinical-validation-context')->assertExitCode(1);
+
+        DB::table('audit_events')->insert($this->ownedMarker('site-assignment.provisioned', (string) DB::table('operator_site_assignments')->value('id')));
+        DB::table('audit_events')->where('action', 'production.validation-context.shift-assignment.provisioned')->delete();
+        $this->artisan('mhcs:provision-nonclinical-validation-context')->assertExitCode(1);
+    }
+
+    public function test_runtime_operator_login_and_active_site_resolution_succeed(): void
+    {
+        $this->fixture();
+        $secret = 'test-secret-'.Str::random(32);
+        putenv(NonclinicalValidationAccountProvisioningService::OPERATOR_SECRET_NAME.'='.$secret);
+        $this->artisan('mhcs:provision-nonclinical-validation-context')->assertExitCode(0);
+        $operator = User::query()->where('email', 'like', '%-operator@invalid')->firstOrFail();
+        $siteId = DB::table('operator_site_assignments')->value('operator_site_id');
+
+        $this->assertTrue(auth('web')->attempt(['email' => $operator->email, 'password' => $secret]));
+        session()->put('operator.active_site_id', $siteId);
+        $context = app(LaravelAuthenticatedContextProvider::class)->current();
+        $this->assertSame($siteId, (string) app(ActiveSiteResolver::class)->resolve($context));
+    }
+
+    public function test_nullable_provenance_keeps_foreign_key_enforced(): void
+    {
+        $fixture = $this->fixture();
+        $secret = 'test-secret-'.Str::random(32);
+        putenv(NonclinicalValidationAccountProvisioningService::OPERATOR_SECRET_NAME.'='.$secret);
+        $this->artisan('mhcs:provision-nonclinical-validation-context')->assertExitCode(0);
+        $assignment = DB::table('operator_shift_assignments')->first();
+        $userId = DB::table('users')->where('email', 'like', '%-operator@invalid')->value('id');
+        DB::table('operator_shift_assignments')->where('id', $assignment->id)->update(['assigned_by_user_id' => $userId]);
+        $this->assertSame($userId, DB::table('operator_shift_assignments')->where('id', $assignment->id)->value('assigned_by_user_id'));
+        DB::table('operator_shift_assignments')->where('id', $assignment->id)->update(['assigned_by_user_id' => null]);
+
+        $this->expectException(QueryException::class);
+        DB::table('operator_shift_assignments')->where('id', $assignment->id)->update(['assigned_by_user_id' => (string) Str::uuid()]);
+    }
+
+    public function test_normal_administrator_shift_assignment_keeps_authenticated_provenance(): void
+    {
+        $this->fixture();
+        $secret = 'test-secret-'.Str::random(32);
+        putenv(NonclinicalValidationAccountProvisioningService::OPERATOR_SECRET_NAME.'='.$secret);
+        $this->artisan('mhcs:provision-nonclinical-validation-context')->assertExitCode(0);
+        $assignment = DB::table('operator_shift_assignments')->first();
+        DB::table('operator_shift_assignments')->where('id', $assignment->id)->update(['status' => 'revoked', 'revoked_at' => now()]);
+
+        $admin = User::factory()->create(['email' => 'administrator-'.Str::random(8).'@example.test']);
+        $now = now();
+        DB::table('authorization_role_assignments')->insert(['id' => (string) Str::uuid(), 'user_id' => $admin->id, 'role' => 'administrator', 'assigned_by_user_id' => null, 'active' => true, 'created_at' => $now, 'updated_at' => $now]);
+        DB::table('authorization_permission_assignments')->insert(['id' => (string) Str::uuid(), 'user_id' => $admin->id, 'permission' => 'operator.shift.manage', 'assigned_by_user_id' => null, 'active' => true, 'created_at' => $now, 'updated_at' => $now]);
+        $this->actingAs($admin);
+
+        $created = app(OperatorShiftAssignmentService::class)->assign((string) $assignment->operator_eligible_shift_id, (string) $assignment->operator_profile_id);
+        $this->assertSame($admin->id, $created->assigned_by_user_id);
+        $this->assertNotNull($created->assigned_by_user_id);
+    }
+
     public function test_command_boundary_and_missing_secret_are_fail_closed(): void
     {
         $this->assertArrayHasKey('mhcs:provision-nonclinical-validation-context', $this->app->make(Kernel::class)->all());
@@ -231,5 +332,32 @@ final class NonclinicalValidationContextProvisioningTest extends TestCase
         }
 
         return ['schedule_id' => $schedule, 'eligible_id' => $eligible];
+    }
+
+    private function insertCandidate(object $source, string $schedule, string $eligible, mixed $starts, mixed $ends, mixed $projectionStarts): void
+    {
+        $now = now()->utc();
+        DB::table('shift_schedules')->insert([
+            'id' => $schedule, 'examination_site_id' => $source->examination_site_id, 'service_offering_id' => $source->service_offering_id,
+            'display_reference' => 'candidate-'.$schedule, 'starts_at' => $starts, 'ends_at' => $ends, 'quota' => 10, 'status' => 'open', 'eligible_at' => $now,
+            'created_at' => $now, 'updated_at' => $now,
+        ]);
+        DB::table('operator_eligible_shifts')->insert([
+            'id' => $eligible, 'member_schedule_id' => $schedule, 'operator_site_id' => 'site-validation', 'schedule_starts_at' => $projectionStarts,
+            'schedule_ends_at' => $ends, 'confirmed_count_at_eligibility' => 0, 'quota' => 10, 'event_version' => 1, 'source_event_id' => 'candidate:'.$schedule,
+            'eligible_at' => $now, 'sync_status' => 'eligible', 'created_at' => $now, 'updated_at' => $now,
+        ]);
+    }
+
+    /** @return array<string, mixed> */
+    private function ownedMarker(string $suffix, string $targetId): array
+    {
+        return [
+            'event_id' => (string) Str::uuid(), 'event_version' => 1, 'actor_id' => '00000000-0000-4000-8000-000000000000',
+            'roles' => json_encode(['system']), 'permissions' => json_encode([]), 'target_type' => 'operator', 'target_id' => $targetId,
+            'action' => 'production.validation-context.'.$suffix, 'occurred_at' => now(), 'recorded_at' => now(), 'source' => 'validation', 'outcome' => 'success',
+            'metadata' => json_encode(['validation_context' => NonclinicalValidationContext::KEY, 'nonclinical' => true, 'provisioning_actor' => 'system', 'human_assignment_performed' => false]),
+            'created_at' => now(), 'updated_at' => now(),
+        ];
     }
 }
