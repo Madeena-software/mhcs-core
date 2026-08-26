@@ -1,24 +1,25 @@
 ---
 title: MHCS Core Nonclinical Production Validation Context Provisioning
 document_id: MHCS-TASK-NONCLINICAL-VALIDATION-CONTEXT-001
-version: 1.0
+version: 2.0
 status: validated-published
 language: en-US
 last_updated: 2026-08-26
 scope:
   - one deterministic nonclinical production validation context
   - normal authenticated Operator-to-Image-Gateway readiness
-  - no NPZ capture or production validation execution
-authority_note: This task authorizes implementation of a bounded console-only provisioning capability and focused verification. It does not authorize production execution, credential creation, fixture download, NPZ submission, deployment, or release.
+  - operational progression and active-schedule LCD semantics
+  - no production execution or real-NPZ acceptance in this task
+authority_note: This is the authoritative umbrella task for the remaining nonclinical real-NPZ acceptance work. It authorizes only the bounded phase explicitly selected for execution; it does not authorize deployment, production mutation, credential access, capture, or release.
 ---
 
 # Executable Task
 
 ## Task identity
 
-**Task title:** Provision one nonclinical production context for the real NPZ validation
+**Task title:** Provision one nonclinical production context for real-NPZ validation
 
-**Task path:** .agents/tasks/nonclinical-production-validation-context-provisioning.md
+**Task path:** `.agents/tasks/nonclinical-production-validation-context-provisioning.md`
 
 **Task contract state:** Validated/Published upon immutable publication of this exact content.
 
@@ -26,338 +27,183 @@ authority_note: This task authorizes implementation of a bounded console-only pr
 
 **Owner / designated planning authority:** Faliq Adlan, CTO
 
-## Delivery context
+This umbrella supersedes the historical publication at `50e8ff1f3ae1573a3d0d59ffa7aefdfb7286f6ac`. Historical child task files remain immutable supporting specifications and evidence; future execution references this umbrella revision and an explicit phase.
 
-The async private-object promise incident remains closed as:
+## Delivery context and preserved intent
 
-PRODUCTION PRIVATE OBJECT ASYNC PROMISE ISSUE — SOLVED
+The objective remains one deterministic, clearly marked nonclinical validation context that reaches the normal authenticated Operator flow and ultimately `ImageGatewayController::captureStore()` for the real-NPZ acceptance path. The context must use normal authorization, domain services, retained operational records, sanitized output, pinned fixture integrity, and separate deployment/runtime authorization.
 
-The related real-size NPZ validation task is accepted but blocked because the repository has no isolated nonclinical member/operator/admission context that can reach the normal authenticated Image Gateway capture flow.
-
-Observed normal application flow:
-
-MemberRegistrationService::register()
-→ Mvp03BookingService::createForCurrentMember()
-→ OperatorArrivalService::confirm()
-→ OperatorCheckInTicketService::issue()
-→ claimBasicExamination()
-→ callBasicExamination()
-→ startBasicExamination()
-→ completeBasicExamination()
-→ claimXray()
-→ callXray()
-→ authenticated ImageGatewayController::captureStore()
-
-Existing normal functionality cannot currently bootstrap this complete chain:
-
-- no suitable public/normal production member-registration route exists;
-- the Member admin surface is not a member-creation workflow;
-- existing Operator administration does not provision the complete member side;
-- no dedicated nonclinical production operator/admission exists.
-
-MvpOperatorSeeder is not an acceptable solution. Its production override is broader than this objective, creates several synthetic users/sites/assignments, uses fixture-oriented credential handling, and requires production seeding authority.
+The system must not call a direct S3, queue, or MPIPS shortcut and label it full application E2E. No automatic production execution is permitted. The solved private-object async-promise incident is historical context, not reopened scope.
 
 ## Baseline and task revision
 
-**Implementation baseline:** 3f2692b8d94da7da951ddcf93afd22c75fabee7d
+**Current implementation baseline:** `4d6116cd7bfe20b912b59f6a9014a3ca45108118`
 
-**Related governing task:** .agents/tasks/production-real-npz-end-to-end-validation.md @ 3f2692b8d94da7da951ddcf93afd22c75fabee7d
+**Accepted implementation prerequisites:** listed in Phase A–C below.
 
 **Task revision:** The full SHA of the commit containing this exact task content, supplied by publication metadata.
 
-The task revision and implementation baseline are separate. The task revision must be resolved before an Executor is handed this task.
+The task revision and implementation baseline are separate. Future Executor prompts MUST include:
 
-## Objective
+    umbrella_task_path=.agents/tasks/nonclinical-production-validation-context-provisioning.md
+    umbrella_task_revision=<LATEST SHA>
+    umbrella_phase=<PHASE>
 
-Design and implement the smallest repository capability that provisions exactly one deterministic, clearly marked nonclinical validation context sufficient for the later real-NPZ acceptance task, while stopping before Image Gateway capture.
+## Accepted prerequisite ledger
 
-The resulting context must support:
+### Phase A — Nonclinical Member identity
 
-- a dedicated validation Member identity;
-- a separate dedicated validation Operator identity;
-- a valid site and schedule relationship;
-- normal booking, arrival, check-in, ticket, and advance queue admission;
-- normal basic-examination progression;
-- normal X-ray claim/call;
-- normal Operator login/session and active-site resolution; and
-- later use of ImageGatewayController::captureStore() without authorization bypass.
+**Status:** PASS
+**Implementation:** `f0c0a7876a796fe331bcb643a4648b3689fb8363`
 
-Provisioning itself MUST create no capture, NPZ object, processing job, or MPIPS request.
+Guarantees the exact `NonclinicalValidationContext::KEY`, `IdentityStatus::NonclinicalValidation`, `RegistrationSource::NonclinicalValidation`, no NIK/KK/KTP/KIA, no profile verification asset, no misleading verified semantics, and preserved normal Member behavior.
 
-## Authoritative inputs
+Historical task: `.agents/tasks/nonclinical-validation-member-identity-semantics.md`
 
-### Governing authority
+### Phase B — Validation booking point funding
 
-- .agents/AGENTS.md and .agents/software-workflow.md — delivery, evidence, and side-effect boundaries.
-- .agents/context/project.md — application architecture and security boundaries.
-- .agents/context/modules/member/project.md — Member identity and booking ownership.
-- .agents/context/modules/operator/project.md — Operator authorization and queue ownership.
-- .agents/context/modules/image-gateway/project.md — Image Gateway submission boundary.
-- .agents/tasks/production-real-npz-end-to-end-validation.md @ 3f2692b8d94da7da951ddcf93afd22c75fabee7d — dependent validation objective and runtime separation.
+**Status:** PASS
+**Implementation:** `c985bfff45a750f5ba438ea4758d9181c401632f`
 
-### Observed implementation inputs
+Guarantees exact-validation-Member-only, deterministic purpose-bound funding, normal booking charges, deterministic source reference, replay fail-closed behavior, no direct balance edit, and no production seeder.
 
-- MemberRegistrationService::register() and MemberAuthorization.
-- Mvp03BookingService::createForCurrentMember().
-- OperatorArrivalService::confirm().
-- OperatorCheckInTicketService::issue().
-- OperatorWorklistService basic-examination and X-ray transitions.
-- InteractiveMemberLoginService, InteractiveOperatorAccessService, and OperatorAuthorization.
-- ImageGatewayController and ImageGatewayCaptureService.
-- Existing Member and Operator feature tests and deployment evidence.
+Historical task: `.agents/tasks/nonclinical-validation-booking-points-funding.md`
 
-### Requirement traceability
+### Phase C — Validation account principals
 
-- NVC-001 → exactly one deterministic nonclinical context is provisioned.
-- NVC-002 → normal domain services and authorization remain the only workflow boundaries.
-- NVC-003 → credentials, audit, retention, and secure handoff do not expose secrets or raw application identifiers.
-- NVC-004 → provisioning stops before Image Gateway capture and all NPZ/MPIPS behavior remains out of scope.
+**Status:** PASS
+**Implementation:** `1e469384141317424929592ecfe150d3d16b150e`
 
-## Scope
+Guarantees exactly one deterministic validation Member User and Operator User for the context key; no Member roles/permissions; Operator role exactly `operator`; no Administrator role; and only these Operator permissions:
 
-### In scope
+- `operator.portal.access`
+- `operator.attendance.read`
+- `operator.arrival.record`
+- `operator.identity.verify`
 
-- One guarded console-only Artisan command as the privileged external boundary.
-- One focused application orchestration service if existing service composition requires it.
-- Reuse of existing Member and Operator services wherever they own the needed invariant.
-- Exactly one fixed semantic context key, such as real-npz-e2e-v1.
-- Separate validation Member and Operator identities, clearly marked as nonclinical.
-- Deterministic site, schedule, booking, point-balance, arrival, ticket, admission, assignment, and audit handling required by the normal flow.
-- Normal Operator authentication and active-site resolution.
-- Sanitized command output and secure server-side handoff for the later workflow.
-- Focused static/feature tests for all security, idempotency, scope, and no-capture invariants.
+The external password secret contract is `MHCS_REAL_NPZ_VALIDATION_OPERATOR_PASSWORD`. No plaintext credential may appear in source, tests, logs, or task output. Ownership and replay/fail-closed semantics are audit-based.
 
-### Out of scope
+Historical task: `.agents/tasks/nonclinical-validation-account-provisioning.md`
 
-- Any public HTTP/API route or unauthenticated access path.
-- NPZ download, fixture integrity checks, capture submission, private-object storage, ProcessCaptureSet, MPIPS, DICOM, or production E2E execution.
-- Direct SQL fabrication of Member, booking, ticket, admission, or Operator state.
-- Production seeder execution, MHCS_ALLOW_PRODUCTION_MVP_SEED mutation, or generic production seeding.
-- Creation of arbitrary users, Members, Operators, sites, schedules, context keys, roles, permissions, or admission IDs from runtime input.
-- Deployment, environment/configuration mutation, schema migration, network, MinIO, IAM, bucket, or secret-store changes.
-- Automatic scheduling, startup execution, retry, rerun, cleanup, or deletion of retained records.
-- Reopening or revalidating the solved async promise incident.
+## Phase D — Operational progression and LCD
 
-### Preserved behavior and invariants
+**Status:** SPEC_ACCEPTED_IMPLEMENTATION_PENDING
+**Authoritative child specification:** `.agents/tasks/nonclinical-validation-operational-progression-and-lcd-schedule-projection.md @ 4d6116cd7bfe20b912b59f6a9014a3ca45108118`
 
-- OperatorAuthorization remains the source of Operator identity, role, permission, and active-site authorization.
-- The normal booking, arrival, ticket, queue, claim, call, and capture controllers/services remain unchanged in behavior.
-- No validation capability is reachable through normal HTTP traffic.
-- No Administrator permissions are granted to the validation Operator.
-- No actual patient, customer, clinical identity, consent, diagnosis, or examination is used.
-- Provisioning stops before capture; no capture set, object, worker job, MPIPS request, or DICOM study is created.
-- Existing retention policy remains authoritative; no raw database or object deletion is introduced.
+The following semantics are part of this umbrella contract.
 
-## Dependencies and assumptions
+### D1–D5 — Exact nonclinical operational semantics
 
-### Dependencies
+Only the exact canonical validation Member may use these branches. Recognition requires the accepted conjunction: nonclinical identity status and registration source, null genuine identity fields, no verification assets, the exact `mhcs.validation` marker, and `NonclinicalValidationContext::KEY`. Never recognize by email, name, MRN, route/caller/environment flags, or arbitrary state text.
 
-- Existing domain services and relationships can represent the context without a schema migration.
-- A separately named deployment secret can be added through the approved secret-management process; its value is not part of this task.
-- A fresh explicit one-time production authorization is obtained after implementation review and before executing the command.
-- The later real-NPZ task remains separately reviewed and authorized.
+- Attendance must not decrypt null `encrypted_nik`, fabricate NIK, or expose fake digits; it returns an explicit safe nonclinical representation. Normal attendance is unchanged.
+- Identity disposition is an explicit Operator action with terminal state `nonclinical_validation`, never `matched`, `verified`, or `identity_verified`. Audit states `nonclinical=true` and `identity_verification_performed=false`. Normal Members retain approved evidence plus matched semantics.
+- No patient/member consent, signature, clinical consent evidence, or `examination_consents` row is fabricated. The exact validation state makes patient clinical consent NOT APPLICABLE. Normal check-in remains `matched` plus real confirmed consent; the validation branch requires the exact canonical identity invariant and is fail closed.
+- Existing check-in creates the normal paper ticket and `basic_examination` waiting admission. No direct admission fabrication or generalized state bypass is allowed.
+- The exact Member traverses normal `waiting → claimed → called → in_service`, then explicit Operator nonclinical-stage completion, `completed`, and normal X-ray waiting admission. It creates no vital signs, vital-sign execution, questionnaire, or clinical finding. Audit states `nonclinical=true`, `clinical_basic_examination_performed=false`, `vital_signs_recorded=false`, and `questionnaire_recorded=false`. Normal Members retain the existing clinical evidence requirements.
 
-### Approved assumptions
+### D6 — LCD active schedule projection
 
-- The current repository revision is 3f2692b8d94da7da951ddcf93afd22c75fabee7d.
-- Mvp03BookingService requires an active, verified, complete Member and may require Madeena Points.
-- Existing domain services emit audit/outbox records for their owned transitions.
-- The validation context may be retained as audit evidence when no safe domain cleanup exists.
+The public LCD boundary is the requested Operator site plus its CURRENT ACTIVE SCHEDULE SET—not calendar date, midnight reset, all site history, or one arbitrary schedule. Resolve schedules through `operator_sites.operator_site_id → examination_site_refs.operator_site_id → shift_schedules.examination_site_id`.
 
-### Remaining approval requirements
+An active schedule belongs to the site, is available/open under existing domain semantics, and satisfies `starts_at <= current instant < ends_at`, using repository `Clock` semantics. Multiple overlapping active schedules are eligible. With no active schedules, return `current=[]` and `recent_calls=[]`.
 
-- Planner/Reviewer approval of the implementation and verification evidence.
-- Fresh explicit one-time authorization before production provisioning.
-- Separate authorization immediately before the later real-NPZ fixture download/submission.
-- Any migration, new permission, financial-like balance mechanism, or unresolved identity-data decision returns to planning before implementation.
+Current calls require the requested site, `admission.member_schedule_id` in the active set, `state=called`, and stage `basic_examination|xray`. Recent calls require the requested site, an active schedule, `history.event_type=called`, and stage `basic_examination|xray`. Calls from ended schedules disappear on normal five-second polling; future schedules remain excluded. Queue/history rows are never deleted, and filtering is not based on `occurred_at >= today`.
 
-## Required design decisions
+## Phase E — Local integrated operational acceptance
 
-### Console boundary and deterministic identity
+**Status:** PENDING
 
-Use a console-only command, conceptually:
+Add a deterministic local test using the exact validation Member proving booking/domain setup, arrival, nonclinical identity disposition, no fake consent, normal check-in ticket, basic-examination waiting, claim, call, start, explicit nonclinical completion, X-ray waiting, X-ray call, and LCD inclusion while the schedule is active. Advance `FrozenClock` past schedule end and prove LCD current/recent are empty while queue admissions and history remain. No NPZ is used in this phase.
+
+## Phase F — Full context provisioner
+
+**Status:** PENDING_AFTER_PHASE_D_E
+
+The original provisioning capability remains the console-only deterministic boundary:
 
     php artisan mhcs:provision-nonclinical-validation-context
 
-The command may accept no context argument, or accept and validate only the one exact constant. It MUST reject arbitrary context keys and MUST NOT accept arbitrary user/member/operator/site/admission IDs, emails, names, roles, or permissions.
+It must compose the accepted primitives: account principals → exact validation Member registration → deterministic eligible site/schedule → bounded point funding → normal booking → Operator profile → site assignment → eligible shift → shift assignment. It must not provision fake identity verification, consent, vital signs, questionnaires, or clinical findings.
 
-The fixed context marker must use existing supported fields, operation/source markers, external-identifier namespace, and audit metadata where possible. Do not add a validation_context column unless implementation proves existing fields insufficient; a migration is a planning escalation.
+Provisioning should stop at the earliest deterministic legitimate state that allows later authenticated Operator execution through Phase D, preferably before claim/call. Re-evaluate any legacy requirement that provisioning itself complete basic examination or create X-ray admission; do not retain it solely because version 1.0 did. Select site/schedule server-side with no arbitrary schedule ID input; require ownership, availability, and capacity; fail closed when no suitable schedule exists. Do not create production catalogue/schedule data merely to pass validation.
 
-### Identity data
+The command accepts no arbitrary context, user, Member, Operator, site, admission, role, permission, email, name, or credential input. It uses a fixed context key, existing markers, server-side resolution, normal domain services, fail-closed idempotency, retained records, and sanitized output. It never reads, creates, prints, logs, commits, or tests a secret value; the application stores only a password hash and approved secret injection supplies the later workflow value.
 
-The implementation must inspect the exact registration contract. It MUST NOT use real NIK, KK, name, identity document, profile photograph, patient, customer, consent, diagnosis, or clinical record.
+## Phase G — Production deployment
 
-If MemberRegistrationService cannot legitimately accept clearly synthetic validation identity evidence, stop and return to planning with the smallest domain-level extension required. Do not insert Member rows manually or claim synthetic evidence is genuine.
+**Status:** NOT_AUTHORIZED
 
-### Domain-service reuse
+Production is not assumed to contain all accepted revisions. Deployment requires fresh explicit one-time authorization after implementation review. Publication, implementation, merge, or acceptance is not deployment authorization.
 
-Use existing services for their owned invariants, including as applicable:
+## Phase H — Production context provisioning
 
-- MemberRegistrationService;
-- Mvp03BookingService;
-- OperatorArrivalService;
-- OperatorCheckInTicketService;
-- basic-examination and X-ray worklist services;
-- Operator profile, site, site-assignment, and shift-assignment services.
+**Status:** NOT_AUTHORIZED
 
-Direct repository access is permitted only where no owning application service exists and the implementation documents the invariant and authorization boundary. Ad-hoc persistence logic is not acceptable merely for convenience.
+Provisioning requires fresh explicit one-time production authorization after the exact deployed revision is reviewed. The Operator password comes only through approved secret injection. Provisioned records are retained unless separately authorized lifecycle work says otherwise. No production provisioning occurs in task publication or implementation of Phases D/E.
 
-### Schedule, capacity, and points
+## Phase I — Real NPZ acceptance
 
-Select an existing deterministic production-safe site/schedule when possible. Do not select a real Member booking or create arbitrary production catalogue data unless strictly necessary and separately approved.
+**Status:** BLOCKED_ON_PHASES_D_E_F_G_H_AND_MPIPS
 
-If normal booking consumes capacity or points, use the existing authorized domain mechanism with the minimum deterministic amount, audit it, and document the resulting ledger/capacity side effect. Never edit a balance directly or use a real Member's balance. If no safe balance mechanism exists, stop and return to planning.
+The final path is: real authenticated validation Operator → legitimate active site/schedule → legitimate validation booking → explicit nonclinical progression → X-ray admission claim/call → `ImageGatewayController::captureStore()` → real radiograph and gain NPZ → async private-object persistence → accepted sources → `ProcessCaptureSet` → MPIPS → valid DICOM → terminal study state. A direct service shortcut is not full application E2E.
 
-### Operator identity and credentials
+### Pinned fixtures
 
-Provision a separate validation-only Operator with the minimum existing role, permission, site assignment, and shift assignment required by the normal flow. It must authenticate through /operator/login, resolve its site through OperatorAuthorization, and never receive Administrator permissions.
+Radiograph: Drive ID `1Ft3OALtx_d3ua-z0DSS34jJmywaXjLu2`, filename `TRX_1787726886830.npz`, bytes `73089445`, SHA-256 `605540c9102867eda3a5b54f4f88566d067ba8705fcc20bf870e4a60f80262b9`.
 
-new_secret_required=true. Use a purpose-specific named secret selected from repository conventions, conceptually MHCS_REAL_NPZ_VALIDATION_OPERATOR_PASSWORD. The value MUST NOT be created, printed, committed, logged, passed as a command argument, or included in tests. The application stores only a password hash; the later workflow receives the value only through approved GitHub Actions secret injection.
+Gain: Drive ID `1kI99se2CjzCgo4qInMEGUuJ-ZJZE3iQY`, filename `TRX_1787726609597.npz`, bytes `17190412`, SHA-256 `38918e436e5329e28b08c844e8df3766a1ab83a1fc3135c83df56370c480b2a9`.
 
-### Production guard and authorization
+Fail closed on mismatch. Logs use aliases `radiograph_fixture` and `gain_fixture` only; never log original filenames/person/folder context, raw NPZ content, array data, local paths, or credentials.
 
-The capability must fail closed unless the environment, explicit validation intent, exact context version, prerequisite site/schedule state, and absence of inconsistent existing context all match. It must not require a broad permanent flag equivalent to MHCS_ALLOW_PRODUCTION_MVP_SEED.
+## Status table
 
-Capability existence is separate from execution authorization. No schedule, startup hook, deployment-time seed, automatic execution, or reusable generic production-provisioning mode is allowed.
-
-If a dedicated application permission is needed, use the narrowest possible permission, conceptually production.validation-context.provision, and do not grant it to the validation Operator.
-
-### Idempotency and failure handling
-
-Use one stable context identity. A replay may return the existing context only when all immutable properties match, including the Member marker, Operator marker, site/shift assignment, schedule/booking association, ticket/admission identity, expected stage/state, role/permission set, and nonclinical marker.
-
-Partial or inconsistent state must fail closed unless safe documented domain idempotency permits resumption. Never silently create a second context or repair unknown state.
-
-### Final state and secure handoff
-
-Provisioning should stop with one admission ready for the later normal X-ray claim/call flow, preferably before claim/call if the later workflow can perform those actions through normal HTTP routes. It must leave:
-
-- no capture;
-- no NPZ object;
-- no ProcessCaptureSet job;
-- no MPIPS invocation; and
-- no fake completed capture.
-
-The later workflow must resolve the admission server-side from the fixed context marker or another repository-native protected mechanism. Do not print user, Member, profile, booking, admission, ticket, medical-record, NIK, KK, credential, or raw audit identifiers into public logs, and do not add a public lookup endpoint.
-
-## Retention and lifecycle
-
-Unless an existing safe domain cleanup is proven, classify provisioned records as RETAINED:
-
-| Record class | Expected state |
+| Area | Status |
 |---|---|
-| user / Member / verification assets | RETAINED |
-| Operator profile / role-permission state | RETAINED |
-| site and shift assignment | RETAINED |
-| booking / point ledger / ticket / admission / history | RETAINED |
-| audit / outbox | RETAINED |
-| capture / objects / study | NOT_CREATED |
+| member_identity | PASS |
+| booking_points | PASS |
+| account_principals | PASS |
+| operational_progression_spec | PASS |
+| operational_progression_implementation | PENDING |
+| lcd_schedule_projection_spec | PASS |
+| lcd_schedule_projection_implementation | PENDING |
+| local_operational_acceptance | PENDING |
+| schedule_context_feasibility | CONDITIONAL |
+| operator_profile_site_shift_composition | PENDING |
+| full_context_provisioner | PENDING |
+| production_deployment | NOT_AUTHORIZED |
+| production_context_provisioning | NOT_AUTHORIZED |
+| mpips_network_connectivity | PASS |
+| mpips_thorax_functional_readiness | PENDING_EXTERNAL_FIX |
+| real_npz_acceptance | BLOCKED |
+| production_authorization | NONE |
 
-After the later validation, disabling the validation Operator through an existing authorized account mechanism may be performed only by a separately authorized operation. No automatic raw database disable/delete is allowed. If no normal disable mechanism exists, document the residual reusable-account risk.
-
-## Sanitized runtime output
-
-The command must emit stable fields without raw identifiers or secret values:
-
-    validation_context_key=real-npz-e2e-v1
-    environment_guard=PASS|FAIL
-    authorization_guard=PASS|FAIL
-    validation_member_state=CREATED|EXISTING_VALID|INCONSISTENT|NOT_EXECUTED
-    validation_operator_state=CREATED|EXISTING_VALID|INCONSISTENT|NOT_EXECUTED
-    operator_minimum_permissions=PASS|FAIL|NOT_EXECUTED
-    operator_site_assignment=PASS|FAIL|NOT_EXECUTED
-    operator_shift_assignment=PASS|FAIL|NOT_EXECUTED
-    booking_state=CREATED|EXISTING_VALID|FAILED|NOT_EXECUTED
-    arrival_state=CONFIRMED|EXISTING_VALID|FAILED|NOT_EXECUTED
-    ticket_state=ISSUED|EXISTING_VALID|FAILED|NOT_EXECUTED
-    basic_examination_state=COMPLETED|EXISTING_VALID|FAILED|NOT_EXECUTED
-    xray_admission_state=READY|EXISTING_VALID|FAILED|NOT_EXECUTED
-    capture_present=false|true|NOT_OBSERVED
-    validation_operator_login_ready=true|false
-    audit_marker=PASS|FAIL
-    application_records_retention=RETAINED
-    validation_context_provisioning=PASS|FAIL|NOT_EXECUTED
+`mpips_network_connectivity=PASS` and `mpips_thorax_functional_readiness=PENDING_EXTERNAL_FIX` are recorded separately. Do not execute final real-NPZ acceptance while the known MPIPS thorax bug remains unresolved unless explicitly intended as a bounded diagnostic. Do not modify MPIPS from `mhcs-core`.
 
 ## Acceptance criteria
 
-- [ ] The capability is console-only and introduces no HTTP/API route.
-- [ ] Exactly one fixed deterministic context is accepted; arbitrary context and record identifiers are unsupported.
-- [ ] Exact replay is idempotent; inconsistent or partial state fails closed.
-- [ ] Member and Operator identities are separate, clearly nonclinical, and use no real identity data.
-- [ ] Existing domain services are reused for registration, booking, arrival, ticket, queue, examination, assignment, and authorization invariants.
-- [ ] No direct row fabrication replaces an existing domain service.
-- [ ] Any points, capacity, or financial-like ledger side effect is deterministic, minimal, authorized, and audited.
-- [ ] The validation Operator has only minimum existing permissions and uses normal authentication and active-site resolution.
-- [ ] A purpose-specific credential secret is injected externally; no plaintext credential appears in source, tests, logs, or command arguments.
-- [ ] Production guards and explicit execution authorization are fail-closed and do not rely on broad MVP-seeder flags.
-- [ ] Provisioning creates no capture, private object, NPZ, processing job, MPIPS request, or DICOM study.
-- [ ] The later workflow can resolve the context without public logging of raw application identifiers.
-- [ ] Retained records and the absence of capture records are reported truthfully.
-- [ ] No deployment, configuration, schema, network, MinIO, IAM, or secret-value mutation is required by the capability.
+- [ ] Phase D semantics are implemented and verified without fake identity evidence, consent, clinical measurements, schema mutation, new broad permission, or normal-workflow weakening.
+- [ ] Phase E local integration proves the complete nonclinical operational path and schedule-bound LCD expiry while retaining queue/history rows.
+- [ ] Phase F, when selected, provisions exactly one deterministic context through accepted domain primitives, stops before capture, is idempotent/fail closed, and emits sanitized output.
+- [ ] Production deployment/provisioning and Phase I remain separately authorized and are not claimed by this task.
+- [ ] Pinned fixtures fail closed on byte/hash mismatch and are logged only by aliases.
 
 ## Verification requirements
 
-Focused tests must prove:
-
-1. no HTTP route is introduced and the command is console-only;
-2. only the exact deterministic context is accepted;
-3. arbitrary identifiers and multiple contexts are rejected;
-4. exact replay is idempotent and inconsistent partial state fails closed;
-5. MvpOperatorSeeder is not called and MHCS_ALLOW_PRODUCTION_MVP_SEED is not mutated;
-6. domain services and normal authorization boundaries are reused;
-7. no plaintext credential, secret value, NIK, KK, or raw identifier is logged;
-8. minimum Operator permissions and normal login/site resolution are preserved;
-9. no capture, storage, queue, MPIPS, DICOM, or NPZ operation occurs;
-10. audit marker, retention classification, and sanitized output are stable;
-11. no automatic execution, deployment mutation, migration, or broad configuration change is required.
-
-Required local checks include focused tests, PHP syntax/formatting as applicable, route inspection proving no public endpoint, git diff --check, and final diff inspection. No production command execution is a local test.
+- Run focused Member, Operator, LCD, and integrated tests for the selected phase.
+- Run static checks for no schema migration, new broad permission, fake clinical records, direct SQL fabrication, public validation endpoint, secret disclosure, automatic execution, or queue/history deletion.
+- Run `git diff --check` and report exact revision, commands, observed results, changed tests, gaps, deviations, and blockers.
 
 ## Stop conditions
 
-Stop and return to planning if any of the following occurs:
-
-- synthetic identity data cannot satisfy current registration semantics without misleading clinical evidence;
-- no safe authorized point/balance mechanism exists;
-- a schema migration, broad permission, environment mutation, or production seeder is proposed;
-- existing services cannot enforce an invariant without ad-hoc direct persistence;
-- a second or arbitrary context can be created;
-- partial state cannot be safely classified or resumed;
-- credential handoff would expose plaintext or require a static source value;
-- normal Operator authorization or active-site resolution would be bypassed;
-- secure server-side handoff cannot be provided;
-- implementation would create capture/NPZ/storage/queue/MPIPS/DICOM state; or
-- scope, authority, approval, or retention semantics are unclear.
+Return to Planner if implementation requires a schema migration, new broad permission, fake identity evidence, fake consent, fake clinical measurements, arbitrary validation context/member, production seeder, generic account provisioning, direct SQL replacing owned services, a public validation endpoint, a secret value in source/logs, automatic deployment/provisioning, unsafe schedule ambiguity, or weakened normal safeguards. Also stop for missing/contradictory authority, scope expansion, unsafe production/external mutation, or inability to resolve the active schedule set deterministically.
 
 ## Side-effect authorization
 
-### Authorized in this task
+This task authorizes only bounded repository source/test/documentation changes for the explicitly selected phase and local test-harness effects. It does not authorize production records, credentials or secret access, deployment, capture, NPZ/MPIPS/DICOM work, external mutation, release, or automatic execution.
 
-- Repository implementation of the bounded provisioning capability and focused tests.
-- Local static/feature verification.
+## Governance and terminal outcome
 
-### Not authorized in this task
+This updated umbrella is authoritative for all remaining nonclinical real-NPZ acceptance work. Historical child tasks are immutable supporting specifications/evidence. Do not create a new `.agents/tasks/*.md` file for each remaining phase or blocker; update this umbrella in place when planning changes are material.
 
-- Creating or executing production context, users, Members, bookings, Operators, sites, or admissions.
-- Creating secrets or changing secret values.
-- Running seeders, downloading NPZ, submitting NPZ, invoking MPIPS, dispatching production workflows, deploying, or accessing production.
-- Deleting or mutating retained application records or storage objects.
-
-After implementation review, a fresh explicit one-time authorization is required before exactly one production provisioning operation. The later real-NPZ task requires its own separate runtime authorization.
-
-## Delivery sequencing
-
-publish this task
-→ Planner reviews task
-→ Executor implements capability/tests only
-→ Planner reviews implementation
-→ fresh one-time production provisioning authorization
-→ exactly one provisioning operation
-→ Planner verifies sanitized context evidence
-→ resume real-NPZ workflow implementation/runtime planning
-
-## Expected terminal outcome
-
-Review Required after implementation and verification evidence are available.
-
-Planning Required for any unresolved identity, balance, migration, authority, credential, retention, or side-effect decision. Implementation acceptance does not authorize production execution or release.
+Execution ends in **Review Required** with observed evidence or **Planning Required** on a stop condition. Implementation acceptance is not release authorization.
