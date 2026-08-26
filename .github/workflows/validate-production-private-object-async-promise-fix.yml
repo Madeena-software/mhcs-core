@@ -1,0 +1,252 @@
+name: Validate production private-object async promise fix
+on:
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: self-hosted
+    permissions:
+      contents: read
+    steps:
+      - name: Run bounded private-object promise validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXPECTED_REVISION="2d3de5920493001039b7d6a1c5641a835327ba83"
+          APP_SERVICE="mhcs_core_app"
+          APP_CONTAINER=""
+          TASK_ID="$(docker service ps "$APP_SERVICE" --filter desired-state=running --no-trunc --format '{{.ID}}' 2>/dev/null | head -n 1 || true)"
+          if [ -n "$TASK_ID" ]; then
+            while IFS= read -r candidate; do
+              [ -n "$candidate" ] || continue
+              candidate_task="$(docker inspect "$candidate" --format '{{index .Config.Labels "com.docker.swarm.task.id"}}' 2>/dev/null || true)"
+              if [ "$candidate_task" = "$TASK_ID" ] || [[ "$candidate_task" == "$TASK_ID"* ]] || [[ "$TASK_ID" == "$candidate_task"* ]]; then APP_CONTAINER="$candidate"; break; fi
+            done < <(docker ps -q --filter "label=com.docker.swarm.service.name=${APP_SERVICE}" --filter status=running 2>/dev/null)
+          fi
+          SERVICE_IMAGE=""; CONTAINER_IMAGE=""; VERSION_CURRENT=""
+          if [ -n "$APP_CONTAINER" ]; then
+            SERVICE_IMAGE="$(docker service inspect "$APP_SERVICE" --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 2>/dev/null || true)"
+            CONTAINER_IMAGE="$(docker inspect "$APP_CONTAINER" --format '{{.Config.Image}}' 2>/dev/null || true)"
+            VERSION_CURRENT="$(docker exec "$APP_CONTAINER" cat /var/www/html/VERSION-CURRENT 2>/dev/null || true)"
+          fi
+          image_revision() {
+            local image="${1-}"
+            local without_digest=""
+            local revision=""
+            if [ -z "$image" ]; then return 0; fi
+            without_digest="${image%%@*}"
+            revision="${without_digest##*:}"
+            if [[ "$revision" =~ ^[0-9a-f]{40}$ ]]; then printf '%s' "$revision"; fi
+            return 0
+          }
+          SERVICE_REVISION="$(image_revision "$SERVICE_IMAGE")"
+          CONTAINER_REVISION="$(image_revision "$CONTAINER_IMAGE")"
+          app_container_resolved=false; version_current_match=false; service_revision_match=false; container_revision_match=false
+          if [ -n "$APP_CONTAINER" ]; then app_container_resolved=true; fi
+          if [ "$VERSION_CURRENT" = "$EXPECTED_REVISION" ]; then version_current_match=true; fi
+          if [ "$SERVICE_REVISION" = "$EXPECTED_REVISION" ]; then service_revision_match=true; fi
+          if [ "$CONTAINER_REVISION" = "$EXPECTED_REVISION" ]; then container_revision_match=true; fi
+          revision_match=false
+          if [ "$app_container_resolved" = "true" ] && [ "$version_current_match" = "true" ] && [ "$service_revision_match" = "true" ] && [ "$container_revision_match" = "true" ]; then revision_match=true; fi
+          echo "validation_revision=$EXPECTED_REVISION"
+          echo "app_container_resolved=$app_container_resolved"
+          echo "version_current_match=$version_current_match"
+          echo "service_revision_match=$service_revision_match"
+          echo "container_revision_match=$container_revision_match"
+          if [ "$revision_match" != "true" ]; then
+            echo "revision_match=false"
+            echo "single_async_state=NOT_EXECUTED"
+            echo "single_async_value_private_object=NOT_EXECUTED"
+            echo "single_object_head=NOT_EXECUTED"
+            echo "single_metadata_head=NOT_EXECUTED"
+            echo "single_size_match=NOT_EXECUTED"
+            echo "single_error_family=NOT_EXECUTED"
+            echo "radiograph_async_state=NOT_EXECUTED"
+            echo "gain_async_state=NOT_EXECUTED"
+            echo "radiograph_value_private_object=NOT_EXECUTED"
+            echo "gain_value_private_object=NOT_EXECUTED"
+            echo "radiograph_object_head=NOT_EXECUTED"
+            echo "gain_object_head=NOT_EXECUTED"
+            echo "radiograph_metadata_head=NOT_EXECUTED"
+            echo "gain_metadata_head=NOT_EXECUTED"
+            echo "radiograph_size_match=NOT_EXECUTED"
+            echo "gain_size_match=NOT_EXECUTED"
+            echo "pair_result=NOT_EXECUTED"
+            echo "single_cleanup=NOT_EXECUTED"
+            echo "pair_cleanup=NOT_EXECUTED"
+            echo "overall_cleanup=NOT_EXECUTED"
+            echo "cleanup_incident=false"
+            echo "promise_fix_runtime_validation=NOT_EXECUTED"
+            exit 1
+          fi
+          echo "revision_match=true"
+          docker exec -i "$APP_CONTAINER" php <<'PHP'
+          <?php
+          declare(strict_types=1);
+
+          use App\Shared\Context\AuthenticatedContext;
+          use App\Shared\Context\CorrelationId;
+          use App\Shared\Identity\LocalId;
+          use App\Shared\Storage\OpaqueObjectKey;
+          use App\Shared\Storage\PrivateObject;
+          use App\Shared\Storage\PrivateObjectStore;
+          use Aws\Exception\AwsException;
+          use GuzzleHttp\Promise\RejectedPromise;
+          use GuzzleHttp\Promise\Utils;
+          use Illuminate\Contracts\Console\Kernel;
+          use Illuminate\Filesystem\AwsS3V3Adapter;
+          use Illuminate\Support\Str;
+          use Illuminate\Support\Facades\Storage;
+          use Throwable;
+
+          require 'vendor/autoload.php';
+          $app = require 'bootstrap/app.php';
+          $app->make(Kernel::class)->bootstrap();
+
+          function statusOf(Throwable $e): string
+          {
+              for ($depth = 0; $depth < 4; $depth++, $e = $e->getPrevious()) {
+                  if ($e instanceof AwsException && is_int($e->getStatusCode()) && $e->getStatusCode() >= 100 && $e->getStatusCode() <= 599) return (string) $e->getStatusCode();
+              }
+              return 'none';
+          }
+          function sanitizeThrowableChain(Throwable $e): string
+          {
+              for ($depth = 0; $depth < 4; $depth++, $e = $e->getPrevious()) {
+                  if (! $e instanceof AwsException) continue;
+                  $status = statusOf($e); $code = strtolower((string) $e->getAwsErrorCode());
+                  if (in_array($status, ['401', '403'], true) || in_array($code, ['accessdenied', 'invalidaccesskeyid', 'signaturedoesnotmatch', 'expiredtoken'], true)) return 'authorization';
+                  if ($status === '404' || in_array($code, ['nosuchbucket', 'nosuchkey', 'notfound'], true)) return 'not_found';
+                  if (in_array($status, ['408', '429', '500', '502', '503', '504'], true) || in_array($code, ['networkingerror', 'endpointconnectionerror', 'requesttimeout'], true)) return 'transport';
+                  if (in_array($status, ['405', '501'], true) || in_array($code, ['notimplemented', 'methodnotallowed'], true)) return 'unsupported';
+              }
+              return 'unknown';
+          }
+          function streamOf(string $contents): array
+          {
+              $stream = fopen('php://temp', 'w+b');
+              if ($stream === false || fwrite($stream, $contents) !== strlen($contents) || rewind($stream) === false) throw new RuntimeException('synthetic stream failed');
+              return [$stream, hash('sha256', $contents), strlen($contents)];
+          }
+          function head(Aws\S3\S3Client $client, string $bucket, string $key): array
+          {
+              try { $response = $client->headObject(['Bucket' => $bucket, 'Key' => $key]); return [true, (int) $response['ContentLength'], 'none']; }
+              catch (Throwable $e) { return [false, null, sanitizeThrowableChain($e)]; }
+          }
+          function cleanup(Aws\S3\S3Client $client, string $bucket, array $keys): bool
+          {
+              $ok = true;
+              foreach (array_unique($keys) as $key) {
+                  try { $client->deleteObject(['Bucket' => $bucket, 'Key' => $key]); } catch (Throwable) { $ok = false; continue; }
+                  try { $client->headObject(['Bucket' => $bucket, 'Key' => $key]); $ok = false; }
+                  catch (Throwable $e) { if (sanitizeThrowableChain($e) !== 'not_found') $ok = false; }
+              }
+              return $ok;
+          }
+          function startAsync(callable $operation): object
+          {
+              try { return $operation(); } catch (Throwable $e) { return new RejectedPromise($e); }
+          }
+          function boolText(bool $value): string { return $value ? 'true' : 'false'; }
+          function errorFamily(array $settled, int $index): string
+          {
+              $reason = $settled[$index]['reason'] ?? null;
+              return $reason instanceof Throwable ? sanitizeThrowableChain($reason) : 'unknown';
+          }
+
+          $privateDiskName = config('mhcs.private_object_disk');
+          $configuredDisk = Storage::disk($privateDiskName);
+          if (! $configuredDisk instanceof AwsS3V3Adapter) { echo "promise_fix_runtime_validation=FAIL\noverall_cleanup=FAIL\ncleanup_incident=true\n"; exit(1); }
+          $client = $configuredDisk->getClient();
+          $bucket = (string) ($configuredDisk->getConfig()['bucket'] ?? '');
+          $purpose = 'production-private-object-async-promise-validation';
+          $context = new AuthenticatedContext(
+              actorId: LocalId::fromString('validation-'.Str::uuid()),
+              operationId: CorrelationId::random(),
+              purpose: $purpose,
+          );
+          $store = app(PrivateObjectStore::class);
+          $run = (string) Str::uuid();
+          $cleanupIncident = false;
+          $singleCleanup = 'NOT_EXECUTED';
+          $pairCleanup = 'NOT_EXECUTED';
+          $singleState = 'rejected'; $singleValue = null; $singleFamily = 'none';
+          $singleHead = [false, null, 'unknown']; $singleMeta = [false, null, 'unknown']; $singleSize = false;
+          $singleKey = 'diagnostics/'.$run.'/single';
+          $singleKeys = [$singleKey, $singleKey.'.meta.json'];
+          try {
+              [$singleStream, $singleChecksum, $singleBytes] = streamOf('async-promise-single');
+              try {
+                  $singleSettled = Utils::settle([startAsync(fn (): object => $store->putStreamAsync($singleStream, $singleBytes, $singleChecksum, $context, $purpose, OpaqueObjectKey::fromString($singleKey)))])->wait();
+                  $singleState = $singleSettled[0]['state'];
+                  $singleValue = $singleSettled[0]['value'] ?? null;
+                  if ($singleState === 'rejected') $singleFamily = errorFamily($singleSettled, 0);
+              } catch (Throwable $e) { $singleFamily = sanitizeThrowableChain($e); }
+              $singleHead = head($client, $bucket, $singleKey);
+              $singleMeta = head($client, $bucket, $singleKey.'.meta.json');
+              $singleSize = $singleHead[0] && $singleHead[1] === $singleBytes;
+          } catch (Throwable $e) { $singleFamily = sanitizeThrowableChain($e); }
+          finally {
+              if (is_resource($singleStream ?? null)) fclose($singleStream);
+              $singleClean = cleanup($client, $bucket, $singleKeys);
+              $singleCleanup = $singleClean ? 'PASS' : 'FAIL';
+              if (! $singleClean) $cleanupIncident = true;
+          }
+          echo 'single_async_state='.$singleState."\n";
+          echo 'single_async_value_private_object='.boolText($singleState === 'fulfilled' && $singleValue instanceof PrivateObject)."\n";
+          echo 'single_object_head='.($singleHead[0] ? 'PASS' : 'FAIL')."\n";
+          echo 'single_metadata_head='.($singleMeta[0] ? 'PASS' : 'FAIL')."\n";
+          echo 'single_size_match='.boolText($singleSize)."\n";
+          echo 'single_error_family='.$singleFamily."\n";
+
+          $radiographKey = 'diagnostics/'.$run.'/radiograph';
+          $gainKey = 'diagnostics/'.$run.'/gain';
+          $pairKeys = [$radiographKey, $radiographKey.'.meta.json', $gainKey, $gainKey.'.meta.json'];
+          $rState = 'rejected'; $gState = 'rejected'; $rValue = null; $gValue = null; $rFamily = 'none'; $gFamily = 'none';
+          $rHead = [false, null, 'unknown']; $gHead = [false, null, 'unknown']; $rMeta = [false, null, 'unknown']; $gMeta = [false, null, 'unknown']; $rSize = false; $gSize = false;
+          try {
+              [$rStream, $rChecksum, $rBytes] = streamOf('async-promise-radiograph');
+              [$gStream, $gChecksum, $gBytes] = streamOf('async-promise-gain');
+              $radiographPromise = startAsync(fn (): object => $store->putStreamAsync($rStream, $rBytes, $rChecksum, $context, $purpose, OpaqueObjectKey::fromString($radiographKey)));
+              $gainPromise = startAsync(fn (): object => $store->putStreamAsync($gStream, $gBytes, $gChecksum, $context, $purpose, OpaqueObjectKey::fromString($gainKey)));
+              $settled = Utils::settle([$radiographPromise, $gainPromise])->wait();
+              $rState = $settled[0]['state']; $gState = $settled[1]['state'];
+              $rValue = $settled[0]['value'] ?? null; $gValue = $settled[1]['value'] ?? null;
+              if ($rState === 'rejected') $rFamily = errorFamily($settled, 0);
+              if ($gState === 'rejected') $gFamily = errorFamily($settled, 1);
+              $rHead = head($client, $bucket, $radiographKey); $gHead = head($client, $bucket, $gainKey);
+              $rMeta = head($client, $bucket, $radiographKey.'.meta.json'); $gMeta = head($client, $bucket, $gainKey.'.meta.json');
+              $rSize = $rHead[0] && $rHead[1] === $rBytes; $gSize = $gHead[0] && $gHead[1] === $gBytes;
+          } catch (Throwable $e) { $rFamily = sanitizeThrowableChain($e); $gFamily = $rFamily; }
+          finally {
+              if (is_resource($rStream ?? null)) fclose($rStream);
+              if (is_resource($gStream ?? null)) fclose($gStream);
+              $pairClean = cleanup($client, $bucket, $pairKeys);
+              $pairCleanup = $pairClean ? 'PASS' : 'FAIL';
+              if (! $pairClean) $cleanupIncident = true;
+          }
+          $rPrivate = $rState === 'fulfilled' && $rValue instanceof PrivateObject;
+          $gPrivate = $gState === 'fulfilled' && $gValue instanceof PrivateObject;
+          $pairResult = $rPrivate && $gPrivate && $rHead[0] && $gHead[0] && $rMeta[0] && $gMeta[0] && $rSize && $gSize;
+          echo 'radiograph_async_state='.$rState."\n";
+          echo 'gain_async_state='.$gState."\n";
+          echo 'radiograph_value_private_object='.boolText($rPrivate)."\n";
+          echo 'gain_value_private_object='.boolText($gPrivate)."\n";
+          echo 'radiograph_object_head='.($rHead[0] ? 'PASS' : 'FAIL')."\n";
+          echo 'gain_object_head='.($gHead[0] ? 'PASS' : 'FAIL')."\n";
+          echo 'radiograph_metadata_head='.($rMeta[0] ? 'PASS' : 'FAIL')."\n";
+          echo 'gain_metadata_head='.($gMeta[0] ? 'PASS' : 'FAIL')."\n";
+          echo 'radiograph_size_match='.boolText($rSize)."\n";
+          echo 'gain_size_match='.boolText($gSize)."\n";
+          echo 'radiograph_error_family='.$rFamily."\n";
+          echo 'gain_error_family='.$gFamily."\n";
+          echo 'pair_result='.($pairResult ? 'PASS' : 'FAIL')."\n";
+          $overallCleanup = $singleCleanup === 'PASS' && $pairCleanup === 'PASS' && ! $cleanupIncident;
+          $overall = $singleState === 'fulfilled' && $singleValue instanceof PrivateObject && $singleHead[0] && $singleMeta[0] && $singleSize && $pairResult && $overallCleanup;
+          echo 'single_cleanup='.$singleCleanup."\n";
+          echo 'pair_cleanup='.$pairCleanup."\n";
+          echo 'overall_cleanup='.($overallCleanup ? 'PASS' : 'FAIL')."\n";
+          echo 'cleanup_incident='.boolText($cleanupIncident)."\n";
+          echo 'promise_fix_runtime_validation='.($overall ? 'PASS' : 'FAIL')."\n";
+          if (! $overall) exit(1);
+          PHP
