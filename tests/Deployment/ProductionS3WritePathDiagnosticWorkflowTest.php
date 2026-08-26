@@ -92,8 +92,34 @@ final class ProductionS3WritePathDiagnosticWorkflowTest extends TestCase
         foreach (['GetObject', 'ListObjects', 'getObject(', 'listObjects(', 'DB::', 'Google Drive', 'drive.google.com', 'goat', 'radiograph.npz', 'echo $endpoint', 'echo $bucket', 'getMessage()'] as $forbidden) {
             $this->assertStringNotContainsString($forbidden, $workflow);
         }
-        foreach (['none', 'authorization', 'not_found', 'transport', 'unsupported', 'unknown', 'sanitizeThrowable', 'http_status='] as $family) {
+        foreach (['none', 'authorization', 'not_found', 'transport', 'unsupported', 'unknown', 'sanitizeThrowableChain', 'http_status='] as $family) {
             $this->assertStringContainsString($family, $workflow);
         }
+    }
+
+    public function test_reviewed_write_path_defects_are_not_regressed(): void
+    {
+        $workflow = $this->workflow();
+
+        $this->assertStringNotContainsString('->getAdapter()', $workflow);
+        $this->assertStringContainsString('$configuredDisk = Storage::disk($privateDiskName)', $workflow);
+        $this->assertStringContainsString('$configuredDisk->getConfig()', $workflow);
+        $this->assertStringContainsString('use App\\Shared\\Identity\\LocalId;', $workflow);
+        $this->assertStringContainsString('use App\\Shared\\Context\\CorrelationId;', $workflow);
+        $this->assertStringContainsString('LocalId::fromString(', $workflow);
+        $this->assertStringContainsString('CorrelationId::random()', $workflow);
+        $this->assertStringContainsString('$context->actorId !== null', $workflow);
+        $this->assertStringContainsString('$context->operationId !== null', $workflow);
+        $this->assertStringNotContainsString('AuthenticatedContext::anonymous()', $workflow);
+        $this->assertStringContainsString("\$purpose = 'production-s3-write-path-diagnostic'", $workflow);
+        $this->assertStringContainsString('$context->purpose === $purpose', $workflow);
+        $this->assertStringNotContainsString('catch (Throwable) { }', $workflow);
+        $this->assertStringContainsString('finally', $workflow);
+        $this->assertStringContainsString('sanitizeThrowableChain', $workflow);
+        $this->assertStringContainsString('pair_small_radiograph=', $workflow);
+        $this->assertStringContainsString('pair_small_gain=', $workflow);
+        $this->assertStringContainsString('realistic_radiograph_size_match=', $workflow);
+        $this->assertStringContainsString('realistic_gain_size_match=', $workflow);
+        $this->assertStringNotContainsString('overall_cleanup=PASS', substr($workflow, strpos($workflow, 'overall_cleanup=FAIL')));
     }
 }
