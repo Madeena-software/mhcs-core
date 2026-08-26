@@ -70,6 +70,11 @@ jobs:
           minio_listener_host_gateway_match_basis=unknown
           host_to_host_gateway_9000_tcp_checked=false
           host_to_host_gateway_9000_tcp=none
+          host_gateway_minio_health_checked=false
+          host_gateway_minio_health_http_status=none
+          host_gateway_minio_health=none
+          container_host_gateway_route_checked=false
+          container_host_gateway_route=unavailable
           host_firewall_inspection=SKIPPED
           docker_gateway_9000_explicit_reject_detected=unknown
           docker_gateway_9000_explicit_accept_detected=unknown
@@ -189,6 +194,36 @@ jobs:
               host_to_host_gateway_9000_tcp=PASS
             else
               host_to_host_gateway_9000_tcp=FAIL
+            fi
+
+            if command -v curl >/dev/null 2>&1; then
+              host_gateway_minio_health_checked=true
+              gateway_health_host="$host_gateway_address"
+              if [ "$host_gateway_address_family" = ipv6 ]; then gateway_health_host="[$host_gateway_address]"; fi
+              gateway_health_status="$(curl --silent --output /dev/null --write-out '%{http_code}' --connect-timeout 3 --max-time 3 --max-redirs 0 --request GET "http://${gateway_health_host}:9000/minio/health/live" 2>/dev/null || true)"
+              case "$gateway_health_status" in
+                200) host_gateway_minio_health_http_status=200; host_gateway_minio_health=PASS ;;
+                2[0-9][0-9]) host_gateway_minio_health_http_status=other_2xx; host_gateway_minio_health=FAIL ;;
+                3[0-9][0-9]) host_gateway_minio_health_http_status=3xx; host_gateway_minio_health=FAIL ;;
+                4[0-9][0-9]) host_gateway_minio_health_http_status=4xx; host_gateway_minio_health=FAIL ;;
+                5[0-9][0-9]) host_gateway_minio_health_http_status=5xx; host_gateway_minio_health=FAIL ;;
+                *) host_gateway_minio_health_http_status=none; host_gateway_minio_health=FAIL ;;
+              esac
+            fi
+
+            container_route_output="$(docker exec "$APP_CONTAINER" sh -c 'if ! command -v ip >/dev/null 2>&1; then printf "%s" __IP_UNAVAILABLE__; else route_output="$(ip route get "$1" 2>/dev/null || true)"; if [ -n "$route_output" ]; then printf "%s" "$route_output"; else printf "%s" __IP_LOOKUP_FAILED__; fi; fi' sh "$host_gateway_address" 2>/dev/null || true)"
+            if [ "$container_route_output" = __IP_UNAVAILABLE__ ]; then
+              container_host_gateway_route_checked=false
+              container_host_gateway_route=unavailable
+            else
+              container_host_gateway_route_checked=true
+              case "$container_route_output" in
+                *unreachable*|*prohibit*|*blackhole*) container_host_gateway_route=unreachable ;;
+                *__IP_LOOKUP_FAILED__*) container_host_gateway_route=unknown ;;
+                *" via "*" dev "*) container_host_gateway_route=reachable_via_gateway ;;
+                *" dev "*) container_host_gateway_route=reachable_direct ;;
+                *) container_host_gateway_route=unknown ;;
+              esac
             fi
           fi
 
@@ -315,7 +350,7 @@ jobs:
           echo 'laravel_bootstrap='.($bootstrapOk?'PASS':'FAIL').PHP_EOL; echo 'private_object_disk_is_s3='.($diskIsS3?'true':'false').PHP_EOL; echo 'credentials_present='.($credentialsPresent?'true':'false').PHP_EOL; echo 'bucket_present='.($bucketPresent?'true':'false').PHP_EOL; echo 'endpoint_present='.($endpointPresent?'true':'false').PHP_EOL; echo 'region_present='.($regionPresent?'true':'false').PHP_EOL; echo 'path_style_enabled='.($pathStyleEnabled?'true':'false').PHP_EOL;
           echo 'current_endpoint_host_class='.$currentEndpointHostClass.PHP_EOL; echo 'current_endpoint_port_is_9000='.($currentEndpointPortIs9000?'true':'false').PHP_EOL; echo 'current_endpoint_head_bucket='.$currentEndpointHeadBucket.PHP_EOL; echo 'current_endpoint_head_bucket_error_family='.$currentEndpointHeadBucketErrorFamily.PHP_EOL; echo 'current_endpoint_head_bucket_error_code='.$currentEndpointHeadBucketErrorCode.PHP_EOL; echo 'current_endpoint_head_bucket_http_status='.$currentEndpointHeadBucketHttpStatus.PHP_EOL;
           echo 'container_loopback_endpoint_conflict='.($containerLoopbackEndpointConflict?'true':'false').PHP_EOL;
-          echo 'host_gateway_resolves='.($hostGatewayResolves?'true':'false').PHP_EOL; echo 'host_gateway_port_9000_tcp_checked='.($hostGatewayPort9000TcpChecked?'true':'false').PHP_EOL; echo 'host_gateway_port_9000_tcp='.$hostGatewayPort9000Tcp.PHP_EOL; echo 'host_gateway_minio_health_http_status='.$hostGatewayMinioHealthHttpStatus.PHP_EOL; echo 'host_gateway_minio_health='.$hostGatewayMinioHealth.PHP_EOL; echo 'host_gateway_head_bucket='.$hostGatewayHeadBucket.PHP_EOL; echo 'host_gateway_head_bucket_error_family='.$hostGatewayHeadBucketErrorFamily.PHP_EOL; echo 'host_gateway_head_bucket_error_code='.$hostGatewayHeadBucketErrorCode.PHP_EOL; echo 'host_gateway_head_bucket_http_status='.$hostGatewayHeadBucketHttpStatus.PHP_EOL;
+          echo 'host_gateway_resolves='.($hostGatewayResolves?'true':'false').PHP_EOL; echo 'host_gateway_port_9000_tcp_checked='.($hostGatewayPort9000TcpChecked?'true':'false').PHP_EOL; echo 'host_gateway_port_9000_tcp='.$hostGatewayPort9000Tcp.PHP_EOL; echo 'container_host_gateway_minio_health_http_status='.$hostGatewayMinioHealthHttpStatus.PHP_EOL; echo 'container_host_gateway_minio_health='.$hostGatewayMinioHealth.PHP_EOL; echo 'host_gateway_head_bucket='.$hostGatewayHeadBucket.PHP_EOL; echo 'host_gateway_head_bucket_error_family='.$hostGatewayHeadBucketErrorFamily.PHP_EOL; echo 'host_gateway_head_bucket_error_code='.$hostGatewayHeadBucketErrorCode.PHP_EOL; echo 'host_gateway_head_bucket_http_status='.$hostGatewayHeadBucketHttpStatus.PHP_EOL;
           echo 'intended_local_endpoint_viable='.($intendedLocalEndpointViable?'true':'false').PHP_EOL; echo 'configured_endpoint_matches_intended_topology='.($configuredEndpointMatchesIntendedTopology?'true':'false').PHP_EOL; echo 'configured_endpoint_root_cause_boundary='.$rootBoundary.PHP_EOL; echo 'configured_endpoint_root_cause_class='.$rootClass.PHP_EOL; echo 'configured_endpoint_root_cause_confirmed='.($rootConfirmed?'true':'false').PHP_EOL; echo 's3_probe_executed=false'.PHP_EOL; echo 'PRODUCTION_S3_DIAGNOSTIC_STATUS='.($failure?'FAIL':'PASS').PHP_EOL;
           exit($failure?1:0);
           PHP
@@ -335,6 +370,18 @@ jobs:
             host_listener_root_boundary=docker_host_gateway_connectivity
             host_listener_root_class=container_tcp_check_not_executed
             host_listener_root_confirmed=false
+          elif [ "$host_gateway_minio_health_checked" = true ] && [ "$host_gateway_minio_health" = PASS ] && [ "$container_host_gateway_route_checked" = true ] && [ "$container_host_gateway_route" = unreachable ] && [ "$host_gateway_port_9000_tcp_checked" = true ] && [ "$host_gateway_port_9000_tcp" = FAIL ]; then
+            host_gateway_connectivity_root_boundary=container_routing
+            host_gateway_connectivity_root_class=container_has_no_route_to_host_gateway
+            host_gateway_connectivity_root_confirmed=true
+          elif [ "$host_gateway_minio_health" = PASS ] && { [ "$container_host_gateway_route" = reachable_direct ] || [ "$container_host_gateway_route" = reachable_via_gateway ]; } && [ "$host_gateway_port_9000_tcp_checked" = true ] && [ "$host_gateway_port_9000_tcp" = FAIL ]; then
+            host_gateway_connectivity_root_boundary=container_to_host_gateway
+            host_gateway_connectivity_root_class=route_present_but_container_tcp_failed
+            host_gateway_connectivity_root_confirmed=false
+          elif [ "$host_to_host_gateway_9000_tcp_checked" = true ] && [ "$host_to_host_gateway_9000_tcp" = PASS ] && [ "$host_gateway_minio_health_checked" = true ] && [ "$host_gateway_minio_health" = FAIL ]; then
+            host_gateway_connectivity_root_boundary=minio_runtime_topology
+            host_gateway_connectivity_root_class=host_gateway_port_9000_not_confirmed_as_minio
+            host_gateway_connectivity_root_confirmed=false
           elif [ "$host_local_minio_confirmed" = true ] && [ "$host_listener_inspection" = PASS ] && [ "$host_gateway_address_resolved" = true ] && [ "$minio_listener_matches_host_gateway" = false ] && [ "$host_to_host_gateway_9000_tcp_checked" = true ] && [ "$host_to_host_gateway_9000_tcp" = PASS ] && [ "$host_gateway_port_9000_tcp_checked" = true ] && [ "$host_gateway_port_9000_tcp" = FAIL ]; then
             container_host_gateway_failure_explained=false
             host_listener_root_boundary=listener_classification
@@ -389,6 +436,11 @@ jobs:
           echo "minio_listener_host_gateway_match_basis=$minio_listener_host_gateway_match_basis"
           echo "host_to_host_gateway_9000_tcp_checked=$host_to_host_gateway_9000_tcp_checked"
           echo "host_to_host_gateway_9000_tcp=$host_to_host_gateway_9000_tcp"
+          echo "host_gateway_minio_health_checked=$host_gateway_minio_health_checked"
+          echo "host_gateway_minio_health_http_status=$host_gateway_minio_health_http_status"
+          echo "host_gateway_minio_health=$host_gateway_minio_health"
+          echo "container_host_gateway_route_checked=$container_host_gateway_route_checked"
+          echo "container_host_gateway_route=$container_host_gateway_route"
           echo "host_firewall_inspection=$host_firewall_inspection"
           echo "docker_gateway_9000_explicit_reject_detected=$docker_gateway_9000_explicit_reject_detected"
           echo "docker_gateway_9000_explicit_accept_detected=$docker_gateway_9000_explicit_accept_detected"

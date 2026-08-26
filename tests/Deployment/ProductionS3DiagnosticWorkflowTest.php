@@ -65,6 +65,12 @@ final class ProductionS3DiagnosticWorkflowTest extends TestCase
             'minio_listener_host_gateway_match_basis=',
             'host_to_host_gateway_9000_tcp_checked=',
             'host_to_host_gateway_9000_tcp=',
+            'host_gateway_minio_health_checked=',
+            'host_gateway_minio_health_http_status=',
+            'host_gateway_minio_health=',
+            'container_host_gateway_route_checked=',
+            'container_host_gateway_route=',
+            'container_host_gateway_minio_health=',
             'host_firewall_inspection=',
             'docker_gateway_9000_explicit_reject_detected=',
             'docker_gateway_9000_explicit_accept_detected=',
@@ -116,6 +122,9 @@ final class ProductionS3DiagnosticWorkflowTest extends TestCase
             'matching_listener_but_host_tcp_failed',
             'host_reachable_but_container_tcp_failed',
             'listener_mismatch_but_host_tcp_passed',
+            'container_has_no_route_to_host_gateway',
+            'route_present_but_container_tcp_failed',
+            'host_gateway_port_9000_not_confirmed_as_minio',
         ] as $required) {
             $this->assertStringContainsString($required, $workflow);
         }
@@ -279,6 +288,48 @@ final class ProductionS3DiagnosticWorkflowTest extends TestCase
         $this->assertStringContainsString('docker_gateway_9000_explicit_accept_detected=unknown', $workflow);
         foreach (['iptables', 'nft ', 'echo "$firewall_rules"', 'printf "%s\\n" "$firewall_rules"'] as $forbidden) {
             $this->assertStringNotContainsString($forbidden, strtolower($workflow));
+        }
+    }
+
+    public function test_host_gateway_identity_and_container_route_are_bounded_and_sanitized(): void
+    {
+        $workflow = file_get_contents(base_path('.github/workflows/diagnose-production-s3.yml'));
+        $this->assertIsString($workflow);
+
+        $this->assertStringContainsString('curl --silent --output /dev/null', $workflow);
+        $this->assertStringContainsString('--connect-timeout 3', $workflow);
+        $this->assertStringContainsString('--max-time 3', $workflow);
+        $this->assertStringContainsString('--max-redirs 0', $workflow);
+        $this->assertStringContainsString('"http://${gateway_health_host}:9000/minio/health/live"', $workflow);
+        $this->assertStringContainsString('container_host_gateway_minio_health=', $workflow);
+        $this->assertStringContainsString('docker exec "$APP_CONTAINER" sh -c', $workflow);
+        $this->assertStringContainsString('ip route get "$1"', $workflow);
+        $this->assertStringContainsString('__IP_UNAVAILABLE__', $workflow);
+        $this->assertStringContainsString('__IP_LOOKUP_FAILED__', $workflow);
+        $this->assertStringContainsString('reachable_via_gateway', $workflow);
+        $this->assertStringContainsString('reachable_direct', $workflow);
+        $this->assertStringContainsString('unreachable', $workflow);
+        $this->assertStringContainsString('prohibit', $workflow);
+        $this->assertStringContainsString('blackhole', $workflow);
+        $this->assertStringContainsString('container_has_no_route_to_host_gateway', $workflow);
+        $this->assertStringContainsString('route_present_but_container_tcp_failed', $workflow);
+        $this->assertStringContainsString('host_gateway_port_9000_not_confirmed_as_minio', $workflow);
+        foreach (['echo "$host_gateway_address"', 'echo "$gateway_health_host"', 'echo "$container_route_output"', 'echo "$route_output"'] as $disclosure) {
+            $this->assertStringNotContainsString($disclosure, $workflow);
+        }
+
+        $caseA = strpos($workflow, 'container_has_no_route_to_host_gateway');
+        $this->assertNotFalse($caseA);
+        $caseABlock = substr($workflow, $caseA - 700, 950);
+        foreach (['host_gateway_minio_health" = PASS', 'container_host_gateway_route_checked" = true', 'container_host_gateway_route" = unreachable', 'host_gateway_port_9000_tcp_checked" = true', 'host_gateway_port_9000_tcp" = FAIL', 'host_gateway_connectivity_root_confirmed=true'] as $condition) {
+            $this->assertStringContainsString($condition, $caseABlock);
+        }
+
+        $caseB = strpos($workflow, 'route_present_but_container_tcp_failed');
+        $this->assertNotFalse($caseB);
+        $caseBBlock = substr($workflow, $caseB - 650, 850);
+        foreach (['host_gateway_minio_health" = PASS', 'reachable_direct', 'reachable_via_gateway', 'host_gateway_port_9000_tcp" = FAIL', 'host_gateway_connectivity_root_confirmed=false'] as $condition) {
+            $this->assertStringContainsString($condition, $caseBBlock);
         }
     }
 }
