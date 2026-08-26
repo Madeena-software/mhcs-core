@@ -153,8 +153,7 @@ jobs:
             -e NPM_CONFIG_FETCH_RETRY_MINTIMEOUT=20000 \
             -e NPM_CONFIG_FETCH_RETRY_MAXTIMEOUT=120000 \
             -e NPM_CONFIG_FETCH_TIMEOUT=300000 \
-            -v "$NPM_WORKSPACE:/work" -w /work "$IMAGE" \
-            npm ci --ignore-scripts --no-audit --no-fund >"$npm_log" 2>&1
+            -v "$NPM_WORKSPACE:/input:ro" "$IMAGE" sh -ceu '\n+              mkdir -p /tmp/npm-work\n+              cp /input/package.json /input/package-lock.json /tmp/npm-work/\n+              cd /tmp/npm-work\n+              exec npm ci --ignore-scripts --no-audit --no-fund\n+            ' >"$npm_log" 2>&1
           then
             npm_status=0
           else

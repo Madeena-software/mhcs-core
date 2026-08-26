@@ -61,6 +61,15 @@ final class ProductionNpmEgressDiagnosticWorkflowTest extends TestCase
         $this->assertStringContainsString('NPM_CONFIG_FETCH_TIMEOUT=300000', $workflow);
         $this->assertStringContainsString('timeout 360s', $workflow);
         $this->assertStringContainsString('trap cleanup EXIT', $workflow);
+        $this->assertStringContainsString(':/input:ro', $workflow);
+        $this->assertStringContainsString('sh -ceu', $workflow);
+        $this->assertStringContainsString('cp /input/package.json /input/package-lock.json', $workflow);
+        $this->assertStringContainsString('cd /tmp/npm-work', $workflow);
+        $this->assertStringNotContainsString('$NPM_WORKSPACE:/work', $workflow);
+        $this->assertStringNotContainsString('node_modules', $workflow);
+        foreach (['sudo ', 'chown ', 'chmod ', '--privileged'] as $forbiddenCleanupOperation) {
+            $this->assertStringNotContainsString($forbiddenCleanupOperation, $workflow);
+        }
         $this->assertStringContainsString('shell: bash', $workflow);
         $this->assertStringContainsString('npm_command_exit_status=', $workflow);
         $this->assertStringContainsString('npm_status=0', $workflow);
