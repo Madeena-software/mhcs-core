@@ -197,15 +197,30 @@ BASH;
         $cleanupEnd = strpos($workflow, 'function startAsync(', $cleanupStart);
         $cleanup = substr($workflow, $cleanupStart, $cleanupEnd - $cleanupStart);
 
-        $this->assertStringContainsString('for ($round = 0; $round < 3; $round++)', $cleanup);
+        $this->assertStringContainsString('$knownKeys = array_values(array_unique($keys));', $cleanup);
+        $this->assertStringContainsString('// Initial delete phase:', $cleanup);
+        $this->assertStringContainsString('$deleteExact($knownKeys);', $cleanup);
+        $this->assertStringContainsString('$reappeared = $inspect($knownKeys);', $cleanup);
+        $this->assertStringContainsString('foreach ($targets as $key)', $cleanup);
+        $this->assertStringContainsString('$cleanupFailed = true;', $cleanup);
+        $this->assertStringContainsString('if ($reappeared !== [])', $cleanup);
+        $this->assertStringContainsString('$deleteExact($reappeared);', $cleanup);
+        $this->assertStringContainsString('for ($round = 0; $round < 4; $round++)', $cleanup);
         $this->assertStringContainsString('$stableChecks', $cleanup);
-        $this->assertStringContainsString('usleep(100000)', $cleanup);
+        $this->assertStringContainsString('usleep(250000)', $cleanup);
         $this->assertStringContainsString('deleteObject(', $cleanup);
         $this->assertStringContainsString('$stableChecks >= 2', $cleanup);
         $this->assertStringContainsString('headObject(', $cleanup);
-        $this->assertStringContainsString('if ($exists) {', $cleanup);
-        $this->assertStringContainsString('continue 2', $cleanup);
+        $this->assertStringContainsString('return ! $cleanupFailed;', $cleanup);
         $this->assertStringContainsString('return false;', $cleanup);
+
+        $initialDelete = strpos($cleanup, '$deleteExact($knownKeys);');
+        $stabilization = strpos($cleanup, '$stableChecks = 0;');
+        $quiescence = strpos($cleanup, 'usleep(250000);', $stabilization);
+        $stabilityHead = strpos($cleanup, '$reappeared = $inspect($knownKeys);', $quiescence);
+        $this->assertLessThan($stabilization, $initialDelete);
+        $this->assertLessThan($stabilityHead, $quiescence);
+        $this->assertStringNotContainsString('$deleteExact($knownKeys);', substr($cleanup, $stabilization));
 
         $this->assertSame(3, substr_count($workflow, 'putStreamAsync('));
         $this->assertStringNotContainsString('putStreamAsync(', $cleanup);

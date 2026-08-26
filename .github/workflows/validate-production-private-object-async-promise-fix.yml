@@ -135,18 +135,39 @@ jobs:
           }
           function cleanup(Aws\S3\S3Client $client, string $bucket, array $keys): bool
           {
+              $knownKeys = array_values(array_unique($keys));
+              $cleanupFailed = false;
+              $deleteExact = static function (array $targets) use ($client, $bucket, &$cleanupFailed): void {
+                  foreach ($targets as $key) {
+                      try { $client->deleteObject(['Bucket' => $bucket, 'Key' => $key]); } catch (Throwable) { $cleanupFailed = true; }
+                  }
+              };
+              $inspect = static function (array $targets) use ($client, $bucket, &$cleanupFailed): array {
+                  $reappeared = [];
+                  foreach ($targets as $key) {
+                      try { $client->headObject(['Bucket' => $bucket, 'Key' => $key]); $reappeared[] = $key; }
+                      catch (Throwable $e) { if (sanitizeThrowableChain($e) !== 'not_found') $cleanupFailed = true; }
+                  }
+                  return $reappeared;
+              };
+
+              // Initial delete phase: attempt every known key, then inspect every key.
+              $deleteExact($knownKeys);
+              $reappeared = $inspect($knownKeys);
+              if ($reappeared !== []) $deleteExact($reappeared);
+
               $stableChecks = 0;
-              for ($round = 0; $round < 3; $round++) {
-                  foreach (array_unique($keys) as $key) {
-                      try { $client->deleteObject(['Bucket' => $bucket, 'Key' => $key]); } catch (Throwable) { return false; }
-                      $exists = false;
-                      try { $client->headObject(['Bucket' => $bucket, 'Key' => $key]); $exists = true; }
-                      catch (Throwable $e) { if (sanitizeThrowableChain($e) !== 'not_found') return false; }
-                      if ($exists) { $stableChecks = 0; usleep(100000); continue 2; }
+              for ($round = 0; $round < 4; $round++) {
+                  usleep(250000);
+                  $reappeared = $inspect($knownKeys);
+                  if ($reappeared !== []) {
+                      $stableChecks = 0;
+                      $deleteExact($reappeared);
+                      $inspect($reappeared);
+                      continue;
                   }
                   $stableChecks++;
-                  if ($stableChecks >= 2) return true;
-                  usleep(100000);
+                  if ($stableChecks >= 2) return ! $cleanupFailed;
               }
               return false;
           }
