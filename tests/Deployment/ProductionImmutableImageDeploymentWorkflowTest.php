@@ -36,6 +36,17 @@ final class ProductionImmutableImageDeploymentWorkflowTest extends TestCase
         $this->assertStringContainsString('PULL_DELAY=$((PULL_ATTEMPT * 10))', $workflow);
         $this->assertStringContainsString('sleep "$PULL_DELAY"', $workflow);
         $this->assertStringContainsString('PULL_ATTEMPT=$((PULL_ATTEMPT + 1))', $workflow);
+        $retryBlock = preg_match('/PULL_MAX_ATTEMPTS=3.*?done/s', $workflow, $matches);
+        $this->assertSame(1, $retryBlock);
+        $this->assertMatchesRegularExpression(
+            '/if \[ "\$PULL_ATTEMPT" -ge "\$PULL_MAX_ATTEMPTS" \]; then.*?exit 1/s',
+            $matches[0],
+        );
+        $this->assertStringNotContainsString('ghcr.io/madeena-software/mhcs-core:${SOURCE_SHA}', $workflow);
+        $this->assertDoesNotMatchRegularExpression(
+            '/ghcr\.io\/madeena-software\/mhcs-core:\$\{(?:SOURCE_SHA|LIVE_VERSION|GITHUB_SHA)\}/',
+            $workflow,
+        );
         $this->assertStringContainsString('RepoDigests', $workflow);
         $this->assertStringContainsString('org.opencontainers.image.revision', $workflow);
         $this->assertStringContainsString('org.opencontainers.image.source', $workflow);
