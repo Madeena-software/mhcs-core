@@ -1,0 +1,43 @@
+name: Provision production Prestige upload diagnostic Members
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_application_revision:
+        required: true
+        type: string
+      authorization_marker:
+        required: true
+        type: string
+
+concurrency:
+  group: production-deployment-mhcs_core
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  provision:
+    runs-on: self-hosted
+    steps:
+      - name: Require exact authorization marker
+        env:
+          AUTHORIZATION_MARKER: ${{ inputs.authorization_marker }}
+        run: test "$AUTHORIZATION_MARKER" = AUTHORIZE_ONE_PRESTIGE_UPLOAD_DIAGNOSTIC_MEMBER_PROVISION
+      - name: Prove runtime identity before mutation
+        env:
+          EXPECTED_REVISION: ${{ inputs.expected_application_revision }}
+        run: |
+          set -euo pipefail
+          test -n "$EXPECTED_REVISION"
+          test "$(docker ps --filter name=mhcs_core_app --filter status=running -q | wc -l)" = 1
+          APP_CONTAINER="$(docker ps --filter name=mhcs_core_app --filter status=running -q)"
+          SERVICE_IMAGE_SHA="$(docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' mhcs_core_app | sed 's/.*@//')"
+          TASK_IMAGE_SHA="$(docker inspect --format '{{.Image}}' "$APP_CONTAINER" | sed 's/.*@//')"
+          test -n "$SERVICE_IMAGE_SHA"; test -n "$TASK_IMAGE_SHA"; test "$SERVICE_IMAGE_SHA" = "$TASK_IMAGE_SHA"
+          test "$(docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$APP_CONTAINER")" = "$EXPECTED_REVISION"
+          test "$(docker inspect --format '{{.State.Health.Status}}' "$APP_CONTAINER")" = healthy
+          test "$(docker exec "$APP_CONTAINER" sh -c 'cat VERSION-CURRENT')" = "$EXPECTED_REVISION"
+      - name: Provision fixed diagnostic Members
+        run: php artisan mhcs:provision-prestige-upload-diagnostic-members

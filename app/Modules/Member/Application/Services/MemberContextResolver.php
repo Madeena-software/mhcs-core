@@ -65,7 +65,7 @@ final class MemberContextResolver implements NonclinicalValidationIdentityContra
             return true;
         }
 
-        return $statusValidation && $sourceValidation && $this->isExactNonclinicalValidationIdentity($member);
+        return $statusValidation && $sourceValidation && ($this->isExactNonclinicalValidationIdentity($member) || $this->isExactPrestigeUploadDiagnosticIdentity($member));
     }
 
     public function isExactNonclinicalValidationIdentity(Member $member): bool
@@ -85,6 +85,20 @@ final class MemberContextResolver implements NonclinicalValidationIdentityContra
             ->where('namespace', NonclinicalValidationContext::MARKER_NAMESPACE)
             ->where('value', NonclinicalValidationContext::KEY)
             ->count() === 1
+            && ! DB::table('member_verification_assets')->where('member_id', $member->id)->exists();
+    }
+
+    public function isExactPrestigeUploadDiagnosticIdentity(Member $member): bool
+    {
+        if ($member->identity_status !== IdentityStatus::NonclinicalValidation->value
+            || $member->registration_source !== RegistrationSource::NonclinicalValidation->value
+            || $member->identity_document_type !== null || $member->encrypted_nik !== null || $member->nik_lookup_digest !== null) {
+            return false;
+        }
+
+        return DB::table('member_external_identifiers')->where('member_id', $member->id)
+            ->where('namespace', NonclinicalValidationContext::PRESTIGE_MARKER_NAMESPACE)
+            ->whereIn('value', ['gbsuparta', 'ipang'])->count() === 1
             && ! DB::table('member_verification_assets')->where('member_id', $member->id)->exists();
     }
 

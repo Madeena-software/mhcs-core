@@ -22,19 +22,21 @@ final class NonclinicalValidationContextProvider implements AuthenticatedContext
 
     private ?string $memberId = null;
 
+    public function __construct(private readonly string $contextKey = NonclinicalValidationContext::KEY) {}
+
     public function current(): AuthenticatedContext
     {
         if ($this->mode === 'member' && $this->memberId !== null) {
             return new AuthenticatedContext(
                 actorId: LocalId::fromString($this->memberId),
-                operationId: new CorrelationId('nonclinical-validation:'.NonclinicalValidationContext::KEY),
+                operationId: new CorrelationId('nonclinical-validation:'.$this->contextKey),
                 purpose: 'authenticated-session',
             );
         }
 
         return new AuthenticatedContext(
             actorId: LocalId::fromString(self::SYSTEM_ACTOR),
-            operationId: new CorrelationId('nonclinical-validation:'.NonclinicalValidationContext::KEY),
+            operationId: new CorrelationId('nonclinical-validation:'.$this->contextKey),
             roles: ['system'],
             purpose: $this->purpose,
         );
@@ -91,17 +93,20 @@ final class NonclinicalValidationContextProvider implements AuthenticatedContext
 
     private function ownedMember(string $memberId): bool
     {
+        $action = $this->contextKey === NonclinicalValidationContext::PRESTIGE_KEY
+            ? 'production.prestige-upload-diagnostic.account.provisioned'
+            : 'production.validation-context.member-account.provisioned';
         $events = DB::table('audit_events')
-            ->where('action', 'production.validation-context.member-account.provisioned')
+            ->where('action', $action)
             ->where('target_type', 'App\\Models\\User')
             ->where('target_id', $memberId)
             ->where('outcome', 'success')
             ->get();
 
-        return $events->count() === 1 && json_decode((string) $events->first()->metadata, true) === [
-            'validation_context' => NonclinicalValidationContext::KEY,
-            'nonclinical' => true,
-            'principal_type' => 'member',
-        ];
+        $metadata = json_decode((string) $events->first()?->metadata, true);
+
+        return $events->count() === 1 && is_array($metadata)
+            && ($metadata['validation_context'] ?? null) === $this->contextKey
+            && ($metadata['nonclinical'] ?? false) === true;
     }
 }
