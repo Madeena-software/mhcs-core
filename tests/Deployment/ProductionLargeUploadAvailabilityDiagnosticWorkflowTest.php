@@ -27,7 +27,13 @@ final class ProductionLargeUploadAvailabilityDiagnosticWorkflowTest extends Test
             }
             $this->assertStringNotContainsString($forbidden, $workflow);
         }
-        $this->assertStringContainsString('0469faa33b120d8ee622f997a0fd2f54f53edaec', $workflow);
+        foreach (['--insecure', ' -k', '--proxy-insecure', '--location-trusted', 'EXPECTED_REVISION='] as $forbidden) {
+            $this->assertStringNotContainsString($forbidden, $workflow);
+        }
+        $this->assertStringContainsString('--noproxy', $workflow);
+        $this->assertStringContainsString('--max-time 8', $workflow);
+        $this->assertStringContainsString('--connect-timeout 3', $workflow);
+        $this->assertStringContainsString('--max-redirs 0', $workflow);
     }
 
     public function test_workflow_covers_required_observation_boundaries_and_outputs(): void
@@ -40,12 +46,14 @@ final class ProductionLargeUploadAvailabilityDiagnosticWorkflowTest extends Test
             'LOCAL_8013_HTTP_STATUS', 'LOCAL_8013_CONNECT_SECONDS', 'LOCAL_8013_TOTAL_SECONDS', 'LOCAL_8013_RESULT',
             'PUBLIC_HTTPS_HTTP_STATUS', 'PUBLIC_HTTPS_CONNECT_SECONDS', 'PUBLIC_HTTPS_TOTAL_SECONDS', 'PUBLIC_HTTPS_RESULT',
             'mhcs_core_nginx', 'mhcs_core_app', 'mhcs_core_queue', 'mhcs_core_image-worker', 'docker service ps', 'docker stats --no-stream',
+            'STAT_TARGETS=()', 'docker ps -q --filter "label=com.docker.swarm.service.name=$service"', '${STAT_TARGETS[@]}',
             'NGINX_CONTAINER_RESOLVED', 'NGINX_HEALTH', 'APP_CONTAINER_RESOLVED', 'APP_HEALTH',
             'NGINX_CLIENT_BODY_TEMP_PATH', 'NGINX_CLIENT_BODY_TEMP_FS_USAGE', 'NGINX_CLIENT_BODY_TEMP_BYTES', 'NGINX_CLIENT_BODY_TEMP_FILE_COUNT',
             'worker_processes', 'worker_connections', 'client_max_body_size', 'client_body_buffer_size', 'client_body_timeout', 'fastcgi_request_buffering',
             'pm.max_children', 'pm.start_servers', 'pm.min_spare_servers', 'pm.max_spare_servers', 'PHP_FPM_PORT_9000_ACCEPTING',
-            'docker service logs --since 5m', 'no space left', 'too many open files', 'upstream timed out', 'OOM', 'CLASSIFICATION',
-            'PUBLIC_INGRESS_FAILURE', 'LOCAL_NGINX_FAILURE', 'APP_UPSTREAM_FAILURE', 'HOST_RESOURCE_PRESSURE',
+            'docker service logs --since 5m', 'log_count', 'NO_SPACE_LEFT_COUNT', 'TOO_MANY_OPEN_FILES_COUNT', 'WORKER_CONNECTION_LIMIT_COUNT',
+            'UPSTREAM_TIMEOUT_COUNT', 'CONNECT_FAILURE_COUNT', 'CLIENT_TIMEOUT_COUNT', 'OOM_COUNT', 'CLASSIFICATION',
+            'PUBLIC_PATH_FAILURE', 'LOCAL_NGINX_FAILURE', 'APP_UPSTREAM_FAILURE', 'HOST_RESOURCE_PRESSURE',
             'REQUEST_BODY_TEMP_STORAGE_PRESSURE', 'HOST_NETWORK_FAILURE', 'NO_FAILURE_OBSERVED', 'INDETERMINATE',
         ] as $required) {
             $this->assertStringContainsString($required, $workflow);
@@ -53,5 +61,20 @@ final class ProductionLargeUploadAvailabilityDiagnosticWorkflowTest extends Test
         foreach (['curl --silent', '--max-time 8', '--connect-timeout 3', '--max-redirs 0', 'sanitize', 'authorization'] as $marker) {
             $this->assertStringContainsString($marker, $workflow);
         }
+        $this->assertStringNotContainsString('PUBLIC_INGRESS_FAILURE', $workflow);
+        $this->assertStringNotContainsString('echo "LOG_', $workflow);
+        $stats = strpos($workflow, 'STAT_TARGETS=()');
+        $statsCall = strpos($workflow, 'docker stats --no-stream');
+        $this->assertNotFalse($stats);
+        $this->assertNotFalse($statsCall);
+        $this->assertLessThan($statsCall, $stats);
+        $this->assertStringNotContainsString('docker stats --no-stream --format {{.Name}} cpu={{.CPUPerc}} mem={{.MemUsage}} net={{.NetIO}} block={{.BlockIO}} pids={{.PIDs}} ${SERVICES[@]}', $workflow);
+        $delta = strpos($workflow, 'network_listener_failure=false');
+        $classification = strpos($workflow, 'if [ "$temp_storage_pressure" = true ]');
+        $this->assertNotFalse($delta);
+        $this->assertNotFalse($classification);
+        $this->assertLessThan($classification, $delta);
+        $this->assertStringContainsString('printf \'%s\\n\' "$nstat_delta"', $workflow);
+        $this->assertStringNotContainsString('elif echo "$(nstat_snapshot)', substr($workflow, $classification));
     }
 }

@@ -19,7 +19,6 @@ jobs:
         run: |
           set -euo pipefail
 
-          EXPECTED_REVISION="0469faa33b120d8ee622f997a0fd2f54f53edaec"
           SERVICES=(mhcs_core_nginx mhcs_core_app mhcs_core_queue mhcs_core_image-worker)
           NGINX_SERVICE="mhcs_core_nginx"
           APP_SERVICE="mhcs_core_app"
@@ -58,7 +57,7 @@ jobs:
             # PUBLIC_HTTPS_TOTAL_SECONDS, PUBLIC_HTTPS_RESULT.
             local name="$1" url="$2" status="000" connect="-1" total="-1" result="FAIL"
             local line
-            line="$(curl --silent --show-error --insecure --noproxy '*' --max-time 8 --connect-timeout 3 --location-trusted --max-redirs 0 -o /dev/null -w '%{http_code} %{time_connect} %{time_total}' "$url" 2>/dev/null || true)"
+            line="$(curl --silent --show-error --noproxy '*' --max-time 8 --connect-timeout 3 --max-redirs 0 -o /dev/null -w '%{http_code} %{time_connect} %{time_total}' "$url" 2>/dev/null || true)"
             read -r status connect total <<<"$line"
             if [[ "$status" =~ ^2[0-9][0-9]$ ]]; then result="PASS"; fi
             emit "${name}_HTTP_STATUS" "$status"
@@ -79,7 +78,8 @@ jobs:
 
           nstat_after="$(nstat_snapshot)"
           echo "NSTAT_AFTER=$(echo "$nstat_after" | tr '\n' ';')"
-          echo "NSTAT_DELTA=$(awk -F= 'NR==FNR {before[$1]=$2; next} {delta=$2-(before[$1]+0); if (delta != 0) print $1 "=" delta}' <(printf '%s\n' "$nstat_before") <(printf '%s\n' "$nstat_after") | tr '\n' ';')"
+          nstat_delta="$(awk -F= 'NR==FNR {before[$1]=$2; next} {delta=$2-(before[$1]+0); if (delta != 0) print $1 "=" delta}' <(printf '%s\n' "$nstat_before") <(printf '%s\n' "$nstat_after") )"
+          echo "NSTAT_DELTA=$(echo "$nstat_delta" | tr '\n' ';')"
 
           resolve_container() {
             local service="$1" task="" candidate="" candidate_task=""
@@ -105,11 +105,19 @@ jobs:
             echo "SERVICE_${service}_TASKS=$(safe docker service ps "$service" --no-trunc --format 'state={{.CurrentState}} image={{.Image}} desired={{.DesiredState}}' | sanitize)"
           done
 
-          for container_name in "$NGINX_CONTAINER" "$APP_CONTAINER"; do
-            [ -n "$container_name" ] || continue
-            safe docker inspect "$container_name" --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' >/dev/null
+          STAT_TARGETS=()
+          for service in "${SERVICES[@]}"; do
+            while IFS= read -r container_name; do
+              [ -n "$container_name" ] || continue
+              STAT_TARGETS+=("$container_name")
+            done < <(safe docker ps -q --filter "label=com.docker.swarm.service.name=$service" --filter status=running)
           done
-          echo "DOCKER_STATS=$(safe docker stats --no-stream --format '{{.Name}} cpu={{.CPUPerc}} mem={{.MemUsage}} net={{.NetIO}} block={{.BlockIO}} pids={{.PIDs}}' "${SERVICES[@]}" | sanitize)"
+          if [ "${#STAT_TARGETS[@]}" -gt 0 ]; then
+            # docker stats .Name is the sanitized container name; all targets came from service labels above.
+            echo "DOCKER_STATS=$(safe docker stats --no-stream --format '{{.Name}} cpu={{.CPUPerc}} mem={{.MemUsage}} net={{.NetIO}} block={{.BlockIO}} pids={{.PIDs}}' "${STAT_TARGETS[@]}" | sanitize)"
+          else
+            emit DOCKER_STATS NOT_OBSERVED
+          fi
 
           temp_path="UNKNOWN"
           if [ -n "$NGINX_CONTAINER" ]; then
@@ -144,9 +152,33 @@ jobs:
           fi
           emit PHP_FPM_PORT_9000_ACCEPTING "$php9000"
 
+          log_count() {
+            local service="$1" pattern="$2"
+            docker service logs --since 5m --tail 200 "$service" 2>/dev/null | grep -Eic "$pattern" || true
+          }
+          NO_SPACE_LEFT_COUNT=0
+          TOO_MANY_OPEN_FILES_COUNT=0
+          WORKER_CONNECTION_LIMIT_COUNT=0
+          UPSTREAM_TIMEOUT_COUNT=0
+          CONNECT_FAILURE_COUNT=0
+          CLIENT_TIMEOUT_COUNT=0
+          OOM_COUNT=0
           for service in "$NGINX_SERVICE" "$APP_SERVICE"; do
-            echo "LOG_${service}=$(safe docker service logs --since 5m --tail 200 "$service" 2>/dev/null | grep -Ei 'no space left|too many open files|worker_connections are not enough|upstream timed out|connect\(\) failed|recv\(\) failed|send\(\) failed|client timed out|client intended to send too large body|prematurely closed connection|OOM|out of memory|killed' | sanitize | tr '\n' ';')"
+            NO_SPACE_LEFT_COUNT=$((NO_SPACE_LEFT_COUNT + $(log_count "$service" 'no space left')))
+            TOO_MANY_OPEN_FILES_COUNT=$((TOO_MANY_OPEN_FILES_COUNT + $(log_count "$service" 'too many open files')))
+            WORKER_CONNECTION_LIMIT_COUNT=$((WORKER_CONNECTION_LIMIT_COUNT + $(log_count "$service" 'worker_connections are not enough')))
+            UPSTREAM_TIMEOUT_COUNT=$((UPSTREAM_TIMEOUT_COUNT + $(log_count "$service" 'upstream timed out')))
+            CONNECT_FAILURE_COUNT=$((CONNECT_FAILURE_COUNT + $(log_count "$service" 'connect\(\) failed')))
+            CLIENT_TIMEOUT_COUNT=$((CLIENT_TIMEOUT_COUNT + $(log_count "$service" 'client timed out|client intended to send too large body|prematurely closed connection')))
+            OOM_COUNT=$((OOM_COUNT + $(log_count "$service" 'OOM|out of memory|killed')))
           done
+          emit NO_SPACE_LEFT_COUNT "$NO_SPACE_LEFT_COUNT"
+          emit TOO_MANY_OPEN_FILES_COUNT "$TOO_MANY_OPEN_FILES_COUNT"
+          emit WORKER_CONNECTION_LIMIT_COUNT "$WORKER_CONNECTION_LIMIT_COUNT"
+          emit UPSTREAM_TIMEOUT_COUNT "$UPSTREAM_TIMEOUT_COUNT"
+          emit CONNECT_FAILURE_COUNT "$CONNECT_FAILURE_COUNT"
+          emit CLIENT_TIMEOUT_COUNT "$CLIENT_TIMEOUT_COUNT"
+          emit OOM_COUNT "$OOM_COUNT"
 
           host_resource_pressure=false
           if df -P / 2>/dev/null | awk 'NR==2 {exit ($5+0 >= 95 ? 0 : 1)}' || \
@@ -155,18 +187,28 @@ jobs:
              awk '{exit (($1+0)/($3+0) >= 0.95 ? 0 : 1)}' /proc/sys/fs/file-nr 2>/dev/null; then
             host_resource_pressure=true
           fi
-          if [ "$local_ok" = true ] && [ "$public_ok" = false ]; then
-            classification=PUBLIC_INGRESS_FAILURE
+          temp_storage_pressure=false
+          if [ "${temp_fs:-UNKNOWN}" != UNKNOWN ] && echo "$temp_fs" | awk '{exit ($5+0 >= 95 ? 0 : 1)}'; then
+            temp_storage_pressure=true
+          elif [ "$NO_SPACE_LEFT_COUNT" -gt 0 ]; then
+            temp_storage_pressure=true
+          fi
+          network_listener_failure=false
+          if printf '%s\n' "$nstat_delta" | awk -F= '$1 ~ /Listen(Overflows|Drops)$/ && ($2+0) > 0 {found=1} END {exit(found ? 0 : 1)}'; then
+            network_listener_failure=true
+          fi
+          if [ "$temp_storage_pressure" = true ]; then
+            classification=REQUEST_BODY_TEMP_STORAGE_PRESSURE
+          elif [ "$host_resource_pressure" = true ]; then
+            classification=HOST_RESOURCE_PRESSURE
+          elif [ "$network_listener_failure" = true ]; then
+            classification=HOST_NETWORK_FAILURE
           elif [ "$port_8013" != true ] || [ "$local_ok" = false ]; then
             classification=LOCAL_NGINX_FAILURE
           elif [ "$php9000" = false ] || [[ "$app_health" =~ ^(unhealthy|exited|dead)$ ]]; then
             classification=APP_UPSTREAM_FAILURE
-          elif [ "$host_resource_pressure" = true ]; then
-            classification=HOST_RESOURCE_PRESSURE
-          elif [ "${temp_fs:-UNKNOWN}" != UNKNOWN ] && echo "$temp_fs" | awk '{exit ($5+0 >= 95 ? 0 : 1)}'; then
-            classification=REQUEST_BODY_TEMP_STORAGE_PRESSURE
-          elif echo "$(nstat_snapshot)" | grep -Eiq 'ListenOverflows=[1-9]|ListenDrops=[1-9]'; then
-            classification=HOST_NETWORK_FAILURE
+          elif [ "$local_ok" = true ] && [ "$public_ok" = false ]; then
+            classification=PUBLIC_PATH_FAILURE
           elif [ "$local_ok" = true ] && [ "$public_ok" = true ]; then
             classification=NO_FAILURE_OBSERVED
           else
