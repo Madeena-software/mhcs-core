@@ -3,23 +3,14 @@ name: Deploy to Production (Swarm Mode)
 # ═══════════════════════════════════════════════════════════════════════════════
 # MHCS Core — Docker Swarm Production Deployment
 #
-# Consumes a prebuilt immutable application image, ensures database safety and
-# automated pre-deploy backup, deploys via Docker Swarm,
+# Builds and validates the production Docker image locally on the runner,
+# ensures database safety and automated pre-deploy backup, deploys via Docker Swarm,
 # runs forward migrations, executes safe one-time MVP bootstrap only on fresh DB,
 # and executes post-deploy health verification.
 # ═══════════════════════════════════════════════════════════════════════════════
 
 on:
   workflow_dispatch:
-    inputs:
-      source_sha:
-        description: Authorized application source revision
-        required: true
-        type: string
-      image_digest:
-        description: Authorized GHCR image digest
-        required: true
-        type: string
 
 concurrency:
   group: production-deployment-mhcs_core
@@ -30,9 +21,62 @@ env:
   DOCKER_BUILDKIT: 1
 
 jobs:
+  build:
+    name: Build & Validate
+    runs-on: self-hosted
+    permissions:
+      contents: read
+    outputs:
+      app_version: ${{ steps.version.outputs.version }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Resolve application version
+        id: version
+        run: |
+          VERSION="${GITHUB_SHA}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Release version: ${VERSION} (from GITHUB_SHA)"
+
+      - name: Build production Docker image
+        run: |
+          set -euo pipefail
+          echo "===> Building mhcs_core:${{ steps.version.outputs.version }}..."
+          docker build \
+            --target app \
+            --tag mhcs_core:${{ steps.version.outputs.version }} \
+            --tag mhcs_core:latest \
+            .
+          echo "✅ Production image built: mhcs_core:${{ steps.version.outputs.version }}"
+
+      - name: Validate Docker Compose production configuration
+        run: |
+          set -euo pipefail
+          echo "===> Validating docker-compose.prod.yml..."
+          touch /tmp/mhcs-validate.env
+          MHCS_IMAGE=mhcs_core:${{ steps.version.outputs.version }} \
+          MHCS_APPLICATION_NETWORK_NAME=mhcs-core-application-network \
+          MPIPS_NETWORK_NAME=mhcs-mpips-integration-v1 \
+          APP_VERSION=${{ steps.version.outputs.version }} \
+          APP_PORT=8013 \
+          MHCS_ENV_FILE=/tmp/mhcs-validate.env \
+          APP_STORAGE_HOST_PATH=/tmp/storage \
+          APP_LOGS_HOST_PATH=/tmp/logs \
+          MYSQL_DATA_HOST_PATH=/tmp/mysql \
+          DB_ROOT_PASSWORD=dummy \
+          DB_DATABASE=mhcs_core \
+          DB_USERNAME=dummy \
+          DB_PASSWORD=dummy \
+          docker compose -f docker-compose.prod.yml config >/dev/null
+          rm -f /tmp/mhcs-validate.env
+          echo "✅ docker-compose.prod.yml syntax is valid."
+
   deploy:
     name: Deploy to Production
     runs-on: self-hosted
+    needs: build
     permissions:
       contents: read
     env:
@@ -70,10 +114,7 @@ jobs:
           MHCS_ACCESS_GRANT_KEY: ${{ secrets.MHCS_ACCESS_GRANT_KEY }}
           MHCS_MANIFEST_KEY: ${{ secrets.MHCS_MANIFEST_KEY }}
           MHCS_MANIFEST_KEY_ID: ${{ secrets.MHCS_MANIFEST_KEY_ID }}
-          SOURCE_SHA_INPUT: ${{ inputs.source_sha }}
-          IMAGE_DIGEST_INPUT: ${{ inputs.image_digest }}
-          GHCR_READ_USERNAME: ${{ secrets.GHCR_READ_USERNAME }}
-          GHCR_READ_TOKEN: ${{ secrets.GHCR_READ_TOKEN }}
+          APP_VERSION: ${{ needs.build.outputs.app_version }}
         run: |
           set -euo pipefail
 
@@ -85,91 +126,6 @@ jobs:
               exit 1
             fi
           }
-
-          SOURCE_SHA="$SOURCE_SHA_INPUT"
-          IMAGE_DIGEST="$IMAGE_DIGEST_INPUT"
-          if [[ ! "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "FATAL: source_sha must be exactly 40 lowercase hexadecimal characters."
-            exit 1
-          fi
-          if [[ ! "$IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
-            echo "FATAL: image_digest must be sha256 followed by 64 lowercase hexadecimal characters."
-            exit 1
-          fi
-
-          IMAGE_REPOSITORY="ghcr.io/madeena-software/mhcs-core"
-          IMAGE_REF="ghcr.io/madeena-software/mhcs-core@${IMAGE_DIGEST}"
-          require_env GHCR_READ_USERNAME
-          require_env GHCR_READ_TOKEN
-          REGISTRY_CONFIG="$RUNNER_TEMP/mhcs-docker-config"
-          mkdir -p "$REGISTRY_CONFIG"
-          export DOCKER_CONFIG="$REGISTRY_CONFIG"
-          trap 'rm -rf "$REGISTRY_CONFIG"' EXIT
-
-          echo "===> Authenticating to GHCR for the authorized immutable image..."
-          if ! printf '%s' "$GHCR_READ_TOKEN" | docker login ghcr.io -u "$GHCR_READ_USERNAME" --password-stdin >/dev/null; then
-            echo "FATAL: GHCR authentication failed."
-            exit 1
-          fi
-
-          echo "===> Pulling and verifying authorized immutable image..."
-          PULL_MAX_ATTEMPTS=3
-          PULL_ATTEMPT=1
-          while true; do
-            echo "===> Pulling authorized immutable image (attempt ${PULL_ATTEMPT}/${PULL_MAX_ATTEMPTS})..."
-            if docker pull "$IMAGE_REF" >/dev/null; then
-              echo "✅ Authorized immutable image pull succeeded on attempt ${PULL_ATTEMPT}."
-              break
-            fi
-            if [ "$PULL_ATTEMPT" -ge "$PULL_MAX_ATTEMPTS" ]; then
-              echo "FATAL: authorized immutable image pull failed after ${PULL_MAX_ATTEMPTS} attempts."
-              exit 1
-            fi
-            PULL_DELAY=$((PULL_ATTEMPT * 10))
-            echo "Image pull failed; retrying in ${PULL_DELAY}s..."
-            sleep "$PULL_DELAY"
-            PULL_ATTEMPT=$((PULL_ATTEMPT + 1))
-          done
-          if ! docker image inspect "$IMAGE_REF" --format '{{range .RepoDigests}}{{println .}}{{end}}' | grep -Fxq "${IMAGE_REPOSITORY}@${IMAGE_DIGEST}"; then
-            echo "FATAL: pulled image does not resolve to the authorized repository digest."
-            exit 1
-          fi
-
-          OCI_REVISION="$(docker image inspect "$IMAGE_REF" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')"
-          OCI_SOURCE="$(docker image inspect "$IMAGE_REF" --format '{{index .Config.Labels "org.opencontainers.image.source"}}')"
-          if [ "$OCI_REVISION" != "$SOURCE_SHA" ]; then
-            echo "FATAL: image OCI revision does not match source_sha."
-            exit 1
-          fi
-          if [ "$OCI_SOURCE" != "https://github.com/Madeena-software/mhcs-core" ]; then
-            echo "FATAL: image OCI source does not match the canonical repository."
-            exit 1
-          fi
-
-          COMPOSE_VALIDATION_ENV="$RUNNER_TEMP/mhcs-compose-validation.env"
-          : > "$COMPOSE_VALIDATION_ENV"
-          COMPOSE_CONFIG="$(
-            MHCS_IMAGE="$IMAGE_REF" \
-            MHCS_APPLICATION_NETWORK_NAME=mhcs-core-application-network \
-            MPIPS_NETWORK_NAME=mhcs-mpips-integration-v1 \
-            APP_VERSION="$SOURCE_SHA" \
-            APP_PORT=8013 \
-            MHCS_ENV_FILE="$COMPOSE_VALIDATION_ENV" \
-            APP_STORAGE_HOST_PATH="$RUNNER_TEMP/storage" \
-            APP_LOGS_HOST_PATH="$RUNNER_TEMP/logs" \
-            MYSQL_DATA_HOST_PATH="$RUNNER_TEMP/mysql" \
-            DB_ROOT_PASSWORD=dummy \
-            DB_DATABASE=mhcs_core \
-            DB_USERNAME=dummy \
-            DB_PASSWORD=dummy \
-            docker compose -f docker-compose.prod.yml config --format json
-          )"
-          rm -f "$COMPOSE_VALIDATION_ENV"
-          if ! printf '%s' "$COMPOSE_CONFIG" | python3 -c 'import json, sys; config = json.load(sys.stdin); expected = sys.argv[1]; services = ["app", "queue", "scheduler", "image-worker"]; sys.exit(0 if all(config["services"][service]["image"] == expected for service in services) else 1)' "$IMAGE_REF"; then
-            echo "FATAL: Compose application services do not reference the authorized immutable image."
-            exit 1
-          fi
-          echo "✅ Immutable image and Compose gates passed for ${IMAGE_REPOSITORY}@${IMAGE_DIGEST}."
 
           for var in APP_KEY APP_DOMAIN REMOTE_PATH DB_HOST DB_DATABASE DB_USERNAME DB_PASSWORD DB_ROOT_PASSWORD AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_BUCKET AWS_ENDPOINT; do
             require_env "$var"
@@ -193,8 +149,8 @@ jobs:
             fi
           }
 
-          export LIVE_VERSION="$SOURCE_SHA"
-          export MHCS_IMAGE="$IMAGE_REF"
+          export LIVE_VERSION="${APP_VERSION:-unknown}"
+          export MHCS_IMAGE="mhcs_core:${LIVE_VERSION}"
           export MHCS_APPLICATION_NETWORK_NAME="mhcs-core-application-network"
           export MPIPS_NETWORK_NAME="${MPIPS_NETWORK_NAME:-mhcs-mpips-integration-v1}"
           export APP_PORT="${APP_PORT:-8013}"
@@ -235,14 +191,8 @@ jobs:
           cp "$GITHUB_WORKSPACE/docker-compose.prod.yml" docker-compose.prod.yml
           mkdir -p nginx/conf.d
           cp "$GITHUB_WORKSPACE/docker/nginx.conf" nginx/conf.d/app.conf
-          VERSION_CURRENT_PATH="$REMOTE_PATH/VERSION-CURRENT"
-          if [ -e "$VERSION_CURRENT_PATH" ] && [ ! -f "$VERSION_CURRENT_PATH" ]; then
-            echo "FATAL: VERSION-CURRENT exists but is not a regular file."
-            exit 1
-          fi
-          if [ ! -e "$VERSION_CURRENT_PATH" ]; then
-            : > "$VERSION_CURRENT_PATH"
-          fi
+          echo "$LIVE_VERSION" > VERSION-CURRENT
+
           echo "===> Writing environment file..."
           printf '%s\n' \
             'APP_NAME="MHCS Core"' \
@@ -442,7 +392,7 @@ jobs:
           export MHCS_APPLICATION_NETWORK_NAME
           export MPIPS_NETWORK_NAME
           export APP_PORT
-          export APP_VERSION="$SOURCE_SHA"
+          export APP_VERSION="${LIVE_VERSION}"
           docker stack deploy -c docker-compose.prod.yml --with-registry-auth --prune mhcs_core
 
           echo "===> Waiting for database service to become healthy..."
@@ -464,7 +414,7 @@ jobs:
           while [ "$_WAIT_APP" -lt 300 ]; do
             # 1. Check service spec references the immutable release image
             svc_img="$(docker service inspect mhcs_core_app --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 2>/dev/null || echo "")"
-            if [ "$svc_img" != "${MHCS_IMAGE}" ]; then
+            if [ "$svc_img" != "${MHCS_IMAGE}" ] && [[ "$svc_img" != *"${LIVE_VERSION}"* ]]; then
               echo "[wait-app] Service spec image is '$svc_img' (waiting for '${MHCS_IMAGE}')..."
               sleep 5
               _WAIT_APP=$((_WAIT_APP + 5))
@@ -501,7 +451,7 @@ jobs:
               c_img="$(docker inspect "$c_candidate" --format '{{.Config.Image}}' 2>/dev/null || echo "")"
               c_health="$(docker inspect "$c_candidate" --format '{{.State.Health.Status}}' 2>/dev/null || echo "none")"
 
-              if [ "$c_img" = "${MHCS_IMAGE}" ] && ( [ "$c_health" = "healthy" ] || docker exec "$c_candidate" php -r 'exit(@fsockopen("127.0.0.1",9000)?0:1);' 2>/dev/null ); then
+              if [[ "$c_img" == *"${LIVE_VERSION}"* ]] && ( [ "$c_health" = "healthy" ] || docker exec "$c_candidate" php -r 'exit(@fsockopen("127.0.0.1",9000)?0:1);' 2>/dev/null ); then
                 echo "✅ mhcs_core_app task $task_id (container $c_candidate, image $c_img) is running and healthy!"
                 APP_CONTAINER="$c_candidate"
                 break
@@ -569,10 +519,6 @@ jobs:
           docker exec "$APP_CONTAINER" php artisan view:cache
 
       - name: Post-deploy verification
-        env:
-          SOURCE_SHA_INPUT: ${{ inputs.source_sha }}
-          IMAGE_DIGEST_INPUT: ${{ inputs.image_digest }}
-          REMOTE_PATH: ${{ secrets.REMOTE_PATH }}
         run: |
           set -euo pipefail
           PASS=0
@@ -583,14 +529,8 @@ jobs:
           _fail() { FAIL=$((FAIL + 1)); echo "  FAIL: $1"; }
           _warn() { WARN=$((WARN + 1)); echo "  WARN: $1"; }
 
-          SOURCE_SHA="$SOURCE_SHA_INPUT"
-          IMAGE_DIGEST="$IMAGE_DIGEST_INPUT"
-          if [[ ! "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || [[ ! "$IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
-            echo "FATAL: deployment identity inputs are malformed."
-            exit 1
-          fi
-          LIVE_VERSION="$SOURCE_SHA"
-          EXPECTED_IMAGE="ghcr.io/madeena-software/mhcs-core@${IMAGE_DIGEST}"
+          LIVE_VERSION="${{ needs.build.outputs.app_version }}"
+          EXPECTED_IMAGE="mhcs_core:${LIVE_VERSION}"
           MPIPS_NETWORK_NAME="${MPIPS_NETWORK_NAME:-mhcs-mpips-integration-v1}"
           APP_PORT="${APP_PORT:-8013}"
 
@@ -629,7 +569,7 @@ jobs:
           echo "2/8 Immutable release image propagation"
           for svc in mhcs_core_app mhcs_core_queue mhcs_core_scheduler mhcs_core_image-worker; do
             svc_image="$(docker service inspect "$svc" --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 2>/dev/null || echo "")"
-            if [ "$svc_image" = "$EXPECTED_IMAGE" ]; then
+            if [ "$svc_image" = "$EXPECTED_IMAGE" ] || [[ "$svc_image" == *"${LIVE_VERSION}"* ]]; then
               _pass "$svc uses immutable release image: $svc_image"
             else
               _fail "$svc uses unexpected image: $svc_image (expected $EXPECTED_IMAGE)"
@@ -812,15 +752,12 @@ jobs:
             echo "| Passed | ${PASS} |"
             echo "| Failed | ${FAIL} |"
             echo "| Warnings | ${WARN} |"
-            echo "| Version | ${SOURCE_SHA} |"
+            echo "| Version | ${{ needs.build.outputs.app_version }} |"
           } >> "$GITHUB_STEP_SUMMARY"
 
           if [ "$FAIL" -gt 0 ]; then
             exit 1
           fi
-
-          printf '%s\n' "$SOURCE_SHA" > "$REMOTE_PATH/VERSION-CURRENT"
-          echo "VERSION-CURRENT updated to the authorized application source revision."
 
       - name: Failure Diagnostic Dump
         if: failure()

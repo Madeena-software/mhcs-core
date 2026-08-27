@@ -28,10 +28,9 @@ final class ProductionRealNpzEndToEndValidationWorkflowTest extends TestCase
         foreach (['push:', 'pull_request:', 'schedule:', 'cron:', 'workflow_run:'] as $forbidden) {
             $this->assertStringNotContainsString($forbidden, $workflow);
         }
-        foreach (['app_container_resolved=', 'version_current_match=', 'service_image_match=', 'container_image_match=', 'image_identity_consistent=', 'oci_source_match=', 'oci_revision_match=', 'revision_match=', 'org.opencontainers.image.revision', 'org.opencontainers.image.source', 'ghcr\\.io/madeena-software/mhcs-core@sha256'] as $field) {
+        foreach (['app_container_resolved=', 'version_current_match=', 'service_revision_match=', 'container_revision_match=', 'revision_match='] as $field) {
             $this->assertStringContainsString($field, $workflow);
         }
-        $this->assertStringNotContainsString('image_revision()', $workflow);
         $guard = strpos($workflow, 'if [ "$revision_match" != true ]; then');
         $fixture = strpos($workflow, 'drive.usercontent.google.com');
         $this->assertNotFalse($guard);

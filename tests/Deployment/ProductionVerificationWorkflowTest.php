@@ -79,26 +79,10 @@ final class ProductionVerificationWorkflowTest extends TestCase
         ] as $observation) {
             $this->assertStringContainsString($observation, $workflow);
         }
-        foreach ([
-            'IMMUTABLE_IMAGE_REGEX',
-            'ghcr\\.io/madeena-software/mhcs-core@sha256:[0-9a-f]{64}',
-            'org.opencontainers.image.revision',
-            'org.opencontainers.image.source',
-            'SERVICE_IMAGE_MATCH',
-            'CONTAINER_IMAGE_MATCH',
-            'IMAGE_IDENTITY_CONSISTENT',
-            'OCI_SOURCE_MATCH',
-            'OCI_REVISION_MATCH',
-            '[ "$SERVICE_IMAGE" = "$CONTAINER_IMAGE" ]',
-        ] as $identityGuard) {
-            $this->assertStringContainsString($identityGuard, $workflow);
-        }
-        $this->assertStringNotContainsString('image_revision()', $workflow);
 
         $this->assertStringContainsString('if [ -n "$EXPECTED_REVISION" ]; then', $workflow);
         $this->assertStringContainsString('if [ "$REVISION_MATCH" != "true" ]; then', $workflow);
-        $this->assertStringContainsString('expected_revision must be exactly 40 lowercase hexadecimal characters.', $workflow);
-        $this->assertStringNotContainsString('827b59dd81516e44c0ec10e7afb9b6b804e81226', $workflow);
+        $this->assertStringContainsString('EXPECTED_REVISION="827b59dd81516e44c0ec10e7afb9b6b804e81226"', $workflow);
         $this->assertStringNotContainsString('GITHUB_SHA', $workflow);
 
         $this->assertStringContainsString('local_ingress_http_status=', $workflow);

@@ -53,12 +53,6 @@ network boundary. MHCS exposes no public MPIPS route. Workflow implementation,
 host values, credentials, environment secrets, and private data remain outside
 this README.
 
-The application image is built and published outside production. Production
-consumes only `ghcr.io/madeena-software/mhcs-core` by immutable digest.
-`source_sha` identifies the application source embedded in that image and may
-differ from the workflow/control-plane `GITHUB_SHA`. Production pulls use
-dedicated read-only GHCR credentials; there is no production build fallback.
-
 The current bounded deployment and verification evidence is recorded in
 `docs/mvp/evidence/production-swarm-deployment.md` and
 `docs/mvp/evidence/prestige-production-rehearsal-data.md`; it does not by

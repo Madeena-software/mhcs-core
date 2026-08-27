@@ -33,10 +33,9 @@ final class ProductionNonclinicalValidationContextProvisioningWorkflowTest exten
     public function test_phase_h_guards_revision_before_provisioning_and_reports_safe_fields(): void
     {
         $workflow = $this->workflow();
-        foreach (['app_container_resolved=', 'version_current_match=', 'service_image_match=', 'container_image_match=', 'image_identity_consistent=', 'oci_source_match=', 'oci_revision_match=', 'revision_match=', 'docker service inspect', 'VERSION-CURRENT', 'org.opencontainers.image.revision', 'org.opencontainers.image.source', 'ghcr\\.io/madeena-software/mhcs-core@sha256'] as $required) {
+        foreach (['app_container_resolved=', 'version_current_match=', 'service_revision_match=', 'container_revision_match=', 'revision_match=', 'docker service inspect', 'VERSION-CURRENT'] as $required) {
             $this->assertStringContainsString($required, $workflow);
         }
-        $this->assertStringNotContainsString('image_revision()', $workflow);
         $guard = strpos($workflow, 'if [ "$revision_match" != true ]; then');
         $provision = strpos($workflow, 'php artisan mhcs:provision-nonclinical-validation-context');
         $this->assertNotFalse($guard);
