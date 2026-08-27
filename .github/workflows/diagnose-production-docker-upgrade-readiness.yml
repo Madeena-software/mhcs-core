@@ -1,0 +1,174 @@
+name: Diagnose production Docker upgrade readiness
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: production-deployment-mhcs_core
+  cancel-in-progress: false
+
+jobs:
+  diagnose:
+    name: Read-only production Docker upgrade readiness diagnostic
+    runs-on: self-hosted
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Inspect upgrade readiness
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo '===> Operating system'
+          awk -F= '$1 == "ID" || $1 == "VERSION_ID" || $1 == "VERSION_CODENAME" { gsub(/^"|"$/, "", $2); key = ($1 == "VERSION_CODENAME" ? "OS_CODENAME" : "OS_" $1); print key "=" $2 }' /etc/os-release 2>/dev/null || true
+
+          echo '===> Docker package provenance'
+          docker_packages=(docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin)
+          for package in "${docker_packages[@]}"; do
+            status_version="$(dpkg-query -W -f='${Status}|${Version}' "$package" 2>/dev/null || true)"
+            if [[ "$status_version" == *'install ok installed|'* ]]; then
+              installed_version="${status_version##*|}"
+              echo "${package}=INSTALLED version=${installed_version}"
+            else
+              installed_version='NOT_INSTALLED'
+              echo "${package}=NOT_INSTALLED"
+            fi
+
+            policy="$(apt-cache policy "$package" 2>/dev/null || true)"
+            if grep -Eq 'https?://([^/@:]+:[^/@]*@)?download\.docker\.com/' <<< "$policy"; then
+              echo "${package}-origin=OFFICIAL_DOCKER"
+            elif [ -n "$policy" ]; then
+              echo "${package}-origin=OTHER_OR_UNKNOWN"
+            else
+              echo "${package}-origin=UNKNOWN"
+            fi
+          done
+
+          echo '===> Docker package holds'
+          held_packages="$(apt-mark showhold 2>/dev/null || true)"
+          for package in "${docker_packages[@]}"; do
+            if ! dpkg-query -W -f='${Status}' "$package" >/dev/null 2>&1; then
+              echo "${package}=UNKNOWN"
+            elif grep -Fxq "$package" <<< "$held_packages"; then
+              echo "${package}=HELD"
+            else
+              echo "${package}=NOT_HELD"
+            fi
+          done
+
+          echo '===> Docker APT repository'
+          apt_sources='/etc/apt/sources.list /etc/apt/sources.list.d'
+          if grep -RhsEq '^[[:space:]]*deb(-src)?[[:space:]].*download\.docker\.com/linux/ubuntu' $apt_sources 2>/dev/null; then
+            echo 'DOCKER_APT_REPOSITORY=OFFICIAL_DOCKER'
+          elif grep -RhsEq '^[[:space:]]*deb(-src)?[[:space:]]' $apt_sources 2>/dev/null; then
+            echo 'DOCKER_APT_REPOSITORY=OTHER'
+          else
+            echo 'DOCKER_APT_REPOSITORY=NOT_FOUND'
+          fi
+
+          echo '===> Docker 29.7.2 availability from local APT metadata'
+          for package in docker-ce docker-ce-cli; do
+            versions="$(apt-cache madison "$package" 2>/dev/null | awk -F'|' '{gsub(/^[[:space:]]+|[[:space:]]+$/, "", $2); print $2}' || true)"
+            target_version="$(grep -E '(^|:)29\.7\.2(-|$)' <<< "$versions" | head -n 1 || true)"
+            if [ -n "$target_version" ]; then
+              echo "${package//-/_}_29_7_2=AVAILABLE version=${target_version}"
+            else
+              echo "${package//-/_}_29_7_2=NOT_OBSERVED"
+            fi
+          done
+          latest_index="$(find /var/lib/apt/lists -maxdepth 1 -type f -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -n 1 || true)"
+          if [ -n "$latest_index" ]; then
+            index_timestamp="${latest_index%% *}"
+            echo "APT_INDEX_LATEST_UTC=$(date -u -d "@${index_timestamp%.*}" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || echo UNKNOWN)"
+          else
+            echo 'APT_INDEX_LATEST_UTC=UNKNOWN'
+          fi
+
+          echo '===> Docker daemon and live restore'
+          docker version --format 'Client={{.Client.Version}} Server={{.Server.Version}}' 2>/dev/null || true
+          if [ ! -r /etc/docker/daemon.json ]; then
+            echo 'DAEMON_JSON=UNREADABLE'
+          elif ! command -v python3 >/dev/null 2>&1; then
+            echo 'DAEMON_JSON=UNREADABLE'
+          else
+            python3 -c 'import json, sys; config = json.load(sys.stdin); value = config.get("live-restore"); print("LIVE_RESTORE=TRUE" if value is True else "LIVE_RESTORE=FALSE" if value is False else "LIVE_RESTORE=UNSET")' < /etc/docker/daemon.json || echo 'DAEMON_JSON=INVALID'
+          fi
+          if systemctl show docker --property=ExecStart --value 2>/dev/null | grep -Fq -- '--live-restore'; then
+            echo 'DOCKERD_LIVE_RESTORE_FLAG=TRUE'
+          else
+            echo 'DOCKERD_LIVE_RESTORE_FLAG=FALSE'
+          fi
+
+          echo '===> Swarm local state'
+          swarm_state="$(docker info --format '{{.Swarm.LocalNodeState}}' 2>/dev/null || true)"
+          control_available="$(docker info --format '{{.Swarm.ControlAvailable}}' 2>/dev/null || true)"
+          node_id="$(docker info --format '{{.Swarm.NodeID}}' 2>/dev/null || true)"
+          echo "SwarmLocalNodeState=${swarm_state}"
+          echo "SwarmControlAvailable=${control_available}"
+          echo "SwarmNodeID=${node_id}"
+          if [ "$control_available" = 'true' ]; then
+            echo 'LOCAL_SWARM_ROLE=MANAGER'
+          elif [ "$swarm_state" = 'active' ]; then
+            echo 'LOCAL_SWARM_ROLE=WORKER'
+          elif [ "$swarm_state" = 'inactive' ]; then
+            echo 'LOCAL_SWARM_ROLE=INACTIVE'
+          else
+            echo 'LOCAL_SWARM_ROLE=INDETERMINATE'
+          fi
+
+          echo '===> Manager and quorum readiness'
+          manager_count=0
+          reachable_count=0
+          quorum=0
+          if [ "$control_available" = 'true' ]; then
+            manager_status="$(docker node ls --format '{{.ManagerStatus}}' 2>/dev/null || true)"
+            manager_count="$(grep -c '.' <<< "$manager_status" || true)"
+            reachable_count="$(grep -Ec 'Leader|Reachable' <<< "$manager_status" || true)"
+            leader_or_reachable="$(docker node inspect self --format '{{.ManagerStatus.Leader}} {{.ManagerStatus.Reachability}}' 2>/dev/null || true)"
+            echo "MANAGER_COUNT=${manager_count}"
+            echo "REACHABLE_MANAGER_COUNT=${reachable_count}"
+            echo "LOCAL_MANAGER_STATUS=${leader_or_reachable}"
+            quorum=$((manager_count / 2 + 1))
+            if [ "$manager_count" -le 1 ]; then
+              echo 'SWARM_MAINTENANCE_QUORUM=UNSAFE_SINGLE_MANAGER'
+            elif [ "$reachable_count" -ge "$quorum" ] && [ "$((reachable_count - 1))" -ge "$quorum" ]; then
+              echo 'SWARM_MAINTENANCE_QUORUM=SAFE_FOR_ONE_MANAGER_TEMPORARY_OUTAGE'
+            else
+              echo 'SWARM_MAINTENANCE_QUORUM=UNSAFE_QUORUM'
+            fi
+          else
+            echo 'SWARM_MAINTENANCE_QUORUM=INDETERMINATE'
+          fi
+
+          echo '===> Local node workload'
+          local_availability="$(docker node inspect self --format '{{.Spec.Availability}}' 2>/dev/null || echo UNKNOWN)"
+          running_tasks="$(docker node ps self --filter desired-state=running --format '{{.ID}}\t{{.Name}}' 2>/dev/null || true)"
+          echo "LOCAL_NODE_AVAILABILITY=${local_availability}"
+          echo "LOCAL_RUNNING_SWARM_TASK_COUNT=$(grep -c '.' <<< "$running_tasks" || true)"
+          echo "LOCAL_RUNNING_SWARM_TASK_SERVICES=$(awk -F '\t' '{print $2}' <<< "$running_tasks" | paste -sd, -)"
+
+          echo '===> Docker daemon health'
+          echo "DOCKER_SERVICE_ACTIVE=$(systemctl is-active docker 2>/dev/null || echo UNKNOWN)"
+          if docker info --format '{{.ServerVersion}}' >/dev/null 2>&1; then
+            echo 'DOCKER_INFO_AVAILABLE=TRUE'
+          else
+            echo 'DOCKER_INFO_AVAILABLE=FALSE'
+          fi
+
+          echo '===> Readiness classification'
+          if [ "$manager_count" = '1' ]; then
+            echo 'READINESS=SWARM_MAINTENANCE_RISK'
+          elif [ "$swarm_state" != 'active' ]; then
+            echo 'READINESS=INDETERMINATE'
+          elif ! grep -RhsEq '^[[:space:]]*deb(-src)?[[:space:]].*download\.docker\.com/linux/ubuntu' $apt_sources 2>/dev/null; then
+            echo 'READINESS=PACKAGE_SOURCE_BLOCKER'
+          elif [ "$(apt-cache madison docker-ce 2>/dev/null | grep -Ec '(^|:)29\.7\.2(-|$)' || true)" -eq 0 ] || [ "$(apt-cache madison docker-ce-cli 2>/dev/null | grep -Ec '(^|:)29\.7\.2(-|$)' || true)" -eq 0 ]; then
+            echo 'READINESS=NEEDS_PACKAGE_INDEX_REFRESH'
+          elif [ "$control_available" = 'true' ] && [ "$reachable_count" -ge "$quorum" ] && [ "$((reachable_count - 1))" -lt "$quorum" ]; then
+            echo 'READINESS=SWARM_MAINTENANCE_RISK'
+          elif [ "$control_available" = 'false' ]; then
+            echo 'READINESS=READY_FOR_UPGRADE_PLANNING'
+          else
+            echo 'READINESS=INDETERMINATE'
+          fi
