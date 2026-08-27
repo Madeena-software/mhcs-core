@@ -65,37 +65,37 @@ jobs:
           deb822_result='INDETERMINATE'
           if command -v python3 >/dev/null 2>&1; then
             deb822_result="$(python3 - "$official_docker_uri" <<'PY'
-            import glob
-            import sys
+          import glob
+          import sys
 
-            official_uri = sys.argv[1]
-            has_source = False
-            has_official = False
-            def inspect_stanza(fields):
-                global has_source, has_official
-                types = fields.get('types', [])
-                uris = fields.get('uris', [])
-                if 'deb' not in types or fields.get('enabled', ['yes']) == ['no']:
-                    return
-                has_source = True
-                if official_uri in uris:
-                    has_official = True
+          official_uri = sys.argv[1]
+          has_source = False
+          has_official = False
+          def inspect_stanza(fields):
+              global has_source, has_official
+              types = fields.get('types', [])
+              uris = fields.get('uris', [])
+              if 'deb' not in types or fields.get('enabled', ['yes']) == ['no']:
+                  return
+              has_source = True
+              if official_uri in uris:
+                  has_official = True
 
-            for path in glob.glob('/etc/apt/sources.list.d/*.sources'):
-                fields = {}
-                for line in open(path, encoding='utf-8', errors='replace'):
-                    line = line.strip()
-                    if not line:
-                        inspect_stanza(fields)
-                        fields = {}
-                        continue
-                    if line.startswith('#') or ':' not in line:
-                        continue
-                    key, value = line.split(':', 1)
-                    fields.setdefault(key.strip().lower(), []).extend(value.split())
-                inspect_stanza(fields)
-            print('OFFICIAL' if has_official else 'OTHER' if has_source else 'NONE')
-            PY
+          for path in glob.glob('/etc/apt/sources.list.d/*.sources'):
+              fields = {}
+              for line in open(path, encoding='utf-8', errors='replace'):
+                  line = line.strip()
+                  if not line:
+                      inspect_stanza(fields)
+                      fields = {}
+                      continue
+                  if line.startswith('#') or ':' not in line:
+                      continue
+                  key, value = line.split(':', 1)
+                  fields.setdefault(key.strip().lower(), []).extend(value.split())
+              inspect_stanza(fields)
+          print('OFFICIAL' if has_official else 'OTHER' if has_source else 'NONE')
+          PY
             )"
           fi
           if [ "$legacy_official" = 'true' ] || [ "$deb822_result" = 'OFFICIAL' ]; then

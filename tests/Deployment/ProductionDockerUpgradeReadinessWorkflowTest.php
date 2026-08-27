@@ -40,7 +40,7 @@ final class ProductionDockerUpgradeReadinessWorkflowTest extends TestCase
         $this->assertStringContainsString("'types'", $workflow);
         $this->assertStringContainsString("'uris'", $workflow);
         $this->assertStringContainsString('inspect_stanza', $workflow);
-        $this->assertStringContainsString("if not line:", $workflow);
+        $this->assertStringContainsString('if not line:', $workflow);
         $this->assertStringContainsString('DOCKER_APT_REPOSITORY=INDETERMINATE', $workflow);
         $this->assertStringContainsString('apt-cache madison', $workflow);
         $this->assertStringContainsString('29\\.7\\.2', $workflow);
