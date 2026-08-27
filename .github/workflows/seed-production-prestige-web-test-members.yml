@@ -1,0 +1,125 @@
+name: Seed production Prestige web-test Members
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_application_revision:
+        description: Confirm the exact verified application revision.
+        required: true
+        type: string
+      authorization_marker:
+        description: Type the exact one-time authorization marker.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-deployment-mhcs_core
+  cancel-in-progress: false
+
+jobs:
+  seed:
+    name: Seed exactly two Prestige web-test Members
+    runs-on: self-hosted
+    timeout-minutes: 10
+    steps:
+      - name: Run guarded one-time seed
+        env:
+          EXPECTED_APPLICATION_REVISION: ${{ inputs.expected_application_revision }}
+          AUTHORIZATION_MARKER: ${{ inputs.authorization_marker }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          EXPECTED_REVISION="2361ff074e31b3c70419ab21a1710fec024ff5d3"
+          SERVICE="mhcs_core_app"
+          APP_CONTAINER=""
+
+          if [ "${EXPECTED_APPLICATION_REVISION}" != "$EXPECTED_REVISION" ]; then
+            echo "FATAL: expected application revision does not match the fixed verified revision."
+            exit 1
+          fi
+          if [ "${AUTHORIZATION_MARKER}" != "AUTHORIZE_ONE_PRESTIGE_WEB_TEST_MEMBER_SEED" ]; then
+            echo "FATAL: exact one-time authorization marker is required."
+            exit 1
+          fi
+
+          if [ "$(docker service ls --format '{{.Replicas}}' --filter "name=${SERVICE}" | head -n 1)" != "1/1" ]; then
+            echo "FATAL: mhcs_core_app is not exactly one healthy replica."
+            exit 1
+          fi
+          SERVICE_IMAGE="$(docker service inspect "$SERVICE" --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}')"
+          if [[ "$SERVICE_IMAGE" != "mhcs_core:${EXPECTED_REVISION}" && "$SERVICE_IMAGE" != "mhcs_core:${EXPECTED_REVISION}"@sha256:* ]]; then
+            echo "FATAL: service image is not the fixed verified application revision."
+            exit 1
+          fi
+          TASK_ID="$(docker service ps "$SERVICE" --filter desired-state=running --no-trunc --format '{{.ID}}' | head -n 1)"
+          [ -n "$TASK_ID" ] || { echo "FATAL: no desired running task found."; exit 1; }
+          TASK_STATE="$(docker service ps "$SERVICE" --filter "id=${TASK_ID}" --format '{{.CurrentState}}')"
+          [[ "$TASK_STATE" == Running* ]] || { echo "FATAL: desired task is not running."; exit 1; }
+          while IFS= read -r candidate; do
+            candidate_task="$(docker inspect "$candidate" --format '{{index .Config.Labels "com.docker.swarm.task.id"}}' 2>/dev/null || true)"
+            if [ "$candidate_task" = "$TASK_ID" ]; then APP_CONTAINER="$candidate"; break; fi
+          done < <(docker ps -q --filter "label=com.docker.swarm.service.name=${SERVICE}" --filter status=running)
+          [ -n "$APP_CONTAINER" ] || { echo "FATAL: exact task container was not found."; exit 1; }
+          CONTAINER_IMAGE="$(docker inspect "$APP_CONTAINER" --format '{{.Config.Image}}')"
+          if [[ "$CONTAINER_IMAGE" != "mhcs_core:${EXPECTED_REVISION}" && "$CONTAINER_IMAGE" != "mhcs_core:${EXPECTED_REVISION}"@sha256:* ]]; then
+            echo "FATAL: container image is not the fixed verified application revision."
+            exit 1
+          fi
+          [ "$(docker exec "$APP_CONTAINER" cat /var/www/html/VERSION-CURRENT)" = "$EXPECTED_REVISION" ] || { echo "FATAL: VERSION-CURRENT mismatch."; exit 1; }
+          [ "$(docker inspect "$APP_CONTAINER" --format '{{.State.Health.Status}}')" = "healthy" ] || { echo "FATAL: application container is not healthy."; exit 1; }
+          echo "production_revision_verified=true"
+
+          docker exec "$APP_CONTAINER" php -r '
+            require "vendor/autoload.php";
+            $app = require "bootstrap/app.php";
+            $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+            $db = Illuminate\Support\Facades\DB::class;
+            $users = $db::table("users")->where("email", "like", "%@prestige.madeena-xray.com")->get(["id", "account_status", "login_enabled"]);
+            $members = $db::table("members")->whereIn("user_id", $users->pluck("id"))->get(["id", "user_id"]);
+            $site = $db::table("examination_site_refs")->where("operator_site_id", "site-prestige")->where("code", "PRES-01")->where("active", true)->first();
+            $offering = $db::table("service_offerings")->where("code", "SYN-CHEST-A")->where("active", true)->first();
+            $emails = ["gbsuparta@ugm.ac.id", "ipang.prestige@madeena-xray.com"];
+            $sources = ["prestige:web-test:gbsuparta:credit", "prestige:web-test:ipang:credit", "prestige:web-test:gbsuparta:charge", "prestige:web-test:ipang:charge"];
+            $schedule = $db::table("shift_schedules")->where("display_reference", "JAD-PRES-NPZ-TEST")->get(["id"]);
+            $eligible = $schedule->isEmpty() ? collect() : $db::table("operator_eligible_shifts")->where("member_schedule_id", $schedule->first()->id)->get(["id"]);
+            $assignments = $eligible->isEmpty() ? collect() : $db::table("operator_shift_assignments")->where("operator_eligible_shift_id", $eligible->first()->id)->get(["id"]);
+            $profiles = $db::table("operator_profiles")->whereIn("employee_code", ["OPR-PRES-01", "OPR-PRES-02", "OPR-PRES-03", "OPR-PRES-04", "OPR-PRES-05"])->get(["id"]);
+            if ($users->count() !== 37 || $members->count() !== 37 || $users->where("account_status", "active")->count() !== 37 || $users->where("login_enabled", true)->count() !== 37 || $members->pluck("user_id")->unique()->count() !== 37 || $site === null || $offering === null || $db::table("operator_profiles")->where("employee_code", "like", "OPR-PRES-%")->where("active", true)->count() !== 5 || $db::table("users")->whereIn("email", $emails)->exists() || $schedule->isNotEmpty() || $db::table("point_ledger_entries")->whereIn("source_reference", $sources)->exists() || $eligible->isNotEmpty() || $assignments->isNotEmpty()) { exit(1); }
+          ' || { echo "FATAL: pre-mutation ABSENT probe failed."; exit 1; }
+
+          docker exec -e MHCS_ALLOW_PRODUCTION_MVP_SEED=true "$APP_CONTAINER" php artisan db:seed --class='Database\Seeders\PrestigeWebTestMembersSeeder' --force
+
+          docker exec "$APP_CONTAINER" php -r '
+            require "vendor/autoload.php";
+            $app = require "bootstrap/app.php";
+            $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+            $db = Illuminate\Support\Facades\DB::class;
+            $emails = ["gbsuparta@ugm.ac.id", "ipang.prestige@madeena-xray.com"];
+            $users = $db::table("users")->where("email", "like", "%@prestige.madeena-xray.com")->get(["id"]);
+            $fixtureUsers = $db::table("users")->whereIn("email", $emails)->get(["id"]);
+            $fixtureMembers = $db::table("members")->whereIn("user_id", $fixtureUsers->pluck("id"))->get(["id"]);
+            $schedule = $db::table("shift_schedules")->where("display_reference", "JAD-PRES-NPZ-TEST")->get();
+            $bookings = $schedule->count() === 1 ? $db::table("bookings")->where("shift_schedule_id", $schedule->first()->id)->get() : collect();
+            $credits = $db::table("point_ledger_entries")->whereIn("source_reference", ["prestige:web-test:gbsuparta:credit", "prestige:web-test:ipang:credit"])->get();
+            $charges = $db::table("point_ledger_entries")->whereIn("source_reference", ["prestige:web-test:gbsuparta:charge", "prestige:web-test:ipang:charge"])->get();
+            $eligible = $schedule->count() === 1 ? $db::table("operator_eligible_shifts")->where("member_schedule_id", $schedule->first()->id)->get() : collect();
+            $assignments = $eligible->count() === 1 ? $db::table("operator_shift_assignments")->where("operator_eligible_shift_id", $eligible->first()->id)->get() : collect();
+            $profiles = $db::table("operator_profiles")->whereIn("id", $assignments->pluck("operator_profile_id"))->pluck("employee_code")->sort()->values()->all();
+            $operational = [["operator_arrivals", "booking_id"], ["operator_identity_verifications", "booking_id"], ["examination_consents", "booking_id"], ["operator_paper_tickets", "booking_id"], ["operator_queue_admissions", "member_schedule_id"], ["member_vital_signs_assessments", "member_schedule_id"], ["operator_vital_signs_executions", "operator_queue_admission_id"], ["member_paper_questionnaires", "member_schedule_id"], ["image_gateway_capture_sets", "member_schedule_id"], ["image_gateway_studies", "capture_set_id"], ["local_imaging_orders", "shift_schedule_id"]];
+            $absent = true; foreach ($operational as [$table, $column]) { $absent = $absent && ! $db::table($table)->whereIn($column, $bookings->pluck("id"))->exists(); }
+            if ($users->count() !== 37 || $fixtureUsers->count() !== 2 || $fixtureMembers->count() !== 2 || $schedule->count() !== 1 || $schedule->first()->quota !== 2 || $schedule->first()->status !== "open" || $bookings->count() !== 2 || $bookings->where("status", "!=", "confirmed")->isNotEmpty() || $bookings->where("funding_source", "!=", "personal")->isNotEmpty() || $bookings->where("booking_type", "!=", "b2c")->isNotEmpty() || $bookings->where("service_code_snapshot", "!=", "SYN-CHEST-A")->isNotEmpty() || $bookings->pluck("member_id")->unique()->count() !== 2 || $credits->count() !== 2 || $charges->count() !== 2 || $eligible->count() !== 1 || $eligible->first()->operator_site_id !== "site-prestige" || $eligible->first()->quota !== 2 || $eligible->first()->confirmed_count_at_eligibility !== 2 || $eligible->first()->sync_status !== "eligible" || $assignments->count() !== 5 || $assignments->where("status", "!=", "active")->isNotEmpty() || $profiles !== ["OPR-PRES-01", "OPR-PRES-02", "OPR-PRES-03", "OPR-PRES-04", "OPR-PRES-05"] || ! $absent) { exit(1); }
+          ' || { echo "FATAL: post-mutation verification failed."; exit 1; }
+
+          echo "canonical_prestige_member_count=37"
+          echo "additional_web_test_member_count=2"
+          echo "diagnostic_schedule=JAD-PRES-NPZ-TEST"
+          echo "diagnostic_booking_count=2"
+          echo "fixture_credit_count=2"
+          echo "fixture_charge_count=2"
+          echo "prestige_operator_assignment_count=5"
+          echo "operational_progression_present=false"
+          echo "seeding=PASS"
