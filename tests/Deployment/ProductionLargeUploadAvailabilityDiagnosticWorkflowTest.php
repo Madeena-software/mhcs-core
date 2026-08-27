@@ -51,7 +51,7 @@ final class ProductionLargeUploadAvailabilityDiagnosticWorkflowTest extends Test
             'NGINX_CLIENT_BODY_TEMP_PATH', 'NGINX_CLIENT_BODY_TEMP_FS_USAGE', 'NGINX_CLIENT_BODY_TEMP_BYTES', 'NGINX_CLIENT_BODY_TEMP_FILE_COUNT',
             'worker_processes', 'worker_connections', 'client_max_body_size', 'client_body_buffer_size', 'client_body_timeout', 'fastcgi_request_buffering',
             'pm.max_children', 'pm.start_servers', 'pm.min_spare_servers', 'pm.max_spare_servers', 'PHP_FPM_PORT_9000_ACCEPTING',
-            'docker service logs --since 5m', 'log_count', 'NO_SPACE_LEFT_COUNT', 'TOO_MANY_OPEN_FILES_COUNT', 'WORKER_CONNECTION_LIMIT_COUNT',
+            'docker service logs --since 5m', 'log_count', 'NGINX_NO_SPACE_LEFT_COUNT', 'APP_NO_SPACE_LEFT_COUNT', 'TOO_MANY_OPEN_FILES_COUNT', 'WORKER_CONNECTION_LIMIT_COUNT',
             'UPSTREAM_TIMEOUT_COUNT', 'CONNECT_FAILURE_COUNT', 'CLIENT_TIMEOUT_COUNT', 'OOM_COUNT', 'CLASSIFICATION',
             'PUBLIC_PATH_FAILURE', 'LOCAL_NGINX_FAILURE', 'APP_UPSTREAM_FAILURE', 'HOST_RESOURCE_PRESSURE',
             'REQUEST_BODY_TEMP_STORAGE_PRESSURE', 'HOST_NETWORK_FAILURE', 'NO_FAILURE_OBSERVED', 'INDETERMINATE',
@@ -63,6 +63,19 @@ final class ProductionLargeUploadAvailabilityDiagnosticWorkflowTest extends Test
         }
         $this->assertStringNotContainsString('PUBLIC_INGRESS_FAILURE', $workflow);
         $this->assertStringNotContainsString('echo "LOG_', $workflow);
+        $appFailure = strpos($workflow, 'classification=APP_UPSTREAM_FAILURE');
+        $localFailure = strpos($workflow, 'classification=LOCAL_NGINX_FAILURE');
+        $this->assertNotFalse($appFailure);
+        $this->assertNotFalse($localFailure);
+        $this->assertLessThan($localFailure, $appFailure);
+        $this->assertStringContainsString('[ "$port_8013" = true ]', $workflow);
+        $this->assertStringContainsString('[[ "$nginx_health" =~ ^(healthy|running)$ ]]', $workflow);
+        $this->assertStringContainsString('[ "$php9000" = false ]', $workflow);
+        $this->assertStringContainsString('[[ "$app_health" =~ ^(unhealthy|exited|dead)$ ]]', $workflow);
+        $this->assertStringContainsString('NGINX_NO_SPACE_LEFT_COUNT=', $workflow);
+        $this->assertStringContainsString('APP_NO_SPACE_LEFT_COUNT=', $workflow);
+        $this->assertStringContainsString('elif [ "$NGINX_NO_SPACE_LEFT_COUNT" -gt 0 ]', $workflow);
+        $this->assertStringNotContainsString('elif [ "$APP_NO_SPACE_LEFT_COUNT" -gt 0 ]', $workflow);
         $stats = strpos($workflow, 'STAT_TARGETS=()');
         $statsCall = strpos($workflow, 'docker stats --no-stream');
         $this->assertNotFalse($stats);

@@ -97,8 +97,16 @@ jobs:
           APP_CONTAINER="$(resolve_container "$APP_SERVICE")"
           emit NGINX_CONTAINER_RESOLVED "$( [ -n "$NGINX_CONTAINER" ] && echo true || echo false )"
           emit APP_CONTAINER_RESOLVED "$( [ -n "$APP_CONTAINER" ] && echo true || echo false )"
-          emit NGINX_HEALTH "$( [ -n "$NGINX_CONTAINER" ] && safe docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$NGINX_CONTAINER" || echo UNKNOWN )"
-          emit APP_HEALTH "$( [ -n "$APP_CONTAINER" ] && safe docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$APP_CONTAINER" || echo UNKNOWN )"
+          nginx_health="UNKNOWN"
+          if [ -n "$NGINX_CONTAINER" ]; then
+            nginx_health="$(safe docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$NGINX_CONTAINER")"
+          fi
+          emit NGINX_HEALTH "$nginx_health"
+          app_health="UNKNOWN"
+          if [ -n "$APP_CONTAINER" ]; then
+            app_health="$(safe docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$APP_CONTAINER")"
+          fi
+          emit APP_HEALTH "$app_health"
 
           for service in "${SERVICES[@]}"; do
             echo "SERVICE_${service}_STATE=$(safe docker service inspect "$service" --format 'desired={{.Spec.Mode.Replicated.Replicas}} running={{.ServiceStatus.RunningTasks}} image={{.Spec.TaskTemplate.ContainerSpec.Image}}' | sanitize)"
@@ -156,7 +164,8 @@ jobs:
             local service="$1" pattern="$2"
             docker service logs --since 5m --tail 200 "$service" 2>/dev/null | grep -Eic "$pattern" || true
           }
-          NO_SPACE_LEFT_COUNT=0
+          NGINX_NO_SPACE_LEFT_COUNT="$(log_count "$NGINX_SERVICE" 'no space left')"
+          APP_NO_SPACE_LEFT_COUNT="$(log_count "$APP_SERVICE" 'no space left')"
           TOO_MANY_OPEN_FILES_COUNT=0
           WORKER_CONNECTION_LIMIT_COUNT=0
           UPSTREAM_TIMEOUT_COUNT=0
@@ -164,7 +173,6 @@ jobs:
           CLIENT_TIMEOUT_COUNT=0
           OOM_COUNT=0
           for service in "$NGINX_SERVICE" "$APP_SERVICE"; do
-            NO_SPACE_LEFT_COUNT=$((NO_SPACE_LEFT_COUNT + $(log_count "$service" 'no space left')))
             TOO_MANY_OPEN_FILES_COUNT=$((TOO_MANY_OPEN_FILES_COUNT + $(log_count "$service" 'too many open files')))
             WORKER_CONNECTION_LIMIT_COUNT=$((WORKER_CONNECTION_LIMIT_COUNT + $(log_count "$service" 'worker_connections are not enough')))
             UPSTREAM_TIMEOUT_COUNT=$((UPSTREAM_TIMEOUT_COUNT + $(log_count "$service" 'upstream timed out')))
@@ -172,7 +180,8 @@ jobs:
             CLIENT_TIMEOUT_COUNT=$((CLIENT_TIMEOUT_COUNT + $(log_count "$service" 'client timed out|client intended to send too large body|prematurely closed connection')))
             OOM_COUNT=$((OOM_COUNT + $(log_count "$service" 'OOM|out of memory|killed')))
           done
-          emit NO_SPACE_LEFT_COUNT "$NO_SPACE_LEFT_COUNT"
+          emit NGINX_NO_SPACE_LEFT_COUNT "$NGINX_NO_SPACE_LEFT_COUNT"
+          emit APP_NO_SPACE_LEFT_COUNT "$APP_NO_SPACE_LEFT_COUNT"
           emit TOO_MANY_OPEN_FILES_COUNT "$TOO_MANY_OPEN_FILES_COUNT"
           emit WORKER_CONNECTION_LIMIT_COUNT "$WORKER_CONNECTION_LIMIT_COUNT"
           emit UPSTREAM_TIMEOUT_COUNT "$UPSTREAM_TIMEOUT_COUNT"
@@ -190,7 +199,7 @@ jobs:
           temp_storage_pressure=false
           if [ "${temp_fs:-UNKNOWN}" != UNKNOWN ] && echo "$temp_fs" | awk '{exit ($5+0 >= 95 ? 0 : 1)}'; then
             temp_storage_pressure=true
-          elif [ "$NO_SPACE_LEFT_COUNT" -gt 0 ]; then
+          elif [ "$NGINX_NO_SPACE_LEFT_COUNT" -gt 0 ]; then
             temp_storage_pressure=true
           fi
           network_listener_failure=false
@@ -203,10 +212,10 @@ jobs:
             classification=HOST_RESOURCE_PRESSURE
           elif [ "$network_listener_failure" = true ]; then
             classification=HOST_NETWORK_FAILURE
+          elif [ "$port_8013" = true ] && [[ "$nginx_health" =~ ^(healthy|running)$ ]] && { [ "$php9000" = false ] || [[ "$app_health" =~ ^(unhealthy|exited|dead)$ ]]; }; then
+            classification=APP_UPSTREAM_FAILURE
           elif [ "$port_8013" != true ] || [ "$local_ok" = false ]; then
             classification=LOCAL_NGINX_FAILURE
-          elif [ "$php9000" = false ] || [[ "$app_health" =~ ^(unhealthy|exited|dead)$ ]]; then
-            classification=APP_UPSTREAM_FAILURE
           elif [ "$local_ok" = true ] && [ "$public_ok" = false ]; then
             classification=PUBLIC_PATH_FAILURE
           elif [ "$local_ok" = true ] && [ "$public_ok" = true ]; then
