@@ -31,8 +31,8 @@ final class PrestigeWebTestMembersSeeder extends Seeder
 
     /** @var list<array{reference: string, start: string, end: string}> */
     private const SCHEDULES = [
-        ['reference' => 'JAD-PRES-NPZ-20260827', 'start' => '2026-08-26 17:00:00', 'end' => '2026-08-27 17:00:00'],
-        ['reference' => 'JAD-PRES-NPZ-20260828', 'start' => '2026-08-27 17:00:00', 'end' => '2026-08-28 17:00:00'],
+        ['reference' => 'JAD-NPZ-0827', 'start' => '2026-08-26 17:00:00', 'end' => '2026-08-27 17:00:00'],
+        ['reference' => 'JAD-NPZ-0828', 'start' => '2026-08-27 17:00:00', 'end' => '2026-08-28 17:00:00'],
     ];
 
     /** @var list<array{name: string, email: string, nik: string, birth_date: string}> */

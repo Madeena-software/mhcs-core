@@ -60,7 +60,7 @@ jobs:
             $users = $db::table("users")->where("email", "like", "%@prestige.madeena-xray.com")->get(["id", "account_status", "login_enabled"]);
             $members = $db::table("members")->whereIn("user_id", $users->pluck("id"))->get(["id", "user_id"]);
             $profiles = $db::table("operator_profiles")->where("active", true)->where("employee_code", "like", "OPR-PRES-%")->pluck("employee_code")->sort()->values()->all();
-            $refs = ["JAD-PRES-NPZ-20260827", "JAD-PRES-NPZ-20260828"];
+            $refs = ["JAD-NPZ-0827", "JAD-NPZ-0828"];
             $emails = ["gbsuparta@ugm.ac.id", "ipang.prestige@madeena-xray.com"];
             if ($users->count() !== 37 || $members->count() !== 37 || $users->where("account_status", "active")->count() !== 37 || $users->where("login_enabled", true)->count() !== 37 || $members->pluck("user_id")->unique()->count() !== 37 || $profiles !== ["OPR-PRES-01", "OPR-PRES-02", "OPR-PRES-03", "OPR-PRES-04", "OPR-PRES-05"] || $db::table("users")->whereIn("email", $emails)->exists() || $db::table("shift_schedules")->whereIn("display_reference", $refs)->exists() || $db::table("point_ledger_entries")->where("source_reference", "like", "prestige:web-test:%")->exists()) { exit(1); }
           ' || { echo "FATAL: pre-mutation ABSENT probe failed."; exit 1; }
@@ -75,7 +75,7 @@ jobs:
             $users = $db::table("users")->where("email", "like", "%@prestige.madeena-xray.com")->get(["id"]);
             $fixtureUsers = $db::table("users")->whereIn("email", ["gbsuparta@ugm.ac.id", "ipang.prestige@madeena-xray.com"])->get(["id"]);
             $fixtureMembers = $db::table("members")->whereIn("user_id", $fixtureUsers->pluck("id"))->get(["id"]);
-            $schedules = $db::table("shift_schedules")->whereIn("display_reference", ["JAD-PRES-NPZ-20260827", "JAD-PRES-NPZ-20260828"])->get(["id", "quota"]);
+            $schedules = $db::table("shift_schedules")->whereIn("display_reference", ["JAD-NPZ-0827", "JAD-NPZ-0828"])->get(["id", "quota"]);
             $bookings = $db::table("bookings")->whereIn("shift_schedule_id", $schedules->pluck("id"))->get();
             if ($users->count() !== 37 || $fixtureUsers->count() !== 2 || $fixtureMembers->count() !== 2 || $schedules->count() !== 2 || $schedules->where("quota", "!=", 50)->isNotEmpty() || $bookings->count() !== 4 || $bookings->where("status", "!=", "confirmed")->isNotEmpty() || $bookings->pluck("member_id")->unique()->count() !== 2) { exit(1); }
           ' || { echo "FATAL: post-seed sanity check failed."; exit 1; }
