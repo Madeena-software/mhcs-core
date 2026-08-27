@@ -43,11 +43,12 @@ final class PrestigeWebTestMembersSeederTest extends TestCase
             $this->assertSame(0, DB::table('authorization_role_assignments')->whereIn('user_id', DB::table('members')->whereIn('id', $fixtureIds)->pluck('user_id'))->count());
             $this->assertSame(0, DB::table('authorization_permission_assignments')->whereIn('user_id', DB::table('members')->whereIn('id', $fixtureIds)->pluck('user_id'))->count());
 
-            $schedules = DB::table('shift_schedules')->whereIn('display_reference', ['JAD-NPZ-0827', 'JAD-NPZ-0828'])->orderBy('display_reference')->get();
+            $schedules = DB::table('shift_schedules')->whereIn('display_reference', ['JAD-260827NP', 'JAD-260828NP'])->orderBy('display_reference')->get();
             $this->assertCount(2, $schedules);
-            $this->assertSame(['JAD-NPZ-0827', 'JAD-NPZ-0828'], $schedules->pluck('display_reference')->all());
+            $this->assertSame(['JAD-260827NP', 'JAD-260828NP'], $schedules->pluck('display_reference')->all());
             foreach ($schedules as $schedule) {
-                $this->assertLessThanOrEqual(12, strlen($schedule->display_reference));
+                $this->assertMatchesRegularExpression('/^JAD-[A-Z0-9]{8}$/', $schedule->display_reference);
+                $this->assertSame(12, strlen($schedule->display_reference));
             }
             $this->assertSame(['2026-08-26 17:00:00', '2026-08-27 17:00:00'], $schedules->pluck('starts_at')->all());
             $this->assertSame(['2026-08-27 17:00:00', '2026-08-28 17:00:00'], $schedules->pluck('ends_at')->all());
@@ -89,7 +90,7 @@ final class PrestigeWebTestMembersSeederTest extends TestCase
     {
         $this->withPrestige(function (): void {
             $this->seed(PrestigeWebTestMembersSeeder::class);
-            $schedule = DB::table('shift_schedules')->where('display_reference', 'JAD-NPZ-0827')->firstOrFail();
+            $schedule = DB::table('shift_schedules')->where('display_reference', 'JAD-260827NP')->firstOrFail();
             $operator = DB::table('users')->where('email', 'operatorprestigesatu@madeena-xray.com')->firstOrFail();
             $siteId = DB::table('operator_sites')->where('operator_site_id', 'site-prestige')->value('id');
 
@@ -148,7 +149,7 @@ final class PrestigeWebTestMembersSeederTest extends TestCase
     {
         $this->withPrestige(function (): void {
             $this->seed(PrestigeWebTestMembersSeeder::class);
-            $eligibleId = DB::table('operator_eligible_shifts')->where('member_schedule_id', DB::table('shift_schedules')->where('display_reference', 'JAD-NPZ-0827')->value('id'))->value('id');
+            $eligibleId = DB::table('operator_eligible_shifts')->where('member_schedule_id', DB::table('shift_schedules')->where('display_reference', 'JAD-260827NP')->value('id'))->value('id');
             DB::table('operator_shift_assignments')->where('operator_eligible_shift_id', $eligibleId)->limit(1)->delete();
             $this->expectException(RuntimeException::class);
             $this->seed(PrestigeWebTestMembersSeeder::class);
@@ -160,7 +161,7 @@ final class PrestigeWebTestMembersSeederTest extends TestCase
         $this->withPrestige(function (): void {
             $this->seed(PrestigeWebTestMembersSeeder::class);
             $booking = DB::table('bookings')->whereIn('member_id', DB::table('members')->whereIn('name', ['gbsuparta', 'ipang'])->pluck('id'))->firstOrFail();
-            $schedule = DB::table('shift_schedules')->where('display_reference', 'JAD-NPZ-0827')->firstOrFail();
+            $schedule = DB::table('shift_schedules')->where('display_reference', 'JAD-260827NP')->firstOrFail();
             $profile = DB::table('operator_profiles')->where('employee_code', 'OPR-PRES-01')->firstOrFail();
             $site = DB::table('operator_sites')->where('operator_site_id', 'site-prestige')->firstOrFail();
             DB::table('operator_arrivals')->insert(['id' => (string) Str::uuid(), 'booking_id' => $booking->id, 'member_schedule_id' => $schedule->id, 'operator_site_id' => $site->id, 'operator_profile_id' => $profile->id, 'occurrence_at' => now(), 'recorded_at' => now(), 'operation_id' => (string) Str::uuid(), 'source' => 'test', 'status' => 'recorded', 'created_at' => now(), 'updated_at' => now()]);
