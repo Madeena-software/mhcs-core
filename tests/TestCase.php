@@ -20,6 +20,8 @@ abstract class TestCase extends BaseTestCase
         foreach ([
             'mhcs.security.identifier_key' => 'mhcs-test-identifier-key',
             'mhcs.security.grant_key' => 'mhcs-test-access-grant-key',
+            'mhcs.security.manifest_key' => str_repeat('m', 32),
+            'mhcs.security.manifest_key_id' => 'test-key',
         ] as $key => $fallback) {
             $value = config($key);
             if (! is_string($value) || trim($value) === '') {
