@@ -21,12 +21,17 @@ final class ProductionDockerImageStoreDiagnosticWorkflowTest extends TestCase
         $this->assertStringContainsString('contents: read', $workflow);
         $this->assertStringContainsString('set -euo pipefail', $workflow);
         $this->assertStringContainsString("docker version --format 'Client={{.Client.Version}} Server={{.Server.Version}}'", $workflow);
-        $this->assertStringContainsString("docker info --format 'StorageDriver={{.Driver}}'", $workflow);
+        $this->assertStringContainsString("docker info --format '{{.Driver}}'", $workflow);
         $this->assertStringContainsString("docker info --format 'DriverStatus={{json .DriverStatus}}'", $workflow);
+        $this->assertStringContainsString('STORAGE_DRIVER="$(docker info --format', $workflow);
+        $this->assertStringContainsString('StorageDriver=${STORAGE_DRIVER}', $workflow);
         $this->assertStringContainsString('io.containerd.snapshotter.v1', $workflow);
         $this->assertStringContainsString('CONTAINERD_IMAGE_STORE', $workflow);
         $this->assertStringContainsString('CLASSIC_IMAGE_STORE', $workflow);
         $this->assertStringContainsString('INDETERMINATE', $workflow);
+        $this->assertStringContainsString('if [ "$STORAGE_DRIVER" = "overlay2" ]; then', $workflow);
+        $this->assertStringNotContainsString('grep -Fq \'overlay2\' <<< "$DRIVER_STATUS"', $workflow);
+        $this->assertStringContainsString('else', $workflow);
         $this->assertStringContainsString('json.load(sys.stdin)', $workflow);
         $this->assertStringContainsString('features', $workflow);
         $this->assertStringContainsString('containerd-snapshotter', $workflow);

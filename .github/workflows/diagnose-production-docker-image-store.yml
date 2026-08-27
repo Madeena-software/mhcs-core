@@ -24,7 +24,8 @@ jobs:
           docker version --format 'Client={{.Client.Version}} Server={{.Server.Version}}' 2>/dev/null || true
 
           echo "===> Docker storage driver"
-          docker info --format 'StorageDriver={{.Driver}}' 2>/dev/null || true
+          STORAGE_DRIVER="$(docker info --format '{{.Driver}}' 2>/dev/null || true)"
+          echo "StorageDriver=${STORAGE_DRIVER}"
 
           echo "===> Docker driver status"
           DRIVER_STATUS="$(docker info --format 'DriverStatus={{json .DriverStatus}}' 2>/dev/null || true)"
@@ -44,7 +45,7 @@ jobs:
           echo "===> Conservative image store classification"
           if grep -Fq 'io.containerd.snapshotter.v1' <<< "$DRIVER_STATUS"; then
             echo 'image-store-classification=CONTAINERD_IMAGE_STORE'
-          elif grep -Fq 'overlay2' <<< "$DRIVER_STATUS"; then
+          elif [ "$STORAGE_DRIVER" = "overlay2" ]; then
             echo 'image-store-classification=CLASSIC_IMAGE_STORE'
           else
             echo 'image-store-classification=INDETERMINATE'
