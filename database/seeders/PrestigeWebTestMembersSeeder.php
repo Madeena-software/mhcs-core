@@ -15,8 +15,6 @@ use App\Shared\Identity\LocalId;
 use App\Shared\Security\ProtectedIdentifierService;
 use App\Shared\Storage\PrivateObject;
 use App\Shared\Storage\PrivateObjectStore;
-use DateTimeImmutable;
-use DateTimeZone;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -29,9 +27,13 @@ final class PrestigeWebTestMembersSeeder extends Seeder
 
     private const SITE_CODE = PrestigeClinicSeeder::SITE_CODE;
 
-    private const SERVICE_CODE = 'SYN-CHEST-A';
+    private const SERVICE_CODE = 'SYN-CHEST-B';
 
-    private const DISPLAY_REFERENCE = 'JAD-PRES-NPZ-TEST';
+    /** @var list<array{reference: string, start: string, end: string}> */
+    private const SCHEDULES = [
+        ['reference' => 'JAD-PRES-NPZ-20260827', 'start' => '2026-08-26 17:00:00', 'end' => '2026-08-27 17:00:00'],
+        ['reference' => 'JAD-PRES-NPZ-20260828', 'start' => '2026-08-27 17:00:00', 'end' => '2026-08-28 17:00:00'],
+    ];
 
     /** @var list<array{name: string, email: string, nik: string, birth_date: string}> */
     private const SUBJECTS = [
@@ -53,12 +55,11 @@ final class PrestigeWebTestMembersSeeder extends Seeder
 
         $this->assertCanonicalPrestigeState();
         $subjects = $this->existingSubjects();
-        $bounds = $this->todayBounds();
         if (DB::table('point_exchange_rates')->where('status', 'active')->count() !== 1) {
             throw new RuntimeException('The canonical Prestige point rate is missing or ambiguous.');
         }
 
-        $state = $this->classifyFixtureState($site, $offering, $subjects, (string) $offering->point_price, $bounds);
+        $state = $this->classifyFixtureState($site, $offering, $subjects, (string) $offering->point_price);
         if ($state === 'exact') {
             return;
         }
@@ -66,44 +67,22 @@ final class PrestigeWebTestMembersSeeder extends Seeder
             throw new RuntimeException('The Prestige web-test fixture is partial or inconsistent.');
         }
 
-        $schedule = $this->existingSchedule((string) $site->id, (string) $offering->id);
-
-        if ($schedule !== null && ($schedule->examination_site_id !== $site->id || $schedule->service_offering_id !== $offering->id || $schedule->starts_at !== $bounds['start'] || $schedule->ends_at !== $bounds['end'] || (int) $schedule->quota !== 2 || $schedule->status !== 'open')) {
-            throw new RuntimeException('The owned Prestige web-test schedule is inconsistent or has ended.');
-        }
-
         $this->assertIdentityAvailability($subjects);
 
-        DB::transaction(function () use ($site, $offering, $schedule, $bounds): void {
+        DB::transaction(function () use ($site, $offering): void {
             $now = now();
-            $scheduleId = $schedule?->id;
-            if ($scheduleId === null) {
-                $scheduleId = (string) Str::uuid();
-                DB::table('shift_schedules')->insert([
-                    'id' => $scheduleId,
-                    'display_reference' => self::DISPLAY_REFERENCE,
-                    'examination_site_id' => $site->id,
-                    'service_offering_id' => $offering->id,
-                    'starts_at' => $bounds['start'],
-                    'ends_at' => $bounds['end'],
-                    'quota' => 2,
-                    'status' => 'open',
-                    'eligible_at' => $now,
-                    'created_at' => $now,
-                    'updated_at' => $now,
-                ]);
-            }
-
             $rateId = (string) DB::table('point_exchange_rates')->where('status', 'active')->value('id');
-
             $members = [];
             foreach (self::SUBJECTS as $definition) {
                 $members[] = $this->ensureSubject($definition, $now);
             }
-            foreach ($members as $member) {
-                $this->ensureBooking($member, $scheduleId, $site, $offering, $rateId, (string) $offering->point_price, $now);
+            foreach (self::SCHEDULES as $scheduleDefinition) {
+                $scheduleId = $this->ensureSchedule($scheduleDefinition, $site, $offering, $now);
+                foreach ($members as $member) {
+                    $this->ensureBooking($member, $scheduleId, $site, $offering, $rateId, (string) $offering->point_price, $scheduleDefinition['reference'], $now);
+                }
+                $this->ensureEligibleShift($scheduleId, $scheduleDefinition, $now);
             }
-            $this->ensureEligibleShift($scheduleId, $bounds, $now);
         });
     }
 
@@ -156,34 +135,43 @@ final class PrestigeWebTestMembersSeeder extends Seeder
         }
     }
 
-    private function classifyFixtureState(object $site, object $offering, array $subjects, string $pointCost, array $bounds): string
+    private function classifyFixtureState(object $site, object $offering, array $subjects, string $pointCost): string
     {
-        $schedule = $this->existingSchedule((string) $site->id, (string) $offering->id);
         $fixtureUsers = User::query()->whereIn('email', array_column(self::SUBJECTS, 'email'))->get();
         $memberIds = DB::table('members')->whereIn('user_id', $fixtureUsers->pluck('id'))->pluck('id');
-        $credits = DB::table('point_ledger_entries')->whereIn('source_reference', ['prestige:web-test:gbsuparta:credit', 'prestige:web-test:ipang:credit'])->get();
-        $charges = DB::table('point_ledger_entries')->whereIn('source_reference', ['prestige:web-test:gbsuparta:charge', 'prestige:web-test:ipang:charge'])->get();
-        $bookingIds = $schedule === null ? collect() : DB::table('bookings')->where('shift_schedule_id', $schedule->id)->whereIn('member_id', $memberIds)->pluck('id');
-        $scheduleBookings = $schedule === null ? collect() : DB::table('bookings')->where('shift_schedule_id', $schedule->id)->get(['id', 'member_id', 'status', 'service_code_snapshot', 'booking_type', 'funding_source', 'point_cost_snapshot']);
-        $eligible = $schedule === null ? null : DB::table('operator_eligible_shifts')->where('member_schedule_id', $schedule->id)->first();
-        $assignments = $eligible === null ? collect() : DB::table('operator_shift_assignments')->where('operator_eligible_shift_id', $eligible->id)->get();
-        $hasAny = $fixtureUsers->isNotEmpty() || $schedule !== null || $credits->isNotEmpty() || $charges->isNotEmpty() || $bookingIds->isNotEmpty() || $eligible !== null || $assignments->isNotEmpty();
+        $references = collect(self::SCHEDULES)->pluck('reference');
+        $schedules = DB::table('shift_schedules')->whereIn('display_reference', $references)->get();
+        $credits = DB::table('point_ledger_entries')->where('source_reference', 'like', 'prestige:web-test:%')->where('entry_type', PointEntryType::Credit->value)->get();
+        $charges = DB::table('point_ledger_entries')->where('source_reference', 'like', 'prestige:web-test:%')->where('entry_type', PointEntryType::Charge->value)->get();
+        $hasAny = $fixtureUsers->isNotEmpty() || $schedules->isNotEmpty() || $credits->isNotEmpty() || $charges->isNotEmpty();
 
         try {
             if (count(array_filter($subjects, static fn (?object $member): bool => $member !== null)) !== 2
-                || $schedule === null
-                || $schedule->starts_at !== $bounds['start'] || $schedule->ends_at !== $bounds['end'] || (int) $schedule->quota !== 2 || $schedule->status !== 'open'
-                || $credits->count() !== 2 || $charges->count() !== 2 || $bookingIds->count() !== 2 || $scheduleBookings->count() !== 2 || $scheduleBookings->where('status', '!=', 'confirmed')->isNotEmpty() || $scheduleBookings->where('service_code_snapshot', '!=', self::SERVICE_CODE)->isNotEmpty() || $scheduleBookings->where('booking_type', '!=', 'b2c')->isNotEmpty() || $scheduleBookings->where('funding_source', '!=', 'personal')->isNotEmpty()
-                || $eligible === null || $eligible->operator_site_id !== self::SITE_ID || $eligible->schedule_starts_at !== $bounds['start'] || $eligible->schedule_ends_at !== $bounds['end'] || (int) $eligible->confirmed_count_at_eligibility !== 2 || (int) $eligible->quota !== 2 || $eligible->sync_status !== 'eligible'
-                || $assignments->count() !== 5 || $assignments->where('status', '!=', 'active')->isNotEmpty()) {
+                || $schedules->count() !== 2 || $credits->count() !== 4 || $charges->count() !== 4) {
                 throw new RuntimeException('partial');
             }
-            $profiles = DB::table('operator_profiles')->whereIn('employee_code', ['OPR-PRES-01', 'OPR-PRES-02', 'OPR-PRES-03', 'OPR-PRES-04', 'OPR-PRES-05'])->where('active', true)->pluck('id')->sort()->values()->all();
-            $assignedProfiles = $assignments->pluck('operator_profile_id')->sort()->values()->all();
-            if ($profiles !== $assignedProfiles || $credits->pluck('source_reference')->sort()->values()->all() !== ['prestige:web-test:gbsuparta:credit', 'prestige:web-test:ipang:credit'] || $charges->pluck('source_reference')->sort()->values()->all() !== ['prestige:web-test:gbsuparta:charge', 'prestige:web-test:ipang:charge'] || $scheduleBookings->pluck('member_id')->sort()->values()->all() !== $memberIds->sort()->values()->all() || $scheduleBookings->contains(fn (object $booking): bool => PointAmount::fromString((string) $booking->point_cost_snapshot)->compare(PointAmount::fromString($pointCost)) !== 0) || $credits->contains(fn (object $credit): bool => PointAmount::fromString((string) $credit->point_delta)->compare(PointAmount::fromString($pointCost)) !== 0) || $charges->contains(fn (object $charge): bool => PointAmount::fromString((string) $charge->point_delta)->compare(PointAmount::fromString('-'.$pointCost)) !== 0) || $memberIds->contains(fn (string $memberId): bool => app(Mvp03PointService::class)->personalBalance($memberId)->compare(PointAmount::zero()) !== 0)) {
+            foreach (self::SCHEDULES as $definition) {
+                $schedule = $schedules->where('display_reference', $definition['reference']);
+                if ($schedule->count() !== 1) {
+                    throw new RuntimeException('partial');
+                }
+                $schedule = $schedule->first();
+                $bookings = DB::table('bookings')->where('shift_schedule_id', $schedule->id)->get();
+                $eligible = DB::table('operator_eligible_shifts')->where('member_schedule_id', $schedule->id)->first();
+                $assignments = $eligible === null ? collect() : DB::table('operator_shift_assignments')->where('operator_eligible_shift_id', $eligible->id)->get();
+                if ($schedule->examination_site_id !== $site->id || $schedule->service_offering_id !== $offering->id || $schedule->starts_at !== $definition['start'] || $schedule->ends_at !== $definition['end'] || (int) $schedule->quota !== 50 || $schedule->status !== 'open' || $bookings->count() !== 2 || $bookings->where('status', '!=', 'confirmed')->isNotEmpty() || $bookings->where('service_code_snapshot', '!=', self::SERVICE_CODE)->isNotEmpty() || $bookings->where('booking_type', '!=', 'b2c')->isNotEmpty() || $bookings->where('funding_source', '!=', 'personal')->isNotEmpty() || $bookings->pluck('member_id')->sort()->values()->all() !== $memberIds->sort()->values()->all() || $eligible === null || $eligible->operator_site_id !== self::SITE_ID || $eligible->schedule_starts_at !== $definition['start'] || $eligible->schedule_ends_at !== $definition['end'] || (int) $eligible->confirmed_count_at_eligibility !== 2 || (int) $eligible->quota !== 50 || $eligible->sync_status !== 'eligible' || $assignments->count() !== 5 || $assignments->where('status', '!=', 'active')->isNotEmpty()) {
+                    throw new RuntimeException('partial');
+                }
+                $profiles = DB::table('operator_profiles')->where('active', true)->whereIn('employee_code', ['OPR-PRES-01', 'OPR-PRES-02', 'OPR-PRES-03', 'OPR-PRES-04', 'OPR-PRES-05'])->pluck('id')->sort()->values()->all();
+                if ($assignments->pluck('operator_profile_id')->sort()->values()->all() !== $profiles) {
+                    throw new RuntimeException('partial');
+                }
+                $this->assertOperationalAbsence($bookings->pluck('id')->all(), (string) $schedule->id);
+            }
+            $expectedSources = collect(self::SCHEDULES)->flatMap(fn (array $definition): array => array_map(fn (array $subject): string => 'prestige:web-test:'.substr($definition['reference'], -8).':'.($subject['name']).':credit', self::SUBJECTS))->sort()->values()->all();
+            if ($credits->pluck('source_reference')->sort()->values()->all() !== $expectedSources || $charges->pluck('source_reference')->sort()->values()->all() !== str_replace(':credit', ':charge', $expectedSources) || $credits->contains(fn (object $entry): bool => PointAmount::fromString((string) $entry->point_delta)->compare(PointAmount::fromString($pointCost)) !== 0) || $charges->contains(fn (object $entry): bool => PointAmount::fromString((string) $entry->point_delta)->compare(PointAmount::fromString('-'.$pointCost)) !== 0) || $memberIds->contains(fn (string $memberId): bool => app(Mvp03PointService::class)->personalBalance($memberId)->compare(PointAmount::zero()) !== 0)) {
                 throw new RuntimeException('partial');
             }
-            $this->assertOperationalAbsence($bookingIds->all(), (string) $schedule->id);
         } catch (RuntimeException) {
             return $hasAny ? 'partial' : 'absent';
         }
@@ -216,30 +204,20 @@ final class PrestigeWebTestMembersSeeder extends Seeder
         }
     }
 
-    private function existingSchedule(string $siteId, string $offeringId): ?object
+    private function ensureSchedule(array $definition, object $site, object $offering, mixed $now): string
     {
-        $schedules = DB::table('shift_schedules')->where('display_reference', self::DISPLAY_REFERENCE)->get();
-        if ($schedules->count() > 1) {
-            throw new RuntimeException('The Prestige web-test schedule is duplicated.');
+        $schedule = DB::table('shift_schedules')->where('display_reference', $definition['reference'])->first();
+        if ($schedule !== null) {
+            if ($schedule->examination_site_id !== $site->id || $schedule->service_offering_id !== $offering->id || $schedule->starts_at !== $definition['start'] || $schedule->ends_at !== $definition['end'] || (int) $schedule->quota !== 50 || $schedule->status !== 'open') {
+                throw new RuntimeException('The owned Prestige web-test schedule is inconsistent.');
+            }
+
+            return (string) $schedule->id;
         }
+        $id = (string) Str::uuid();
+        DB::table('shift_schedules')->insert(['id' => $id, 'display_reference' => $definition['reference'], 'examination_site_id' => $site->id, 'service_offering_id' => $offering->id, 'starts_at' => $definition['start'], 'ends_at' => $definition['end'], 'quota' => 50, 'status' => 'open', 'eligible_at' => $now, 'created_at' => $now, 'updated_at' => $now]);
 
-        $schedule = $schedules->first();
-        if ($schedule !== null && ($schedule->examination_site_id !== $siteId || $schedule->service_offering_id !== $offeringId)) {
-            throw new RuntimeException('The Prestige web-test schedule belongs to another fixture.');
-        }
-
-        return $schedule;
-    }
-
-    /** @return array{start: string, end: string} */
-    private function todayBounds(): array
-    {
-        $timezone = new DateTimeZone(PrestigeClinicSeeder::SITE_TIMEZONE);
-        $utc = new DateTimeZone('UTC');
-        $start = new DateTimeImmutable('today', $timezone);
-        $end = $start->modify('+1 day');
-
-        return ['start' => $start->setTimezone($utc)->format('Y-m-d H:i:s'), 'end' => $end->setTimezone($utc)->format('Y-m-d H:i:s')];
+        return $id;
     }
 
     private function ensureSubject(array $subject, mixed $now): object
@@ -268,19 +246,20 @@ final class PrestigeWebTestMembersSeeder extends Seeder
         return DB::table('members')->where('id', $memberId)->firstOrFail();
     }
 
-    private function ensureBooking(object $member, string $scheduleId, object $site, object $offering, string $rateId, string $pointCost, mixed $now): void
+    private function ensureBooking(object $member, string $scheduleId, object $site, object $offering, string $rateId, string $pointCost, string $scheduleReference, mixed $now): void
     {
         $existing = DB::table('bookings')->where('member_id', $member->id)->where('shift_schedule_id', $scheduleId)->first();
         $point = app(Mvp03PointService::class);
         $email = (string) DB::table('users')->where('id', $member->user_id)->value('email');
         $key = str_contains($email, 'gbsuparta') ? 'gbsuparta' : 'ipang';
-        $point->creditPersonalForLocalTesting((string) $member->id, $pointCost, 'prestige:web-test:'.$key.':credit');
+        $source = 'prestige:web-test:'.substr($scheduleReference, -8).':'.$key;
+        $point->creditPersonalForLocalTesting((string) $member->id, $pointCost, $source.':credit');
         if ($existing !== null) {
             if ($existing->service_code_snapshot !== self::SERVICE_CODE || $existing->status !== 'confirmed' || $existing->booking_type !== 'b2c' || $existing->funding_source !== 'personal' || PointAmount::fromString((string) $existing->point_cost_snapshot)->compare(PointAmount::fromString($pointCost)) !== 0) {
                 throw new RuntimeException('The Prestige web-test booking is inconsistent.');
             }
             $charge = DB::table('point_ledger_entries')->where('booking_id', $existing->id)->where('entry_type', PointEntryType::Charge->value)->first();
-            if ($charge === null || PointAmount::fromString((string) $charge->point_delta)->compare(PointAmount::fromString('-'.$pointCost)) !== 0 || $charge->source_reference !== 'prestige:web-test:'.$key.':charge') {
+            if ($charge === null || PointAmount::fromString((string) $charge->point_delta)->compare(PointAmount::fromString('-'.$pointCost)) !== 0 || $charge->source_reference !== $source.':charge') {
                 throw new RuntimeException('The Prestige web-test booking charge is inconsistent.');
             }
 
@@ -289,21 +268,21 @@ final class PrestigeWebTestMembersSeeder extends Seeder
 
         $bookingId = (string) Str::uuid();
         DB::table('bookings')->insert(['id' => $bookingId, 'member_id' => $member->id, 'shift_schedule_id' => $scheduleId, 'service_offering_id' => $offering->id, 'examination_site_id_snapshot' => $site->id, 'booking_type' => 'b2c', 'funding_source' => 'personal', 'status' => 'confirmed', 'service_code_snapshot' => self::SERVICE_CODE, 'point_cost_snapshot' => $pointCost, 'point_exchange_rate_id' => $rateId, 'includes_ai_snapshot' => (bool) $offering->includes_ai, 'includes_doctor_snapshot' => (bool) $offering->includes_doctor, 'site_code_snapshot' => self::SITE_CODE, 'site_name_snapshot' => PrestigeClinicSeeder::SITE_DISPLAY_NAME, 'site_timezone_snapshot' => PrestigeClinicSeeder::SITE_TIMEZONE, 'created_at' => $now, 'confirmed_at' => $now, 'updated_at' => $now]);
-        DB::table('point_ledger_entries')->insert(['id' => (string) Str::uuid(), 'member_id' => $member->id, 'booking_id' => $bookingId, 'funding_source' => 'personal', 'entry_type' => PointEntryType::Charge->value, 'point_delta' => '-'.$pointCost, 'source_reference' => 'prestige:web-test:'.$key.':charge', 'reverses_id' => null, 'created_at' => $now]);
+        DB::table('point_ledger_entries')->insert(['id' => (string) Str::uuid(), 'member_id' => $member->id, 'booking_id' => $bookingId, 'funding_source' => 'personal', 'entry_type' => PointEntryType::Charge->value, 'point_delta' => '-'.$pointCost, 'source_reference' => $source.':charge', 'reverses_id' => null, 'created_at' => $now]);
     }
 
     /** @param array{start: string, end: string} $bounds */
-    private function ensureEligibleShift(string $scheduleId, array $bounds, mixed $now): void
+    private function ensureEligibleShift(string $scheduleId, array $definition, mixed $now): void
     {
         $existing = DB::table('operator_eligible_shifts')->where('member_schedule_id', $scheduleId)->first();
         $profiles = DB::table('operator_profiles')->where('employee_code', 'like', 'OPR-PRES-%')->orderBy('employee_code')->get();
-        if ($existing !== null && ($existing->operator_site_id !== self::SITE_ID || $existing->schedule_starts_at !== $bounds['start'] || $existing->schedule_ends_at !== $bounds['end'] || (int) $existing->quota !== 2 || (int) $existing->confirmed_count_at_eligibility !== 2 || $existing->sync_status !== 'eligible')) {
+        if ($existing !== null && ($existing->operator_site_id !== self::SITE_ID || $existing->schedule_starts_at !== $definition['start'] || $existing->schedule_ends_at !== $definition['end'] || (int) $existing->quota !== 50 || (int) $existing->confirmed_count_at_eligibility !== 2 || $existing->sync_status !== 'eligible')) {
             throw new RuntimeException('The Prestige web-test eligible shift is inconsistent.');
         }
         $eligibleId = $existing?->id;
         if ($eligibleId === null) {
             $eligibleId = (string) Str::uuid();
-            DB::table('operator_eligible_shifts')->insert(['id' => $eligibleId, 'member_schedule_id' => $scheduleId, 'operator_site_id' => self::SITE_ID, 'schedule_starts_at' => $bounds['start'], 'schedule_ends_at' => $bounds['end'], 'confirmed_count_at_eligibility' => 2, 'quota' => 2, 'event_version' => 1, 'source_event_id' => 'prestige:web-test:shift-eligible', 'eligible_at' => $now, 'sync_status' => 'eligible', 'created_at' => $now, 'updated_at' => $now]);
+            DB::table('operator_eligible_shifts')->insert(['id' => $eligibleId, 'member_schedule_id' => $scheduleId, 'operator_site_id' => self::SITE_ID, 'schedule_starts_at' => $definition['start'], 'schedule_ends_at' => $definition['end'], 'confirmed_count_at_eligibility' => 2, 'quota' => 50, 'event_version' => 1, 'source_event_id' => 'prestige:web-test:'.$definition['reference'], 'eligible_at' => $now, 'sync_status' => 'eligible', 'created_at' => $now, 'updated_at' => $now]);
         }
         $assignments = DB::table('operator_shift_assignments')->where('operator_eligible_shift_id', $eligibleId)->get();
         if ($assignments->count() > 5 || $assignments->where('status', '!=', 'active')->isNotEmpty()) {
