@@ -69,7 +69,17 @@ final class ProductionGhcrTransportDiagnosticWorkflowTest extends TestCase
         $this->assertStringContainsString('sed -E', $workflow);
         $this->assertStringNotContainsString('systemctl show docker -p Environment', $workflow);
         $this->assertStringNotContainsString('systemctl show docker -p ExecStart', $workflow);
-        $this->assertStringContainsString('report_proxy_presence()', $workflow);
+        $this->assertStringContainsString('DOCKER_SERVICE_ENV="$(', $workflow);
+        $this->assertStringContainsString('--property=Environment', $workflow);
+        $this->assertStringContainsString('--value', $workflow);
+        $this->assertStringContainsString('docker-service-${name}=SET', $workflow);
+        $this->assertStringContainsString('docker-service-${name}=UNSET', $workflow);
+        $this->assertStringNotContainsString('${!name:-}', $workflow);
+        $this->assertStringNotContainsString('RegistryConfig={{json .RegistryConfig}}', $workflow);
+        $this->assertStringContainsString('json.load(sys.stdin)', $workflow);
+        $this->assertStringContainsString('print("daemon-" + key + "="', $workflow);
+        $this->assertStringContainsString('DOCKER_SERVICE_ENV="$(systemctl show docker --property=Environment --value', $workflow);
+        $this->assertStringContainsString('service_env_has() {', $workflow);
         foreach (['HTTP_PROXY', 'http_proxy', 'HTTPS_PROXY', 'https_proxy', 'NO_PROXY', 'no_proxy'] as $proxy) {
             $this->assertStringContainsString($proxy, $workflow);
         }

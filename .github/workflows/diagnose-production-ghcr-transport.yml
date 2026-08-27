@@ -28,29 +28,21 @@ jobs:
           docker version --format 'DockerClient={{.Client.Version}} DockerServer={{.Server.Version}} Containerd={{.Server.Components}}' 2>/dev/null || true
 
           echo "===> Docker daemon transfer configuration"
-          docker info --format 'RegistryConfig={{json .RegistryConfig}}' 2>/dev/null || true
-          docker system info --format 'RegistryConfig={{json .RegistryConfig}}' 2>/dev/null || true
           if [ -r /etc/docker/daemon.json ]; then
-            for key in max-concurrent-downloads max-download-attempts registry-mirrors mtu dns proxies; do
-              if grep -Eq "^[[:space:]]*\\\"${key}\\\"[[:space:]]*:" /etc/docker/daemon.json; then
-                echo "daemon-${key}=SET"
-              else
-                echo "daemon-${key}=UNSET"
-              fi
-            done
+            python3 -c 'import json, sys; config = json.load(sys.stdin); keys = ["max-concurrent-downloads", "max-download-attempts", "registry-mirrors", "mtu", "dns", "proxies"]; [print("daemon-" + key + "=" + ("SET" if key in config else "UNSET")) for key in keys]' \
+              < /etc/docker/daemon.json || echo 'daemon-json-parse=FAIL'
           else
             echo 'daemon.json=unreadable-or-absent'
           fi
-          report_proxy_presence() {
-            for name in HTTP_PROXY http_proxy HTTPS_PROXY https_proxy NO_PROXY no_proxy; do
-              if [ -n "${!name:-}" ]; then
-                echo "${name}=SET"
-              else
-                echo "${name}=UNSET"
-              fi
-            done
-          }
-          report_proxy_presence
+          DOCKER_SERVICE_ENV="$(systemctl show docker --property=Environment --value 2>/dev/null || true)"
+          service_env_has() { grep -Eq "(^| )$1=" <<< "$DOCKER_SERVICE_ENV"; }
+          for name in HTTP_PROXY http_proxy HTTPS_PROXY https_proxy NO_PROXY no_proxy; do
+            if service_env_has "$name"; then
+              echo "docker-service-${name}=SET"
+            else
+              echo "docker-service-${name}=UNSET"
+            fi
+          done
           for flag in http-proxy https-proxy no-proxy; do
             if systemctl cat docker 2>/dev/null | grep -Eq -- "--${flag}="; then
               echo "docker-${flag}-flag=SET"
