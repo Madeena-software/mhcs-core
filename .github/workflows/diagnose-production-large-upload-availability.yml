@@ -1,0 +1,175 @@
+name: Diagnose production availability during large upload
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: production-deployment-mhcs_core
+  cancel-in-progress: false
+
+jobs:
+  diagnose:
+    runs-on: self-hosted
+    permissions:
+      contents: read
+    timeout-minutes: 5
+    steps:
+      - name: Run read-only large-upload availability diagnostic
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          EXPECTED_REVISION="0469faa33b120d8ee622f997a0fd2f54f53edaec"
+          SERVICES=(mhcs_core_nginx mhcs_core_app mhcs_core_queue mhcs_core_image-worker)
+          NGINX_SERVICE="mhcs_core_nginx"
+          APP_SERVICE="mhcs_core_app"
+          NGINX_CONTAINER=""
+          APP_CONTAINER=""
+
+          safe() { "$@" 2>&1 || true; }
+          bool() { [ "${1:-}" = "0" ] && echo true || echo false; }
+          sanitize() { sed -E 's/(https?:\/\/[^/[:space:]]+).*/\1/; s/[?&](token|key|secret|signature|authorization)=[^&[:space:]]+//Ig; s/(Authorization:|Cookie:)[^[:space:]]+/***REDACTED***/Ig'; }
+          emit() { printf '%s=%s\n' "$1" "${2:-UNKNOWN}"; }
+
+          echo "UTC_TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          echo "UPTIME=$(safe uptime | sanitize)"
+          echo "LOAD_AVERAGE=$(safe uptime | sed -E 's/.*load average[s]?:[[:space:]]*//')"
+          emit CPU_COUNT "$(safe nproc | tr -cd '0-9')"
+          echo "FREE_MEMORY=$(safe free -m | sanitize)"
+          echo "SWAP=$(safe free -m | awk '/^Swap:/ {print "total_mb=" $2 ",used_mb=" $3 ",free_mb=" $4}')"
+          echo "FILESYSTEM_USAGE=$(safe df -h | awk 'NR==1 || $NF=="/" {print}' | sanitize)"
+          echo "INODE_USAGE=$(safe df -i | awk 'NR==1 || $NF=="/" {print}' | sanitize)"
+
+          echo "HOST_IPV4_ROUTE=$(safe ip -4 route | sanitize)"
+          echo "HOST_LINK_STATS=$(safe ip -s link | sanitize)"
+          echo "SOCKET_SUMMARY=$(safe ss -s | sanitize)"
+          nstat_snapshot() { safe nstat -az 2>/dev/null | awk 'BEGIN{IGNORECASE=1} /Retrans|Reset|ListenOverflows|ListenDrops|Timeout|TimeWait/ {print $1 "=" $2}'; }
+          nstat_before="$(nstat_snapshot)"
+          echo "NSTAT_BEFORE=$(echo "$nstat_before" | tr '\n' ';')"
+
+          port_8013="false"
+          if ss -H -ltn '( sport = :8013 )' 2>/dev/null | grep -q .; then port_8013="true"; fi
+          emit HOST_8013_LISTENING "$port_8013"
+
+          probe() {
+            # Output contract: LOCAL_8013_HTTP_STATUS, LOCAL_8013_CONNECT_SECONDS,
+            # LOCAL_8013_TOTAL_SECONDS, LOCAL_8013_RESULT,
+            # PUBLIC_HTTPS_HTTP_STATUS, PUBLIC_HTTPS_CONNECT_SECONDS,
+            # PUBLIC_HTTPS_TOTAL_SECONDS, PUBLIC_HTTPS_RESULT.
+            local name="$1" url="$2" status="000" connect="-1" total="-1" result="FAIL"
+            local line
+            line="$(curl --silent --show-error --insecure --noproxy '*' --max-time 8 --connect-timeout 3 --location-trusted --max-redirs 0 -o /dev/null -w '%{http_code} %{time_connect} %{time_total}' "$url" 2>/dev/null || true)"
+            read -r status connect total <<<"$line"
+            if [[ "$status" =~ ^2[0-9][0-9]$ ]]; then result="PASS"; fi
+            emit "${name}_HTTP_STATUS" "$status"
+            emit "${name}_CONNECT_SECONDS" "$connect"
+            emit "${name}_TOTAL_SECONDS" "$total"
+            emit "${name}_RESULT" "$result"
+            [ "$result" = PASS ]
+          }
+          local_ok=false
+          if probe LOCAL_8013 http://127.0.0.1:8013/up; then local_ok=true; fi
+          public_ok="SKIPPED"
+          if getent ahostsv4 fams.mhcsgo.cloud >/dev/null 2>&1; then
+            public_ok=false
+            if probe PUBLIC_HTTPS https://fams.mhcsgo.cloud/up; then public_ok=true; fi
+          else
+            emit PUBLIC_HTTPS_RESULT SKIPPED_UNRESOLVABLE
+          fi
+
+          nstat_after="$(nstat_snapshot)"
+          echo "NSTAT_AFTER=$(echo "$nstat_after" | tr '\n' ';')"
+          echo "NSTAT_DELTA=$(awk -F= 'NR==FNR {before[$1]=$2; next} {delta=$2-(before[$1]+0); if (delta != 0) print $1 "=" delta}' <(printf '%s\n' "$nstat_before") <(printf '%s\n' "$nstat_after") | tr '\n' ';')"
+
+          resolve_container() {
+            local service="$1" task="" candidate="" candidate_task=""
+            task="$(safe docker service ps "$service" --filter desired-state=running --no-trunc --format '{{.ID}}' | head -n 1)"
+            [ -n "$task" ] || return 0
+            while IFS= read -r candidate; do
+              [ -n "$candidate" ] || continue
+              candidate_task="$(safe docker inspect "$candidate" --format '{{index .Config.Labels "com.docker.swarm.task.id"}}')"
+              if [ "$candidate_task" = "$task" ] || [[ "$candidate_task" == "$task"* ]] || [[ "$task" == "$candidate_task"* ]]; then
+                printf '%s' "$candidate"; return 0
+              fi
+            done < <(safe docker ps -q --filter "label=com.docker.swarm.service.name=$service" --filter status=running)
+          }
+          NGINX_CONTAINER="$(resolve_container "$NGINX_SERVICE")"
+          APP_CONTAINER="$(resolve_container "$APP_SERVICE")"
+          emit NGINX_CONTAINER_RESOLVED "$( [ -n "$NGINX_CONTAINER" ] && echo true || echo false )"
+          emit APP_CONTAINER_RESOLVED "$( [ -n "$APP_CONTAINER" ] && echo true || echo false )"
+          emit NGINX_HEALTH "$( [ -n "$NGINX_CONTAINER" ] && safe docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$NGINX_CONTAINER" || echo UNKNOWN )"
+          emit APP_HEALTH "$( [ -n "$APP_CONTAINER" ] && safe docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$APP_CONTAINER" || echo UNKNOWN )"
+
+          for service in "${SERVICES[@]}"; do
+            echo "SERVICE_${service}_STATE=$(safe docker service inspect "$service" --format 'desired={{.Spec.Mode.Replicated.Replicas}} running={{.ServiceStatus.RunningTasks}} image={{.Spec.TaskTemplate.ContainerSpec.Image}}' | sanitize)"
+            echo "SERVICE_${service}_TASKS=$(safe docker service ps "$service" --no-trunc --format 'state={{.CurrentState}} image={{.Image}} desired={{.DesiredState}}' | sanitize)"
+          done
+
+          for container_name in "$NGINX_CONTAINER" "$APP_CONTAINER"; do
+            [ -n "$container_name" ] || continue
+            safe docker inspect "$container_name" --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' >/dev/null
+          done
+          echo "DOCKER_STATS=$(safe docker stats --no-stream --format '{{.Name}} cpu={{.CPUPerc}} mem={{.MemUsage}} net={{.NetIO}} block={{.BlockIO}} pids={{.PIDs}}' "${SERVICES[@]}" | sanitize)"
+
+          temp_path="UNKNOWN"
+          if [ -n "$NGINX_CONTAINER" ]; then
+            temp_path="$(safe docker exec "$NGINX_CONTAINER" nginx -T 2>/dev/null | awk '$1=="client_body_temp_path" {gsub(";", "", $2); print $2; exit}')"
+            [ -n "$temp_path" ] || temp_path="UNKNOWN"
+          fi
+          emit NGINX_CLIENT_BODY_TEMP_PATH "$temp_path"
+          if [ "$temp_path" != UNKNOWN ] && [ -n "$NGINX_CONTAINER" ]; then
+            temp_fs="$(safe docker exec "$NGINX_CONTAINER" df -hP -- "$temp_path" | tail -n 1 | sanitize)"
+            temp_bytes="$(safe docker exec "$NGINX_CONTAINER" sh -c 'du -sb -- "$1" 2>/dev/null | cut -f1' sh "$temp_path" | tr -cd '0-9')"
+            temp_count="$(safe docker exec "$NGINX_CONTAINER" sh -c 'find "$1" -type f -printf . 2>/dev/null | wc -c' sh "$temp_path" | tr -cd '0-9')"
+          else
+            temp_fs="UNKNOWN"; temp_bytes="UNKNOWN"; temp_count="UNKNOWN"
+          fi
+          emit NGINX_CLIENT_BODY_TEMP_FS_USAGE "$temp_fs"
+          emit NGINX_CLIENT_BODY_TEMP_BYTES "${temp_bytes:-UNKNOWN}"
+          emit NGINX_CLIENT_BODY_TEMP_FILE_COUNT "${temp_count:-UNKNOWN}"
+
+          if [ -n "$NGINX_CONTAINER" ]; then
+            safe docker exec "$NGINX_CONTAINER" nginx -T 2>/dev/null | awk '$1 ~ /^(worker_processes|worker_connections|client_max_body_size|client_body_buffer_size|client_body_timeout|fastcgi_request_buffering)$/ {gsub(";", "", $2); print $1 "=" $2}' | sanitize
+          fi
+          app_health="UNKNOWN"
+          if [ -n "$APP_CONTAINER" ]; then
+            # Output contract: pm, pm.max_children, pm.start_servers,
+            # pm.min_spare_servers, pm.max_spare_servers.
+            safe docker exec "$APP_CONTAINER" sh -c 'php-fpm -tt 2>&1 || php-fpm8.2 -tt 2>&1 || true' | sed -nE 's/.*(pm(\.max_children|\.start_servers|\.min_spare_servers|\.max_spare_servers)?)[[:space:]]*=[[:space:]]*([^ ,;]+).*/\1=\4/p' | sanitize
+            app_health="$(safe docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$APP_CONTAINER")"
+          fi
+          php9000="UNKNOWN"
+          if [ -n "$NGINX_CONTAINER" ]; then
+            if docker exec "$NGINX_CONTAINER" sh -c 'nc -z -w 2 mhcs_core_app 9000' >/dev/null 2>&1; then php9000="true"; else php9000="false"; fi
+          fi
+          emit PHP_FPM_PORT_9000_ACCEPTING "$php9000"
+
+          for service in "$NGINX_SERVICE" "$APP_SERVICE"; do
+            echo "LOG_${service}=$(safe docker service logs --since 5m --tail 200 "$service" 2>/dev/null | grep -Ei 'no space left|too many open files|worker_connections are not enough|upstream timed out|connect\(\) failed|recv\(\) failed|send\(\) failed|client timed out|client intended to send too large body|prematurely closed connection|OOM|out of memory|killed' | sanitize | tr '\n' ';')"
+          done
+
+          host_resource_pressure=false
+          if df -P / 2>/dev/null | awk 'NR==2 {exit ($5+0 >= 95 ? 0 : 1)}' || \
+             df -Pi / 2>/dev/null | awk 'NR==2 {exit ($5+0 >= 95 ? 0 : 1)}' || \
+             free -m 2>/dev/null | awk '/^Mem:/ {exit (($7+0) < (($2+0)*0.05) ? 0 : 1)}' || \
+             awk '{exit (($1+0)/($3+0) >= 0.95 ? 0 : 1)}' /proc/sys/fs/file-nr 2>/dev/null; then
+            host_resource_pressure=true
+          fi
+          if [ "$local_ok" = true ] && [ "$public_ok" = false ]; then
+            classification=PUBLIC_INGRESS_FAILURE
+          elif [ "$port_8013" != true ] || [ "$local_ok" = false ]; then
+            classification=LOCAL_NGINX_FAILURE
+          elif [ "$php9000" = false ] || [[ "$app_health" =~ ^(unhealthy|exited|dead)$ ]]; then
+            classification=APP_UPSTREAM_FAILURE
+          elif [ "$host_resource_pressure" = true ]; then
+            classification=HOST_RESOURCE_PRESSURE
+          elif [ "${temp_fs:-UNKNOWN}" != UNKNOWN ] && echo "$temp_fs" | awk '{exit ($5+0 >= 95 ? 0 : 1)}'; then
+            classification=REQUEST_BODY_TEMP_STORAGE_PRESSURE
+          elif echo "$(nstat_snapshot)" | grep -Eiq 'ListenOverflows=[1-9]|ListenDrops=[1-9]'; then
+            classification=HOST_NETWORK_FAILURE
+          elif [ "$local_ok" = true ] && [ "$public_ok" = true ]; then
+            classification=NO_FAILURE_OBSERVED
+          else
+            classification=INDETERMINATE
+          fi
+          emit CLASSIFICATION "$classification"
