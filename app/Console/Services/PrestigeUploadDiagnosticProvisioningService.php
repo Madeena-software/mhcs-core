@@ -9,7 +9,9 @@ use App\Modules\Member\Application\Data\PrestigeUploadDiagnosticMemberRegistrati
 use App\Modules\Member\Application\Services\MemberContextResolver;
 use App\Modules\Member\Application\Services\MemberRegistrationService;
 use App\Modules\Member\Application\Services\Mvp03BookingService;
+use App\Modules\Member\Application\Services\Mvp03PointService;
 use App\Modules\Member\Domain\Models\Member;
+use App\Modules\Operator\Application\Services\EligibleShiftIntakeService;
 use App\Shared\Audit\AuditEvent;
 use App\Shared\Audit\AuditStore;
 use App\Shared\Context\AuthenticatedContextProvider;
@@ -41,6 +43,8 @@ final readonly class PrestigeUploadDiagnosticProvisioningService
     public function __construct(
         private MemberRegistrationService $registration,
         private Mvp03BookingService $booking,
+        private Mvp03PointService $points,
+        private EligibleShiftIntakeService $eligibleShifts,
         private MemberContextResolver $members,
         private AuditStore $audit,
         private Clock $clock,
@@ -64,6 +68,7 @@ final readonly class PrestigeUploadDiagnosticProvisioningService
             $this->assertAccountSet();
             $this->assertMemberSet();
             $canonical = $this->canonicalState();
+            $this->assertCanonical($canonical);
 
             $schedule = $this->schedule((string) $siteRef->id, (string) $service->id);
             $states = [];
@@ -74,19 +79,17 @@ final readonly class PrestigeUploadDiagnosticProvisioningService
                 $accountExisted = User::query()->where('email', $subject['email'])->exists();
                 $account = $this->account($subject);
                 $provider->memberRegistration();
-                $member = $this->registration->registerNonclinicalValidation(new PrestigeUploadDiagnosticMemberRegistrationData(
+                $member = $this->registration->registerPrestigeUploadDiagnostic(new PrestigeUploadDiagnosticMemberRegistrationData(
                     self::OPERATION.':'.$subject['key'].':member-v1',
                     $account->id,
-                    NonclinicalValidationContext::PRESTIGE_KEY,
-                    NonclinicalValidationContext::PRESTIGE_MARKER_NAMESPACE,
                     $subject['key'],
-                    $subject['name'],
                 ));
                 $memberModel = Member::query()->findOrFail($member->memberId);
                 if (! $this->members->isExactPrestigeUploadDiagnosticIdentity($memberModel)) {
                     throw new RuntimeException('The Prestige diagnostic Member state is inconsistent.');
                 }
-                $this->fund($memberModel, $schedule, (string) $service->point_price, $subject['key'], $provider);
+                $provider->pointFunding();
+                $funding = $this->points->ensurePrestigeUploadDiagnosticBookingFunding($subject['key'], $schedule->id);
                 $provider->bindValidationMember($account->id);
                 $provider->memberBooking();
                 Auth::guard('web')->setUser($account);
@@ -94,26 +97,36 @@ final readonly class PrestigeUploadDiagnosticProvisioningService
                 if ($existing->count() > 1 || ($existing->isNotEmpty() && ($existing->first()->shift_schedule_id !== $schedule->id || $existing->first()->status !== 'confirmed'))) {
                     throw new RuntimeException('The Prestige diagnostic booking state is inconsistent.');
                 }
-                $booking = $existing->isEmpty() ? $this->booking->createForCurrentMember($schedule->id, self::OPERATION.':'.$subject['key'].':booking-v1', (string) $service->point_price) : ['status' => 'confirmed'];
+                $booking = $existing->isEmpty() ? $this->booking->createForCurrentMember($schedule->id, self::OPERATION.':'.$subject['key'].':booking-v1', $funding['point_cost']) : ['status' => 'confirmed'];
                 Auth::guard('web')->logout();
                 $states[$subject['key'].'_account_state'] = $accountExisted ? 'EXISTING_VALID' : 'CREATED';
                 $states[$subject['key'].'_member_state'] = $member->replayed ? 'EXISTING_VALID' : 'CREATED';
                 $states[$subject['key'].'_booking_state'] = $existing->isNotEmpty() ? 'EXISTING_VALID' : ((string) $booking['status'] === 'confirmed' ? 'CREATED' : 'INVALID');
             }
 
-            $this->eligibleAndOperators($schedule, (string) $site->id);
+            $provider = new NonclinicalValidationContextProvider(NonclinicalValidationContext::PRESTIGE_KEY);
+            app()->instance(AuthenticatedContextProvider::class, $provider);
+            $provider->accountProvisioning();
+            $projection = $this->eligibleShifts->consume(self::OPERATION.':eligible-v1', [
+                'schedule_id' => (string) $schedule->id,
+                'operator_site_id' => self::SITE,
+                'starts_at' => (new DateTimeImmutable($schedule->starts_at, new DateTimeZone('UTC')))->format(DATE_ATOM),
+                'ends_at' => (new DateTimeImmutable($schedule->ends_at, new DateTimeZone('UTC')))->format(DATE_ATOM),
+                'confirmed_count' => 2, 'quota' => 2, 'event_version' => 1,
+            ]);
+            $this->operators((object) ['eligible_id' => $projection['eligible_shift_id']], (string) $site->id);
             if ($canonical !== $this->canonicalState()) {
                 throw new RuntimeException('The canonical Prestige employee or SYN-CHEST-A state changed.');
             }
+            $terminal = $this->assertTerminalState($schedule);
 
             return $states + [
-                'production_revision_verified' => true,
-                'canonical_prestige_employee_count' => DB::table('members')->where('registration_source', 'administrator')->where('identity_status', 'verified')->whereNotNull('encrypted_nik')->count(),
+                'canonical_prestige_employee_count' => $canonical['employees'],
                 'canonical_syn_chest_a_unchanged' => true,
                 'additional_validation_member_count' => DB::table('member_external_identifiers')->where('namespace', NonclinicalValidationContext::PRESTIGE_MARKER_NAMESPACE)->whereIn('value', ['gbsuparta', 'ipang'])->count(),
                 'diagnostic_site' => 'PRES-01', 'diagnostic_service' => self::SERVICE, 'diagnostic_schedule_quota' => 2,
                 'diagnostic_schedule_window' => $this->window($schedule), 'prestige_operator_count' => 5, 'diagnostic_shift_assignment_count' => 5,
-                'arrival_state' => 'NOT_EXECUTED', 'identity_verification_state' => 'NOT_EXECUTED', 'basic_examination_state' => 'NOT_EXECUTED', 'capture_present' => false,
+                'arrival_state' => $terminal['arrival_state'], 'identity_verification_state' => $terminal['identity_verification_state'], 'basic_examination_state' => $terminal['basic_examination_state'], 'capture_present' => $terminal['capture_present'],
                 'provisioning' => 'PASS',
             ];
         });
@@ -162,7 +175,9 @@ final readonly class PrestigeUploadDiagnosticProvisioningService
 
     private function owned(string $id, string $subject): bool
     {
-        return DB::table('audit_events')->where('action', 'production.prestige-upload-diagnostic.account.provisioned')->where('target_id', $id)->where('outcome', 'success')->where('metadata', 'like', '%"subject":"'.$subject.'"%')->count() === 1;
+        return $this->exactAudit('production.prestige-upload-diagnostic.account.provisioned', User::class, $id, [
+            'validation_context' => self::OPERATION, 'subject' => $subject, 'nonclinical' => true,
+        ]);
     }
 
     private function schedule(string $siteRef, string $service): object
@@ -178,9 +193,14 @@ final readonly class PrestigeUploadDiagnosticProvisioningService
         if ($rows->isNotEmpty()) {
             throw new RuntimeException('An unrelated Prestige diagnostic schedule exists.');
         }
-        $local = new DateTimeImmutable($this->clock->now()->setTimezone(new DateTimeZone('Asia/Jakarta'))->format('Y-m-d').' 00:00:00', new DateTimeZone('Asia/Jakarta'));
-        $start = $local->setTimezone(new DateTimeZone('UTC'));
-        $end = $local->modify('+1 day')->setTimezone(new DateTimeZone('UTC'));
+        $localNow = $this->clock->now()->setTimezone(new DateTimeZone('Asia/Jakarta'));
+        $boundary = $localNow->setTime((int) $localNow->format('H'), intdiv((int) $localNow->format('i'), 15) * 15, 0);
+        if ($boundary <= $localNow) {
+            $boundary = $boundary->modify('+15 minutes');
+        }
+        $localStart = $boundary->modify('+15 minutes');
+        $start = $localStart->setTimezone(new DateTimeZone('UTC'));
+        $end = $localStart->modify('+1 day')->setTimezone(new DateTimeZone('UTC'));
         $now = $this->clock->now();
         $id = (string) Str::uuid();
         DB::table('shift_schedules')->insert(['id' => $id, 'display_reference' => 'JAD-'.Str::upper(Str::random(8)), 'examination_site_id' => $siteRef, 'service_offering_id' => $service, 'starts_at' => $start->format('Y-m-d H:i:s'), 'ends_at' => $end->format('Y-m-d H:i:s'), 'quota' => 2, 'status' => 'open', 'eligible_at' => null, 'created_at' => $now, 'updated_at' => $now]);
@@ -191,21 +211,41 @@ final readonly class PrestigeUploadDiagnosticProvisioningService
 
     private function ownedSchedule(string $id): bool
     {
-        return DB::table('audit_events')->where('action', 'production.prestige-upload-diagnostic.schedule.provisioned')->where('target_id', $id)->where('outcome', 'success')->count() === 1;
+        return $this->exactAudit('production.prestige-upload-diagnostic.schedule.provisioned', 'shift-schedule', $id, ['validation_context' => self::OPERATION, 'nonclinical' => true]);
     }
 
-    /** @return array{employees:int,schedules:array<int,array<string,mixed>>,bookings:array<int,string>} */
+    /** @return array{employees:int,schedules:array<int,array<string,mixed>>,bookings:array<int,string>,populations:array<int,array<int,string>>} */
     private function canonicalState(): array
     {
         $serviceId = DB::table('service_offerings')->where('code', 'SYN-CHEST-A')->value('id');
-        $schedules = $serviceId === null ? [] : DB::table('shift_schedules as s')->join('examination_site_refs as r', 'r.id', '=', 's.examination_site_id')->where('s.service_offering_id', $serviceId)->where('r.operator_site_id', self::SITE)->orderBy('s.id')->get(['s.id', 's.starts_at', 's.ends_at', 's.quota', 's.status'])->map(fn (object $row): array => (array) $row)->all();
+        $schedules = $serviceId === null ? [] : DB::table('shift_schedules as s')->join('examination_site_refs as r', 'r.id', '=', 's.examination_site_id')->where('s.service_offering_id', $serviceId)->where('r.operator_site_id', self::SITE)->orderBy('s.starts_at')->get(['s.id', 's.starts_at', 's.ends_at', 's.quota', 's.status'])->map(fn (object $row): array => (array) $row)->all();
         $scheduleIds = array_column($schedules, 'id');
 
         return [
             'employees' => DB::table('members')->join('users', 'users.id', '=', 'members.user_id')->where('users.email', 'like', '%@prestige.madeena-xray.com')->where('members.registration_source', 'administrator')->where('members.identity_status', 'verified')->whereNotNull('members.encrypted_nik')->count(),
             'schedules' => $schedules,
             'bookings' => $scheduleIds === [] ? [] : DB::table('bookings')->whereIn('shift_schedule_id', $scheduleIds)->orderBy('id')->pluck('id')->all(),
+            'populations' => array_map(fn (string $id): array => DB::table('bookings')->where('shift_schedule_id', $id)->where('status', 'confirmed')->orderBy('member_id')->pluck('member_id')->all(), $scheduleIds),
         ];
+    }
+
+    private function assertCanonical(array $canonical): void
+    {
+        $users = DB::table('users')->where('email', 'like', '%@prestige.madeena-xray.com')->get();
+        $members = DB::table('members')->join('users', 'users.id', '=', 'members.user_id')->where('users.email', 'like', '%@prestige.madeena-xray.com')->get(['members.id', 'members.user_id', 'members.identity_status', 'members.registration_source', 'members.identity_document_type', 'members.encrypted_nik', 'members.nik_lookup_digest']);
+        $starts = array_column($canonical['schedules'], 'starts_at');
+        $ends = array_column($canonical['schedules'], 'ends_at');
+        if ($users->count() !== 37 || $members->count() !== 37 || $members->pluck('user_id')->unique()->count() !== 37 || $members->contains(fn (object $member): bool => $member->identity_status !== 'verified' || $member->registration_source !== 'administrator' || $member->identity_document_type !== 'ktp' || $member->encrypted_nik === null || $member->nik_lookup_digest === null)
+            || $canonical['employees'] !== 37 || count($canonical['schedules']) !== 3 || array_map('intval', array_column($canonical['schedules'], 'quota')) !== [37, 37, 37]
+            || $starts !== ['2026-08-19 17:00:00', '2026-08-26 17:00:00', '2026-08-27 17:00:00']
+            || $ends !== ['2026-08-26 17:00:00', '2026-08-27 17:00:00', '2026-08-28 17:00:00']
+            || count($canonical['bookings']) !== 111
+            || array_map('count', $canonical['populations']) !== [37, 37, 37]
+            || count(array_unique($canonical['populations'][0])) !== 37
+            || $canonical['populations'][0] !== $canonical['populations'][1]
+            || $canonical['populations'][1] !== $canonical['populations'][2]) {
+            throw new RuntimeException('The canonical Prestige 37-member SYN-CHEST-A state is inconsistent.');
+        }
     }
 
     private function window(object $schedule): string
@@ -215,35 +255,43 @@ final readonly class PrestigeUploadDiagnosticProvisioningService
         return $now < new DateTimeImmutable($schedule->starts_at, new DateTimeZone('UTC')) ? 'FUTURE' : ($now < new DateTimeImmutable($schedule->ends_at, new DateTimeZone('UTC')) ? 'ACTIVE' : 'ENDED');
     }
 
-    private function fund(Member $member, object $schedule, string $cost, string $subject, NonclinicalValidationContextProvider $provider): void
+    /** @return array{arrival_state:string,identity_verification_state:string,basic_examination_state:string,capture_present:bool} */
+    private function assertTerminalState(object $schedule): array
     {
-        $source = self::OPERATION.':'.$subject.':booking-funding-v1';
-        $entries = DB::table('point_ledger_entries')->where('source_reference', $source)->lockForUpdate()->get();
-        if ($entries->count() > 1 || ($entries->isNotEmpty() && ((string) $entries->first()->member_id !== $member->id || (string) $entries->first()->point_delta !== $cost))) {
-            throw new RuntimeException('The Prestige diagnostic funding state is inconsistent.');
+        $markers = DB::table('member_external_identifiers')->where('namespace', NonclinicalValidationContext::PRESTIGE_MARKER_NAMESPACE)->whereIn('value', array_column(self::SUBJECTS, 'key'))->get();
+        if ($markers->count() !== 2 || $markers->pluck('value')->unique()->count() !== 2) {
+            throw new RuntimeException('The Prestige diagnostic marker state is inconsistent.');
         }
-        if ($entries->isEmpty()) {
-            $id = (string) Str::uuid();
-            DB::table('point_ledger_entries')->insert(['id' => $id, 'member_id' => $member->id, 'booking_id' => null, 'funding_source' => 'personal', 'entry_type' => 'credit', 'point_delta' => $cost, 'source_reference' => $source, 'reverses_id' => null, 'created_at' => $this->clock->now()]);
-            $this->audit->append(AuditEvent::fromContext($provider->current(), 'member.point-funding.prestige-upload-diagnostic', 'member', 'success', $this->clock->now(), 'point-ledger-entry', $id, metadata: ['validation_context' => self::OPERATION, 'subject' => $subject, 'nonclinical' => true]));
+        $bookings = DB::table('bookings')->whereIn('member_id', $markers->pluck('member_id'))->get();
+        if ($bookings->count() !== 2 || $bookings->where('shift_schedule_id', $schedule->id)->where('booking_type', 'b2c')->where('funding_source', 'personal')->where('status', 'confirmed')->count() !== 2) {
+            throw new RuntimeException('The Prestige diagnostic booking terminal state is inconsistent.');
         }
-        if (DB::table('point_ledger_entries')->where('member_id', $member->id)->sum('point_delta') != $cost && DB::table('bookings')->where('member_id', $member->id)->exists() === false) {
-            throw new RuntimeException('The Prestige diagnostic funding balance is inconsistent.');
+        $ids = $bookings->pluck('id');
+        foreach (['operator_arrivals', 'operator_identity_verifications', 'examination_consents', 'operator_paper_tickets', 'member_vital_signs_assessments', 'member_paper_questionnaires', 'image_gateway_capture_sets'] as $table) {
+            if (DB::table($table)->whereIn('booking_id', $ids)->exists()) {
+                throw new RuntimeException('The Prestige diagnostic context progressed beyond provisioning.');
+            }
         }
+        if (DB::table('operator_queue_admissions as q')->join('operator_paper_tickets as t', 't.id', '=', 'q.operator_paper_ticket_id')->whereIn('t.booking_id', $ids)->exists()) {
+            throw new RuntimeException('The Prestige diagnostic queue state is inconsistent.');
+        }
+        foreach ($markers as $marker) {
+            $member = Member::query()->find($marker->member_id);
+            $booking = $bookings->where('member_id', $marker->member_id)->first();
+            $user = DB::table('users')->where('id', $member?->user_id)->first();
+            $charge = DB::table('point_ledger_entries')->where('booking_id', $booking?->id)->where('entry_type', 'charge')->where('funding_source', 'personal')->where('point_delta', '-'.$booking?->point_cost_snapshot)->get();
+            if ($member === null || $user === null || ! $this->members->isExactPrestigeUploadDiagnosticIdentity($member) || $booking === null || $booking->service_offering_id !== $schedule->service_offering_id || $booking->examination_site_id_snapshot !== $schedule->examination_site_id || $booking->service_code_snapshot !== 'SYN-CHEST-B' || $booking->site_code_snapshot !== 'PRES-01' || $charge->count() !== 1 || DB::table('local_imaging_orders')->where('booking_id', $booking->id)->where('member_id', $member->id)->where('shift_schedule_id', $schedule->id)->where('status', 'authored')->count() !== 1) {
+                throw new RuntimeException('The Prestige diagnostic Member terminal state is inconsistent.');
+            }
+        }
+
+        return ['arrival_state' => 'NOT_EXECUTED', 'identity_verification_state' => 'NOT_EXECUTED', 'basic_examination_state' => 'NOT_EXECUTED', 'capture_present' => false];
     }
 
-    private function eligibleAndOperators(object $schedule, string $operatorSiteLocalId): void
+    private function operators(object $projection, string $operatorSiteLocalId): void
     {
-        $eligible = DB::table('operator_eligible_shifts')->where('member_schedule_id', $schedule->id)->get();
-        if ($eligible->count() > 1 || ($eligible->isNotEmpty() && ((int) $eligible->first()->quota !== 2 || $eligible->first()->operator_site_id !== self::SITE))) {
-            throw new RuntimeException('The Prestige diagnostic eligible shift is inconsistent.');
-        }
         $now = $this->clock->now();
-        $eligibleId = $eligible->first()?->id;
-        if ($eligibleId === null) {
-            $eligibleId = (string) Str::uuid();
-            DB::table('operator_eligible_shifts')->insert(['id' => $eligibleId, 'member_schedule_id' => $schedule->id, 'operator_site_id' => self::SITE, 'schedule_starts_at' => $schedule->starts_at, 'schedule_ends_at' => $schedule->ends_at, 'confirmed_count_at_eligibility' => 2, 'quota' => 2, 'event_version' => 1, 'source_event_id' => self::OPERATION.':shift-v1', 'eligible_at' => $now, 'sync_status' => 'eligible', 'created_at' => $now, 'updated_at' => $now]);
-        }
+        $eligibleId = $projection->eligible_id;
         $profiles = DB::table('operator_profiles')->where('employee_code', 'like', 'OPR-PRES-%')->where('active', true)->orderBy('employee_code')->get();
         if ($profiles->count() !== 5) {
             throw new RuntimeException('The Prestige Operator set is not exactly five active profiles.');
@@ -269,6 +317,13 @@ final readonly class PrestigeUploadDiagnosticProvisioningService
 
     private function ownedAssignment(string $id): bool
     {
-        return DB::table('audit_events')->where('action', 'production.prestige-upload-diagnostic.shift-assignment.provisioned')->where('target_id', $id)->where('outcome', 'success')->count() === 1;
+        return $this->exactAudit('production.prestige-upload-diagnostic.shift-assignment.provisioned', 'operator-shift-assignment', $id, ['validation_context' => self::OPERATION, 'nonclinical' => true]);
+    }
+
+    private function exactAudit(string $action, string $targetType, string $targetId, array $metadata): bool
+    {
+        $events = DB::table('audit_events')->where('action', $action)->where('target_type', $targetType)->where('target_id', $targetId)->where('outcome', 'success')->get();
+
+        return $events->count() === 1 && json_decode((string) $events->first()->metadata, true) === $metadata;
     }
 }

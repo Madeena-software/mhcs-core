@@ -20,24 +20,52 @@ permissions:
 jobs:
   provision:
     runs-on: self-hosted
+    timeout-minutes: 10
+    env:
+      EXPECTED_APPLICATION_REVISION: ${{ inputs.expected_application_revision }}
+      AUTHORIZATION_MARKER: ${{ inputs.authorization_marker }}
+      APP_SERVICE: mhcs_core_app
     steps:
-      - name: Require exact authorization marker
-        env:
-          AUTHORIZATION_MARKER: ${{ inputs.authorization_marker }}
-        run: test "$AUTHORIZATION_MARKER" = AUTHORIZE_ONE_PRESTIGE_UPLOAD_DIAGNOSTIC_MEMBER_PROVISION
-      - name: Prove runtime identity before mutation
-        env:
-          EXPECTED_REVISION: ${{ inputs.expected_application_revision }}
+      - name: Verify runtime, provision, and recheck in the same app container
         run: |
           set -euo pipefail
-          test -n "$EXPECTED_REVISION"
-          test "$(docker ps --filter name=mhcs_core_app --filter status=running -q | wc -l)" = 1
-          APP_CONTAINER="$(docker ps --filter name=mhcs_core_app --filter status=running -q)"
-          SERVICE_IMAGE_SHA="$(docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' mhcs_core_app | sed 's/.*@//')"
-          TASK_IMAGE_SHA="$(docker inspect --format '{{.Image}}' "$APP_CONTAINER" | sed 's/.*@//')"
-          test -n "$SERVICE_IMAGE_SHA"; test -n "$TASK_IMAGE_SHA"; test "$SERVICE_IMAGE_SHA" = "$TASK_IMAGE_SHA"
-          test "$(docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$APP_CONTAINER")" = "$EXPECTED_REVISION"
+          test "$AUTHORIZATION_MARKER" = AUTHORIZE_ONE_PRESTIGE_UPLOAD_DIAGNOSTIC_MEMBER_PROVISION
+          [[ "$EXPECTED_APPLICATION_REVISION" =~ ^[0-9a-f]{40}$ ]]
+          task_id="$(docker service ps "$APP_SERVICE" --filter desired-state=running --no-trunc --format '{{.ID}}' | sed -n '1p')"
+          APP_CONTAINER=""
+          while IFS= read -r candidate; do
+            candidate_task="$(docker inspect "$candidate" --format '{{index .Config.Labels "com.docker.swarm.task.id"}}' 2>/dev/null || true)"
+            if [ "$candidate_task" = "$task_id" ] || [[ "$candidate_task" == "$task_id"* ]] || [[ "$task_id" == "$candidate_task"* ]]; then APP_CONTAINER="$candidate"; break; fi
+          done < <(docker ps -q --filter "label=com.docker.swarm.service.name=$APP_SERVICE" --filter status=running)
+          test -n "$APP_CONTAINER"
+          service_image="$(docker service inspect "$APP_SERVICE" --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}')"
+          container_image="$(docker inspect "$APP_CONTAINER" --format '{{.Config.Image}}')"
+          image_revision() { local image="$1"; image="${image%%@*}"; image="${image##*:}"; [[ "$image" =~ ^[0-9a-f]{40}$ ]] && printf '%s' "$image"; }
+          test "$(image_revision "$service_image")" = "$EXPECTED_APPLICATION_REVISION"
+          test "$(image_revision "$container_image")" = "$EXPECTED_APPLICATION_REVISION"
+          test "$(docker exec "$APP_CONTAINER" cat /var/www/html/VERSION-CURRENT)" = "$EXPECTED_APPLICATION_REVISION"
           test "$(docker inspect --format '{{.State.Health.Status}}' "$APP_CONTAINER")" = healthy
-          test "$(docker exec "$APP_CONTAINER" sh -c 'cat VERSION-CURRENT')" = "$EXPECTED_REVISION"
-      - name: Provision fixed diagnostic Members
-        run: php artisan mhcs:provision-prestige-upload-diagnostic-members
+          output="$(mktemp)"; resolver="$(mktemp)"; trap 'rm -f "$output" "$resolver"' EXIT
+          docker exec "$APP_CONTAINER" php artisan mhcs:provision-prestige-upload-diagnostic-members >"$output"
+          for field in canonical_prestige_employee_count=37 canonical_syn_chest_a_unchanged=true additional_validation_member_count=2 diagnostic_site=PRES-01 diagnostic_service=SYN-CHEST-B diagnostic_schedule_quota=2 prestige_operator_count=5 diagnostic_shift_assignment_count=5 provisioning=PASS; do grep -Fxq "$field" "$output"; done
+          cat >"$resolver" <<'PHP'
+          <?php
+          declare(strict_types=1);
+          use IlluminateContractsConsoleKernel;
+          use IlluminateSupportFacadesDB;
+          require 'vendor/autoload.php';
+          $app = require 'bootstrap/app.php'; $app->make(Kernel::class)->bootstrap();
+          $markers = DB::table('member_external_identifiers')->where('namespace', 'prestige.validation')->whereIn('value', ['gbsuparta', 'ipang'])->get();
+          if ($markers->count() !== 2 || $markers->pluck('value')->unique()->count() !== 2) exit(1);
+          $memberIds = $markers->pluck('member_id'); $bookings = DB::table('bookings')->whereIn('member_id', $memberIds)->get();
+          if ($bookings->count() !== 2 || $bookings->where('status', 'confirmed')->count() !== 2) exit(1);
+          $schedule = DB::table('shift_schedules')->where('id', $bookings->first()->shift_schedule_id)->first();
+          if ($schedule === null || (int) $schedule->quota !== 2) exit(1);
+          $site = DB::table('examination_site_refs')->where('id', $schedule->examination_site_id)->where('operator_site_id', 'site-prestige')->where('code', 'PRES-01')->first();
+          $service = DB::table('service_offerings')->where('id', $schedule->service_offering_id)->where('code', 'SYN-CHEST-B')->first();
+          if ($site === null || $service === null) exit(1);
+          foreach (['operator_arrivals', 'operator_identity_verifications', 'examination_consents', 'operator_paper_tickets', 'member_vital_signs_assessments', 'member_paper_questionnaires', 'image_gateway_capture_sets'] as $table) if (DB::table($table)->whereIn('booking_id', $bookings->pluck('id'))->exists()) exit(1);
+          echo "production_revision_verified=true\ncanonical_prestige_employee_count=".DB::table('members')->join('users', 'users.id', '=', 'members.user_id')->where('users.email', 'like', '%@prestige.madeena-xray.com')->where('members.registration_source', 'administrator')->where('members.identity_status', 'verified')->count()."\nadditional_validation_member_count=2\nprovisioning=PASS\n";
+          PHP
+          cat "$output"
+          docker exec -i "$APP_CONTAINER" php <"$resolver"

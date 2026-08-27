@@ -9,16 +9,24 @@ use InvalidArgumentException;
 
 final readonly class NonclinicalValidationMemberRegistrationData
 {
+    public string $contextKey;
+
+    public string $markerNamespace;
+
+    public string $markerValue;
+
+    public string $displayName;
+
     public function __construct(
         public string $operationId,
         public string $userId,
-        public string $contextKey = NonclinicalValidationContext::KEY,
-        public string $markerNamespace = NonclinicalValidationContext::MARKER_NAMESPACE,
-        public string $markerValue = NonclinicalValidationContext::KEY,
-        public string $displayName = 'Nonclinical validation subject',
     ) {
         if (trim($this->operationId) === '' || trim($this->userId) === '') {
             throw new InvalidArgumentException('Nonclinical validation registration identity is required.');
         }
+        $this->contextKey = NonclinicalValidationContext::KEY;
+        $this->markerNamespace = NonclinicalValidationContext::MARKER_NAMESPACE;
+        $this->markerValue = NonclinicalValidationContext::KEY;
+        $this->displayName = 'Nonclinical validation subject';
     }
 }

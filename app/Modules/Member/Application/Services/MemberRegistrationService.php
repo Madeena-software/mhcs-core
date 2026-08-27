@@ -204,7 +204,17 @@ final readonly class MemberRegistrationService
         }
     }
 
-    public function registerNonclinicalValidation(NonclinicalValidationMemberRegistrationData|PrestigeUploadDiagnosticMemberRegistrationData $data): MemberRegistrationResult
+    public function registerNonclinicalValidation(NonclinicalValidationMemberRegistrationData $data): MemberRegistrationResult
+    {
+        return $this->registerFixedNonclinicalValidation($data);
+    }
+
+    public function registerPrestigeUploadDiagnostic(PrestigeUploadDiagnosticMemberRegistrationData $data): MemberRegistrationResult
+    {
+        return $this->registerFixedNonclinicalValidation($data);
+    }
+
+    private function registerFixedNonclinicalValidation(NonclinicalValidationMemberRegistrationData|PrestigeUploadDiagnosticMemberRegistrationData $data): MemberRegistrationResult
     {
         $legacy = $data->contextKey === NonclinicalValidationContext::KEY
             && $data->markerNamespace === NonclinicalValidationContext::MARKER_NAMESPACE
