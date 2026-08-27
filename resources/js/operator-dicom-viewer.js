@@ -9,7 +9,11 @@ import {
     init as dicomImageLoaderInit,
 } from '@cornerstonejs/dicom-image-loader';
 import dicomParser from 'dicom-parser';
-import { VIEWER_TIMEOUT_MS, withViewerTimeout } from './operator-viewer-timeout.js';
+import {
+    dicomLoadTimeout,
+    VIEWER_TIMEOUT_MS,
+    withViewerTimeout,
+} from './operator-viewer-timeout.js';
 
 const VIEWPORT_ID = 'mhcs-dicom-viewport';
 const ENGINE_ID = 'mhcs-dicom-engine';
@@ -241,6 +245,7 @@ export async function renderStudy(root) {
     setViewerState(root, 'loading', root.dataset.loadingMessage);
     window.__mhcsDicomViewerReady = false;
     const timeoutMs = viewerTimeout(root);
+    const dicomTimeoutMs = dicomLoadTimeout(root);
 
     try {
         if (typeof dicomParser.parseDicom !== 'function') {
@@ -261,7 +266,7 @@ export async function renderStudy(root) {
 
         const viewport = renderingEngine.getViewport(VIEWPORT_ID);
         const imageId = 'wadouri:' + root.dataset.imageUrl;
-        await withViewerTimeout(viewport.setStack([imageId], 0), timeoutMs);
+        await withViewerTimeout(viewport.setStack([imageId], 0), dicomTimeoutMs);
 
         const center = Number(root.dataset.windowCenter);
         const width = Number(root.dataset.windowWidth);
@@ -284,4 +289,3 @@ export async function renderStudy(root) {
         setViewerState(root, 'error');
     }
 }
-

@@ -13,7 +13,12 @@ const {
     toggleFullscreen,
 } = viewerModule;
 const { bootstrapViewer } = await import('../../resources/js/app.js');
-const { withViewerTimeout } = await import('../../resources/js/operator-viewer-timeout.js');
+const {
+    DICOM_LOAD_TIMEOUT_MS,
+    VIEWER_TIMEOUT_MS,
+    dicomLoadTimeout,
+    withViewerTimeout,
+} = await import('../../resources/js/operator-viewer-timeout.js');
 
 function viewerRoot() {
     const status = { textContent: '' };
@@ -24,6 +29,7 @@ function viewerRoot() {
         dataset: {
             unavailableMessage: 'Studi DICOM tidak tersedia.',
             displayErrorMessage: 'Studi DICOM tidak dapat ditampilkan.',
+            viewerTimeoutMs: '',
         },
         status,
         secondaryStatus,
@@ -135,6 +141,40 @@ test('moves the study to the safe Indonesian error state when viewer bootstrap f
     assert.equal(root.error.hidden, false);
     assert.equal(root.error.textContent, root.dataset.displayErrorMessage);
     assert.equal(root.error.textContent.includes('bundle'), false);
+});
+
+test('keeps a slow render in loading after the short bootstrap boundary', async () => {
+    const root = viewerRoot();
+    root.dataset.viewerTimeoutMs = '5';
+    const bootstrap = bootstrapViewer(root, async () => ({
+        renderStudy: async () => {
+            root.dataset.viewerState = 'loading';
+            await new Promise((resolve) => setTimeout(resolve, 30));
+            root.dataset.viewerState = 'ready';
+        },
+    }));
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    assert.equal(root.dataset.viewerState, 'loading');
+    await bootstrap;
+    assert.equal(root.dataset.viewerState, 'ready');
+});
+
+test('keeps viewer and DICOM load timeouts distinct', () => {
+    assert.equal(VIEWER_TIMEOUT_MS, 45000);
+    assert.equal(DICOM_LOAD_TIMEOUT_MS, 300000);
+    assert.equal(dicomLoadTimeout(viewerRoot()), 300000);
+    assert.equal(dicomLoadTimeout({ dataset: { dicomLoadTimeoutMs: '7' } }), 7);
+});
+
+test('bounds dynamic viewer-module import with the short timeout', async () => {
+    const root = viewerRoot();
+    root.dataset.viewerTimeoutMs = '5';
+
+    await bootstrapViewer(root, () => new Promise(() => {}));
+
+    assert.equal(root.dataset.viewerState, 'error');
 });
 
 test('bounds an unsettled viewer promise', async () => {
