@@ -210,6 +210,10 @@ function viewerTimeout(root) {
     return Number.isFinite(configured) && configured > 0 ? configured : VIEWER_TIMEOUT_MS;
 }
 
+export function loadDicomStack(viewport, imageId, timeoutMs) {
+    return withViewerTimeout(viewport.setStack([imageId], 0), timeoutMs);
+}
+
 export function registerDicomDecoder() {
     try {
         dicomImageLoaderInit({ maxWebWorkers: 1 });
@@ -266,7 +270,7 @@ export async function renderStudy(root) {
 
         const viewport = renderingEngine.getViewport(VIEWPORT_ID);
         const imageId = 'wadouri:' + root.dataset.imageUrl;
-        await withViewerTimeout(viewport.setStack([imageId], 0), dicomTimeoutMs);
+        await loadDicomStack(viewport, imageId, dicomTimeoutMs);
 
         const center = Number(root.dataset.windowCenter);
         const width = Number(root.dataset.windowWidth);

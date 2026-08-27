@@ -5,6 +5,7 @@ const viewerModule = await import('../../resources/js/operator-dicom-viewer.js')
 const {
     flipViewport,
     isPrimaryPointerDrag,
+    loadDicomStack,
     panViewport,
     resizeRenderingEngine,
     resetViewport,
@@ -166,6 +167,34 @@ test('keeps viewer and DICOM load timeouts distinct', () => {
     assert.equal(DICOM_LOAD_TIMEOUT_MS, 300000);
     assert.equal(dicomLoadTimeout(viewerRoot()), 300000);
     assert.equal(dicomLoadTimeout({ dataset: { dicomLoadTimeoutMs: '7' } }), 7);
+});
+
+test('loads a stack through the bounded DICOM boundary', async () => {
+    let calls = 0;
+    const viewport = {
+        setStack(ids, index) {
+            calls += 1;
+            assert.deepEqual([ids, index], [['wadouri:test'], 0]);
+            return new Promise((resolve) => setTimeout(resolve, 20));
+        },
+    };
+
+    const load = loadDicomStack(viewport, 'wadouri:test', 20);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    assert.equal(calls, 1);
+    await load;
+});
+
+test('resolves a stack before the DICOM-specific timeout', async () => {
+    const viewport = { setStack: async () => 'loaded' };
+
+    await assert.doesNotReject(loadDicomStack(viewport, 'wadouri:test', 20));
+});
+
+test('rejects an unsettled stack at the DICOM-specific timeout', async () => {
+    const viewport = { setStack: () => new Promise(() => {}) };
+
+    await assert.rejects(loadDicomStack(viewport, 'wadouri:test', 5), /timed out/);
 });
 
 test('bounds dynamic viewer-module import with the short timeout', async () => {
