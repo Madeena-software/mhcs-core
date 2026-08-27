@@ -34,12 +34,23 @@ final class ProductionDockerUpgradeReadinessWorkflowTest extends TestCase
         $this->assertStringContainsString('docker-ce-cli', $workflow);
         $this->assertStringContainsString('apt-cache policy', $workflow);
         $this->assertStringContainsString('apt-mark showhold', $workflow);
-        $this->assertStringContainsString('download\\.docker\\.com/linux/ubuntu', $workflow);
+        $this->assertStringContainsString('https://download.docker.com/linux/ubuntu', $workflow);
+        $this->assertStringContainsString('/etc/apt/sources.list.d/*.list', $workflow);
+        $this->assertStringContainsString('/etc/apt/sources.list.d/*.sources', $workflow);
+        $this->assertStringContainsString("'types'", $workflow);
+        $this->assertStringContainsString("'uris'", $workflow);
+        $this->assertStringContainsString('inspect_stanza', $workflow);
+        $this->assertStringContainsString("if not line:", $workflow);
+        $this->assertStringContainsString('DOCKER_APT_REPOSITORY=INDETERMINATE', $workflow);
         $this->assertStringContainsString('apt-cache madison', $workflow);
         $this->assertStringContainsString('29\\.7\\.2', $workflow);
         $this->assertStringContainsString('AVAILABLE', $workflow);
         $this->assertStringContainsString('NOT_OBSERVED', $workflow);
-        $this->assertStringContainsString('/var/lib/apt/lists', $workflow);
+        $this->assertStringContainsString('package_key="${package^^}"', $workflow);
+        $this->assertStringContainsString('DOCKER_APT_INDEX_LATEST_UTC', $workflow);
+        $this->assertStringNotContainsString('echo "APT_INDEX_LATEST_UTC=', $workflow);
+        $this->assertStringNotContainsString('find /var/lib/apt/lists -maxdepth 1 -type f -printf', $workflow);
+        $this->assertStringNotContainsString('cat /etc/apt', $workflow);
         $this->assertStringContainsString('live-restore', $workflow);
         $this->assertStringContainsString('{{.Swarm.LocalNodeState}}', $workflow);
         $this->assertStringContainsString('docker node ls', $workflow);
@@ -50,6 +61,11 @@ final class ProductionDockerUpgradeReadinessWorkflowTest extends TestCase
         $this->assertStringContainsString('READY_FOR_UPGRADE_PLANNING', $workflow);
         $this->assertStringContainsString('NEEDS_PACKAGE_INDEX_REFRESH', $workflow);
         $this->assertStringContainsString('SWARM_MAINTENANCE_RISK', $workflow);
+        $this->assertStringContainsString('UNSAFE_SINGLE_MANAGER', $workflow);
+        $this->assertStringContainsString('UNSAFE_QUORUM', $workflow);
+        $this->assertStringContainsString('SAFE_FOR_ONE_MANAGER_TEMPORARY_OUTAGE', $workflow);
+        $this->assertStringContainsString('reachable_count - 1', $workflow);
+        $this->assertStringContainsString('READINESS=READY_FOR_UPGRADE_PLANNING', $workflow);
         $this->assertStringContainsString('PACKAGE_SOURCE_BLOCKER', $workflow);
         $this->assertStringContainsString('INDETERMINATE', $workflow);
 

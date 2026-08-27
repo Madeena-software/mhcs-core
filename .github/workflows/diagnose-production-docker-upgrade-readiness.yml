@@ -59,10 +59,51 @@ jobs:
 
           echo '===> Docker APT repository'
           apt_sources='/etc/apt/sources.list /etc/apt/sources.list.d'
-          if grep -RhsEq '^[[:space:]]*deb(-src)?[[:space:]].*download\.docker\.com/linux/ubuntu' $apt_sources 2>/dev/null; then
+          official_docker_uri='https://download.docker.com/linux/ubuntu'
+          legacy_official="$(awk -v uri="$official_docker_uri" '$1 == "deb" || $1 == "deb-src" { for (i = 2; i <= NF; i++) if ($i == uri) found = 1 } END { print found ? "true" : "false" }' /etc/apt/sources.list /etc/apt/sources.list.d/*.list 2>/dev/null || echo false)"
+          legacy_source="$(awk '$1 == "deb" || $1 == "deb-src" { found = 1 } END { print found ? "true" : "false" }' /etc/apt/sources.list /etc/apt/sources.list.d/*.list 2>/dev/null || echo false)"
+          deb822_result='INDETERMINATE'
+          if command -v python3 >/dev/null 2>&1; then
+            deb822_result="$(python3 - "$official_docker_uri" <<'PY'
+            import glob
+            import sys
+
+            official_uri = sys.argv[1]
+            has_source = False
+            has_official = False
+            def inspect_stanza(fields):
+                global has_source, has_official
+                types = fields.get('types', [])
+                uris = fields.get('uris', [])
+                if 'deb' not in types or fields.get('enabled', ['yes']) == ['no']:
+                    return
+                has_source = True
+                if official_uri in uris:
+                    has_official = True
+
+            for path in glob.glob('/etc/apt/sources.list.d/*.sources'):
+                fields = {}
+                for line in open(path, encoding='utf-8', errors='replace'):
+                    line = line.strip()
+                    if not line:
+                        inspect_stanza(fields)
+                        fields = {}
+                        continue
+                    if line.startswith('#') or ':' not in line:
+                        continue
+                    key, value = line.split(':', 1)
+                    fields.setdefault(key.strip().lower(), []).extend(value.split())
+                inspect_stanza(fields)
+            print('OFFICIAL' if has_official else 'OTHER' if has_source else 'NONE')
+            PY
+            )"
+          fi
+          if [ "$legacy_official" = 'true' ] || [ "$deb822_result" = 'OFFICIAL' ]; then
             echo 'DOCKER_APT_REPOSITORY=OFFICIAL_DOCKER'
-          elif grep -RhsEq '^[[:space:]]*deb(-src)?[[:space:]]' $apt_sources 2>/dev/null; then
+          elif [ "$legacy_source" = 'true' ] || [ "$deb822_result" = 'OTHER' ]; then
             echo 'DOCKER_APT_REPOSITORY=OTHER'
+          elif [ "$deb822_result" = 'INDETERMINATE' ]; then
+            echo 'DOCKER_APT_REPOSITORY=INDETERMINATE'
           else
             echo 'DOCKER_APT_REPOSITORY=NOT_FOUND'
           fi
@@ -71,18 +112,20 @@ jobs:
           for package in docker-ce docker-ce-cli; do
             versions="$(apt-cache madison "$package" 2>/dev/null | awk -F'|' '{gsub(/^[[:space:]]+|[[:space:]]+$/, "", $2); print $2}' || true)"
             target_version="$(grep -E '(^|:)29\.7\.2(-|$)' <<< "$versions" | head -n 1 || true)"
+            package_key="${package^^}"
+            package_key="${package_key//-/_}"
             if [ -n "$target_version" ]; then
-              echo "${package//-/_}_29_7_2=AVAILABLE version=${target_version}"
+              echo "${package_key}_29_7_2=AVAILABLE version=${target_version}"
             else
-              echo "${package//-/_}_29_7_2=NOT_OBSERVED"
+              echo "${package_key}_29_7_2=NOT_OBSERVED"
             fi
           done
-          latest_index="$(find /var/lib/apt/lists -maxdepth 1 -type f -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -n 1 || true)"
+          latest_index="$(find /var/lib/apt/lists -maxdepth 1 -type f \( -name '*download.docker.com*' -o -name '*download_docker_com*' -o -name '*download%2edocker%2ecom*' \) -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -n 1 || true)"
           if [ -n "$latest_index" ]; then
             index_timestamp="${latest_index%% *}"
-            echo "APT_INDEX_LATEST_UTC=$(date -u -d "@${index_timestamp%.*}" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || echo UNKNOWN)"
+            echo "DOCKER_APT_INDEX_LATEST_UTC=$(date -u -d "@${index_timestamp%.*}" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || echo UNKNOWN)"
           else
-            echo 'APT_INDEX_LATEST_UTC=UNKNOWN'
+            echo 'DOCKER_APT_INDEX_LATEST_UTC=UNKNOWN'
           fi
 
           echo '===> Docker daemon and live restore'
@@ -161,12 +204,14 @@ jobs:
             echo 'READINESS=SWARM_MAINTENANCE_RISK'
           elif [ "$swarm_state" != 'active' ]; then
             echo 'READINESS=INDETERMINATE'
-          elif ! grep -RhsEq '^[[:space:]]*deb(-src)?[[:space:]].*download\.docker\.com/linux/ubuntu' $apt_sources 2>/dev/null; then
+          elif [ "$legacy_official" != 'true' ] && [ "$deb822_result" != 'OFFICIAL' ]; then
             echo 'READINESS=PACKAGE_SOURCE_BLOCKER'
           elif [ "$(apt-cache madison docker-ce 2>/dev/null | grep -Ec '(^|:)29\.7\.2(-|$)' || true)" -eq 0 ] || [ "$(apt-cache madison docker-ce-cli 2>/dev/null | grep -Ec '(^|:)29\.7\.2(-|$)' || true)" -eq 0 ]; then
             echo 'READINESS=NEEDS_PACKAGE_INDEX_REFRESH'
           elif [ "$control_available" = 'true' ] && [ "$reachable_count" -ge "$quorum" ] && [ "$((reachable_count - 1))" -lt "$quorum" ]; then
             echo 'READINESS=SWARM_MAINTENANCE_RISK'
+          elif [ "$control_available" = 'true' ] && [ "$reachable_count" -ge "$quorum" ] && [ "$((reachable_count - 1))" -ge "$quorum" ]; then
+            echo 'READINESS=READY_FOR_UPGRADE_PLANNING'
           elif [ "$control_available" = 'false' ]; then
             echo 'READINESS=READY_FOR_UPGRADE_PLANNING'
           else
