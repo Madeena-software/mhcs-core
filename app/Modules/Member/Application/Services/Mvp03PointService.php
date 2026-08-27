@@ -315,65 +315,6 @@ final readonly class Mvp03PointService
         });
     }
 
-    /** @return array{ledger_entry_id: string, point_cost: string, replayed: bool} */
-    public function ensurePrestigeUploadDiagnosticBookingFunding(string $subjectKey, string $scheduleId): array
-    {
-        if (! in_array($subjectKey, ['gbsuparta', 'ipang'], true) || ! Str::isUuid($scheduleId)) {
-            throw new Mvp03Exception('The Prestige diagnostic funding request is invalid.');
-        }
-        $context = $this->authorization->context('member.nonclinical-validation.point-funding');
-        if (! in_array('system', $context->roles, true)) {
-            throw new Mvp03Exception('Prestige diagnostic funding requires trusted authorization.');
-        }
-
-        return DB::transaction(function () use ($subjectKey, $scheduleId, $context): array {
-            $markers = DB::table('member_external_identifiers')->where('namespace', NonclinicalValidationContext::PRESTIGE_MARKER_NAMESPACE)->where('value', $subjectKey)->lockForUpdate()->get();
-            if ($markers->count() !== 1) {
-                throw new Mvp03Exception('The Prestige diagnostic Member marker is ambiguous.');
-            }
-            $member = Member::query()->whereKey($markers->first()->member_id)->lockForUpdate()->first();
-            if ($member === null || ! $this->members->isExactPrestigeUploadDiagnosticIdentity($member)) {
-                throw new Mvp03Exception('The Prestige diagnostic Member is inconsistent.');
-            }
-            $schedule = DB::table('shift_schedules as s')->join('examination_site_refs as r', 'r.id', '=', 's.examination_site_id')->join('service_offerings as o', 'o.id', '=', 's.service_offering_id')->where('s.id', $scheduleId)->where('s.status', 'open')->where('s.quota', 2)->where('r.operator_site_id', 'site-prestige')->where('r.code', 'PRES-01')->where('o.code', 'SYN-CHEST-B')->where('o.active', true)->lockForUpdate()->first();
-            if ($schedule === null) {
-                throw new Mvp03Exception('The Prestige diagnostic schedule is unavailable.');
-            }
-            $rates = DB::table('point_exchange_rates')->where('status', PointRateStatus::Active->value)->lockForUpdate()->get();
-            if ($rates->count() !== 1) {
-                throw new Mvp03Exception('Exactly one active point rate is required.');
-            }
-            $cost = PointAmount::fromString((string) $schedule->point_price);
-            if (! $cost->isPositive()) {
-                throw new Mvp03Exception('The Prestige diagnostic service price is invalid.');
-            }
-            $source = NonclinicalValidationContext::PRESTIGE_KEY.':'.$subjectKey.':booking-funding-v1';
-            $entries = DB::table('point_ledger_entries')->where('member_id', $member->id)->where('funding_source', 'personal')->lockForUpdate()->get();
-            $funding = $entries->where('source_reference', $source);
-            if ($funding->count() > 1 || $entries->reject(fn (object $entry): bool => (string) $entry->source_reference === $source)->isNotEmpty() || ($funding->isNotEmpty() && ((string) $funding->first()->point_delta !== (string) $cost || $funding->first()->booking_id !== null || $funding->first()->entry_type !== PointEntryType::Credit->value))) {
-                throw new Mvp03Exception('The Prestige diagnostic funding history is inconsistent.');
-            }
-            if ($funding->isEmpty()) {
-                $id = (string) Str::uuid();
-                DB::table('point_ledger_entries')->insert(['id' => $id, 'member_id' => $member->id, 'booking_id' => null, 'funding_source' => 'personal', 'entry_type' => PointEntryType::Credit->value, 'point_delta' => (string) $cost, 'source_reference' => $source, 'reverses_id' => null, 'created_at' => $this->clock->now()]);
-                $this->audit->append(AuditEvent::fromContext($context, 'member.point-funding.prestige-upload-diagnostic', 'member', 'success', $this->clock->now(), 'point-ledger-entry', $id, metadata: ['validation_context' => NonclinicalValidationContext::PRESTIGE_KEY, 'subject' => $subjectKey, 'nonclinical' => true]));
-
-                return ['ledger_entry_id' => $id, 'point_cost' => (string) $cost, 'replayed' => false];
-            }
-            $other = $entries->reject(fn (object $entry): bool => (string) $entry->source_reference === $source);
-            if ($other->count() !== 1) {
-                throw new Mvp03Exception('The Prestige diagnostic funding history is incomplete.');
-            }
-            $charge = $other->first();
-            $booking = DB::table('bookings')->where('id', $charge->booking_id)->where('member_id', $member->id)->where('shift_schedule_id', $scheduleId)->where('service_offering_id', $schedule->service_offering_id)->where('status', 'confirmed')->where('booking_type', 'b2c')->where('funding_source', 'personal')->where('point_cost_snapshot', (string) $cost)->first();
-            if ($charge->entry_type !== PointEntryType::Charge->value || $charge->booking_id === null || (string) $charge->point_delta !== '-'.(string) $cost || $booking === null || $this->personalBalance($member->id)->compare(PointAmount::zero()) !== 0) {
-                throw new Mvp03Exception('The Prestige diagnostic booking charge is inconsistent.');
-            }
-
-            return ['ledger_entry_id' => (string) $funding->first()->id, 'point_cost' => (string) $cost, 'replayed' => true];
-        });
-    }
-
     private function record(string $action, string $targetType, string $targetId, array $metadata): void
     {
         $context = $this->context->current();

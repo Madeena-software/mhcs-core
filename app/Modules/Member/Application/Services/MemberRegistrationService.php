@@ -8,7 +8,6 @@ use App\Models\User;
 use App\Modules\Member\Application\Data\MemberRegistrationData;
 use App\Modules\Member\Application\Data\MemberRegistrationResult;
 use App\Modules\Member\Application\Data\NonclinicalValidationMemberRegistrationData;
-use App\Modules\Member\Application\Data\PrestigeUploadDiagnosticMemberRegistrationData;
 use App\Modules\Member\Domain\Enums\IdentityStatus;
 use App\Modules\Member\Domain\Enums\RegistrationSource;
 use App\Modules\Member\Domain\Enums\VerificationAssetType;
@@ -206,38 +205,15 @@ final readonly class MemberRegistrationService
 
     public function registerNonclinicalValidation(NonclinicalValidationMemberRegistrationData $data): MemberRegistrationResult
     {
-        return $this->registerFixedNonclinicalValidation($data);
-    }
-
-    public function registerPrestigeUploadDiagnostic(PrestigeUploadDiagnosticMemberRegistrationData $data): MemberRegistrationResult
-    {
-        return $this->registerFixedNonclinicalValidation($data);
-    }
-
-    private function registerFixedNonclinicalValidation(NonclinicalValidationMemberRegistrationData|PrestigeUploadDiagnosticMemberRegistrationData $data): MemberRegistrationResult
-    {
-        $legacy = $data->contextKey === NonclinicalValidationContext::KEY
-            && $data->markerNamespace === NonclinicalValidationContext::MARKER_NAMESPACE
-            && $data->markerValue === NonclinicalValidationContext::KEY;
-        $prestige = $data->contextKey === NonclinicalValidationContext::PRESTIGE_KEY
-            && $data->markerNamespace === NonclinicalValidationContext::PRESTIGE_MARKER_NAMESPACE
-            && in_array($data->markerValue, ['gbsuparta', 'ipang'], true)
-            && $data->displayName === $data->markerValue;
-        if (! $legacy && ! $prestige) {
-            throw new MemberIdentityException('The fixed nonclinical validation context is not supported.');
-        }
         $context = $this->authorization->context('member.nonclinical-validation');
         if (! in_array('system', $context->roles, true)) {
             throw new MemberIdentityException('Nonclinical validation registration requires a trusted system context.');
         }
 
         $payloadHash = hash('sha256', json_encode([
-            'context' => $data->contextKey,
+            'context' => NonclinicalValidationContext::KEY,
             'operation_id' => $data->operationId,
             'user_id' => $data->userId,
-            'marker_namespace' => $data->markerNamespace,
-            'marker_value' => $data->markerValue,
-            'display_name' => $data->displayName,
         ], JSON_THROW_ON_ERROR));
 
         try {
@@ -255,7 +231,7 @@ final readonly class MemberRegistrationService
 
                     if ($operation->status === 'handled' && $operation->result !== null) {
                         $result = json_decode($operation->result, true, 512, JSON_THROW_ON_ERROR);
-                        $this->assertNonclinicalMemberState($result['member_id'], $data->userId, $data->markerNamespace, $data->markerValue);
+                        $this->assertNonclinicalMemberState($result['member_id'], $data->userId);
 
                         return new MemberRegistrationResult(
                             memberId: $result['member_id'],
@@ -277,7 +253,7 @@ final readonly class MemberRegistrationService
                 if (DB::table('members')->where('user_id', $data->userId)->exists()) {
                     throw new MemberIdentityException('The validation account is already linked to a Member.');
                 }
-                if (DB::table('member_external_identifiers')->where('namespace', $data->markerNamespace)->where('value', $data->markerValue)->exists()) {
+                if (DB::table('member_external_identifiers')->where('namespace', NonclinicalValidationContext::MARKER_NAMESPACE)->where('value', NonclinicalValidationContext::KEY)->exists()) {
                     throw new MemberIdentityException('The validation marker already belongs to another Member.');
                 }
 
@@ -304,7 +280,7 @@ final readonly class MemberRegistrationService
                     'identity_document_type' => null,
                     'encrypted_nik' => null,
                     'nik_lookup_digest' => null,
-                    'name' => $data->displayName,
+                    'name' => 'Nonclinical validation subject',
                     'birth_date' => '1985-08-04',
                     'administrative_gender' => 'nonclinical',
                     'registration_source' => RegistrationSource::NonclinicalValidation->value,
@@ -319,13 +295,13 @@ final readonly class MemberRegistrationService
                 DB::table('member_external_identifiers')->insert([
                     'id' => (string) Str::uuid(),
                     'member_id' => $memberId,
-                    'namespace' => $data->markerNamespace,
-                    'value' => $data->markerValue,
+                    'namespace' => NonclinicalValidationContext::MARKER_NAMESPACE,
+                    'value' => NonclinicalValidationContext::KEY,
                     'created_at' => $now,
                     'updated_at' => $now,
                 ]);
 
-                $this->assertNonclinicalMemberState($memberId, $data->userId, $data->markerNamespace, $data->markerValue);
+                $this->assertNonclinicalMemberState($memberId, $data->userId);
                 $result = new MemberRegistrationResult(
                     memberId: $memberId,
                     userId: $data->userId,
@@ -341,7 +317,7 @@ final readonly class MemberRegistrationService
                     occurredAt: $now,
                     targetType: Member::class,
                     targetId: $memberId,
-                    metadata: ['validation_context' => $data->contextKey, 'nonclinical' => true],
+                    metadata: ['validation_context' => NonclinicalValidationContext::KEY, 'nonclinical' => true],
                 ));
                 DB::table('member_operations')
                     ->where('operation_type', 'nonclinical_validation_registration')
@@ -395,12 +371,12 @@ final readonly class MemberRegistrationService
         }
     }
 
-    private function assertNonclinicalMemberState(string $memberId, string $userId, string $markerNamespace = NonclinicalValidationContext::MARKER_NAMESPACE, string $markerValue = NonclinicalValidationContext::KEY): void
+    private function assertNonclinicalMemberState(string $memberId, string $userId): void
     {
         $member = DB::table('members')->where('id', $memberId)->first();
         $markerCount = DB::table('member_external_identifiers')
-            ->where('namespace', $markerNamespace)
-            ->where('value', $markerValue)
+            ->where('namespace', NonclinicalValidationContext::MARKER_NAMESPACE)
+            ->where('value', NonclinicalValidationContext::KEY)
             ->count();
 
         if (
@@ -412,7 +388,7 @@ final readonly class MemberRegistrationService
             || $member->encrypted_nik !== null
             || $member->nik_lookup_digest !== null
             || $markerCount !== 1
-            || ! DB::table('member_external_identifiers')->where('member_id', $memberId)->where('namespace', $markerNamespace)->where('value', $markerValue)->exists()
+            || ! DB::table('member_external_identifiers')->where('member_id', $memberId)->where('namespace', NonclinicalValidationContext::MARKER_NAMESPACE)->where('value', NonclinicalValidationContext::KEY)->exists()
             || DB::table('member_verification_assets')->where('member_id', $memberId)->exists()
         ) {
             throw new MemberIdentityException('The nonclinical validation Member state is inconsistent.');
