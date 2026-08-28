@@ -2,13 +2,13 @@
 title: Production Normalized Radiograph Browser Validation Harness
 document_id: MHCS-TASK-PRODUCTION-NORMALIZED-RADIOGRAPH-BROWSER-HARNESS-001
 version: 1.0
-status: Draft
+status: validated-published
 language: en-US
 last_updated: 2026-08-28
 scope:
   - manual-only browser validation harness implementation
   - static and local verification of the harness contract
-authority_note: This Draft authorizes only repository implementation and local verification of a future browser-validation harness. It does not authorize production deployment, production workflow dispatch, fixture download, NPZ submission, production data mutation, or MPIPS changes.
+authority_note: This published task authorizes only the bounded repository implementation and local verification of the browser-validation harness defined here. It does not authorize production deployment, production workflow dispatch, fixture download, NPZ submission, production data mutation, or MPIPS changes.
 ---
 
 # Executable Task
@@ -22,7 +22,7 @@ authority_note: This Draft authorizes only repository implementation and local v
 `.agents/tasks/production-normalized-radiograph-browser-validation-harness.md`
 
 **Task contract state:**
-`Draft`
+`Validated/Published upon immutable publication of this exact content.`
 
 **Delivery objective / Work Package / MVP:**
 `Release prerequisite — prove the deployed Operator browser upload contains the normalized radiograph File`
@@ -48,13 +48,13 @@ task separately governs deployment and one authorized production validation.
 ## Baseline and task revision
 
 **Implementation baseline:**
-`3652b76dc87e51ad5ca379e8d86e72019bd9ec57`
+`ee95351a7d0ecc9951c7ee95ba617a1f037660ea`
 
 **Application revision the future harness may validate:**
 `d6df79cd2c7028c46741c0bdf8d148d6d9220561`
 
 **Task revision:**
-`resolved when published`
+`The full SHA of the commit containing this exact task content, supplied after publication.`
 
 The harness/control-plane revision, deployed application revision, and this
 task's governing revision are distinct identities. The future harness MUST NOT
@@ -182,7 +182,7 @@ synthetic/local test data or byte fixtures only for local harness tests.
 
 ### Remaining approval requirements
 
-- Planner/Reviewer approval and publication of this task before implementation.
+- Implementation may begin only under this exact immutable published task revision.
 - Normal implementation review and acceptance of the harness at an immutable
   revision before the dependent release task may be published.
 - Separate release and one-time production-validation approvals remain
