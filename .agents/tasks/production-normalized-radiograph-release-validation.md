@@ -1,15 +1,15 @@
 ---
 title: Production Normalized Radiograph Release and Validation
 document_id: MHCS-TASK-PRODUCTION-NORMALIZED-RADIOGRAPH-RELEASE-001
-version: 1.1
-status: Draft
+version: 1.2
+status: validated-published
 language: en-US
 last_updated: 2026-08-28
 scope:
   - exact accepted MHCS release deployment
   - one controlled production validation of browser-side normalized radiograph upload
   - post-deployment Image Gateway and MPIPS evidence
-authority_note: This Draft defines a bounded release and validation contract for later publication. It does not authorize execution, deployment, production validation, production mutation, or historical-object changes while Draft.
+authority_note: This published task authorizes only the bounded release preflight, manual deployment, and one controlled production validation described here, subject to explicit approvals and all stop conditions. Publication does not itself authorize execution, deployment, production validation, production mutation, or historical-object changes.
 ---
 
 # Executable Task
@@ -23,7 +23,7 @@ authority_note: This Draft defines a bounded release and validation contract for
 `.agents/tasks/production-normalized-radiograph-release-validation.md`
 
 **Task contract state:**
-`Draft`
+`Validated/Published upon immutable publication of this exact content.`
 
 **Delivery objective / Work Package / MVP:**
 `Release Gate — deploy and validate the accepted browser-side radiograph NPZ normalization through the production Operator → Image Gateway → MPIPS flow`
@@ -33,7 +33,7 @@ authority_note: This Draft defines a bounded release and validation contract for
 
 ## Delivery context
 
-The accepted implementation revision `d6df79cd2c7028c46741c0bdf8d148d6d9220561`
+The application release candidate `d6df79cd2c7028c46741c0bdf8d148d6d9220561`
 implements the approved operator radiograph normalization task. It removes only
 the exact `processedimage.npy` ZIP member from future `radiograph_npz` uploads,
 leaves `gain_npz` unchanged, and sends the resulting bytes through the existing
@@ -63,28 +63,27 @@ Planning review identified that no currently governed production workflow can
 prove the browser/client boundary. The prerequisite
 `.agents/tasks/production-normalized-radiograph-browser-validation-harness.md`
 therefore governs implementation of that capability separately. This release
-task remains Draft and MUST NOT be published or executed until the harness is
-published, implemented, reviewed, and accepted at an immutable revision.
+task is published only after the harness is published, implemented, reviewed,
+and accepted at the immutable revisions recorded below. Publication does not
+itself authorize execution or side effects.
 
 ## Baseline and task revision
 
-**Implementation baseline:**
-`d6df79cd2c7028c46741c0bdf8d148d6d9220561`
-
-**Accepted implementation revision:**
+**Application release candidate / deployment revision:**
 `d6df79cd2c7028c46741c0bdf8d148d6d9220561`
 
 **Browser validation harness governing revision:**
-`resolved after prerequisite publication`
+`b99146a4ca7c7bb71a5b0e7de36dceb632c7dddc`
 
 **Accepted browser validation harness implementation revision:**
-`resolved after prerequisite acceptance`
+`ccc7cbf7397ca19819fbf6cb63c8cf628f3db88c`
 
-**Task revision:**
-`resolved when published`
+**Release-task governing revision:**
+`The full SHA of the commit containing this exact task content, supplied after publication.`
 
-This Draft MUST be republished with an exact immutable task-content revision
-before any Executor may dispatch a deployment or perform production validation.
+This published task governs only the exact release candidate and harness
+identities recorded here. Its publication revision is resolved externally from
+the publication commit and MUST NOT be embedded in this file.
 
 ## Objective
 
@@ -165,7 +164,8 @@ is required; the transmitted radiograph MUST be smaller than the original.
 
 ### Out of scope
 
-- Any production execution while this task remains Draft.
+- Any production execution before the explicit approvals and execution gates
+  in this published task are satisfied.
 - Deployment or validation of any MHCS revision other than the exact accepted
   revision named above.
 - Direct SSH deployment, manual server mutation, direct object-store access,
@@ -212,8 +212,8 @@ is required; the transmitted radiograph MUST be smaller than the original.
 - Exact fixture acquisition mechanism and integrity declarations remain
   available without exposing credentials or fixture contents.
 - The browser-validation harness task has been published, implemented, reviewed,
-  and accepted at an immutable revision recorded in this task before release
-  publication. Its accepted implementation can load the production Operator
+  and accepted at the immutable revisions recorded in this task. Its accepted
+  implementation can load the production Operator
   page, observe the actual multipart request, and retain only sanitized
   evidence. Playwright/Pest availability alone does not satisfy this dependency.
 
@@ -241,8 +241,8 @@ is required; the transmitted radiograph MUST be smaller than the original.
   browser submission, normal queue processing, and sanitized production
   observation.
 - Planner/Reviewer confirmation that the exact browser-validation harness
-  publication and accepted implementation revisions have been inserted into
-  this Draft before it is published.
+  publication and accepted implementation revisions recorded above remain
+  unchanged before release execution.
 - Separate approval remains required for any production data deletion,
   historical-object operation, infrastructure/IAM change, new dependency, or
   MPIPS change; this task does not grant it.
@@ -267,10 +267,15 @@ is required; the transmitted radiograph MUST be smaller than the original.
 Before dispatching deployment, the Executor MUST verify and report, without
 printing secrets:
 
-- current MHCS `HEAD` and selected deployment ref are exactly
+- the application release candidate and selected deployment ref are exactly
   `d6df79cd2c7028c46741c0bdf8d148d6d9220561`;
-- the browser-validation harness task is published and its implementation is
-  accepted at the exact immutable revision recorded above;
+- the deployment workflow is dispatched for/selects exactly that application
+  release candidate, without requiring the current control-plane checkout
+  `HEAD` to equal it;
+- the accepted browser-validation harness available to the validation control
+  plane is exactly `ccc7cbf7397ca19819fbf6cb63c8cf628f3db88c` and is governed by
+  task revision `b99146a4ca7c7bb71a5b0e7de36dceb632c7dddc`;
+- no later application revision is silently substituted;
 - MHCS working tree is clean and no unrelated revision is substituted;
 - `.github/workflows/deploy-swarm.yml` remains `workflow_dispatch` only and
   uses its existing production concurrency group;
@@ -349,8 +354,8 @@ mechanism. It MUST execute the exact deployed application's browser module and
 observe the actual File/FormData used by the real Operator submission. If the
 harness is unavailable, its accepted revision cannot be proved, or it cannot
 observe the actual multipart bytes without replacing application behavior, the
-release task MUST remain unpublished or stop before fixture acquisition and
-return to planning. Direct `curl` of a pre-normalized file is never an
+  release execution MUST stop before fixture acquisition and return to
+  planning. Direct `curl` of a pre-normalized file is never an
 acceptable substitute.
 
 ### Sanitized evidence
@@ -365,8 +370,7 @@ unbounded application logs.
 
 - [ ] This task is published at an immutable revision before any execution.
 - [ ] The browser-validation harness task is published, implemented, reviewed,
-  and accepted at an immutable revision, and both harness revision placeholders
-  in this task are replaced with exact values before release publication.
+  and accepted at the exact immutable revisions recorded in this task.
 - [ ] The exact authorized MHCS revision `d6df79cd2c7028c46741c0bdf8d148d6d9220561` is deployed through the existing manual workflow.
 - [ ] Production independently reports the exact expected application revision and passes deployment/health verification.
 - [ ] The last known good deployed revision is recorded and no rollback ambiguity remains.
@@ -424,9 +428,9 @@ The Executor MUST distinguish:
 
 Stop before or during execution and return `PLANNING REQUIRED` if:
 
-- the task is still Draft, its immutable publication revision is unresolved,
-  the prerequisite harness is not published and accepted at an immutable
-  revision, or required release/one-time validation authority is missing;
+- the task’s immutable publication revision is unresolved, the prerequisite
+  harness is not published and accepted at the exact immutable revisions
+  recorded here, or required release/one-time validation authority is missing;
 - MHCS is not at the exact authorized revision, the deployment workflow cannot
   prove the exact SHA, or production health/rollout is ambiguous;
 - the deployment requires direct SSH/manual server mutation or unapproved
@@ -477,7 +481,7 @@ Stop before or during execution and return `PLANNING REQUIRED` if:
 
 ## Side-effect boundaries
 
-### A later published task MAY authorize
+### This published task MAY authorize
 
 - one manual dispatch of `.github/workflows/deploy-swarm.yml` for the exact
   accepted SHA;
@@ -488,9 +492,9 @@ Stop before or during execution and return `PLANNING REQUIRED` if:
 
 ### The published task MUST keep unauthorized
 
-- execution while Draft or before explicit approvals;
-- publication or execution before the browser-validation harness dependency is
-  accepted and recorded here;
+- execution before explicit approvals;
+- execution before the browser-validation harness dependency is accepted and
+  recorded here;
 - direct SSH/manual production mutation;
 - automatic deployment from a push assumption, repeated runs, retries, or
   arbitrary fixture uploads;

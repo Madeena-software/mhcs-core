@@ -65,7 +65,7 @@ test('resets view-only transforms without changing the stored study', () => {
     assert.deepEqual(calls, [
         'resetCamera',
         ['rotation', 0],
-        ['camera', { flipHorizontal: true, flipVertical: false }],
+        ['camera', { flipHorizontal: false, flipVertical: false }],
         'render',
     ]);
 });
@@ -89,6 +89,160 @@ test('rotates and flips only the active viewport camera', () => {
     assert.equal(rotation, 80);
     assert.deepEqual(camera, { flipHorizontal: true, flipVertical: false });
     assert.equal(rendered, 3);
+});
+
+// Deterministic 3x3 asymmetric raster fixture where left, center, and right columns are distinct
+const ASYMMETRIC_FIXTURE = Object.freeze([
+    ['L_TOP', 'C_TOP', 'R_TOP'],
+    ['L_MID', 'C_MID', 'R_MID'],
+    ['L_BOT', 'C_BOT', 'R_BOT'],
+]);
+
+function projectPresentation(matrix, { flipHorizontal = false, flipVertical = false, rotation = 0 } = {}) {
+    let result = matrix.map((row) => [...row]);
+    if (flipHorizontal) {
+        result = result.map((row) => [...row].reverse());
+    }
+    if (flipVertical) {
+        result = [...result].reverse();
+    }
+    const normalizedRotation = ((rotation % 360) + 360) % 360;
+    if (normalizedRotation === 90) {
+        const rows = result.length;
+        const cols = result[0].length;
+        const rotated = [];
+        for (let c = 0; c < cols; c++) {
+            const newRow = [];
+            for (let r = rows - 1; r >= 0; r--) {
+                newRow.push(result[r][c]);
+            }
+            rotated.push(newRow);
+        }
+        result = rotated;
+    } else if (normalizedRotation === 180) {
+        result = result.map((row) => [...row].reverse()).reverse();
+    } else if (normalizedRotation === 270) {
+        const rows = result.length;
+        const cols = result[0].length;
+        const rotated = [];
+        for (let c = cols - 1; c >= 0; c--) {
+            const newRow = [];
+            for (let r = 0; r < rows; r++) {
+                newRow.push(result[r][c]);
+            }
+            rotated.push(newRow);
+        }
+        result = rotated;
+    }
+    return result;
+}
+
+function createPresentationViewport(initialCamera = { flipHorizontal: false, flipVertical: false }, initialRotation = 0) {
+    let camera = { ...initialCamera };
+    let rotation = initialRotation;
+    let renderedCount = 0;
+
+    return {
+        resetCamera() {
+            camera = { flipHorizontal: false, flipVertical: false };
+        },
+        setRotation(r) { rotation = r; },
+        getRotation() { return rotation; },
+        setCamera(next) {
+            camera = { ...camera, ...next };
+        },
+        getCamera() { return { ...camera }; },
+        render() { renderedCount += 1; },
+        get renderedCount() { return renderedCount; },
+        renderPresentation(source = ASYMMETRIC_FIXTURE) {
+            return projectPresentation(source, {
+                flipHorizontal: camera.flipHorizontal,
+                flipVertical: camera.flipVertical,
+                rotation,
+            });
+        },
+    };
+}
+
+test('asymmetric fixture mathematically distinguishes canonical from horizontally mirrored presentation', () => {
+    const canonical = projectPresentation(ASYMMETRIC_FIXTURE, { flipHorizontal: false, flipVertical: false, rotation: 0 });
+    const mirrored = projectPresentation(ASYMMETRIC_FIXTURE, { flipHorizontal: true, flipVertical: false, rotation: 0 });
+
+    assert.notDeepEqual(canonical, mirrored);
+    assert.deepEqual(canonical, ASYMMETRIC_FIXTURE);
+    assert.equal(canonical[0][0], 'L_TOP');
+    assert.equal(mirrored[0][0], 'R_TOP');
+    assert.equal(canonical[0][2], 'R_TOP');
+    assert.equal(mirrored[0][2], 'L_TOP');
+    assert.equal(canonical[1][0], 'L_MID');
+    assert.equal(mirrored[1][0], 'R_MID');
+});
+
+test('default viewport presentation renders canonical orientation without horizontal reflection', () => {
+    const viewport = createPresentationViewport();
+    resetViewport(viewport);
+
+    const canonical = projectPresentation(ASYMMETRIC_FIXTURE, { flipHorizontal: false, flipVertical: false, rotation: 0 });
+    const mirrored = projectPresentation(ASYMMETRIC_FIXTURE, { flipHorizontal: true, flipVertical: false, rotation: 0 });
+    const presentation = viewport.renderPresentation(ASYMMETRIC_FIXTURE);
+
+    assert.deepEqual(presentation, canonical);
+    assert.notDeepEqual(presentation, mirrored);
+    assert.equal(presentation[0][0], 'L_TOP');
+    assert.equal(presentation[0][2], 'R_TOP');
+    assert.equal(viewport.getCamera().flipHorizontal, false);
+    assert.equal(viewport.getCamera().flipVertical, false);
+    assert.equal(viewport.getRotation(), 0);
+});
+
+test('accidental horizontal mirroring default would be caught by asymmetric fixture regression', () => {
+    const legacyMirroredCamera = { flipHorizontal: true, flipVertical: false, rotation: 0 };
+    const buggyPresentation = projectPresentation(ASYMMETRIC_FIXTURE, legacyMirroredCamera);
+    const canonical = projectPresentation(ASYMMETRIC_FIXTURE, { flipHorizontal: false, flipVertical: false, rotation: 0 });
+
+    assert.notDeepEqual(buggyPresentation, canonical);
+    assert.equal(buggyPresentation[0][0], 'R_TOP');
+    assert.equal(buggyPresentation[0][2], 'L_TOP');
+});
+
+test('explicit horizontal flip reversibly transforms viewport from canonical to mirrored and back', () => {
+    const viewport = createPresentationViewport();
+    resetViewport(viewport);
+
+    const canonical = projectPresentation(ASYMMETRIC_FIXTURE, { flipHorizontal: false, flipVertical: false, rotation: 0 });
+    const mirrored = projectPresentation(ASYMMETRIC_FIXTURE, { flipHorizontal: true, flipVertical: false, rotation: 0 });
+
+    assert.deepEqual(viewport.renderPresentation(), canonical);
+
+    // Explicit horizontal flip
+    flipViewport(viewport, 'horizontal');
+    assert.equal(viewport.getCamera().flipHorizontal, true);
+    assert.deepEqual(viewport.renderPresentation(), mirrored);
+
+    // Second explicit flip (reversibility)
+    flipViewport(viewport, 'horizontal');
+    assert.equal(viewport.getCamera().flipHorizontal, false);
+    assert.deepEqual(viewport.renderPresentation(), canonical);
+});
+
+test('resetViewport restores canonical presentation and clears all flips and rotations', () => {
+    const viewport = createPresentationViewport();
+    resetViewport(viewport);
+
+    const canonical = projectPresentation(ASYMMETRIC_FIXTURE, { flipHorizontal: false, flipVertical: false, rotation: 0 });
+
+    rotateViewport(viewport, 90);
+    flipViewport(viewport, 'vertical');
+    flipViewport(viewport, 'horizontal');
+
+    assert.notDeepEqual(viewport.renderPresentation(), canonical);
+
+    resetViewport(viewport);
+
+    assert.equal(viewport.getCamera().flipHorizontal, false);
+    assert.equal(viewport.getCamera().flipVertical, false);
+    assert.equal(viewport.getRotation(), 0);
+    assert.deepEqual(viewport.renderPresentation(), canonical);
 });
 
 test('does not treat a plain click as a pan gesture', () => {

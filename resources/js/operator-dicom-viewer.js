@@ -17,7 +17,7 @@ import {
 
 const VIEWPORT_ID = 'mhcs-dicom-viewport';
 const ENGINE_ID = 'mhcs-dicom-engine';
-const DEFAULT_VIEW = Object.freeze({ rotation: 0, flipHorizontal: true, flipVertical: false });
+export const DEFAULT_VIEW = Object.freeze({ rotation: 0, flipHorizontal: false, flipVertical: false });
 const PAN_START_THRESHOLD = 3;
 
 export const VIEWER_INTERACTIONS = Object.freeze(['zoom', 'pan', 'reset', 'rotate', 'flip', 'fullscreen']);
@@ -58,7 +58,7 @@ export function resizeRenderingEngine(renderingEngine) {
     }
 }
 
-function applyDefaultViewport(viewport) {
+export function applyDefaultViewport(viewport) {
     viewport.resetCamera();
     viewport.setRotation(DEFAULT_VIEW.rotation);
     viewport.setCamera({
