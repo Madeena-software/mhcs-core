@@ -141,20 +141,23 @@ The Image Gateway module owns:
 - publication and report-version distribution state.
 
 Operator submits a capture through the public `mhcs-core` application. Before
-the multipart HTTP upload, the operator browser may normalize only the
-radiograph NPZ at the ZIP archive-member boundary by removing the redundant
-lower-case `processedimage.npy` member. The resulting bytes are the immutable
-canonical radiograph source received by Image Gateway; the gain NPZ is not
-normalized. Image Gateway durably persists the canonical radiograph, gain,
-manifest, and signature to the configured private store, then atomically
-accepts the complete source set and queues MPIPS. Checksums, byte counts,
-immutable manifests, idempotency, storage identity, and MPIPS submission refer
-to those normalized bytes. MHCS does not centrally retain the pre-normalization
-radiograph bytes for future captures. Each successful component is immutable; a
-later same-admission attempt uploads only a missing component. Historical
-objects already stored by MHCS remain unchanged. The Image Gateway queue worker
-is the only MPIPS caller, and no application-server-to-application-server file
-copy or internal network submission exists inside `mhcs-core`.
+the multipart HTTP upload, the operator browser normalizes only the radiograph
+NPZ at the ZIP archive-member boundary: when the exact lower-case
+`processedimage.npy` member exists, it is removed completely; when it is absent,
+the radiograph is already normalized and may pass through unchanged. Malformed,
+corrupt, or materially ambiguous normalization fails before upload and never
+falls back to the original heavy file. The resulting bytes are the immutable
+canonical radiograph source received by Image Gateway; the gain NPZ is unchanged.
+Image Gateway durably persists the canonical radiograph, gain, manifest, and
+signature to the configured private store, then atomically accepts the complete
+source set and queues MPIPS. Checksums, byte counts, immutable manifests,
+idempotency, storage identity, and MPIPS submission refer to those normalized
+bytes. MHCS does not centrally retain the pre-normalization radiograph bytes for
+future captures. Each successful component is immutable; a later same-admission
+attempt uploads only a missing component. Historical objects already stored by
+MHCS remain unchanged. The Image Gateway queue worker is the only MPIPS caller,
+and no application-server-to-application-server file copy or internal network
+submission exists inside `mhcs-core`.
 
 ## MPIPS black-box contract
 
@@ -215,9 +218,11 @@ implementation details in this context.
   user sessions.
 - Input size, dimensions, file count, CPU, memory, execution time, and temporary
   storage are bounded.
-- `mhcs-core` does not parse or deserialize NumPy object payloads and does not
-  execute pickle; NPZ parsing remains an isolated MPIPS process/container
-  boundary and must not execute untrusted pickle payloads.
+- The operator browser performs NPZ ZIP-container normalization without
+  deserializing `.npy` arrays or interpreting NumPy payloads. `mhcs-core` does
+  not load NumPy object arrays or execute or interpret pickle. NumPy/.npy
+  payload parsing, radiography image processing, and NPZ-to-DICOM conversion
+  remain the isolated MPIPS trust boundary.
 - The manifest is signed and its checksum is bound to the conversion job.
 - Logs contain correlation IDs and sanitized technical status, not NPZ
   contents, clinical payloads, tokens, or patient identifiers.

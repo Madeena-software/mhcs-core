@@ -42,10 +42,10 @@ contract.
 The Image Gateway module receives:
 
 - one or more patient-free canonical radiograph NPZ captures for one
-  examination. For future operator submissions, the browser may construct the
-  canonical source before HTTP upload by removing only the lower-case
-  `processedimage.npy` ZIP member; all other archive members and payloads are
-  preserved;
+  examination. For future operator submissions, before HTTP upload the browser
+  removes the exact lower-case `processedimage.npy` ZIP member when present;
+  when absent, the radiograph passes through unchanged. All other archive
+  members and payloads are preserved;
 - the gain NPZ object required by each radiograph capture, correlated by its
   frozen gain identity;
 - a frozen member/examination metadata snapshot;
@@ -64,16 +64,19 @@ copying the same clinical file between application servers.
 ## Processing coordination
 
 - Every submitted radiograph NPZ must be processed with its matching gain NPZ.
-- The operator browser performs any approved radiograph normalization before
-  the multipart request begins. The active MHCS capture request then persists
-  those received canonical radiograph bytes, the unchanged gain bytes,
-  manifest, and signature to the configured private store. Checksums, byte
-  counts, immutable manifests, idempotency, storage identity, and the later
-  MPIPS submission all refer to the received canonical bytes. MHCS does not
-  centrally retain the pre-normalization radiograph bytes for future captures.
-  Once the complete source set is durable, it is atomically accepted and the
-  Image Gateway worker queues the private MPIPS conversion. Historical NPZ
-  objects already stored by MHCS remain unchanged.
+- The operator browser performs the radiograph normalization before the
+  multipart request begins. If the target member is absent, it may pass the
+  selected radiograph through unchanged; malformed, corrupt, or materially
+  ambiguous normalization fails closed and never uploads the original heavy
+  file. The active MHCS capture request then persists those received canonical
+  radiograph bytes, the unchanged gain bytes, manifest, and signature to the
+  configured private store. Checksums, byte counts, immutable manifests,
+  idempotency, storage identity, and the later MPIPS submission all refer to the
+  received canonical bytes. MHCS does not centrally retain the
+  pre-normalization radiograph bytes for future captures. Once the complete
+  source set is durable, it is atomically accepted and the Image Gateway worker
+  queues the private MPIPS conversion. Historical NPZ objects already stored by
+  MHCS remain unchanged.
 - Successful capture results are preserved if a sibling capture fails.
 - Only the failed capture is retried.
 - A failed capture receives three total processing attempts.
@@ -96,6 +99,13 @@ metadata; MHCS does not add application encryption or public download URLs.
 Image Gateway validates the result against the input checksums and frozen
 manifest before permanent acceptance. It owns retry count and timing, reuses the
 same conversion identity, and rejects a replay whose bytes or manifest differ.
+
+The operator browser performs NPZ ZIP-container normalization only to locate,
+remove, and preserve archive members. Browser and MHCS server code do not
+deserialize `.npy` arrays, interpret NumPy object payloads, execute or interpret
+pickle, or perform radiography image processing. NumPy/.npy payload parsing,
+image processing, and NPZ-to-DICOM conversion remain the isolated MPIPS trust
+boundary.
 
 ## Completion rules
 

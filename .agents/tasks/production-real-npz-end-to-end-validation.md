@@ -38,14 +38,6 @@ closed. The accepted fix is revision
 directly validated by run `32948479799` with fulfilled single and concurrent
 promises, successful persistence, and stabilized cleanup.
 
-**Future-upload supersession:** The approved 2026-08-28 operator normalization
-decision supersedes this task's exact-original-radiograph assumption for future
-operator uploads. Future radiograph submissions may arrive as canonical NPZ
-bytes with only the lower-case `processedimage.npy` member removed before HTTP
-upload; the gain fixture and this task's historical evidence remain unchanged.
-This task retains its original pinned-fixture purpose and evidence and is not
-being executed, rewritten, or retroactively reinterpreted by that decision.
-
 This separate task addresses the remaining question: whether the exact pinned
 real-size radiograph/gain NPZ pair can traverse the intended production
 Image Gateway flow from operator submission through source acceptance,

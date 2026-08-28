@@ -42,6 +42,16 @@ that observation is not a universal percentage threshold.
 This task is one coherent browser-to-processing outcome. It does not authorize
 MPIPS implementation changes or production validation.
 
+The historical `.agents/tasks/production-real-npz-end-to-end-validation.md`
+task remains historically valid at its original immutable governing task
+revision, preserved in Git before this normalization task; its pre-normalization
+published content is present at repository revision
+`2e088c668fb4cc262e45767198aa44badb07aac7`. Its exact-original-radiograph
+fixture semantics are not the future canonical upload semantics after this task
+is implemented. Its historical evidence is not retroactively reinterpreted. Any
+future production validation of normalized uploads requires a separately
+governed validation decision/task.
+
 ## Baseline and task revision
 
 **Implementation baseline:**
@@ -70,7 +80,7 @@ Gateway/MPIPS behavior.
 - `.agents/AGENTS.md` and `.agents/software-workflow.md` — delivery, evidence, and side-effect boundaries.
 - `.agents/context/project.md` — MHCS architecture, canonical source, storage, and MPIPS boundary.
 - `.agents/context/modules/image-gateway/project.md` — Image Gateway submission, persistence, idempotency, retention, and access boundaries.
-- `.agents/tasks/production-real-npz-end-to-end-validation.md` — historical real-NPZ validation purpose and explicitly superseded future-upload assumption.
+- `.agents/tasks/production-real-npz-end-to-end-validation.md` — historically valid published real-NPZ validation contract; its original immutable content and evidence are preserved, while this task governs future normalized operator uploads.
 
 ### Observed implementation inputs
 
