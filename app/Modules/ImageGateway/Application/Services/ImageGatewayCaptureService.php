@@ -239,19 +239,23 @@ final readonly class ImageGatewayCaptureService implements OperatorStudyQuery
         ];
     }
 
-    /** @return list<array{study_id: string, display_reference: string, booking_id: string, format: string, rows: ?int, columns: ?int, accepted_at: string}> */
+    /** @return list<array{study_id: string, display_reference: string, booking_id: string, ticket_number: string, member_name: string, medical_record_number: string, schedule_display_reference: string, format: string, rows: ?int, columns: ?int, accepted_at: string}> */
     public function studies(AuthenticatedContext $context, string $profileId, string $siteId, string $operatorSiteId): array
     {
         $this->assertContext($context, self::STUDY_PURPOSE);
 
         return $this->authorizedStudiesQuery($profileId, $siteId, $operatorSiteId)
-            ->select(['studies.id', 'studies.display_reference', 'captures.booking_id', 'studies.format', 'studies.rows', 'studies.columns', 'captures.accepted_at'])
+            ->select(['studies.id', 'studies.display_reference', 'captures.booking_id', 'tickets.ticket_number', 'members.name as member_name', 'members.medical_record_number as medical_record_number', 'schedules.display_reference as schedule_display_reference', 'studies.format', 'studies.rows', 'studies.columns', 'captures.accepted_at'])
             ->orderByDesc('captures.accepted_at')
             ->get()
             ->map(static fn (object $study): array => [
                 'study_id' => (string) $study->id,
                 'display_reference' => (string) $study->display_reference,
                 'booking_id' => (string) $study->booking_id,
+                'ticket_number' => (string) $study->ticket_number,
+                'member_name' => (string) $study->member_name,
+                'medical_record_number' => (string) $study->medical_record_number,
+                'schedule_display_reference' => (string) $study->schedule_display_reference,
                 'format' => (string) $study->format,
                 'rows' => $study->rows === null ? null : (int) $study->rows,
                 'columns' => $study->columns === null ? null : (int) $study->columns,
@@ -790,6 +794,9 @@ final readonly class ImageGatewayCaptureService implements OperatorStudyQuery
         return DB::table('image_gateway_studies as studies')
             ->join('image_gateway_capture_sets as captures', 'captures.id', '=', 'studies.capture_set_id')
             ->join('operator_queue_admissions as admissions', 'admissions.id', '=', 'captures.admission_id')
+            ->join('operator_paper_tickets as tickets', 'tickets.id', '=', 'admissions.operator_paper_ticket_id')
+            ->join('bookings', 'bookings.id', '=', 'tickets.booking_id')
+            ->join('members', 'members.id', '=', 'bookings.member_id')
             ->join('shift_schedules as schedules', 'schedules.id', '=', 'captures.member_schedule_id')
             ->join('examination_site_refs as member_sites', 'member_sites.id', '=', 'schedules.examination_site_id')
             ->where('captures.status', 'accepted')

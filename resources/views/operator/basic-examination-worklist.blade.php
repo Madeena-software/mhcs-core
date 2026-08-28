@@ -13,6 +13,8 @@
                 <thead>
                 <tr>
                     <th>{{ __('Paper ticket') }}</th>
+                    <th>{{ __('Name') }}</th>
+                    <th>{{ __('Medical record') }}</th>
                     <th>{{ __('Site') }}</th>
                     <th>{{ __('Shift') }}</th>
                     <th>{{ __('Stage') }}</th>
@@ -25,12 +27,10 @@
                 @forelse ($entries as $entry)
                     <tr>
                         <td>{{ in_array($entry['state'], ['called', 'in_service'], true) ? __('Current claimed admission') : $entry['ticket_number'] }}</td>
+                        <td>{{ $entry['member_name'] }}</td>
+                        <td>{{ $entry['medical_record_number'] }}</td>
                         <td>{{ $entry['site_name'] }}</td>
-                        <td>
-                            <time datetime="{{ $entry['schedule_starts_at'] }}">{{ $entry['schedule_starts_at'] }}</time>
-                            –
-                            <time datetime="{{ $entry['schedule_ends_at'] }}">{{ $entry['schedule_ends_at'] }}</time>
-                        </td>
+                        <td>{{ $entry['schedule_display_reference'] }}</td>
                         <td>{{ __($entry['stage']) }}</td>
                         <td class="status">{{ __($entry['state']) }}</td>
                         <td><time datetime="{{ $entry['ready_at'] }}">{{ $entry['ready_at'] }}</time></td>
@@ -84,7 +84,7 @@
                         </td>
                     </tr>
                 @empty
-                    <tr><td colspan="7" class="muted">{{ __('No advance-booking tickets are waiting for basic examination.') }}</td></tr>
+                    <tr><td colspan="9" class="muted">{{ __('No advance-booking tickets are waiting for basic examination.') }}</td></tr>
                 @endforelse
                 </tbody>
             </table>

@@ -617,7 +617,17 @@ final class Mvp14ImageGatewayIntegrationTest extends TestCase
 
         $second = $this->secondOperatorFixture($fixture);
         $this->actingAs($second['operator'])->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
-        $this->get(route('operator.study.results'))->assertOk()->assertSee($studyReference)->assertDontSee('<strong>'.$studyId.'</strong>', false);
+        $this->get(route('operator.study.results'))
+            ->assertOk()
+            ->assertSee('Nama')
+            ->assertSee('Tiket kertas')
+            ->assertSee('Rekam medis')
+            ->assertSee('Shift')
+            ->assertSee($studyReference)
+            ->assertSee('Synthetic Arrival Member')
+            ->assertSee('MRN-')
+            ->assertSee((string) DB::table('shift_schedules')->where('id', $fixture['scheduleId'])->value('display_reference'))
+            ->assertDontSee('<strong>'.$studyId.'</strong>', false);
         $this->get(route('operator.study.dicom', $studyId))
             ->assertOk()
             ->assertHeader('Content-Type', 'application/dicom')

@@ -12,6 +12,10 @@
                 <thead>
                 <tr>
                     <th>{{ __('Study') }}</th>
+                    <th>{{ __('Name') }}</th>
+                    <th>{{ __('Paper ticket') }}</th>
+                    <th>{{ __('Medical record') }}</th>
+                    <th>{{ __('Shift') }}</th>
                     <th>{{ __('Format') }}</th>
                     <th>{{ __('Dimensions') }}</th>
                     <th>{{ __('Accepted') }}</th>
@@ -22,13 +26,17 @@
                 @forelse ($studies as $study)
                     <tr>
                         <td><strong>{{ $study['display_reference'] }}</strong></td>
+                        <td>{{ $study['member_name'] }}</td>
+                        <td>{{ $study['ticket_number'] }}</td>
+                        <td>{{ $study['medical_record_number'] }}</td>
+                        <td>{{ $study['schedule_display_reference'] }}</td>
                         <td>{{ $study['format'] }}</td>
                         <td>{{ $study['columns'] }} × {{ $study['rows'] }}</td>
                         <td><time datetime="{{ $study['accepted_at'] }}">{{ $study['accepted_at'] }}</time></td>
                         <td><a href="{{ route('operator.study.show', $study['study_id']) }}">{{ __('Open DICOM study') }}</a></td>
                     </tr>
                 @empty
-                    <tr><td colspan="5" class="muted">{{ __('No accepted DICOM studies are available for this site and shift.') }}</td></tr>
+                    <tr><td colspan="9" class="muted">{{ __('No accepted DICOM studies are available for this site and shift.') }}</td></tr>
                 @endforelse
                 </tbody>
             </table>

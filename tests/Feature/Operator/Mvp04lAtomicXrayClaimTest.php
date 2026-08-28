@@ -254,7 +254,7 @@ final class Mvp04lAtomicXrayClaimTest extends TestCase
         $this->assertDatabaseMissing('idempotent_consumptions', ['message_id' => $operationId, 'status' => 'handled']);
     }
 
-    public function test_xray_worklist_remains_fifo_and_contains_no_member_or_clinical_data(): void
+    public function test_xray_worklist_remains_fifo_and_contains_member_and_shift_context_without_clinical_data(): void
     {
         $fixture = $this->readyFixture();
         $first = $this->insertAdmission($fixture, 'FIFO-XRAY-1', 'xray', null, '2040-01-10 03:01:00');
@@ -263,10 +263,12 @@ final class Mvp04lAtomicXrayClaimTest extends TestCase
         $response = $this->get(route('operator.xray-readiness-worklist'))
             ->assertOk()
             ->assertSeeInOrder(['FIFO-XRAY-1', 'FIFO-XRAY-2'])
+            ->assertSee('Synthetic Arrival Member')
+            ->assertSee('MRN-')
+            ->assertSee((string) DB::table('shift_schedules')->where('id', $fixture['scheduleId'])->value('display_reference'))
             ->assertDontSee($fixture['memberId'])
             ->assertDontSee($fixture['bookingId'])
-            ->assertDontSee('clinical')
-            ->assertDontSee('medical_record_number');
+            ->assertDontSee('clinical');
 
         $this->assertStringContainsString('/operator/xray-readiness-worklist/'.$first->id.'/claim', $response->getContent());
         $this->assertStringContainsString('/operator/xray-readiness-worklist/'.$second->id.'/claim', $response->getContent());

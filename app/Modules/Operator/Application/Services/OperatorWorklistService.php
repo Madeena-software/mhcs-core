@@ -101,6 +101,7 @@ final readonly class OperatorWorklistService
         return DB::table('operator_queue_admissions as admissions')
             ->join('operator_paper_tickets as tickets', 'tickets.id', '=', 'admissions.operator_paper_ticket_id')
             ->join('bookings', 'bookings.id', '=', 'tickets.booking_id')
+            ->join('members', 'members.id', '=', 'bookings.member_id')
             ->join('operator_sites as sites', 'sites.id', '=', 'admissions.operator_site_id')
             ->join('shift_schedules as schedules', 'schedules.id', '=', 'admissions.member_schedule_id')
             ->join('examination_site_refs as member_sites', 'member_sites.id', '=', 'schedules.examination_site_id')
@@ -130,7 +131,10 @@ final readonly class OperatorWorklistService
                 'admissions.member_schedule_id as schedule_id',
                 'admissions.operator_profile_id as claim_operator_profile_id',
                 'tickets.ticket_number',
+                'members.name as member_name',
+                'members.medical_record_number as medical_record_number',
                 'sites.display_name as site_name',
+                'schedules.display_reference as schedule_display_reference',
                 'schedules.starts_at as schedule_starts_at',
                 'schedules.ends_at as schedule_ends_at',
                 'admissions.stage',
@@ -153,6 +157,9 @@ final readonly class OperatorWorklistService
                 return [
                     'admission_id' => (string) $row->admission_id,
                     'ticket_number' => (string) $row->ticket_number,
+                    'member_name' => (string) $row->member_name,
+                    'medical_record_number' => (string) $row->medical_record_number,
+                    'schedule_display_reference' => (string) $row->schedule_display_reference,
                     'site_name' => (string) $row->site_name,
                     'schedule_starts_at' => (string) $row->schedule_starts_at,
                     'schedule_ends_at' => (string) $row->schedule_ends_at,
@@ -183,6 +190,8 @@ final readonly class OperatorWorklistService
 
         return DB::table('operator_queue_admissions as admissions')
             ->join('operator_paper_tickets as tickets', 'tickets.id', '=', 'admissions.operator_paper_ticket_id')
+            ->join('bookings', 'bookings.id', '=', 'tickets.booking_id')
+            ->join('members', 'members.id', '=', 'bookings.member_id')
             ->join('operator_sites as sites', 'sites.id', '=', 'admissions.operator_site_id')
             ->join('shift_schedules as schedules', 'schedules.id', '=', 'admissions.member_schedule_id')
             ->join('examination_site_refs as member_sites', 'member_sites.id', '=', 'schedules.examination_site_id')
@@ -227,7 +236,10 @@ final readonly class OperatorWorklistService
                 'admissions.id as admission_id',
                 'admissions.operator_profile_id as claim_operator_profile_id',
                 'tickets.ticket_number',
+                'members.name as member_name',
+                'members.medical_record_number as medical_record_number',
                 'sites.display_name as site_name',
+                'schedules.display_reference as schedule_display_reference',
                 'schedules.starts_at as schedule_starts_at',
                 'schedules.ends_at as schedule_ends_at',
                 'admissions.stage',
@@ -241,6 +253,9 @@ final readonly class OperatorWorklistService
             ->map(static fn (object $row): array => [
                 'admission_id' => (string) $row->admission_id,
                 'ticket_number' => (string) $row->ticket_number,
+                'member_name' => (string) $row->member_name,
+                'medical_record_number' => (string) $row->medical_record_number,
+                'schedule_display_reference' => (string) $row->schedule_display_reference,
                 'site_name' => (string) $row->site_name,
                 'schedule_starts_at' => (string) $row->schedule_starts_at,
                 'schedule_ends_at' => (string) $row->schedule_ends_at,

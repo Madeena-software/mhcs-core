@@ -74,12 +74,14 @@ final class Mvp04eAdvanceQueueAdmissionTest extends TestCase
             ->assertOk()
             ->assertSee('ADV-17')
             ->assertSee('Synthetic Operator Site')
+            ->assertSee('Synthetic Arrival Member')
+            ->assertSee('MRN-')
+            ->assertSee((string) DB::table('shift_schedules')->where('id', $fixture['scheduleId'])->value('display_reference'))
             ->assertSee('Pemeriksaan dasar')
             ->assertSee('Menunggu')
             ->assertDontSee($fixture['memberId'])
             ->assertDontSee($fixture['bookingId'])
-            ->assertDontSee('Synthetic Arrival Member')
-            ->assertDontSee('MRN-');
+            ->assertDontSee('medical_record_number');
     }
 
     public function test_replays_and_competing_attempts_do_not_duplicate_admission_history_or_evidence(): void
@@ -168,7 +170,9 @@ final class Mvp04eAdvanceQueueAdmissionTest extends TestCase
 
         $this->assertSame($expected, array_column($entries, 'ticket_number'));
         $this->assertCount(2, $entries);
-        $this->assertSame(['admission_id', 'ticket_number', 'site_name', 'schedule_starts_at', 'schedule_ends_at', 'stage', 'state', 'ready_at', 'claimed_by_current_operator', 'has_vital_signs_execution', 'has_questionnaire', 'can_complete', 'is_nonclinical_validation', 'can_complete_nonclinical_validation'], array_keys($entries[0]));
+        $this->assertSame(['admission_id', 'ticket_number', 'member_name', 'medical_record_number', 'schedule_display_reference', 'site_name', 'schedule_starts_at', 'schedule_ends_at', 'stage', 'state', 'ready_at', 'claimed_by_current_operator', 'has_vital_signs_execution', 'has_questionnaire', 'can_complete', 'is_nonclinical_validation', 'can_complete_nonclinical_validation'], array_keys($entries[0]));
+        $this->assertSame('Synthetic Arrival Member', $entries[0]['member_name']);
+        $this->assertStringStartsWith('MRN-', $entries[0]['medical_record_number']);
     }
 
     public function test_queue_audit_failure_rolls_back_check_in_ticket_queue_history_and_idempotency(): void
