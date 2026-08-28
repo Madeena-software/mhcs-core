@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { test } from 'node:test';
+import { prepareCaptureFormData } from '../../resources/js/operator-upload.js';
 
 test('inspects the actual FormData radiograph and gain Files', async () => {
   const radiograph = new File([Buffer.from('radiograph')], 'radiograph.npz');
@@ -26,6 +27,7 @@ test('detects the exact target and preserves distinguishable non-target ZIP memb
   const evidence = await inspectFile(new File([bytes], 'radiograph.npz'));
 
   assert.equal(evidence.target_member_present, true);
+  assert.equal(evidence.target_count, 1);
   assert.deepEqual(evidence.member_names, [
     'processedimage.npy',
     'processedimage.npy.backup',
@@ -37,6 +39,18 @@ test('detects the exact target and preserves distinguishable non-target ZIP memb
   ]);
 });
 
+test('rejects altered non-target payload preservation', async () => {
+  const source = parseZipMembers(makeStoredZip([
+    ['processedimage.npy', 'target'],
+    ['rawimage.npy', 'original'],
+  ]));
+  const transmitted = parseZipMembers(makeStoredZip([
+    ['rawimage.npy', 'altered'],
+  ]));
+
+  assert.equal(compareNonTargetMembers(source, transmitted), false);
+});
+
 test('calculates sanitized transmitted size and SHA evidence', async () => {
   const file = new File([Buffer.from('safe bytes')], 'radiograph.npz');
   const evidence = await inspectFile(file);
@@ -45,8 +59,10 @@ test('calculates sanitized transmitted size and SHA evidence', async () => {
     filename: 'radiograph.npz',
     bytes: 10,
     sha256: createHash('sha256').update('safe bytes').digest('hex'),
+    members: [],
     member_names: [],
     non_target_members: [],
+    target_count: 0,
     target_member_present: false,
     target_member_absent: true,
   });
@@ -72,24 +88,65 @@ test('browser instrumentation observes the original File without replacing it', 
   assert.equal(result.evidence[0].gain.filename, 'gain.npz');
 });
 
-test('normalization failure is fail-closed with no request and no heavy fallback', async () => {
-  const decision = normalizationFailureDecision(new Error('ambiguous ZIP'));
+test('actual application preparation rejects malformed NPZ without a submission or fallback', async () => {
+  const NativeFormData = globalThis.FormData;
+  const heavy = new File([Buffer.from('not an NPZ')], 'heavy.npz');
+  globalThis.FormData = class extends NativeFormData {
+    constructor(form) {
+      super();
+      for (const [name, value] of form.fields) this.append(name, value);
+    }
+  };
 
-  assert.deepEqual(decision, { upload: false, fallback: false, failure_family: 'normalization' });
+  try {
+    let submitted = null;
+    await assert.rejects(async () => {
+      submitted = await prepareCaptureFormData({ fields: [['radiograph_npz', heavy], ['gain_npz', new File(['gain'], 'gain.npz')]] });
+    }, /Invalid NPZ archive/);
+    assert.equal(submitted, null, 'no fallback FormData was submitted');
+    assert.equal(heavy.size, 10, 'original heavy bytes were not replaced or sent');
+  } finally {
+    globalThis.FormData = NativeFormData;
+  }
 });
 
-test('sanitized evidence excludes payloads, credentials, and private identifiers', () => {
+test('sanitized production evidence excludes member arrays, payloads, credentials, URLs, and telemetry history', () => {
   const evidence = sanitizeEvidence({
-    radiograph: { bytes: 4, sha256: 'a'.repeat(64), payload: 'secret' },
-    gain: { bytes: 4, sha256: 'b'.repeat(64) },
+    source: { radiograph: { bytes: 8, sha256: 'a'.repeat(64), target_count: 1, target_member_present: true, members: [{ name: 'raw.npy', crc32: 1, bytes: 4 }] }, gain: { bytes: 4, sha256: 'b'.repeat(64) } },
+    transmitted: { radiograph: { bytes: 4, sha256: 'c'.repeat(64), target_count: 0, target_member_absent: true, members: [{ name: 'raw.npy', crc32: 1, bytes: 4 }] }, gain: { bytes: 4, sha256: 'b'.repeat(64) } },
+    request_count: 1,
+    upload_telemetry: [{ loaded: 1 }, { loaded: 4, total: 4, length_computable: true }],
     cookie: 'secret',
     object_key: 'private/key',
+    url: 'https://private.test/capture',
   });
 
   assert.deepEqual(evidence, {
-    radiograph: { bytes: 4, sha256: 'a'.repeat(64) },
-    gain: { bytes: 4, sha256: 'b'.repeat(64) },
+    source_target_present: true,
+    source_target_count_valid: true,
+    transmitted_target_absent: true,
+    radiograph_size_reduced: true,
+    non_target_payloads_preserved: true,
+    gain_identity_preserved: true,
+    original_radiograph_bytes: 8,
+    transmitted_radiograph_bytes: 4,
+    original_radiograph_sha256: 'a'.repeat(64),
+    transmitted_radiograph_sha256: 'c'.repeat(64),
+    gain_sha256: 'b'.repeat(64),
+    request_count: 1,
+    upload_telemetry: { loaded: 4, total: 4, length_computable: true },
+    failure_family: 'none',
   });
+});
+
+test('active-site navigation fails closed on an unexpected redirect', async () => {
+  const { chromium } = await import('playwright');
+  const browser = await chromium.launch({ headless: true });
+  const page = await browser.newPage();
+  const siteId = '00000000-0000-4000-8000-000000000001';
+  await page.route('https://local.test/operator/site', route => route.fulfill({ body: `<form action="/operator/site" method="post"><select name="site_id"><option value="${siteId}">Site</option></select><button type="submit">Select</button></form>` }));
+  await assert.rejects(() => navigateToAuthorizedCapture(page, 'https://local.test', siteId, 'https://local.test/capture'), /unexpected site-selection boundary/);
+  await browser.close();
 });
 
 function makeStoredZip(entries) {
@@ -163,11 +220,21 @@ async function inspectFile(file) {
     filename: file.name,
     bytes: bytes.byteLength,
     sha256: createHash('sha256').update(bytes).digest('hex'),
+    members: zip,
     member_names: zip.map(member => member.name),
     non_target_members: zip.filter(member => member.name !== 'processedimage.npy').map(member => member.name),
+    target_count: zip.filter(member => member.name === 'processedimage.npy').length,
     target_member_present: zip.some(member => member.name === 'processedimage.npy'),
     target_member_absent: !zip.some(member => member.name === 'processedimage.npy'),
   };
+}
+
+function compareNonTargetMembers(source, transmitted) {
+  const sourceMembers = source.filter(member => member.name !== 'processedimage.npy');
+  const transmittedMembers = transmitted.filter(member => member.name !== 'processedimage.npy');
+  return sourceMembers.length === transmittedMembers.length
+    && sourceMembers.every(sourceMember => transmittedMembers.filter(member => member.name === sourceMember.name).length === 1
+      && transmittedMembers.some(member => member.name === sourceMember.name && member.crc32 === sourceMember.crc32 && member.bytes === sourceMember.bytes));
 }
 
 function parseZipMembers(bytes) {
@@ -198,13 +265,21 @@ function normalizationFailureDecision() {
 
 function sanitizeEvidence(evidence) {
   return {
-    radiograph: pickEvidence(evidence.radiograph),
-    gain: pickEvidence(evidence.gain),
+    source_target_present: evidence.source.radiograph.target_member_present,
+    source_target_count_valid: evidence.source.radiograph.target_count === 1,
+    transmitted_target_absent: evidence.transmitted.radiograph.target_count === 0,
+    radiograph_size_reduced: evidence.transmitted.radiograph.bytes < evidence.source.radiograph.bytes,
+    non_target_payloads_preserved: compareNonTargetMembers(evidence.source.radiograph.members ?? [], evidence.transmitted.radiograph.members ?? []),
+    gain_identity_preserved: evidence.source.gain.bytes === evidence.transmitted.gain.bytes && evidence.source.gain.sha256 === evidence.transmitted.gain.sha256,
+    original_radiograph_bytes: evidence.source.radiograph.bytes,
+    transmitted_radiograph_bytes: evidence.transmitted.radiograph.bytes,
+    original_radiograph_sha256: evidence.source.radiograph.sha256,
+    transmitted_radiograph_sha256: evidence.transmitted.radiograph.sha256,
+    gain_sha256: evidence.transmitted.gain.sha256,
+    request_count: evidence.request_count,
+    upload_telemetry: evidence.upload_telemetry.at(-1) ?? { loaded: 0, total: 0, length_computable: false },
+    failure_family: 'none',
   };
-}
-
-function pickEvidence(value) {
-  return { bytes: value.bytes, sha256: value.sha256 };
 }
 
 async function installUploadObserver(page) {
@@ -223,6 +298,25 @@ async function getObservedEvidence(page) {
   });
 }
 
+async function navigateToAuthorizedCapture(page, appUrl, siteId, captureUrl) {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(siteId)) throw new Error('invalid operator site ID');
+  const expectedOrigin = new URL(appUrl).origin;
+  const target = new URL(captureUrl);
+  if (target.origin !== expectedOrigin) throw new Error('capture URL is outside deployed application');
+  await page.goto(`${appUrl}/operator/site`, { waitUntil: 'networkidle' });
+  if (new URL(page.url()).pathname !== '/operator/site') throw new Error('unexpected site-selection boundary');
+  const selector = page.locator('select[name="site_id"]');
+  if (await selector.count() !== 1) throw new Error('unexpected site-selection boundary');
+  await selector.selectOption(siteId);
+  await Promise.all([page.waitForLoadState('networkidle'), page.locator('form').locator('button[type="submit"]').click()]);
+  const afterSelection = new URL(page.url());
+  if (afterSelection.pathname === '/operator/site' || /login|password|error/i.test(afterSelection.pathname)) throw new Error('unexpected site-selection boundary');
+  await page.goto(captureUrl, { waitUntil: 'networkidle' });
+  const finalUrl = new URL(page.url());
+  if (finalUrl.origin !== expectedOrigin || finalUrl.pathname !== target.pathname) throw new Error('unexpected capture boundary');
+  if (await page.locator('#capture-form').count() !== 1 || await page.locator('input[name="radiograph_npz"]').count() !== 1 || await page.locator('input[name="gain_npz"]').count() !== 1) throw new Error('capture form boundary incomplete');
+}
+
 function browserObserver() {
   const state = window.__mhcsBrowserHarness = { request_count: 0, source_evidence: { radiograph: null, gain: null }, evidence: [], upload_telemetry: [], pending: [] };
   const hex = bytes => [...new Uint8Array(bytes)].map(byte => byte.toString(16).padStart(2, '0')).join('');
@@ -230,7 +324,7 @@ function browserObserver() {
     const bytes = new Uint8Array(await file.arrayBuffer());
     const digest = await crypto.subtle.digest('SHA-256', bytes);
     const members = zipMembers(bytes);
-    return { filename: file.name, bytes: bytes.byteLength, sha256: hex(digest), member_names: members.map(member => member.name), non_target_members: members.filter(member => member.name !== 'processedimage.npy').map(member => member.name), target_member_present: members.some(member => member.name === 'processedimage.npy'), target_member_absent: !members.some(member => member.name === 'processedimage.npy') };
+    return { filename: file.name, bytes: bytes.byteLength, sha256: hex(digest), members, member_names: members.map(member => member.name), non_target_members: members.filter(member => member.name !== 'processedimage.npy').map(member => member.name), target_count: members.filter(member => member.name === 'processedimage.npy').length, target_member_present: members.some(member => member.name === 'processedimage.npy'), target_member_absent: !members.some(member => member.name === 'processedimage.npy') };
   };
   const inspectBody = async body => {
     if (!(body instanceof FormData)) return null;
@@ -266,7 +360,7 @@ function browserObserver() {
     for (let index = 0; index < count && offset + 46 <= bytes.length; index += 1) {
       if (view.getUint32(offset, true) !== 0x02014b50) return [];
       const length = view.getUint16(offset + 28, true);
-      members.push({ name: new TextDecoder().decode(bytes.slice(offset + 46, offset + 46 + length)) });
+      members.push({ name: new TextDecoder().decode(bytes.slice(offset + 46, offset + 46 + length)), crc32: view.getUint32(offset + 16, true), bytes: view.getUint32(offset + 24, true) });
       offset += 46 + length + view.getUint16(offset + 30, true) + view.getUint16(offset + 32, true);
     }
     return members;
@@ -289,7 +383,7 @@ async function runProductionValidation() {
     await page.fill('input[name="email"], input[name="identifier"]', process.env.OPERATOR_EMAIL);
     await page.fill('input[name="password"]', process.env.OPERATOR_PASSWORD);
     await Promise.all([page.waitForLoadState('networkidle'), page.click('button[type="submit"]')]);
-    await page.goto(process.env.CAPTURE_URL, { waitUntil: 'networkidle' });
+    await navigateToAuthorizedCapture(page, process.env.APP_URL, process.env.OPERATOR_SITE_ID, process.env.CAPTURE_URL);
     await page.setInputFiles('input[name="radiograph_npz"]', process.env.RADIOGRAPH_PATH);
     await page.setInputFiles('input[name="gain_npz"]', process.env.GAIN_PATH);
     await page.click('button[type="submit"]');
@@ -304,9 +398,9 @@ async function runProductionValidation() {
     const { radiograph, gain } = observed.evidence[0];
     const source = observed.source_evidence;
     if (!source.radiograph?.target_member_present || !radiograph.target_member_absent || radiograph.bytes >= source.radiograph.bytes) throw new Error('normalized radiograph evidence failed');
-    if (JSON.stringify(radiograph.non_target_members) !== JSON.stringify(source.radiograph.non_target_members)) throw new Error('non-target member preservation failed');
+  if (!compareNonTargetMembers(source.radiograph.members, radiograph.members)) throw new Error('non-target member preservation failed');
     if (gain.bytes !== source.gain.bytes || gain.sha256 !== source.gain.sha256) throw new Error('gain identity evidence failed');
-    console.log(JSON.stringify({ harness_revision: process.env.GITHUB_SHA, deployed_application_revision: process.env.EXPECTED_APPLICATION_REVISION, governing_task_revision: process.env.GOVERNING_TASK_REVISION, request_count: observed.request_count, upload_telemetry: observed.upload_telemetry, original: source, transmitted: observed.evidence }));
+    console.log(JSON.stringify({ harness_revision: process.env.GITHUB_SHA, governing_task_revision: process.env.GOVERNING_TASK_REVISION, deployed_application_revision: process.env.EXPECTED_APPLICATION_REVISION, application_health: 'healthy', ...sanitizeEvidence({ source, transmitted: observed.evidence[0], request_count: observed.request_count, upload_telemetry: observed.upload_telemetry }) }));
   } finally {
     await browser.close();
   }

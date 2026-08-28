@@ -11,12 +11,8 @@ on:
         description: Type the exact one-time authorization marker.
         required: true
         type: string
-      radiograph_fixture_url:
-        description: Authorized fixture URL; acquired only after preflight.
-        required: true
-        type: string
-      gain_fixture_url:
-        description: Authorized fixture URL; acquired only after preflight.
+      operator_site_id:
+        description: UUID of the authorized active Operator site.
         required: true
         type: string
       capture_url:
@@ -40,11 +36,13 @@ jobs:
     env:
       APP_URL: https://fams.mhcsgo.cloud
       CAPTURE_URL: ${{ inputs.capture_url }}
+      OPERATOR_SITE_ID: ${{ inputs.operator_site_id }}
       EXPECTED_APPLICATION_REVISION: ${{ inputs.expected_application_revision }}
       AUTHORIZATION_MARKER: ${{ inputs.authorization_marker }}
       GOVERNING_TASK_REVISION: b99146a4ca7c7bb71a5b0e7de36dceb632c7dddc
       OPERATOR_EMAIL: ${{ secrets.MHCS_NORMALIZED_RADIOGRAPH_VALIDATION_OPERATOR_EMAIL }}
       OPERATOR_PASSWORD: ${{ secrets.MHCS_NORMALIZED_RADIOGRAPH_VALIDATION_OPERATOR_PASSWORD }}
+      APP_SERVICE: mhcs_core_app
     steps:
       - uses: actions/checkout@v4
       - name: Verify authorization and deployed revision before fixture acquisition
@@ -53,28 +51,65 @@ jobs:
           set -euo pipefail
           [ "$AUTHORIZATION_MARKER" = AUTHORIZE_ONE_PRODUCTION_NORMALIZED_RADIOGRAPH_RUN ] || { echo 'failure_family=authorization'; exit 1; }
           [[ "$EXPECTED_APPLICATION_REVISION" =~ ^[0-9a-f]{40}$ ]] || { echo 'failure_family=revision_mismatch'; exit 1; }
-          deployed_application_revision="$(curl --fail --silent --show-error "$APP_URL/version" | grep -Eo '[0-9a-f]{40}' | head -n 1 || true)"
+          [[ "$OPERATOR_SITE_ID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$ ]] || { echo 'failure_family=authorization'; exit 1; }
+          APP_CONTAINER=""
+          TASK_ID="$(docker service ps "$APP_SERVICE" --filter desired-state=running --no-trunc --format '{{.ID}}' 2>/dev/null | head -n 1 || true)"
+          if [ -n "$TASK_ID" ]; then
+            while IFS= read -r candidate; do
+              candidate_task="$(docker inspect "$candidate" --format '{{index .Config.Labels "com.docker.swarm.task.id"}}' 2>/dev/null || true)"
+              if [ "$candidate_task" = "$TASK_ID" ] || [[ "$candidate_task" == "$TASK_ID"* ]] || [[ "$TASK_ID" == "$candidate_task"* ]]; then APP_CONTAINER="$candidate"; break; fi
+            done < <(docker ps -q --filter "label=com.docker.swarm.service.name=${APP_SERVICE}" --filter status=running 2>/dev/null)
+          fi
+          SERVICE_IMAGE="$(docker service inspect "$APP_SERVICE" --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 2>/dev/null || true)"
+          CONTAINER_IMAGE="$(docker inspect "$APP_CONTAINER" --format '{{.Config.Image}}' 2>/dev/null || true)"
+          CONTAINER_HEALTH="$(docker inspect "$APP_CONTAINER" --format '{{.State.Health.Status}}' 2>/dev/null || true)"
+          RAW_VERSION_CURRENT="$(docker exec "$APP_CONTAINER" cat /var/www/html/VERSION-CURRENT 2>/dev/null || true)"
+          image_revision() { local image="${1-}"; image="${image%%@*}"; image="${image##*:}"; [[ "$image" =~ ^[0-9a-f]{40}$ ]] && printf '%s' "$image"; }
+          SERVICE_REVISION="$(image_revision "$SERVICE_IMAGE")"
+          CONTAINER_REVISION="$(image_revision "$CONTAINER_IMAGE")"
+          VERSION_CURRENT="invalid"; [[ "$RAW_VERSION_CURRENT" =~ ^[0-9a-f]{40}$ ]] && VERSION_CURRENT="$RAW_VERSION_CURRENT"
+          application_health=false; curl --fail --silent --show-error --max-time 10 "$APP_URL/up" >/dev/null 2>&1 && [ "$CONTAINER_HEALTH" = healthy ] && application_health=true
           revision_match=false
-          [ "$deployed_application_revision" = "$EXPECTED_APPLICATION_REVISION" ] && revision_match=true
+          [ -n "$APP_CONTAINER" ] && [ "$SERVICE_REVISION" = "$EXPECTED_APPLICATION_REVISION" ] && [ "$CONTAINER_REVISION" = "$EXPECTED_APPLICATION_REVISION" ] && [ "$VERSION_CURRENT" = "$EXPECTED_APPLICATION_REVISION" ] && [ "$application_health" = true ] && revision_match=true
           echo "harness_revision=$GITHUB_SHA"
-          echo "deployed_application_revision=$deployed_application_revision"
+          echo "deployed_application_revision=$VERSION_CURRENT"
+          echo "service_revision=$SERVICE_REVISION"
+          echo "container_revision=$CONTAINER_REVISION"
+          echo "application_container_resolved=$([ -n "$APP_CONTAINER" ] && echo true || echo false)"
+          echo "container_health=$CONTAINER_HEALTH"
+          echo "application_health=$application_health"
           echo "revision_match=$revision_match"
           if [ "$revision_match" != true ]; then echo 'failure_family=revision_mismatch'; echo 'real_normalized_radiograph_submission_started=false'; exit 1; fi
       - name: Acquire authorized fixtures after preflight
         shell: bash
         env:
-          RADIOGRAPH_FIXTURE_URL: ${{ inputs.radiograph_fixture_url }}
-          GAIN_FIXTURE_URL: ${{ inputs.gain_fixture_url }}
+          RADIOGRAPH_FILE_ID: 1Ft3OALtx_d3ua-z0DSS34jJmywaXjLu2
+          RADIOGRAPH_FILENAME: TRX_1787726886830.npz
+          RADIOGRAPH_BYTES: 73089445
+          RADIOGRAPH_SHA256: 605540c9102867eda3a5b54f4f88566d067ba8705fcc20bf870e4a60f80262b9
+          GAIN_FILE_ID: 1kI99se2CjzCgo4qInMEGUuJ-ZJZE3iQY
+          GAIN_FILENAME: TRX_1787726609597.npz
+          GAIN_BYTES: 17190412
+          GAIN_SHA256: 38918e436e5329e28b08c844e8df3766a1ab83a1fc3135c83df56370c480b2a9
         run: |
           set -euo pipefail
           workspace="$(mktemp -d)"
           trap 'rm -rf "$workspace"' EXIT
           echo 'fixture_acquisition=STARTED'
-          curl --fail --silent --show-error --location --output "$workspace/radiograph.npz" "$RADIOGRAPH_FIXTURE_URL"
-          curl --fail --silent --show-error --location --output "$workspace/gain.npz" "$GAIN_FIXTURE_URL"
-          echo 'fixture_acquisition=PASS'
-          export RADIOGRAPH_PATH="$workspace/radiograph.npz"
-          export GAIN_PATH="$workspace/gain.npz"
+          curl --fail --silent --show-error --location --output "$workspace/$RADIOGRAPH_FILENAME" "https://drive.usercontent.google.com/download?id=$RADIOGRAPH_FILE_ID&export=download&confirm=t"
+          curl --fail --silent --show-error --location --output "$workspace/$GAIN_FILENAME" "https://drive.usercontent.google.com/download?id=$GAIN_FILE_ID&export=download&confirm=t"
+          radiograph_size_match=false; gain_size_match=false; radiograph_sha256_match=false; gain_sha256_match=false
+          [ "$(stat -c '%s' "$workspace/$RADIOGRAPH_FILENAME")" = "$RADIOGRAPH_BYTES" ] && radiograph_size_match=true
+          [ "$(stat -c '%s' "$workspace/$GAIN_FILENAME")" = "$GAIN_BYTES" ] && gain_size_match=true
+          [ "$(sha256sum "$workspace/$RADIOGRAPH_FILENAME" | cut -d' ' -f1)" = "$RADIOGRAPH_SHA256" ] && radiograph_sha256_match=true
+          [ "$(sha256sum "$workspace/$GAIN_FILENAME" | cut -d' ' -f1)" = "$GAIN_SHA256" ] && gain_sha256_match=true
+          radiograph_fixture_integrity=FAIL; gain_fixture_integrity=FAIL
+          [ "$radiograph_size_match" = true ] && [ "$radiograph_sha256_match" = true ] && radiograph_fixture_integrity=PASS
+          [ "$gain_size_match" = true ] && [ "$gain_sha256_match" = true ] && gain_fixture_integrity=PASS
+          echo "radiograph_fixture_integrity=$radiograph_fixture_integrity"; echo "gain_fixture_integrity=$gain_fixture_integrity"
+          [ "$radiograph_fixture_integrity" = PASS ] && [ "$gain_fixture_integrity" = PASS ] || { echo 'failure_family=fixture_integrity'; exit 1; }
+          export RADIOGRAPH_PATH="$workspace/$RADIOGRAPH_FILENAME"
+          export GAIN_PATH="$workspace/$GAIN_FILENAME"
           export MHCS_PRODUCTION_HARNESS=1
           test "$AUTHORIZATION_MARKER" = AUTHORIZE_ONE_PRODUCTION_NORMALIZED_RADIOGRAPH_RUN
           node tests/JavaScript/production-normalized-radiograph-browser.test.mjs
