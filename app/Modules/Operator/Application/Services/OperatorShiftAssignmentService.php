@@ -72,6 +72,70 @@ final readonly class OperatorShiftAssignmentService
         });
     }
 
+    public function assignAllForFrontDesk(string $eligibleShiftId, string $operatorSiteId): int
+    {
+        $portal = $this->authorization->frontDesk();
+        $site = $this->authorization->portalSite($portal);
+        if ((string) $site->operator_site_id !== trim($operatorSiteId)) {
+            throw new OperatorException('shift_assignment_site_mismatch', 'The active Operator site does not match the eligible schedule.');
+        }
+        $context = $portal['context'];
+
+        return DB::transaction(function () use ($eligibleShiftId, $operatorSiteId, $site, $context): int {
+            $eligible = OperatorEligibleShift::query()
+                ->whereKey($eligibleShiftId)
+                ->where('operator_site_id', trim($operatorSiteId))
+                ->where('sync_status', 'eligible')
+                ->lockForUpdate()
+                ->first();
+            if ($eligible === null) {
+                throw new OperatorException('shift_assignment_invalid', 'The eligible schedule is unavailable.');
+            }
+
+            $profiles = OperatorProfile::query()
+                ->join('operator_site_assignments', 'operator_site_assignments.operator_profile_id', '=', 'operator_profiles.id')
+                ->where('operator_site_assignments.operator_site_id', $site->getKey())
+                ->where('operator_site_assignments.active', true)
+                ->where('operator_profiles.active', true)
+                ->select('operator_profiles.*')
+                ->distinct()
+                ->lockForUpdate()
+                ->get();
+            $assigned = 0;
+            $now = $this->clock->now();
+            foreach ($profiles as $profile) {
+                $existing = OperatorShiftAssignment::query()
+                    ->where('operator_eligible_shift_id', $eligible->getKey())
+                    ->where('operator_profile_id', $profile->getKey())
+                    ->where('status', 'active')
+                    ->lockForUpdate()
+                    ->first();
+                if ($existing !== null) {
+                    $assigned++;
+
+                    continue;
+                }
+
+                $id = (string) Str::uuid();
+                OperatorShiftAssignment::query()->create([
+                    'id' => $id,
+                    'operator_eligible_shift_id' => $eligible->getKey(),
+                    'operator_profile_id' => $profile->getKey(),
+                    'assigned_by_user_id' => (string) $context->actorId,
+                    'status' => 'active',
+                    'assigned_at' => $now,
+                    'revoked_at' => null,
+                    'reason' => null,
+                ]);
+                $this->audit->append(AuditEvent::fromContext($context, 'operator.shift-assignment.front-desk.create', 'operator', 'success', $now, OperatorShiftAssignment::class, $id, metadata: ['eligible_shift_id' => $eligible->getKey(), 'operator_profile_id' => $profile->getKey(), 'operator_site_id' => $operatorSiteId, 'operator_assisted' => true]));
+                $this->outbox->record(new VersionedDomainEvent(LocalId::fromString((string) Str::uuid()), 'operator.shift-assigned', 1, $now, ['eligible_shift_id' => $eligible->getKey(), 'operator_profile_id' => $profile->getKey(), 'operator_site_id' => $operatorSiteId, 'operator_assisted' => true], LocalId::fromString($id), $context->operationId));
+                $assigned++;
+            }
+
+            return $assigned;
+        });
+    }
+
     public function revoke(OperatorShiftAssignment $assignment, string $reason): OperatorShiftAssignment
     {
         $context = $this->authorization->shiftManage();

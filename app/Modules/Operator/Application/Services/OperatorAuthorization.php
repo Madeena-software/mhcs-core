@@ -129,6 +129,20 @@ final readonly class OperatorAuthorization
         return $this->admin(self::SHIFT_MANAGE, 'operator.shift.manage');
     }
 
+    /** @return array{context: AuthenticatedContext, user: User, profile: OperatorProfile} */
+    public function frontDesk(): array
+    {
+        $portal = $this->portal();
+        if (! $this->has($portal['context'], self::SHIFT_MANAGE)) {
+            throw new OperatorException('operator_front_desk_denied', 'Front-desk management authorization is required.');
+        }
+
+        return [
+            ...$portal,
+            'context' => $portal['context']->forPurpose('operator.front-desk'),
+        ];
+    }
+
     public function portalSite(array $portal): OperatorSite
     {
         /** @var AuthenticatedContext $context */

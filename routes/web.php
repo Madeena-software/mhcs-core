@@ -4,10 +4,12 @@ use App\Http\Controllers\Member\AuthenticationController;
 use App\Http\Controllers\Member\DashboardController;
 use App\Http\Controllers\Member\Mvp03BookingController;
 use App\Http\Controllers\Member\ProfileController;
+use App\Http\Controllers\Operator\FrontDeskController;
 use App\Http\Controllers\Operator\ImageGatewayController;
 use App\Http\Controllers\Operator\PortalController as OperatorPortalController;
 use App\Http\Controllers\PublicQueueDisplayController;
 use App\Http\Middleware\EnsureMemberPortalAccess;
+use App\Http\Middleware\EnsureOperatorFrontDeskAccess;
 use App\Http\Middleware\EnsureOperatorPortalAccess;
 use Illuminate\Support\Facades\Route;
 
@@ -93,6 +95,17 @@ Route::middleware(['auth', EnsureOperatorPortalAccess::class])->group(function (
     Route::get('/operator/paper-tickets/{ticket}', [OperatorPortalController::class, 'ticketResult'])->name('operator.paper-ticket.show');
     Route::get('/operator/paper-tickets/{ticket}/print', [OperatorPortalController::class, 'printTicket'])->name('operator.paper-ticket.print');
     Route::post('/operator/paper-tickets/{ticket}/reprint', [OperatorPortalController::class, 'reprintTicket'])->name('operator.paper-ticket.reprint');
+
+    Route::middleware(EnsureOperatorFrontDeskAccess::class)->group(function (): void {
+        Route::get('/operator/schedules', [FrontDeskController::class, 'schedules'])->name('operator.schedules.index');
+        Route::get('/operator/schedules/create', [FrontDeskController::class, 'createSchedule'])->name('operator.schedules.create');
+        Route::post('/operator/schedules', [FrontDeskController::class, 'storeSchedule'])->name('operator.schedules.store');
+        Route::get('/operator/schedules/{schedule}', [FrontDeskController::class, 'showSchedule'])->name('operator.schedules.show');
+        Route::post('/operator/schedules/{schedule}/participants', [FrontDeskController::class, 'storeParticipant'])->name('operator.schedules.participants.store');
+        Route::get('/operator/members/search', [FrontDeskController::class, 'searchMembers'])->name('operator.members.search');
+        Route::get('/operator/members/register', [FrontDeskController::class, 'createMember'])->name('operator.members.create');
+        Route::post('/operator/members', [FrontDeskController::class, 'storeMember'])->name('operator.members.store');
+    });
 });
 
 Route::post('/logout', [AuthenticationController::class, 'logout'])

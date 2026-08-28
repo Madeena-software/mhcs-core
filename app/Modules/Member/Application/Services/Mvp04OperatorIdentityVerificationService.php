@@ -6,6 +6,8 @@ namespace App\Modules\Member\Application\Services;
 
 use App\Modules\Member\Application\Contracts\OperatorIdentityVerificationContract;
 use App\Modules\Member\Application\Contracts\TrustedOperatorIdentityVerificationContextResolver;
+use App\Modules\Member\Domain\Enums\IdentityStatus;
+use App\Modules\Member\Domain\Enums\RegistrationSource;
 use App\Modules\Member\Domain\Enums\VerificationAssetType;
 use App\Modules\Member\Domain\Enums\VerificationReviewStatus;
 use App\Modules\Member\Domain\MemberIdentityException;
@@ -140,6 +142,38 @@ final readonly class Mvp04OperatorIdentityVerificationService implements Operato
                 'service_name' => (string) $booking->service_name,
                 'identity_document' => null, 'latest_profile_photo' => null,
             ]];
+        }
+
+        if ($this->isWalkInAssisted($member, $booking)) {
+            $view = [
+                'booking_id' => $booking->booking_id,
+                'schedule_id' => $booking->schedule_id,
+                'member_id' => (string) $member->id,
+                'member_name' => (string) $member->name,
+                'medical_record_number' => (string) $member->medical_record_number,
+                'nik' => null,
+                'masked_nik' => null,
+                'booking_status' => (string) $booking->booking_status,
+                'site' => (string) $booking->site_name,
+                'service_code' => (string) $booking->service_code,
+                'service_name' => (string) $booking->service_name,
+                'identity_document' => null,
+                'latest_profile_photo' => null,
+                'manual_confirmation_required' => true,
+            ];
+
+            $this->audit->append(AuditEvent::fromContext(
+                $context,
+                'member.operator-identity.walk-in-assisted-view',
+                'member',
+                'success',
+                $this->clock->now(),
+                'booking',
+                $booking->booking_id,
+                metadata: ['operator_site_id' => $operatorSiteId, 'schedule_id' => $scheduleId, 'case_id' => $caseId, 'operator_assisted' => true],
+            ));
+
+            return ['evidence_status' => 'walk_in_assisted', 'view' => $view];
         }
 
         $expected = $this->expectedDocument((string) $member->birth_date);
@@ -355,6 +389,7 @@ final readonly class Mvp04OperatorIdentityVerificationService implements Operato
                 'examination_site_refs.display_name as site_name',
                 'service_offerings.code as service_code',
                 'service_offerings.name as service_name',
+                'bookings.operator_assisted_hotfix',
             ])
             ->first();
 
@@ -363,6 +398,19 @@ final readonly class Mvp04OperatorIdentityVerificationService implements Operato
         }
 
         return $booking;
+    }
+
+    private function isWalkInAssisted(Member $member, object $booking): bool
+    {
+        return (bool) $booking->operator_assisted_hotfix
+            && $member->registration_source === RegistrationSource::WalkIn->value
+            && $member->identity_status === IdentityStatus::PendingVerification->value
+            && $member->identity_document_type === null
+            && $member->encrypted_nik === null
+            && $member->nik_lookup_digest === null
+            && $member->birth_date === null
+            && $member->administrative_gender === null
+            && ! DB::table('member_verification_assets')->where('member_id', $member->id)->exists();
     }
 
     private function eligibleBookingQuery(string $operatorSiteId): Builder

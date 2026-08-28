@@ -8,6 +8,7 @@ use App\Modules\Member\Application\Contracts\OperatorAttendanceContract;
 use App\Modules\Member\Application\Contracts\TrustedOperatorIdentityVerificationContextResolver;
 use App\Modules\Member\Application\Contracts\TrustedOperatorSiteContextResolver;
 use App\Modules\Member\Domain\Enums\BookingStatus;
+use App\Modules\Member\Domain\Funding\FundingSource;
 use App\Modules\Member\Domain\Models\Booking;
 use App\Modules\Member\Domain\Mvp03Exception;
 use App\Shared\Audit\AuditEvent;
@@ -73,17 +74,23 @@ final readonly class Mvp04AttendanceService implements OperatorAttendanceContrac
                 'members.id as member_id',
                 'members.name as member_name',
                 'members.medical_record_number as medical_record_number',
+                'members.identity_status as member_identity_status',
+                'members.registration_source as member_registration_source',
                 'members.encrypted_nik as encrypted_nik',
                 'service_offerings.code as service_code',
                 'service_offerings.name as service_name',
                 'bookings.includes_ai_snapshot as includes_ai',
                 'bookings.includes_doctor_snapshot as includes_doctor',
+                'bookings.operator_assisted_hotfix',
             ])
             ->orderBy('members.name')
             ->get();
 
         $result = $rows->map(function (object $row) use ($schedule, $site): array {
             $isNonclinical = $row->encrypted_nik === null && $this->isExactNonclinicalValidationMember((string) $row->member_id);
+            $isWalkInAssisted = (bool) $row->operator_assisted_hotfix
+                && $row->member_identity_status === 'pending_verification'
+                && $row->member_registration_source === 'walk_in';
             $nextAction = match ((string) $row->booking_status) {
                 BookingStatus::Confirmed->value => 'Record physical arrival',
                 BookingStatus::Arrived->value => 'Continue identity verification',
@@ -101,7 +108,7 @@ final readonly class Mvp04AttendanceService implements OperatorAttendanceContrac
                 'medical_record_number' => (string) $row->medical_record_number,
                 'nik' => $row->encrypted_nik === null ? null : $this->identifiers->display((string) $row->encrypted_nik),
                 'masked_nik' => $this->maskedIdentifier($row->encrypted_nik),
-                'identity_status' => $isNonclinical ? 'nonclinical_validation' : 'verified',
+                'identity_status' => $isNonclinical ? 'nonclinical_validation' : ($isWalkInAssisted ? 'pending_verification' : 'verified'),
                 'site' => (string) $site->display_name,
                 'schedule_starts_at' => (string) $schedule->starts_at,
                 'schedule_ends_at' => (string) $schedule->ends_at,
@@ -381,13 +388,21 @@ final readonly class Mvp04AttendanceService implements OperatorAttendanceContrac
             ->where('shift_schedules.examination_site_id', $site->id)
             ->where('bookings.examination_site_id_snapshot', $site->id)
             ->whereIn('bookings.status', $statuses ?? [BookingStatus::Confirmed->value])
-            ->where('bookings.funding_source', 'personal')
-            ->whereExists(function (Builder $query): void {
-                $query->selectRaw('1')
-                    ->from('point_ledger_entries')
-                    ->whereColumn('point_ledger_entries.booking_id', 'bookings.id')
-                    ->where('point_ledger_entries.entry_type', 'charge')
-                    ->where('point_ledger_entries.point_delta', '<', 0);
+            ->where(function (Builder $query): void {
+                $query->where(function (Builder $query): void {
+                    $query->where('bookings.funding_source', 'personal')
+                        ->whereExists(function (Builder $query): void {
+                            $query->selectRaw('1')
+                                ->from('point_ledger_entries')
+                                ->whereColumn('point_ledger_entries.booking_id', 'bookings.id')
+                                ->where('point_ledger_entries.entry_type', 'charge')
+                                ->where('point_ledger_entries.point_delta', '<', 0);
+                        });
+                })->orWhere(function (Builder $query): void {
+                    $query->where('bookings.booking_type', 'b2b')
+                        ->where('bookings.funding_source', FundingSource::BusinessReserved->value)
+                        ->where('bookings.operator_assisted_hotfix', true);
+                });
             });
     }
 

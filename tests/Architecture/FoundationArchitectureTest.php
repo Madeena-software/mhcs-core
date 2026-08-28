@@ -149,6 +149,7 @@ final class FoundationArchitectureTest extends TestCase
             '2026_08_13_000003_add_operator_display_references.php',
             '2026_08_26_000001_allow_nonclinical_validation_member_identity.php',
             '2026_08_26_000002_make_validation_shift_assignment_provenance_nullable.php',
+            '2026_08_28_000001_add_operator_front_desk_hotfix_fields.php',
         ];
 
         $this->assertSame([], array_values(array_diff($migrations, $allowed)));

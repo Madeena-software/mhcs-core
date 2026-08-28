@@ -21,6 +21,17 @@
         @endif
     </section>
 
+    @if ($canManageFrontDesk)
+        <section class="card" aria-labelledby="operational-today-title">
+            <p class="eyebrow">{{ __('Front desk') }}</p>
+            <h2 id="operational-today-title">{{ __('Operasional Hari Ini') }}</h2>
+            <div class="actions">
+                <a class="primary-action" href="{{ route('operator.schedules.index') }}">{{ __('Kelola Jadwal') }}</a>
+                <a href="{{ route('operator.members.create') }}">{{ __('Register Member') }}</a>
+            </div>
+        </section>
+    @endif
+
     <ol class="workflow" aria-label="{{ __('Ordered clinic workflow') }}">
         <li class="workflow-item {{ $activeSite ? 'primary' : '' }}">
             <span class="step-number" aria-hidden="true">1</span>

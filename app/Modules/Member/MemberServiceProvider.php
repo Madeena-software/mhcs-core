@@ -5,10 +5,13 @@ declare(strict_types=1);
 namespace App\Modules\Member;
 
 use App\Modules\Member\Application\Contracts\NonclinicalValidationIdentityContract;
+use App\Modules\Member\Application\Contracts\OperatorAssistedBookingContract;
 use App\Modules\Member\Application\Contracts\OperatorAttendanceContract;
 use App\Modules\Member\Application\Contracts\OperatorIdentityVerificationContract;
+use App\Modules\Member\Application\Contracts\OperatorMemberRegistrationContract;
 use App\Modules\Member\Application\Contracts\OperatorPaperConsentContract;
 use App\Modules\Member\Application\Contracts\OperatorPaperQuestionnaireContract;
+use App\Modules\Member\Application\Contracts\OperatorScheduleContract;
 use App\Modules\Member\Application\Contracts\OperatorServiceOfferingQuery;
 use App\Modules\Member\Application\Contracts\OperatorSiteReferenceSynchronizer;
 use App\Modules\Member\Application\Contracts\OperatorVitalSignsContract;
@@ -21,6 +24,9 @@ use App\Modules\Member\Application\Services\Mvp04OperatorSiteReferenceService;
 use App\Modules\Member\Application\Services\Mvp04PaperConsentService;
 use App\Modules\Member\Application\Services\Mvp04PaperQuestionnaireService;
 use App\Modules\Member\Application\Services\Mvp04VitalSignsService;
+use App\Modules\Member\Application\Services\OperatorAssistedBookingService;
+use App\Modules\Member\Application\Services\OperatorMemberRegistrationService;
+use App\Modules\Member\Application\Services\OperatorScheduleService;
 use App\Shared\Audit\AuditStore;
 use App\Shared\Context\AuthenticatedContextProvider;
 use App\Shared\Security\CredentialIdentifierResolver;
@@ -36,12 +42,15 @@ final class MemberServiceProvider extends ServiceProvider
     {
         $this->app->make(ModuleRegistry::class)->register('Member');
         $this->app->scoped(OperatorAttendanceContract::class, Mvp04AttendanceService::class);
+        $this->app->scoped(OperatorAssistedBookingContract::class, OperatorAssistedBookingService::class);
         $this->app->scoped(NonclinicalValidationIdentityContract::class, MemberContextResolver::class);
         $this->app->scoped(OperatorIdentityVerificationContract::class, Mvp04OperatorIdentityVerificationService::class);
+        $this->app->scoped(OperatorMemberRegistrationContract::class, OperatorMemberRegistrationService::class);
         $this->app->scoped(OperatorPaperConsentContract::class, Mvp04PaperConsentService::class);
         $this->app->scoped(OperatorPaperQuestionnaireContract::class, Mvp04PaperQuestionnaireService::class);
         $this->app->scoped(OperatorServiceOfferingQuery::class, Mvp04OperatorServiceOfferingQuery::class);
         $this->app->scoped(OperatorVitalSignsContract::class, Mvp04VitalSignsService::class);
+        $this->app->scoped(OperatorScheduleContract::class, OperatorScheduleService::class);
         $this->app->scoped(OperatorSiteReferenceSynchronizer::class, Mvp04OperatorSiteReferenceService::class);
         $this->app->singleton(CredentialIdentifierResolver::class, MemberCredentialIdentifierResolver::class);
         $this->app->singleton(CredentialVerifier::class, function ($app): CredentialVerifier {

@@ -42,6 +42,7 @@ final class PortalController extends Controller
         return view('operator.dashboard', [
             'operatorName' => $portal['profile']->display_name ?: $portal['user']->getFilamentName(),
             'activeSite' => $activeSite,
+            'canManageFrontDesk' => $authorization->has($portal['context'], OperatorAuthorization::SHIFT_MANAGE),
             'shiftCount' => count($shifts),
             'verificationCount' => $activeSite === null ? 0 : count($worklist->current()),
             'basicExaminationCount' => $activeSite === null ? 0 : count($worklist->basicExamination()),
@@ -621,6 +622,7 @@ final class PortalController extends Controller
             'state' => ['required', 'in:matched,nonclinical_validation,mismatch_reported,insufficient_evidence'],
             'reason' => ['nullable', 'string', 'max:500'],
             'operation_id' => ['required', 'uuid'],
+            'manual_confirmation' => ['sometimes', 'boolean'],
         ]);
         if ($validator->fails()) {
             return back()->withErrors($validator);
@@ -632,6 +634,7 @@ final class PortalController extends Controller
                 (string) $validator->validated()['state'],
                 isset($validator->validated()['reason']) ? (string) $validator->validated()['reason'] : null,
                 (string) $validator->validated()['operation_id'],
+                (bool) ($validator->validated()['manual_confirmation'] ?? false),
             );
 
             return redirect()->route('operator.identity-verification.show', $case)->with('status', __('Verification decision recorded.'));

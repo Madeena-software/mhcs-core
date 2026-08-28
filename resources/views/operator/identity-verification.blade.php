@@ -25,6 +25,14 @@
                 <button type="submit">{{ __('Confirm nonclinical validation') }}</button>
             </form>
         </section>
+    @elseif ($evidenceStatus === 'walk_in_assisted')
+        <section class="card">
+            <h2>{{ __('Member summary') }}</h2>
+            <p><strong>{{ __('Name') }}:</strong> {{ $view['member_name'] }}</p>
+            <p><strong>{{ __('Medical record') }}:</strong> {{ $view['medical_record_number'] }}</p>
+            <p><strong>{{ __('NIK') }}:</strong> {{ __('Not collected during walk-in registration') }}</p>
+            <p class="muted">{{ __('No stored identity document or photograph is available. Confirm the in-person match explicitly before recording a matched decision.') }}</p>
+        </section>
     @elseif ($view)
         <section class="card">
             <h2>{{ __('Member summary') }}</h2>
@@ -108,6 +116,9 @@
                         @csrf
                         <input type="hidden" name="state" value="matched">
                         <input type="hidden" name="operation_id" value="{{ Illuminate\Support\Str::uuid() }}">
+                        @if ($evidenceStatus === 'walk_in_assisted')
+                            <label><input type="checkbox" name="manual_confirmation" value="1" required> {{ __('I confirm the person is physically matched to this walk-in registration.') }}</label>
+                        @endif
                         <button type="submit">{{ __('Matched') }}</button>
                     </form>
                 @endif

@@ -26,6 +26,8 @@ final readonly class OperatorIdentityVerificationService
 
     public const NONCLINICAL_VALIDATION = 'nonclinical_validation';
 
+    public const WALK_IN_ASSISTED = 'walk_in_assisted';
+
     public const MISMATCH_REPORTED = 'mismatch_reported';
 
     public const INSUFFICIENT_EVIDENCE = 'insufficient_evidence';
@@ -171,6 +173,9 @@ final readonly class OperatorIdentityVerificationService
             if ($memberView['evidence_status'] === self::NONCLINICAL_VALIDATION) {
                 return ['case' => $this->caseResult($case), 'safeSummary' => null, 'evidenceStatus' => self::NONCLINICAL_VALIDATION, 'allowedDecisions' => [self::NONCLINICAL_VALIDATION], 'view' => $memberView['view']];
             }
+            if ($memberView['evidence_status'] === self::WALK_IN_ASSISTED) {
+                return ['case' => $this->caseResult($case), 'safeSummary' => null, 'evidenceStatus' => self::WALK_IN_ASSISTED, 'allowedDecisions' => [self::MATCHED, self::MISMATCH_REPORTED, self::INSUFFICIENT_EVIDENCE], 'view' => $memberView['view']];
+            }
             if ($memberView['evidence_status'] === 'unavailable') {
                 $safeSummary = $this->memberAttendance->safeArrivalSummary((string) $case->booking_id);
                 if ($safeSummary === null) {
@@ -315,7 +320,7 @@ final readonly class OperatorIdentityVerificationService
     }
 
     /** @return array<string, mixed> */
-    public function decide(string $caseId, string $state, ?string $reason, string $operationId): array
+    public function decide(string $caseId, string $state, ?string $reason, string $operationId, bool $manualConfirmation = false): array
     {
         if (! in_array($state, [self::MATCHED, self::NONCLINICAL_VALIDATION, self::MISMATCH_REPORTED, self::INSUFFICIENT_EVIDENCE], true)) {
             throw new OperatorException('identity_decision_invalid', 'The verification decision is invalid.');
@@ -328,7 +333,7 @@ final readonly class OperatorIdentityVerificationService
             throw new OperatorException('identity_reason_required', 'A reason is required for this verification decision.');
         }
 
-        return DB::transaction(function () use ($identity, $site, $caseId, $state, $reason, $operationId): array {
+        return DB::transaction(function () use ($identity, $site, $caseId, $state, $reason, $operationId, $manualConfirmation): array {
             $case = $this->caseForOperator($identity, $site->getKey(), $caseId);
             $existing = $this->replayedEvent($case, $operationId, 'decision', $reason, $state);
             if ($existing !== null) {
@@ -337,6 +342,7 @@ final readonly class OperatorIdentityVerificationService
             if ($case->state !== self::OPEN) {
                 throw new OperatorException('identity_terminal', 'A terminal verification decision cannot be changed.');
             }
+            $walkInAssisted = false;
             if (in_array($state, [self::MATCHED, self::NONCLINICAL_VALIDATION], true)) {
                 try {
                     $memberView = $this->memberIdentity->currentView(
@@ -346,7 +352,8 @@ final readonly class OperatorIdentityVerificationService
                         (string) $case->booking_id,
                         (string) $case->id,
                     );
-                    if (($state === self::MATCHED && $memberView['evidence_status'] !== 'available') || ($state === self::NONCLINICAL_VALIDATION && $memberView['evidence_status'] !== self::NONCLINICAL_VALIDATION) || ! is_array($memberView['view'])) {
+                    $walkInAssisted = $memberView['evidence_status'] === self::WALK_IN_ASSISTED;
+                    if (($state === self::MATCHED && (($walkInAssisted && ! $manualConfirmation) || (! $walkInAssisted && $memberView['evidence_status'] !== 'available'))) || ($state === self::NONCLINICAL_VALIDATION && $memberView['evidence_status'] !== self::NONCLINICAL_VALIDATION) || ! is_array($memberView['view'])) {
                         throw new OperatorException('identity_evidence_unavailable', 'Current approved identity evidence is unavailable.');
                     }
                 } catch (Throwable $exception) {
@@ -364,7 +371,7 @@ final readonly class OperatorIdentityVerificationService
             ]);
             $this->event($case, 'decision', self::OPEN, $state, $reason, $operationId, $now);
             $case = DB::table('operator_identity_verifications')->where('id', $case->id)->first();
-            $this->audit($identity['context'], $state === self::NONCLINICAL_VALIDATION ? 'operator.identity-verification.nonclinical-validation' : 'operator.identity-verification.'.$state, $case, $now, $this->auditReasonForDecision($state), $state === self::NONCLINICAL_VALIDATION ? ['validation_context' => NonclinicalValidationContext::KEY, 'nonclinical' => true, 'identity_verification_performed' => false] : []);
+            $this->audit($identity['context'], $state === self::NONCLINICAL_VALIDATION ? 'operator.identity-verification.nonclinical-validation' : 'operator.identity-verification.'.$state, $case, $now, $this->auditReasonForDecision($state), $state === self::NONCLINICAL_VALIDATION ? ['validation_context' => NonclinicalValidationContext::KEY, 'nonclinical' => true, 'identity_verification_performed' => false] : ($manualConfirmation && $walkInAssisted && $state === self::MATCHED ? ['operator_assisted_walk_in_manual_match' => true, 'manual_confirmation' => true] : []));
 
             return $this->caseResult($case);
         });
