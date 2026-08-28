@@ -140,22 +140,30 @@ The Image Gateway module owns:
 - AI and doctor routing; and
 - publication and report-version distribution state.
 
-Operator submits a capture through the public `mhcs-core` application. The
-request durably persists the radiograph, gain, manifest, and signature to the
-configured private store, then atomically accepts the complete source set and
-queues MPIPS. Each successful component is immutable; a later same-admission
-attempt uploads only a missing component. The Image Gateway queue worker is the
-only MPIPS caller, and no application-server-to-application-server file copy or
-internal network submission exists inside `mhcs-core`.
+Operator submits a capture through the public `mhcs-core` application. Before
+the multipart HTTP upload, the operator browser may normalize only the
+radiograph NPZ at the ZIP archive-member boundary by removing the redundant
+lower-case `processedimage.npy` member. The resulting bytes are the immutable
+canonical radiograph source received by Image Gateway; the gain NPZ is not
+normalized. Image Gateway durably persists the canonical radiograph, gain,
+manifest, and signature to the configured private store, then atomically
+accepts the complete source set and queues MPIPS. Checksums, byte counts,
+immutable manifests, idempotency, storage identity, and MPIPS submission refer
+to those normalized bytes. MHCS does not centrally retain the pre-normalization
+radiograph bytes for future captures. Each successful component is immutable; a
+later same-admission attempt uploads only a missing component. Historical
+objects already stored by MHCS remain unchanged. The Image Gateway queue worker
+is the only MPIPS caller, and no application-server-to-application-server file
+copy or internal network submission exists inside `mhcs-core`.
 
 ## MPIPS black-box contract
 
 MPIPS has one MHCS responsibility: convert one radiograph capture into DICOM.
-The Image Gateway worker supplies a patient-free radiograph NPZ, its matching
-patient-free gain NPZ, and a separately signed DICOM metadata manifest. MPIPS
-returns one DICOM result. The exact transport, authentication, idempotency,
-success, and failure contract is owned by the separate `mpips` repository. This
-context defines only the `mhcs-core` side of that boundary.
+The Image Gateway worker supplies the patient-free canonical radiograph NPZ,
+its matching patient-free gain NPZ, and a separately signed DICOM metadata
+manifest. MPIPS returns one DICOM result. The exact transport, authentication,
+idempotency, success, and failure contract is owned by the separate `mpips`
+repository. This context defines only the `mhcs-core` side of that boundary.
 
 MPIPS is stateless from the MHCS business perspective. Temporary files are
 removed after the response or bounded recovery window. MPIPS does not own
@@ -207,8 +215,9 @@ implementation details in this context.
   user sessions.
 - Input size, dimensions, file count, CPU, memory, execution time, and temporary
   storage are bounded.
-- NPZ parsing occurs in an isolated process/container and must not execute
-  untrusted pickle payloads.
+- `mhcs-core` does not parse or deserialize NumPy object payloads and does not
+  execute pickle; NPZ parsing remains an isolated MPIPS process/container
+  boundary and must not execute untrusted pickle payloads.
 - The manifest is signed and its checksum is bound to the conversion job.
 - Logs contain correlation IDs and sanitized technical status, not NPZ
   contents, clinical payloads, tokens, or patient identifiers.
