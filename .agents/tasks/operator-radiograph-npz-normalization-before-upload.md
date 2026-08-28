@@ -2,13 +2,13 @@
 title: Operator Radiograph NPZ Normalization Before Upload
 document_id: MHCS-TASK-OPERATOR-RADIOGRAPH-NPZ-NORMALIZATION-001
 version: 1.0
-status: draft
+status: validated-published
 language: en-US
 last_updated: 2026-08-28
 scope:
   - browser-side normalization of future operator radiograph NPZ uploads
   - preservation of the existing Image Gateway to private storage to MPIPS flow
-authority_note: This Draft task is planning authority only. It is not Validated/Published and does not authorize implementation, deployment, production mutation, historical-object changes, or MPIPS changes.
+authority_note: This published task authorizes only the bounded implementation and local verification defined here. It does not authorize deployment, production mutation, historical-object changes, or MPIPS changes.
 ---
 
 # Executable Task
@@ -22,7 +22,7 @@ authority_note: This Draft task is planning authority only. It is not Validated/
 `.agents/tasks/operator-radiograph-npz-normalization-before-upload.md`
 
 **Task contract state:**
-`Draft`
+`Validated/Published upon immutable publication of this exact content.`
 
 **Delivery objective / Work Package / MVP:**
 `Operator capture upload-size reduction while preserving the Image Gateway → private storage → MPIPS conversion flow`
@@ -55,13 +55,13 @@ governed validation decision/task.
 ## Baseline and task revision
 
 **Implementation baseline:**
-`2e088c668fb4cc262e45767198aa44badb07aac7`
+`dfb5ee263b9d63d3f27cdc6d9bc831e9be8f47d3`
 
 **Task revision:**
-`resolved when published`
+`The full SHA of the commit containing this exact task content, supplied after publication.`
 
-The task remains Draft. The exact immutable governing task revision must be
-resolved before any future Validated/Published handoff.
+The publication commit is the immutable governing task revision and is supplied
+externally after publication; it is not embedded self-referentially here.
 
 ## Objective
 
@@ -148,9 +148,11 @@ Gateway/MPIPS behavior.
 
 ### Remaining approval requirements
 
-- This Draft task requires Planner/Reviewer review and publication before implementation.
-- Any new browser dependency requires the task's dependency criteria and normal repository approval; a material unresolved architecture/security decision is a stop condition.
-- Implementation acceptance does not authorize deployment, production validation, production mutation, or historical-object operations.
+- Any material unresolved architecture, security, or dependency decision returns
+  to planning; the task's dependency criteria remain mandatory.
+- Implementation acceptance does not authorize deployment, production
+  validation, production mutation, or historical-object operations.
+- Production validation of normalized uploads remains separately governed.
 
 ## Required capabilities
 
@@ -227,13 +229,25 @@ The Executor must stop and return to planning if:
 
 ## Side-effect authorization
 
-This Draft task authorizes no implementation or external side effect. After
-publication, authorization remains bounded to the implementation and local
-verification scope defined above.
+After publication, this task explicitly authorizes only the bounded normal
+repository writes and local verification required to implement the objective,
+including:
+
+- modification of the relevant MHCS frontend/application integration code;
+- focused automated tests and synthetic non-clinical fixtures;
+- local dependency installation, frontend build, and test commands necessary
+  for verification;
+- modification of `package.json` and its lockfile only if a small
+  purpose-specific browser ZIP/archive dependency is genuinely required and
+  the existing necessity, security, browser-suitability, licence, and
+  repository-fit criteria are satisfied; and
+- other normal repository writes required to produce the bounded implementation.
 
 The task does not authorize deployment, release, production mutation, fixture
-upload to production, destructive data operations, historical NPZ rewriting,
-direct object-store operations, secrets access, or MPIPS repository changes.
+upload to production, production validation execution, destructive data or
+infrastructure operations, historical NPZ rewriting or deletion, direct
+object-store operations, secrets access or disclosure, MPIPS repository changes,
+force push, or history rewrite.
 
 ## Expected terminal outcome
 
