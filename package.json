@@ -19,6 +19,6 @@
         "@cornerstonejs/dicom-image-loader": "5.7.0",
         "@cornerstonejs/tools": "5.7.0",
         "dicom-parser": "1.8.21",
-        "fflate": "0.7.3"
+        "fflate": "0.8.3"
     }
 }
