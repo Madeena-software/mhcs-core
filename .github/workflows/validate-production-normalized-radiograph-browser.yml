@@ -1,0 +1,83 @@
+name: Validate production normalized radiograph browser boundary
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_application_revision:
+        description: Exact deployed application revision to verify before fixture acquisition.
+        required: true
+        type: string
+      authorization_marker:
+        description: Type the exact one-time authorization marker.
+        required: true
+        type: string
+      radiograph_fixture_url:
+        description: Authorized fixture URL; acquired only after preflight.
+        required: true
+        type: string
+      gain_fixture_url:
+        description: Authorized fixture URL; acquired only after preflight.
+        required: true
+        type: string
+      capture_url:
+        description: Active-site and shift-bound Operator capture URL for the authorized admission.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-normalized-radiograph-browser-validation
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: self-hosted
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      APP_URL: https://fams.mhcsgo.cloud
+      CAPTURE_URL: ${{ inputs.capture_url }}
+      EXPECTED_APPLICATION_REVISION: ${{ inputs.expected_application_revision }}
+      AUTHORIZATION_MARKER: ${{ inputs.authorization_marker }}
+      GOVERNING_TASK_REVISION: b99146a4ca7c7bb71a5b0e7de36dceb632c7dddc
+      OPERATOR_EMAIL: ${{ secrets.MHCS_NORMALIZED_RADIOGRAPH_VALIDATION_OPERATOR_EMAIL }}
+      OPERATOR_PASSWORD: ${{ secrets.MHCS_NORMALIZED_RADIOGRAPH_VALIDATION_OPERATOR_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify authorization and deployed revision before fixture acquisition
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$AUTHORIZATION_MARKER" = AUTHORIZE_ONE_PRODUCTION_NORMALIZED_RADIOGRAPH_RUN ] || { echo 'failure_family=authorization'; exit 1; }
+          [[ "$EXPECTED_APPLICATION_REVISION" =~ ^[0-9a-f]{40}$ ]] || { echo 'failure_family=revision_mismatch'; exit 1; }
+          deployed_application_revision="$(curl --fail --silent --show-error "$APP_URL/version" | grep -Eo '[0-9a-f]{40}' | head -n 1 || true)"
+          revision_match=false
+          [ "$deployed_application_revision" = "$EXPECTED_APPLICATION_REVISION" ] && revision_match=true
+          echo "harness_revision=$GITHUB_SHA"
+          echo "deployed_application_revision=$deployed_application_revision"
+          echo "revision_match=$revision_match"
+          if [ "$revision_match" != true ]; then echo 'failure_family=revision_mismatch'; echo 'real_normalized_radiograph_submission_started=false'; exit 1; fi
+      - name: Acquire authorized fixtures after preflight
+        shell: bash
+        env:
+          RADIOGRAPH_FIXTURE_URL: ${{ inputs.radiograph_fixture_url }}
+          GAIN_FIXTURE_URL: ${{ inputs.gain_fixture_url }}
+        run: |
+          set -euo pipefail
+          workspace="$(mktemp -d)"
+          trap 'rm -rf "$workspace"' EXIT
+          echo 'fixture_acquisition=STARTED'
+          curl --fail --silent --show-error --location --output "$workspace/radiograph.npz" "$RADIOGRAPH_FIXTURE_URL"
+          curl --fail --silent --show-error --location --output "$workspace/gain.npz" "$GAIN_FIXTURE_URL"
+          echo 'fixture_acquisition=PASS'
+          export RADIOGRAPH_PATH="$workspace/radiograph.npz"
+          export GAIN_PATH="$workspace/gain.npz"
+          export MHCS_PRODUCTION_HARNESS=1
+          test "$AUTHORIZATION_MARKER" = AUTHORIZE_ONE_PRODUCTION_NORMALIZED_RADIOGRAPH_RUN
+          node tests/JavaScript/production-normalized-radiograph-browser.test.mjs
+          echo 'real_normalized_radiograph_submission_started=true'
+          echo 'at_most_one_upload=true'
+          echo 'sanitized_evidence=EMITTED'
