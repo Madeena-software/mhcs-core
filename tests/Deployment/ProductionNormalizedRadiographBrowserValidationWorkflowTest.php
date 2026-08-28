@@ -40,7 +40,7 @@ final class ProductionNormalizedRadiographBrowserValidationWorkflowTest extends 
     public function test_authorization_and_revision_guards_precede_fixture_or_upload(): void
     {
         $workflow = $this->workflow();
-        foreach (['expected_application_revision:', 'authorization_marker:', 'operator_site_id:', 'GOVERNING_TASK_REVISION:', 'GITHUB_SHA', 'EXPECTED_APPLICATION_REVISION', 'AUTHORIZE_ONE_PRODUCTION_NORMALIZED_RADIOGRAPH_RUN', 'APP_CONTAINER', 'application_container_resolved', 'docker service ps', 'docker exec', 'SERVICE_REVISION', 'CONTAINER_REVISION', 'VERSION_CURRENT', 'RAW_VERSION_CURRENT', 'CONTAINER_HEALTH', 'healthy', '/up'] as $required) {
+        foreach (['expected_application_revision:', 'authorization_marker:', 'operator_site_id:', 'GOVERNING_TASK_REVISION:', 'GITHUB_SHA', 'EXPECTED_APPLICATION_REVISION', 'AUTHORIZE_ONE_PRODUCTION_NORMALIZED_RADIOGRAPH_RUN', 'OPERATOR_EMAIL', 'OPERATOR_PASSWORD', 'APP_CONTAINER', 'application_container_resolved', 'docker service ps', 'docker exec', 'SERVICE_REVISION', 'CONTAINER_REVISION', 'VERSION_CURRENT', 'RAW_VERSION_CURRENT', 'CONTAINER_HEALTH', 'healthy', '/up'] as $required) {
             $this->assertStringContainsString($required, $workflow);
         }
         foreach (['revision_mismatch', 'authorization', 'fixture_acquisition', 'radiograph_fixture_integrity', 'gain_fixture_integrity', 'production-normalized-radiograph-browser.test.mjs'] as $needle) {
@@ -57,6 +57,8 @@ final class ProductionNormalizedRadiographBrowserValidationWorkflowTest extends 
         $this->assertStringNotContainsString('radiograph_fixture_url:', $workflow);
         $this->assertStringNotContainsString('gain_fixture_url:', $workflow);
         $this->assertStringNotContainsString('/version', $workflow);
+        $this->assertStringContainsString('[ -n "$OPERATOR_EMAIL" ]', $workflow);
+        $this->assertStringContainsString('[ -n "$OPERATOR_PASSWORD" ]', $workflow);
     }
 
     public function test_workflow_is_single_upload_and_sanitized_with_cleanup(): void
@@ -75,11 +77,12 @@ final class ProductionNormalizedRadiographBrowserValidationWorkflowTest extends 
     {
         $harness = $this->browserHarness();
         $this->assertStringContainsString('sanitizeEvidence', $harness);
-        foreach (['source_target_present', 'source_target_count_valid', 'transmitted_target_absent', 'radiograph_size_reduced', 'non_target_payloads_preserved', 'gain_identity_preserved', 'original_radiograph_bytes', 'transmitted_radiograph_bytes', 'request_count', 'failure_family', 'navigateToAuthorizedCapture', 'select[name="site_id"]', 'OPERATOR_SITE_ID', 'input[name="radiograph_npz"]', 'input[name="gain_npz"]'] as $required) {
+        foreach (['source_target_present', 'source_target_count_valid', 'transmitted_target_absent', 'radiograph_size_reduced', 'non_target_payloads_preserved', 'gain_identity_preserved', 'original_radiograph_bytes', 'transmitted_radiograph_bytes', 'request_count', 'failure_family', 'navigateToAuthorizedCapture', 'form:has(select[name="site_id"])', 'submitCaptureForm', '#capture-form', 'assertProductionEvidence', 'select[name="site_id"]', 'OPERATOR_SITE_ID', 'input[name="radiograph_npz"]', 'input[name="gain_npz"]'] as $required) {
             $this->assertStringContainsString($required, $harness);
         }
         $this->assertStringContainsString('upload_telemetry: evidence.upload_telemetry.at(-1)', $harness);
         $this->assertStringNotContainsString('original: source', $harness);
         $this->assertStringNotContainsString('console.log(JSON.stringify(observed', $harness);
+        $this->assertStringNotContainsString("page.click('button[type=\"submit\"]')", $harness);
     }
 }

@@ -139,14 +139,38 @@ test('sanitized production evidence excludes member arrays, payloads, credential
   });
 });
 
-test('active-site navigation fails closed on an unexpected redirect', async () => {
+test('scopes site and capture submissions away from the Operator logout form', async () => {
   const { chromium } = await import('playwright');
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage();
   const siteId = '00000000-0000-4000-8000-000000000001';
-  await page.route('https://local.test/operator/site', route => route.fulfill({ body: `<form action="/operator/site" method="post"><select name="site_id"><option value="${siteId}">Site</option></select><button type="submit">Select</button></form>` }));
-  await assert.rejects(() => navigateToAuthorizedCapture(page, 'https://local.test', siteId, 'https://local.test/capture'), /unexpected site-selection boundary/);
+  let siteSubmitted = '';
+  await page.route('https://local.test/operator/site', route => route.fulfill({ contentType: 'text/html', body: `<form id="logout" action="/logout" method="post"><button type="submit">Logout</button></form><form id="site-form" action="/operator/dashboard" method="post"><select name="site_id"><option value="${siteId}">Site</option></select><button type="submit">Select</button></form>` }));
+  await page.route('https://local.test/operator/dashboard', route => { siteSubmitted = route.request().postData() ?? ''; return route.fulfill({ contentType: 'text/html', body: '<p>Dashboard</p>' }); });
+  await page.route('**/capture', route => route.fulfill({ contentType: 'text/html', body: '<form id="logout" action="/logout" method="post"><button type="submit">Logout</button></form><form id="capture-form" onsubmit="event.preventDefault(); window.captureSubmitted=true" method="post"><input name="radiograph_npz" type="file"><input name="gain_npz" type="file"><button type="submit">Capture</button></form>' }));
+  await navigateToAuthorizedCapture(page, 'https://local.test', siteId, 'https://local.test/capture');
+  assert.match(siteSubmitted, new RegExp(siteId));
+  await submitCaptureForm(page);
+  assert.equal(await page.evaluate(() => window.captureSubmitted), true);
+  assert.equal(await page.evaluate(() => window.logoutSubmitted ?? false), false);
   await browser.close();
+});
+
+test('site selection fails closed when multiple target forms exist', async () => {
+  const { chromium } = await import('playwright');
+  const browser = await chromium.launch({ headless: true });
+  const page = await browser.newPage();
+  const siteId = '00000000-0000-4000-8000-000000000001';
+  await page.route('https://local.test/operator/site', route => route.fulfill({ body: `<form><select name="site_id"><option value="${siteId}">Site one</option></select><button type="submit">One</button></form><form><select name="site_id"><option value="${siteId}">Site two</option></select><button type="submit">Two</button></form>` }));
+  await assert.rejects(() => navigateToAuthorizedCapture(page, 'https://local.test', siteId, 'https://local.test/capture'), /exactly one site-selection form/);
+  await browser.close();
+});
+
+test('production evidence invariants fail closed on any target-count mismatch', () => {
+  const valid = { source: { radiograph: { target_count: 1, bytes: 8, members: [] }, gain: { bytes: 2, sha256: 'a' } }, transmitted: { radiograph: { target_count: 0, bytes: 4, members: [] }, gain: { bytes: 2, sha256: 'a' } } };
+  assert.doesNotThrow(() => assertProductionEvidence(valid.source, valid.transmitted, valid.source.gain, valid.transmitted.gain));
+  assert.throws(() => assertProductionEvidence({ ...valid.source, radiograph: { ...valid.source.radiograph, target_count: 2 } }, valid.transmitted, valid.source.gain, valid.transmitted.gain), /source target count/);
+  assert.throws(() => assertProductionEvidence(valid.source, { ...valid.transmitted, radiograph: { ...valid.transmitted.radiograph, target_count: 1 } }, valid.source.gain, valid.transmitted.gain), /transmitted target count/);
 });
 
 function makeStoredZip(entries) {
@@ -259,10 +283,6 @@ function parseZipMembers(bytes) {
   return members;
 }
 
-function normalizationFailureDecision() {
-  return { upload: false, fallback: false, failure_family: 'normalization' };
-}
-
 function sanitizeEvidence(evidence) {
   return {
     source_target_present: evidence.source.radiograph.target_member_present,
@@ -280,6 +300,14 @@ function sanitizeEvidence(evidence) {
     upload_telemetry: evidence.upload_telemetry.at(-1) ?? { loaded: 0, total: 0, length_computable: false },
     failure_family: 'none',
   };
+}
+
+function assertProductionEvidence(source, transmitted, sourceGain, transmittedGain) {
+  if (source.radiograph.target_count !== 1) throw new Error('source target count invariant failed');
+  if (transmitted.radiograph.target_count !== 0) throw new Error('transmitted target count invariant failed');
+  if (transmitted.radiograph.bytes >= source.radiograph.bytes) throw new Error('normalized radiograph size invariant failed');
+  if (!compareNonTargetMembers(source.radiograph.members, transmitted.radiograph.members)) throw new Error('non-target member preservation failed');
+  if (sourceGain.bytes !== transmittedGain.bytes || sourceGain.sha256 !== transmittedGain.sha256) throw new Error('gain identity evidence failed');
 }
 
 async function installUploadObserver(page) {
@@ -306,15 +334,29 @@ async function navigateToAuthorizedCapture(page, appUrl, siteId, captureUrl) {
   await page.goto(`${appUrl}/operator/site`, { waitUntil: 'networkidle' });
   if (new URL(page.url()).pathname !== '/operator/site') throw new Error('unexpected site-selection boundary');
   const selector = page.locator('select[name="site_id"]');
-  if (await selector.count() !== 1) throw new Error('unexpected site-selection boundary');
+  const siteForm = page.locator('form:has(select[name="site_id"])');
+  const selectorCount = await selector.count();
+  const siteFormCount = await siteForm.count();
+  if (selectorCount !== 1 || siteFormCount !== 1) throw new Error(`exactly one site-selection form required (${selectorCount}/${siteFormCount})`);
+  const siteSubmit = siteForm.locator('button[type="submit"]:enabled');
+  if (await siteSubmit.count() !== 1) throw new Error('exactly one enabled site-selection submit required');
   await selector.selectOption(siteId);
-  await Promise.all([page.waitForLoadState('networkidle'), page.locator('form').locator('button[type="submit"]').click()]);
+  await siteSubmit.click();
   const afterSelection = new URL(page.url());
   if (afterSelection.pathname === '/operator/site' || /login|password|error/i.test(afterSelection.pathname)) throw new Error('unexpected site-selection boundary');
   await page.goto(captureUrl, { waitUntil: 'networkidle' });
   const finalUrl = new URL(page.url());
   if (finalUrl.origin !== expectedOrigin || finalUrl.pathname !== target.pathname) throw new Error('unexpected capture boundary');
   if (await page.locator('#capture-form').count() !== 1 || await page.locator('input[name="radiograph_npz"]').count() !== 1 || await page.locator('input[name="gain_npz"]').count() !== 1) throw new Error('capture form boundary incomplete');
+}
+
+async function submitCaptureForm(page) {
+  const form = page.locator('#capture-form');
+  if (await form.count() !== 1) throw new Error('exactly one capture form required');
+  if (await form.locator('input[name="radiograph_npz"]').count() !== 1 || await form.locator('input[name="gain_npz"]').count() !== 1) throw new Error('capture form boundary incomplete');
+  const submit = form.locator('button[type="submit"]:enabled');
+  if (await submit.count() !== 1) throw new Error('exactly one enabled capture submit required');
+  await submit.click();
 }
 
 function browserObserver() {
@@ -368,7 +410,7 @@ function browserObserver() {
 }
 
 async function runProductionValidation() {
-  const required = ['APP_URL', 'CAPTURE_URL', 'EXPECTED_APPLICATION_REVISION', 'GOVERNING_TASK_REVISION', 'AUTHORIZATION_MARKER', 'OPERATOR_EMAIL', 'OPERATOR_PASSWORD', 'RADIOGRAPH_PATH', 'GAIN_PATH'];
+  const required = ['APP_URL', 'CAPTURE_URL', 'EXPECTED_APPLICATION_REVISION', 'GOVERNING_TASK_REVISION', 'AUTHORIZATION_MARKER', 'OPERATOR_EMAIL', 'OPERATOR_PASSWORD', 'OPERATOR_SITE_ID', 'RADIOGRAPH_PATH', 'GAIN_PATH'];
   if (required.some(name => !process.env[name])) throw new Error('missing required validation input');
   if (!/^[0-9a-f]{40}$/.test(process.env.EXPECTED_APPLICATION_REVISION)) throw new Error('invalid application revision');
   if (process.env.AUTHORIZATION_MARKER !== 'AUTHORIZE_ONE_PRODUCTION_NORMALIZED_RADIOGRAPH_RUN') throw new Error('invalid authorization marker');
@@ -382,24 +424,24 @@ async function runProductionValidation() {
     await page.goto(`${process.env.APP_URL}/operator/login`, { waitUntil: 'networkidle' });
     await page.fill('input[name="email"], input[name="identifier"]', process.env.OPERATOR_EMAIL);
     await page.fill('input[name="password"]', process.env.OPERATOR_PASSWORD);
-    await Promise.all([page.waitForLoadState('networkidle'), page.click('button[type="submit"]')]);
+    const loginSubmit = page.locator('form').filter({ has: page.locator('input[name="password"]') }).locator('button[type="submit"]:enabled');
+    if (await loginSubmit.count() !== 1) throw new Error('exactly one enabled login submit required');
+    await Promise.all([page.waitForLoadState('networkidle'), loginSubmit.click()]);
     await navigateToAuthorizedCapture(page, process.env.APP_URL, process.env.OPERATOR_SITE_ID, process.env.CAPTURE_URL);
     await page.setInputFiles('input[name="radiograph_npz"]', process.env.RADIOGRAPH_PATH);
     await page.setInputFiles('input[name="gain_npz"]', process.env.GAIN_PATH);
-    await page.click('button[type="submit"]');
+    await submitCaptureForm(page);
     try {
       await page.waitForFunction(() => window.__mhcsBrowserHarness.request_count > 0, null, { timeout: 30000 });
     } catch {
-      console.log(JSON.stringify({ ...normalizationFailureDecision(), harness_revision: process.env.GITHUB_SHA, deployed_application_revision: process.env.EXPECTED_APPLICATION_REVISION, governing_task_revision: process.env.GOVERNING_TASK_REVISION }));
+      console.log(JSON.stringify({ failure_family: 'normalization', harness_revision: process.env.GITHUB_SHA, deployed_application_revision: process.env.EXPECTED_APPLICATION_REVISION, governing_task_revision: process.env.GOVERNING_TASK_REVISION }));
       throw new Error('normalization produced no upload request');
     }
     const observed = await getObservedEvidence(page);
     if (observed.request_count !== 1 || observed.evidence.length !== 1) throw new Error('at-most-one-upload contract failed');
     const { radiograph, gain } = observed.evidence[0];
     const source = observed.source_evidence;
-    if (!source.radiograph?.target_member_present || !radiograph.target_member_absent || radiograph.bytes >= source.radiograph.bytes) throw new Error('normalized radiograph evidence failed');
-  if (!compareNonTargetMembers(source.radiograph.members, radiograph.members)) throw new Error('non-target member preservation failed');
-    if (gain.bytes !== source.gain.bytes || gain.sha256 !== source.gain.sha256) throw new Error('gain identity evidence failed');
+    assertProductionEvidence(source, { radiograph, gain }, source.gain, gain);
     console.log(JSON.stringify({ harness_revision: process.env.GITHUB_SHA, governing_task_revision: process.env.GOVERNING_TASK_REVISION, deployed_application_revision: process.env.EXPECTED_APPLICATION_REVISION, application_health: 'healthy', ...sanitizeEvidence({ source, transmitted: observed.evidence[0], request_count: observed.request_count, upload_telemetry: observed.upload_telemetry }) }));
   } finally {
     await browser.close();

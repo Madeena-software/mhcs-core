@@ -50,6 +50,7 @@ jobs:
         run: |
           set -euo pipefail
           [ "$AUTHORIZATION_MARKER" = AUTHORIZE_ONE_PRODUCTION_NORMALIZED_RADIOGRAPH_RUN ] || { echo 'failure_family=authorization'; exit 1; }
+          [ -n "$OPERATOR_EMAIL" ] && [ -n "$OPERATOR_PASSWORD" ] || { echo 'failure_family=authorization'; exit 1; }
           [[ "$EXPECTED_APPLICATION_REVISION" =~ ^[0-9a-f]{40}$ ]] || { echo 'failure_family=revision_mismatch'; exit 1; }
           [[ "$OPERATOR_SITE_ID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$ ]] || { echo 'failure_family=authorization'; exit 1; }
           APP_CONTAINER=""
