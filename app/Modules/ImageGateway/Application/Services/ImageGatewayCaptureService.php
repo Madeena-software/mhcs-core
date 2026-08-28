@@ -9,6 +9,7 @@ use App\Modules\ImageGateway\Application\Jobs\ProcessCaptureSet;
 use App\Modules\ImageGateway\Domain\ImageGatewayException;
 use App\Modules\ImageGateway\Domain\Security\ConversionManifest;
 use App\Modules\ImageGateway\Domain\Security\ManifestSigner;
+use App\Modules\ImageGateway\Domain\Security\SignedManifest;
 use App\Shared\Audit\AuditEvent;
 use App\Shared\Audit\AuditStore;
 use App\Shared\Context\AuthenticatedContext;
@@ -56,7 +57,7 @@ final readonly class ImageGatewayCaptureService implements OperatorStudyQuery
         private ManifestSigner $signer,
     ) {}
 
-    /** @return array{capture_id: ?string, submission_id: string, missing: list<string>, status: string, can_retry: bool, ticket_number: string} */
+    /** @return array{capture_id: ?string, submission_id: string, missing: list<string>, status: string, can_retry: bool, correction_eligible: bool, ticket_number: string} */
     public function captureForm(
         AuthenticatedContext $context,
         string $profileId,
@@ -84,6 +85,7 @@ final readonly class ImageGatewayCaptureService implements OperatorStudyQuery
             'missing' => $missing,
             'status' => (string) ($capture->status ?? 'capturing'),
             'can_retry' => $this->canRetryProcessing($capture, $missing),
+            'correction_eligible' => $this->canCorrectDetector($capture, $missing),
             'ticket_number' => (string) $admission->ticket_number,
             'metadata' => $metadata,
             'metadata_editable' => $capture === null,
@@ -237,6 +239,144 @@ final readonly class ImageGatewayCaptureService implements OperatorStudyQuery
             'processing_state' => $this->processingState($capture, $missing),
             'missing_components' => $missing,
         ];
+    }
+
+    public function correctDetectorAndRetry(
+        AuthenticatedContext $context,
+        string $profileId,
+        string $siteId,
+        string $operatorSiteId,
+        string $admissionId,
+        string $detectorType,
+    ): void {
+        $this->assertContext($context, self::CAPTURE_PURPOSE);
+        $detectorType = trim($detectorType);
+        if (! in_array($detectorType, self::DETECTOR_TYPES, true)) {
+            throw new ImageGatewayException('capture_invalid', 'Detector type is invalid.');
+        }
+
+        $this->admission($profileId, $siteId, $operatorSiteId, $admissionId, false, true);
+        $capture = DB::table('image_gateway_capture_sets')->where('admission_id', $admissionId)->first();
+        $objects = $capture === null
+            ? collect()
+            : DB::table('image_gateway_capture_objects')->where('capture_set_id', $capture->id)->get()->keyBy('object_type');
+        $this->assertDetectorCorrectionEligible($capture, $objects);
+        $this->assertCaptureOwnership($capture, $profileId, $siteId, $admissionId);
+        $metadata = $this->validatedStoredMetadata($capture);
+        $currentDetector = $metadata['capture']['detector_type'];
+        if ($currentDetector === $detectorType) {
+            throw new ImageGatewayException('capture_invalid', 'The corrected detector must differ from the current detector.');
+        }
+
+        $manifestObject = $objects->get('manifest');
+        $signatureObject = $objects->get('manifest_signature');
+        $oldManifestBytes = $this->readCaptureObject($manifestObject, $context);
+        $oldSignatureBytes = $this->readCaptureObject($signatureObject, $context);
+        $this->assertCaptureObject($capture, $manifestObject, $oldManifestBytes, 'manifest_checksum', 'manifest_bytes');
+        $this->assertCaptureObject($capture, $signatureObject, $oldSignatureBytes, 'signature_checksum', 'signature_bytes');
+
+        $signed = SignedManifest::fromArray(json_decode($oldSignatureBytes, true, 512, JSON_THROW_ON_ERROR));
+        $verified = $this->signer->verify($signed);
+        if (
+            $verified->conversionJobId !== (string) $capture->id
+            || $verified->radiographChecksum !== (string) $capture->radiograph_checksum
+            || $verified->gainChecksum !== (string) $capture->gain_checksum
+            || $verified->metadataChecksum !== hash('sha256', $oldManifestBytes)
+        ) {
+            throw new ImageGatewayException('capture_invalid', 'The stored capture manifest is inconsistent.');
+        }
+
+        $manifest = json_decode($oldManifestBytes, true, 512, JSON_THROW_ON_ERROR);
+        if (! is_array($manifest)
+            || ! is_array($manifest['examination'] ?? null)
+            || ! is_array($manifest['capture'] ?? null)
+            || ($manifest['examination']['study_description'] ?? null) !== $metadata['examination']['study_description']
+            || ($manifest['capture']['detector_type'] ?? null) !== $currentDetector
+            || ($manifest['capture']['body_part_examined'] ?? null) !== $metadata['capture']['body_part_examined']
+            || ($manifest['capture']['laterality'] ?? null) !== $metadata['capture']['laterality']
+            || ($manifest['capture']['projection'] ?? null) !== $metadata['capture']['projection']) {
+            throw new ImageGatewayException('capture_invalid', 'The stored capture manifest is inconsistent.');
+        }
+        $manifest['capture']['detector_type'] = $detectorType;
+        $newManifestBytes = json_encode($this->sortKeys($manifest), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+        $newSignatureBytes = json_encode($this->signer->sign(new ConversionManifest(
+            conversionJobId: $verified->conversionJobId,
+            radiographChecksum: $verified->radiographChecksum,
+            gainChecksum: $verified->gainChecksum,
+            metadataChecksum: hash('sha256', $newManifestBytes),
+            manifestVersion: $verified->manifestVersion,
+            issuedAt: $verified->issuedAt,
+            correlationId: $verified->correlationId,
+            keyId: $verified->keyId,
+        ))->toArray(), JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+
+        $stored = [];
+        try {
+            $stored['manifest'] = $this->objects->put($newManifestBytes, $context, self::CAPTURE_PURPOSE);
+            $this->verifyStoredObject($stored['manifest'], $newManifestBytes, $context);
+            $stored['manifest_signature'] = $this->objects->put($newSignatureBytes, $context, self::CAPTURE_PURPOSE);
+            $this->verifyStoredObject($stored['manifest_signature'], $newSignatureBytes, $context);
+        } catch (Throwable $exception) {
+            $this->deleteStored($stored);
+            throw new ImageGatewayException('capture_failure', 'The corrected capture manifest could not be persisted.', $exception);
+        }
+
+        try {
+            $updated = DB::transaction(function () use ($profileId, $siteId, $operatorSiteId, $admissionId, $capture, $manifestObject, $signatureObject, $stored, $currentDetector, $detectorType, $newManifestBytes, $newSignatureBytes): int {
+                $this->admission($profileId, $siteId, $operatorSiteId, $admissionId, true, true);
+                $row = DB::table('image_gateway_capture_sets')->where('id', $capture->id)->lockForUpdate()->first();
+                $currentObjects = DB::table('image_gateway_capture_objects')->where('capture_set_id', $capture->id)->get()->keyBy('object_type');
+                $this->assertDetectorCorrectionEligible($row, $currentObjects);
+                $this->assertCaptureOwnership($row, $profileId, $siteId, $admissionId);
+                $currentMetadata = $this->validatedStoredMetadata($row);
+                if ($currentMetadata['capture']['detector_type'] !== $currentDetector
+                    || (string) $currentObjects->get('manifest')->id !== (string) $manifestObject->id
+                    || (string) $currentObjects->get('manifest_signature')->id !== (string) $signatureObject->id) {
+                    throw new ImageGatewayException('capture_conflict', 'The capture changed before detector correction completed.');
+                }
+
+                $currentMetadata['capture']['detector_type'] = $detectorType;
+                $this->recordObject((string) $row->id, 'manifest', $stored['manifest'], 'application/json');
+                $this->recordObject((string) $row->id, 'manifest_signature', $stored['manifest_signature'], 'application/json');
+                $now = $this->clock->now();
+                DB::table('image_gateway_capture_sets')->where('id', $row->id)->update([
+                    'capture_metadata' => json_encode($currentMetadata, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR),
+                    'manifest_checksum' => hash('sha256', $newManifestBytes),
+                    'manifest_bytes' => strlen($newManifestBytes),
+                    'signature_checksum' => hash('sha256', $newSignatureBytes),
+                    'signature_bytes' => strlen($newSignatureBytes),
+                    'processing_status' => 'pending',
+                    'mpips_status' => 'pending',
+                    'dicom_status' => 'pending',
+                    'last_error_code' => null,
+                    'last_response_status' => null,
+                    'failed_at' => null,
+                    'processing_claim_id' => null,
+                    'processing_lease_expires_at' => null,
+                    'updated_at' => $now,
+                ]);
+
+                return 1;
+            });
+        } catch (Throwable $exception) {
+            $this->deleteStored($stored);
+            if ($exception instanceof ImageGatewayException) {
+                throw $exception;
+            }
+            throw new ImageGatewayException('capture_failure', 'The detector correction could not be accepted.', $exception);
+        }
+
+        if ($updated !== 1) {
+            $this->deleteStored($stored);
+            throw new ImageGatewayException('capture_invalid', 'The detector correction is unavailable.');
+        }
+
+        try {
+            $this->deleteStored([$this->privateObjectForRow($manifestObject), $this->privateObjectForRow($signatureObject)]);
+        } catch (Throwable) {
+            // The committed references point to the new objects; cleanup failure is a safe orphan.
+        }
+        ProcessCaptureSet::dispatch((string) $capture->id)->onQueue('image-gateway')->afterCommit();
     }
 
     /** @return list<array{study_id: string, display_reference: string, booking_id: string, ticket_number: string, member_name: string, medical_record_number: string, schedule_display_reference: string, format: string, rows: ?int, columns: ?int, accepted_at: string}> */
@@ -469,12 +609,17 @@ final readonly class ImageGatewayCaptureService implements OperatorStudyQuery
 
     private function grantForRow(object $row, AuthenticatedContext $context): AccessGrant
     {
-        return $this->objects->grant(new PrivateObject(
+        return $this->objects->grant($this->privateObjectForRow($row), $context, 'capture-intent', self::CAPTURE_PURPOSE, $this->clock->now()->modify('+300 seconds'));
+    }
+
+    private function privateObjectForRow(object $row): PrivateObject
+    {
+        return new PrivateObject(
             OpaqueObjectKey::fromString((string) $row->object_key),
             (string) $row->checksum,
             (int) $row->bytes,
             new DateTimeImmutable((string) $row->created_at),
-        ), $context, 'capture-intent', self::CAPTURE_PURPOSE, $this->clock->now()->modify('+300 seconds'));
+        );
     }
 
     private function recordObject(string $captureId, string $type, PrivateObject $object, string $format): void
@@ -543,6 +688,117 @@ final readonly class ImageGatewayCaptureService implements OperatorStudyQuery
             && (string) $capture->processing_status === 'failed'
             && (int) $capture->attempts < (int) config('mhcs.mpips.max_attempts', 5)
             && ! DB::table('image_gateway_studies')->where('capture_set_id', $capture->id)->exists();
+    }
+
+    private function canCorrectDetector(?object $capture, array $missing): bool
+    {
+        if ($capture === null
+            || $capture->status !== 'accepted'
+            || $capture->accepted_at === null
+            || ! $this->canRetryProcessing($capture, $missing)) {
+            return false;
+        }
+
+        $objects = DB::table('image_gateway_capture_objects')->where('capture_set_id', $capture->id)->get()->keyBy('object_type');
+        if (! $this->captureObjectsComplete($capture, $objects)) {
+            return false;
+        }
+
+        try {
+            $this->validatedStoredMetadata($capture);
+
+            return true;
+        } catch (ImageGatewayException) {
+            return false;
+        }
+    }
+
+    private function assertDetectorCorrectionEligible(?object $capture, $objects): void
+    {
+        if ($capture === null
+            || $capture->status !== 'accepted'
+            || $capture->accepted_at === null
+            || ! $this->canRetryProcessing($capture, [])
+            || ! $this->captureObjectsComplete($capture, $objects)) {
+            throw new ImageGatewayException('capture_invalid', 'The detector correction is unavailable.');
+        }
+    }
+
+    private function assertCaptureOwnership(object $capture, string $profileId, string $siteId, string $admissionId): void
+    {
+        if ((string) $capture->admission_id !== $admissionId
+            || (string) $capture->operator_profile_id !== $profileId
+            || (string) $capture->operator_site_id !== $siteId) {
+            throw new ImageGatewayException('capture_invalid', 'The detector correction is unavailable.');
+        }
+    }
+
+    private function captureObjectsComplete(object $capture, $objects): bool
+    {
+        foreach (['radiograph', 'gain'] as $type) {
+            $row = $objects->get($type);
+            $checksum = $capture->{$type.'_checksum'} ?? null;
+            if ($row === null || ! is_string($checksum) || ! hash_equals($checksum, (string) $row->checksum) || (int) $row->bytes < 1) {
+                return false;
+            }
+        }
+
+        foreach (['manifest', 'manifest_signature'] as $type) {
+            $row = $objects->get($type);
+            if ($row === null || (int) $row->bytes < 1 || preg_match('/\A[a-f0-9]{64}\z/i', (string) $row->checksum) !== 1) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /** @return array<string, mixed> */
+    private function validatedStoredMetadata(object $capture): array
+    {
+        $metadata = $this->storedMetadata($capture);
+        try {
+            $this->normaliseMetadata($metadata, true);
+        } catch (ImageGatewayException $exception) {
+            throw new ImageGatewayException('capture_invalid', 'The stored capture metadata is invalid.', $exception);
+        }
+
+        if ($metadata === null) {
+            throw new ImageGatewayException('capture_invalid', 'The stored capture metadata is invalid.');
+        }
+
+        return $metadata;
+    }
+
+    private function readCaptureObject(object $row, AuthenticatedContext $context): string
+    {
+        try {
+            return $this->objects->get($this->grantForRow($row, $context), $context, 'capture-intent', self::CAPTURE_PURPOSE);
+        } catch (Throwable $exception) {
+            throw new ImageGatewayException('capture_invalid', 'The stored capture object is unavailable.', $exception);
+        }
+    }
+
+    private function assertCaptureObject(object $capture, object $row, string $contents, string $checksumField, string $bytesField): void
+    {
+        $checksum = hash('sha256', $contents);
+        if (! hash_equals((string) $row->checksum, $checksum)
+            || (int) $row->bytes !== strlen($contents)
+            || ! hash_equals((string) ($capture->{$checksumField} ?? ''), $checksum)
+            || (int) ($capture->{$bytesField} ?? 0) !== strlen($contents)) {
+            throw new ImageGatewayException('capture_invalid', 'The stored capture manifest is inconsistent.');
+        }
+    }
+
+    private function verifyStoredObject(PrivateObject $object, string $contents, AuthenticatedContext $context): void
+    {
+        if (! hash_equals($object->checksum, hash('sha256', $contents)) || $object->bytes !== strlen($contents)) {
+            throw new \RuntimeException('capture_object_persistence_failure');
+        }
+        $grant = $this->objects->grant($object, $context, 'capture-intent', self::CAPTURE_PURPOSE, $this->clock->now()->modify('+300 seconds'));
+        if ($this->objects->get($grant, $context, 'capture-intent', self::CAPTURE_PURPOSE) !== $contents) {
+            throw new \RuntimeException('capture_object_persistence_failure');
+        }
     }
 
     private function retryFailedProcessing(object $capture): void

@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Tests\Feature\Operator;
 
 use App\Modules\ImageGateway\Application\Jobs\ProcessCaptureSet;
+use App\Modules\ImageGateway\Domain\Security\ManifestSigner;
+use App\Modules\ImageGateway\Domain\Security\SignedManifest;
 use App\Shared\Storage\OpaqueObjectKey;
 use App\Shared\Storage\PrivateObject;
 use App\Shared\Storage\PrivateObjectStore;
@@ -461,6 +463,259 @@ final class Mvp14ImageGatewayIntegrationTest extends TestCase
         Queue::assertPushed(ProcessCaptureSet::class, 2);
     }
 
+    public function test_failed_capture_can_correct_bed_to_trx_and_retry_with_the_same_sources_and_new_signature(): void
+    {
+        $fixture = $this->operatorFixture(false);
+        $this->actingAs($fixture['operator'])->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
+        $admission = $this->insertCalledXrayAdmission($fixture);
+        $submissionId = (string) Str::uuid();
+
+        $this->post(route('operator.xray-capture.store', $admission), [
+            'submission_id' => $submissionId,
+            ...$this->metadataPayload(),
+            'radiograph_npz' => $this->fixtureUpload('synthetic-radiograph-01.npz'),
+            'gain_npz' => $this->fixtureUpload('synthetic-gain-01.npz'),
+        ])->assertRedirect(route('operator.study.results'));
+
+        $capture = DB::table('image_gateway_capture_sets')->where('id', DB::table('image_gateway_capture_sets')->value('id'))->first();
+        $objects = DB::table('image_gateway_capture_objects')->where('capture_set_id', $capture->id)->get()->keyBy('object_type');
+        $oldMetadata = json_decode((string) $capture->capture_metadata, true, 512, JSON_THROW_ON_ERROR);
+        $oldManifestBytes = Storage::disk('local')->get((string) $objects->get('manifest')->object_key);
+        $oldManifest = json_decode($oldManifestBytes, true, 512, JSON_THROW_ON_ERROR);
+        $oldSignature = json_decode(Storage::disk('local')->get((string) $objects->get('manifest_signature')->object_key), true, 512, JSON_THROW_ON_ERROR);
+        $radiographBytes = Storage::disk('local')->get((string) $objects->get('radiograph')->object_key);
+        $gainBytes = Storage::disk('local')->get((string) $objects->get('gain')->object_key);
+        $stableCaptureFields = array_intersect_key((array) $capture, array_flip([
+            'id', 'submission_id', 'admission_id', 'booking_id', 'member_schedule_id', 'operator_site_id',
+            'operator_profile_id', 'status', 'accepted_at', 'radiograph_checksum', 'gain_checksum',
+        ]));
+
+        $mpipsBody = null;
+        $mpipsCalls = 0;
+        Http::fake(function (Request $request) use (&$mpipsBody, &$mpipsCalls) {
+            $mpipsCalls++;
+            if ($mpipsCalls === 1) {
+                return Http::response(['detail' => 'conversion failed'], 500);
+            }
+
+            $mpipsBody = $request->body();
+
+            return Http::response(
+                str_repeat("\0", 128).'DICM'.'corrected dicom payload',
+                200,
+                [
+                    'Content-Type' => 'application/dicom',
+                    'X-Conversion-Job-ID' => '6ba7b810-9dad-51d1-80b4-00c04fd430c8',
+                    'X-Correlation-ID' => '6ba7b810-9dad-41d1-80b4-00c04fd430c8',
+                ],
+            );
+        });
+        app()->call([new ProcessCaptureSet((string) $capture->id), 'handle']);
+        $this->assertSame('failed', DB::table('image_gateway_capture_sets')->where('id', $capture->id)->value('processing_status'));
+
+        $this->post(route('operator.xray-capture.correct-detector', $admission), [
+            'detector_type' => 'TRX',
+        ])->assertRedirect(route('operator.study.results'));
+
+        $corrected = DB::table('image_gateway_capture_sets')->where('id', $capture->id)->first();
+        $correctedMetadata = json_decode((string) $corrected->capture_metadata, true, 512, JSON_THROW_ON_ERROR);
+        $expectedMetadata = $oldMetadata;
+        $expectedMetadata['capture']['detector_type'] = 'TRX';
+        $this->assertSame($expectedMetadata, $correctedMetadata);
+        foreach ($stableCaptureFields as $field => $value) {
+            $this->assertSame((string) $value, (string) $corrected->{$field}, $field);
+        }
+        $this->assertSame('accepted', $corrected->status);
+        $this->assertSame('pending', $corrected->processing_status);
+        $this->assertSame('pending', $corrected->mpips_status);
+        $this->assertSame('pending', $corrected->dicom_status);
+        $this->assertNull($corrected->last_error_code);
+        $this->assertNull($corrected->last_response_status);
+        $this->assertNull($corrected->failed_at);
+        $this->assertSame(1, (int) $corrected->attempts);
+
+        $newObjects = DB::table('image_gateway_capture_objects')->where('capture_set_id', $capture->id)->get()->keyBy('object_type');
+        foreach (['radiograph', 'gain'] as $type) {
+            $this->assertSame((string) $objects->get($type)->id, (string) $newObjects->get($type)->id);
+            $this->assertSame((string) $objects->get($type)->object_key, (string) $newObjects->get($type)->object_key);
+            $this->assertSame((string) $objects->get($type)->checksum, (string) $newObjects->get($type)->checksum);
+            $this->assertSame(Storage::disk('local')->get((string) $objects->get($type)->object_key), $type === 'radiograph' ? $radiographBytes : $gainBytes);
+        }
+
+        $newManifestBytes = Storage::disk('local')->get((string) $newObjects->get('manifest')->object_key);
+        $newManifest = json_decode($newManifestBytes, true, 512, JSON_THROW_ON_ERROR);
+        $expectedManifest = $oldManifest;
+        $expectedManifest['capture']['detector_type'] = 'TRX';
+        $this->assertSame($expectedManifest, $newManifest);
+        $newSignature = json_decode(Storage::disk('local')->get((string) $newObjects->get('manifest_signature')->object_key), true, 512, JSON_THROW_ON_ERROR);
+        $this->assertNotSame($oldSignature['signature'], $newSignature['signature']);
+        $verified = app(ManifestSigner::class)->verify(SignedManifest::fromArray($newSignature));
+        $this->assertSame(hash('sha256', $newManifestBytes), $verified->metadataChecksum);
+        Storage::disk('local')->assertMissing((string) $objects->get('manifest')->object_key);
+        Storage::disk('local')->assertMissing((string) $objects->get('manifest_signature')->object_key);
+
+        app()->call([new ProcessCaptureSet((string) $capture->id), 'handle']);
+
+        $afterProcessing = DB::table('image_gateway_capture_sets')->where('id', $capture->id)->first();
+        $this->assertSame('completed', $afterProcessing->processing_status);
+        $this->assertSame(1, DB::table('image_gateway_studies')->where('capture_set_id', $capture->id)->count());
+        $this->assertIsString($mpipsBody);
+        $this->assertStringContainsString('"detector_type":"TRX"', $mpipsBody);
+        $this->assertStringNotContainsString('"detector_type":"BED"', $mpipsBody);
+        Queue::assertPushed(ProcessCaptureSet::class, 2);
+        Http::assertSentCount(2);
+    }
+
+    public function test_eligible_failed_capture_shows_frozen_metadata_and_explicit_detector_correction_only(): void
+    {
+        ['admission' => $admission] = $this->failedCapture();
+
+        $this->get(route('operator.xray-capture.show', $admission))
+            ->assertOk()
+            ->assertSee('Metadata pengambilan gambar (dibekukan)')
+            ->assertSee('Jenis detektor')
+            ->assertSee('BED')
+            ->assertSee('name="detector_type"', false)
+            ->assertSee('value="BED"', false)
+            ->assertSee('value="TRX"', false)
+            ->assertSee('Koreksi jenis detektor dan coba proses DICOM lagi')
+            ->assertDontSee('name="metadata[capture][detector_type]"', false)
+            ->assertDontSee('name="radiograph_npz"', false)
+            ->assertDontSee('name="gain_npz"', false);
+    }
+
+    public function test_detector_correction_rejects_a_capture_that_is_not_failed(): void
+    {
+        $fixture = $this->operatorFixture(false);
+        $this->actingAs($fixture['operator'])->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
+        $admission = $this->insertCalledXrayAdmission($fixture);
+        $submissionId = (string) Str::uuid();
+        $this->post(route('operator.xray-capture.store', $admission), [
+            'submission_id' => $submissionId,
+            ...$this->metadataPayload(),
+            'radiograph_npz' => $this->fixtureUpload('synthetic-radiograph-01.npz'),
+            'gain_npz' => $this->fixtureUpload('synthetic-gain-01.npz'),
+        ])->assertRedirect();
+
+        $captureId = (string) DB::table('image_gateway_capture_sets')->where('submission_id', $submissionId)->value('id');
+        $this->from(route('operator.xray-capture.show', $admission))
+            ->post(route('operator.xray-capture.correct-detector', $admission), ['detector_type' => 'TRX'])
+            ->assertRedirect(route('operator.xray-capture.show', $admission))
+            ->assertSessionHasErrors('capture');
+
+        $this->assertSame('BED', json_decode((string) DB::table('image_gateway_capture_sets')->where('id', $captureId)->value('capture_metadata'), true, 512, JSON_THROW_ON_ERROR)['capture']['detector_type']);
+        Queue::assertPushed(ProcessCaptureSet::class, 1);
+    }
+
+    public function test_detector_correction_rejects_missing_sources(): void
+    {
+        ['capture' => $capture, 'admission' => $admission] = $this->failedCapture();
+        DB::table('image_gateway_capture_objects')
+            ->where('capture_set_id', $capture->id)
+            ->where('object_type', 'radiograph')
+            ->delete();
+
+        $this->from(route('operator.xray-capture.show', $admission))
+            ->post(route('operator.xray-capture.correct-detector', $admission), ['detector_type' => 'TRX'])
+            ->assertRedirect(route('operator.xray-capture.show', $admission))
+            ->assertSessionHasErrors('capture');
+        Queue::assertPushed(ProcessCaptureSet::class, 1);
+    }
+
+    public function test_detector_correction_rejects_an_existing_study(): void
+    {
+        ['capture' => $capture, 'admission' => $admission] = $this->failedCapture();
+        $this->post(route('operator.xray-capture.store', $admission), [
+            'submission_id' => $capture->submission_id,
+        ])->assertRedirect(route('operator.study.results'));
+        app()->call([new ProcessCaptureSet((string) $capture->id), 'handle']);
+        $this->assertSame(1, DB::table('image_gateway_studies')->where('capture_set_id', $capture->id)->count());
+
+        $this->from(route('operator.xray-capture.show', $admission))
+            ->post(route('operator.xray-capture.correct-detector', $admission), ['detector_type' => 'TRX'])
+            ->assertRedirect(route('operator.xray-capture.show', $admission))
+            ->assertSessionHasErrors('capture');
+        $this->assertSame('BED', json_decode((string) DB::table('image_gateway_capture_sets')->where('id', $capture->id)->value('capture_metadata'), true, 512, JSON_THROW_ON_ERROR)['capture']['detector_type']);
+    }
+
+    public function test_detector_correction_rejects_same_or_invalid_detector_without_dispatching(): void
+    {
+        ['capture' => $capture, 'admission' => $admission] = $this->failedCapture();
+
+        $this->from(route('operator.xray-capture.show', $admission))
+            ->post(route('operator.xray-capture.correct-detector', $admission), ['detector_type' => 'BED'])
+            ->assertRedirect(route('operator.xray-capture.show', $admission))
+            ->assertSessionHasErrors('capture');
+        $this->from(route('operator.xray-capture.show', $admission))
+            ->post(route('operator.xray-capture.correct-detector', $admission), ['detector_type' => 'INVALID'])
+            ->assertRedirect(route('operator.xray-capture.show', $admission))
+            ->assertSessionHasErrors('detector_type');
+
+        $this->assertSame('BED', json_decode((string) DB::table('image_gateway_capture_sets')->where('id', $capture->id)->value('capture_metadata'), true, 512, JSON_THROW_ON_ERROR)['capture']['detector_type']);
+        Queue::assertPushed(ProcessCaptureSet::class, 1);
+    }
+
+    public function test_detector_correction_rejects_unavailable_metadata_and_unauthorized_operator_context(): void
+    {
+        ['capture' => $capture, 'admission' => $admission, 'fixture' => $fixture] = $this->failedCapture();
+        DB::table('image_gateway_capture_sets')->where('id', $capture->id)->update(['capture_metadata' => null]);
+
+        $this->from(route('operator.xray-capture.show', $admission))
+            ->post(route('operator.xray-capture.correct-detector', $admission), ['detector_type' => 'TRX'])
+            ->assertRedirect(route('operator.xray-capture.show', $admission))
+            ->assertSessionHasErrors('capture');
+
+        $other = $this->secondOperatorFixture($fixture);
+        $this->actingAs($other['operator'])->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
+        $this->post(route('operator.xray-capture.correct-detector', $admission), ['detector_type' => 'TRX'])->assertForbidden();
+        Queue::assertPushed(ProcessCaptureSet::class, 1);
+    }
+
+    public function test_detector_correction_rejects_an_inconsistent_stored_manifest(): void
+    {
+        ['capture' => $capture, 'admission' => $admission] = $this->failedCapture();
+        DB::table('image_gateway_capture_sets')->where('id', $capture->id)->update([
+            'manifest_checksum' => hash('sha256', 'tampered manifest'),
+        ]);
+
+        $this->from(route('operator.xray-capture.show', $admission))
+            ->post(route('operator.xray-capture.correct-detector', $admission), ['detector_type' => 'TRX'])
+            ->assertRedirect(route('operator.xray-capture.show', $admission))
+            ->assertSessionHasErrors('capture');
+        $this->assertSame('BED', json_decode((string) DB::table('image_gateway_capture_sets')->where('id', $capture->id)->value('capture_metadata'), true, 512, JSON_THROW_ON_ERROR)['capture']['detector_type']);
+        Queue::assertPushed(ProcessCaptureSet::class, 1);
+    }
+
+    public function test_detector_correction_ignores_unrelated_metadata_input(): void
+    {
+        ['capture' => $capture, 'admission' => $admission] = $this->failedCapture();
+
+        $this->post(route('operator.xray-capture.correct-detector', $admission), [
+            'detector_type' => 'TRX',
+            'metadata' => [
+                'examination' => ['study_description' => 'CHANGED'],
+                'capture' => ['body_part_examined' => 'HAND', 'laterality' => 'L', 'projection' => 'AP'],
+            ],
+        ])->assertRedirect(route('operator.study.results'));
+
+        $metadata = json_decode((string) DB::table('image_gateway_capture_sets')->where('id', $capture->id)->value('capture_metadata'), true, 512, JSON_THROW_ON_ERROR);
+        $this->assertSame('TRX', $metadata['capture']['detector_type']);
+        $this->assertSame('CHEST RADIOGRAPH', $metadata['examination']['study_description']);
+        $this->assertSame('CHEST', $metadata['capture']['body_part_examined']);
+        $this->assertSame('U', $metadata['capture']['laterality']);
+        $this->assertSame('PA', $metadata['capture']['projection']);
+        Queue::assertPushed(ProcessCaptureSet::class, 2);
+    }
+
+    public function test_detector_correction_rejects_a_wrong_active_site(): void
+    {
+        ['admission' => $admission] = $this->failedCapture();
+        $this->withSession(['operator.active_site_id' => (string) Str::uuid()]);
+
+        $this->post(route('operator.xray-capture.correct-detector', $admission), ['detector_type' => 'TRX'])->assertForbidden();
+        Queue::assertPushed(ProcessCaptureSet::class, 1);
+    }
+
     public function test_capture_status_is_safe_and_capture_authorized(): void
     {
         $fixture = $this->operatorFixture(false);
@@ -733,6 +988,31 @@ final class Mvp14ImageGatewayIntegrationTest extends TestCase
                 'X-Correlation-ID' => '6ba7b810-9dad-41d1-80b4-00c04fd430c8',
             ],
         );
+    }
+
+    /** @return array{fixture: array<string, mixed>, admission: string, capture: object, submissionId: string} */
+    private function failedCapture(): array
+    {
+        $fixture = $this->operatorFixture(false);
+        $this->actingAs($fixture['operator'])->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
+        $admission = $this->insertCalledXrayAdmission($fixture);
+        $submissionId = (string) Str::uuid();
+        $this->post(route('operator.xray-capture.store', $admission), [
+            'submission_id' => $submissionId,
+            ...$this->metadataPayload(),
+            'radiograph_npz' => $this->fixtureUpload('synthetic-radiograph-01.npz'),
+            'gain_npz' => $this->fixtureUpload('synthetic-gain-01.npz'),
+        ])->assertRedirect(route('operator.study.results'));
+
+        $captureId = (string) DB::table('image_gateway_capture_sets')->where('submission_id', $submissionId)->value('id');
+        Http::fakeSequence()
+            ->push(['detail' => 'conversion failed'], 500)
+            ->pushResponse($this->validMpipsResponse());
+        app()->call([new ProcessCaptureSet($captureId), 'handle']);
+        $capture = DB::table('image_gateway_capture_sets')->where('id', $captureId)->first();
+        $this->assertSame('failed', $capture->processing_status);
+
+        return compact('fixture', 'admission', 'capture', 'submissionId');
     }
 
     private function postCapture(string $admission): void

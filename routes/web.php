@@ -63,6 +63,7 @@ Route::middleware(['auth', EnsureOperatorPortalAccess::class])->group(function (
     Route::get('/operator/xray-readiness-worklist', [OperatorPortalController::class, 'xrayReadinessWorklist'])->name('operator.xray-readiness-worklist');
     Route::get('/operator/xray-readiness-worklist/{admission}/capture', [ImageGatewayController::class, 'captureShow'])->name('operator.xray-capture.show');
     Route::post('/operator/xray-readiness-worklist/{admission}/capture', [ImageGatewayController::class, 'captureStore'])->name('operator.xray-capture.store');
+    Route::post('/operator/xray-readiness-worklist/{admission}/capture/correct-detector', [ImageGatewayController::class, 'correctDetector'])->name('operator.xray-capture.correct-detector');
     Route::get('/operator/xray-readiness-worklist/{admission}/capture/status', [ImageGatewayController::class, 'captureStatus'])->name('operator.xray-capture.status');
     Route::get('/operator/studies', [ImageGatewayController::class, 'results'])->name('operator.study.results');
     Route::get('/operator/studies/{study}', [ImageGatewayController::class, 'study'])->name('operator.study.show');
