@@ -65,9 +65,50 @@ test('resets view-only transforms without changing the stored study', () => {
     assert.deepEqual(calls, [
         'resetCamera',
         ['rotation', 0],
-        ['camera', { flipHorizontal: true, flipVertical: false }],
+        ['camera', { flipHorizontal: false, flipVertical: false }],
         'render',
     ]);
+});
+
+test('keeps asymmetric canonical presentation while making horizontal flip explicit', () => {
+    const canonical = [
+        ['L', '.', 'R'],
+        ['A', 'C', 'Z'],
+    ];
+    const mirrored = canonical.map((row) => [...row].reverse());
+    let camera = { flipHorizontal: true, flipVertical: true };
+    let rotation = 180;
+    let presentation;
+    const viewport = {
+        resetCamera() {},
+        setRotation(next) { rotation = next; },
+        getRotation() { return rotation; },
+        setCamera(next) { camera = { ...camera, ...next }; },
+        getCamera() { return camera; },
+        render() {
+            presentation = camera.flipHorizontal
+                ? canonical.map((row) => [...row].reverse())
+                : canonical.map((row) => [...row]);
+        },
+    };
+
+    assert.notDeepEqual(canonical, mirrored);
+    resetViewport(viewport);
+    assert.deepEqual(presentation, canonical);
+    assert.deepEqual(viewport.getCamera(), { flipHorizontal: false, flipVertical: false });
+    assert.equal(viewport.getRotation(), 0);
+
+    flipViewport(viewport, 'horizontal');
+    assert.deepEqual(presentation, mirrored);
+    flipViewport(viewport, 'horizontal');
+    assert.deepEqual(presentation, canonical);
+
+    flipViewport(viewport, 'vertical');
+    rotateViewport(viewport, 90);
+    resetViewport(viewport);
+    assert.deepEqual(presentation, canonical);
+    assert.equal(viewport.getRotation(), 0);
+    assert.deepEqual(viewport.getCamera(), { flipHorizontal: false, flipVertical: false });
 });
 
 test('rotates and flips only the active viewport camera', () => {
