@@ -1,3 +1,48 @@
+import { unzipSync, zipSync } from 'fflate';
+
+const PROCESSED_IMAGE_MEMBER = 'processedimage.npy';
+
+export function normalizeRadiographNpZ(input) {
+    const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
+    let targetCount = 0;
+    const seenNames = new Set();
+    let entries;
+
+    try {
+        entries = unzipSync(bytes, {
+            filter(file) {
+                if (seenNames.has(file.name)) throw new Error('Duplicate archive member');
+                seenNames.add(file.name);
+                if (file.name === PROCESSED_IMAGE_MEMBER) {
+                    targetCount += 1;
+                    if (targetCount > 1) throw new Error('Duplicate processedimage.npy member');
+                    return false;
+                }
+                return true;
+            },
+        });
+    } catch {
+        throw new Error('Invalid NPZ archive');
+    }
+
+    return targetCount === 0 ? bytes : zipSync(entries);
+}
+
+export async function prepareCaptureFormData(form) {
+    const body = new FormData(form);
+    const radiograph = body.get('radiograph_npz');
+    if (!(radiograph instanceof Blob)) return body;
+
+    const original = new Uint8Array(await radiograph.arrayBuffer());
+    const normalized = normalizeRadiographNpZ(original);
+    if (normalized !== original) {
+        body.set('radiograph_npz', new File([normalized], radiograph.name || 'radiograph.npz', {
+            type: radiograph.type || 'application/octet-stream',
+        }));
+    }
+    return body;
+}
+
 export function formatBytes(bytes) {
     if (!Number.isFinite(bytes) || bytes < 0) return '0 B';
     if (bytes < 1024) return `${Math.round(bytes)} B`;
@@ -156,12 +201,21 @@ export function initCaptureUpload() {
         stopPolling();
         if (request) request.abort();
     }, { once: true });
-    form.addEventListener('submit', (event) => {
+    form.addEventListener('submit', async (event) => {
         event.preventDefault();
         if (active) return;
         active = true;
         uploading = true;
-        const body = new FormData(form);
+        let body;
+        try {
+            body = await prepareCaptureFormData(form);
+        } catch {
+            active = false;
+            uploading = false;
+            setControls(false);
+            setStatus(status.dataset.normalizationError);
+            return;
+        }
         const startedAt = now();
         setControls(true);
         progress.hidden = false;
