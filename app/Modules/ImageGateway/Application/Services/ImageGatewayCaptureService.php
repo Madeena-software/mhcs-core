@@ -322,7 +322,7 @@ final readonly class ImageGatewayCaptureService implements OperatorStudyQuery
         }
 
         try {
-            $updated = DB::transaction(function () use ($profileId, $siteId, $operatorSiteId, $admissionId, $capture, $manifestObject, $signatureObject, $stored, $currentDetector, $detectorType, $newManifestBytes, $newSignatureBytes): int {
+            $updated = DB::transaction(function () use ($context, $profileId, $siteId, $operatorSiteId, $admissionId, $capture, $manifestObject, $signatureObject, $stored, $currentDetector, $detectorType, $newManifestBytes, $newSignatureBytes): int {
                 $this->admission($profileId, $siteId, $operatorSiteId, $admissionId, true, true);
                 $row = DB::table('image_gateway_capture_sets')->where('id', $capture->id)->lockForUpdate()->first();
                 $currentObjects = DB::table('image_gateway_capture_objects')->where('capture_set_id', $capture->id)->get()->keyBy('object_type');
@@ -355,6 +355,23 @@ final readonly class ImageGatewayCaptureService implements OperatorStudyQuery
                     'processing_lease_expires_at' => null,
                     'updated_at' => $now,
                 ]);
+
+                $this->audit->append(AuditEvent::fromContext(
+                    $context,
+                    'image-gateway.detector-corrected',
+                    'image-gateway',
+                    'success',
+                    $now,
+                    'image-gateway.capture-set',
+                    (string) $row->id,
+                    metadata: [
+                        'capture_id' => (string) $row->id,
+                        'admission_id' => (string) $row->admission_id,
+                        'operator_site_id' => $operatorSiteId,
+                        'previous_detector' => $currentDetector,
+                        'corrected_detector' => $detectorType,
+                    ],
+                ));
 
                 return 1;
             });

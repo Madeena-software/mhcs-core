@@ -86,6 +86,16 @@ final class Mvp14ImageGatewayIntegrationTest extends TestCase
         $this->assertSame('U', $manifest['capture']['laterality']);
         $this->assertSame('PA', $manifest['capture']['projection']);
         $this->assertSame(1, DB::table('operator_queue_admission_history')->where('operator_queue_admission_id', $admission)->where('event_type', 'capture_accepted')->count());
+        $acceptedAudit = DB::table('audit_events')->where('action', 'image-gateway.capture-accepted')->first();
+        $this->assertNotNull($acceptedAudit);
+        $this->assertSame((string) $fixture['operator']->id, (string) $acceptedAudit->actor_id);
+        $this->assertNotNull($acceptedAudit->correlation_id);
+        $this->assertSame([
+            'capture_id' => (string) $capture->id,
+            'admission_id' => $admission,
+            'operator_site_id' => $fixture['siteStableId'],
+            'status' => 'accepted',
+        ], json_decode((string) $acceptedAudit->metadata, true, 512, JSON_THROW_ON_ERROR));
         $this->assertSame(0, DB::table('image_gateway_studies')->count());
         $this->assertSame(4, DB::table('image_gateway_capture_objects')->where('capture_set_id', $capture->id)->count());
         Queue::assertPushed(ProcessCaptureSet::class, 1);
@@ -517,6 +527,23 @@ final class Mvp14ImageGatewayIntegrationTest extends TestCase
             'detector_type' => 'TRX',
         ])->assertRedirect(route('operator.study.results'));
 
+        $correctionAudits = DB::table('audit_events')->where('action', 'image-gateway.detector-corrected')->get();
+        $this->assertCount(1, $correctionAudits);
+        $correctionAudit = $correctionAudits->first();
+        $this->assertSame('image-gateway', $correctionAudit->source);
+        $this->assertSame('success', $correctionAudit->outcome);
+        $this->assertSame('image-gateway.capture-set', $correctionAudit->target_type);
+        $this->assertSame((string) $capture->id, $correctionAudit->target_id);
+        $this->assertSame((string) $fixture['operator']->id, (string) $correctionAudit->actor_id);
+        $this->assertNotNull($correctionAudit->correlation_id);
+        $this->assertSame([
+            'capture_id' => (string) $capture->id,
+            'admission_id' => $admission,
+            'operator_site_id' => $fixture['siteStableId'],
+            'previous_detector' => 'BED',
+            'corrected_detector' => 'TRX',
+        ], json_decode((string) $correctionAudit->metadata, true, 512, JSON_THROW_ON_ERROR));
+
         $corrected = DB::table('image_gateway_capture_sets')->where('id', $capture->id)->first();
         $correctedMetadata = json_decode((string) $corrected->capture_metadata, true, 512, JSON_THROW_ON_ERROR);
         $expectedMetadata = $oldMetadata;
@@ -604,6 +631,7 @@ final class Mvp14ImageGatewayIntegrationTest extends TestCase
             ->assertSessionHasErrors('capture');
 
         $this->assertSame('BED', json_decode((string) DB::table('image_gateway_capture_sets')->where('id', $captureId)->value('capture_metadata'), true, 512, JSON_THROW_ON_ERROR)['capture']['detector_type']);
+        $this->assertSame(0, DB::table('audit_events')->where('action', 'image-gateway.detector-corrected')->count());
         Queue::assertPushed(ProcessCaptureSet::class, 1);
     }
 
@@ -705,6 +733,103 @@ final class Mvp14ImageGatewayIntegrationTest extends TestCase
         $this->assertSame('U', $metadata['capture']['laterality']);
         $this->assertSame('PA', $metadata['capture']['projection']);
         Queue::assertPushed(ProcessCaptureSet::class, 2);
+    }
+
+    public function test_conflicting_detector_correction_does_not_record_a_success_audit(): void
+    {
+        ['capture' => $capture, 'admission' => $admission] = $this->failedCapture();
+        $realStore = app(PrivateObjectStore::class);
+        $putCount = 0;
+        $store = Mockery::mock(PrivateObjectStore::class);
+        $store->shouldIgnoreMissing();
+        $store->shouldReceive('grant')->andReturnUsing(fn (...$arguments) => $realStore->grant(...$arguments));
+        $store->shouldReceive('get')->andReturnUsing(fn (...$arguments) => $realStore->get(...$arguments));
+        $store->shouldReceive('delete')->andReturnUsing(fn (...$arguments) => $realStore->delete(...$arguments));
+        $store->shouldReceive('put')->twice()->andReturnUsing(function (...$arguments) use (&$putCount, $realStore, $capture): PrivateObject {
+            $object = $realStore->put(...$arguments);
+            if (++$putCount === 1) {
+                $metadata = json_decode((string) DB::table('image_gateway_capture_sets')->where('id', $capture->id)->value('capture_metadata'), true, 512, JSON_THROW_ON_ERROR);
+                $metadata['capture']['detector_type'] = 'TRX';
+                DB::table('image_gateway_capture_sets')->where('id', $capture->id)->update([
+                    'capture_metadata' => json_encode($metadata, JSON_THROW_ON_ERROR),
+                ]);
+            }
+
+            return $object;
+        });
+        $beforeObjects = DB::table('image_gateway_capture_objects')
+            ->where('capture_set_id', $capture->id)
+            ->orderBy('object_type')
+            ->get()
+            ->map(fn (object $object): array => [(string) $object->id, (string) $object->object_key, (string) $object->checksum])
+            ->all();
+        $beforeFiles = Storage::disk('local')->allFiles();
+        $this->app->instance(PrivateObjectStore::class, $store);
+
+        $this->from(route('operator.xray-capture.show', $admission))
+            ->post(route('operator.xray-capture.correct-detector', $admission), ['detector_type' => 'TRX'])
+            ->assertRedirect(route('operator.xray-capture.show', $admission))
+            ->assertSessionHasErrors('capture');
+
+        $afterObjects = DB::table('image_gateway_capture_objects')
+            ->where('capture_set_id', $capture->id)
+            ->orderBy('object_type')
+            ->get()
+            ->map(fn (object $object): array => [(string) $object->id, (string) $object->object_key, (string) $object->checksum])
+            ->all();
+        $this->assertSame($beforeObjects, $afterObjects);
+        $this->assertSame($beforeFiles, Storage::disk('local')->allFiles());
+        $this->assertSame(0, DB::table('audit_events')->where('action', 'image-gateway.detector-corrected')->count());
+    }
+
+    public function test_detector_correction_at_retry_budget_is_fail_closed_without_mutation_or_audit(): void
+    {
+        ['capture' => $capture, 'admission' => $admission] = $this->failedCapture();
+        $maxAttempts = (int) config('mhcs.mpips.max_attempts', 5);
+        DB::table('image_gateway_capture_sets')->where('id', $capture->id)->update(['attempts' => $maxAttempts]);
+        $beforeCapture = DB::table('image_gateway_capture_sets')->where('id', $capture->id)->first();
+        $beforeObjects = DB::table('image_gateway_capture_objects')
+            ->where('capture_set_id', $capture->id)
+            ->orderBy('object_type')
+            ->get()
+            ->map(fn (object $object): array => [(string) $object->id, (string) $object->object_key, (string) $object->checksum])
+            ->all();
+        $manifestKey = (string) DB::table('image_gateway_capture_objects')->where('capture_set_id', $capture->id)->where('object_type', 'manifest')->value('object_key');
+        $signatureKey = (string) DB::table('image_gateway_capture_objects')->where('capture_set_id', $capture->id)->where('object_type', 'manifest_signature')->value('object_key');
+        $beforeManifest = Storage::disk('local')->get($manifestKey);
+        $beforeSignature = Storage::disk('local')->get($signatureKey);
+        $beforeFiles = Storage::disk('local')->allFiles();
+        $beforeAudit = DB::table('audit_events')
+            ->orderBy('event_id')
+            ->get()
+            ->map(fn (object $event): array => (array) $event)
+            ->all();
+
+        $this->from(route('operator.xray-capture.show', $admission))
+            ->post(route('operator.xray-capture.correct-detector', $admission), ['detector_type' => 'TRX'])
+            ->assertRedirect(route('operator.xray-capture.show', $admission))
+            ->assertSessionHasErrors('capture');
+
+        $afterCapture = DB::table('image_gateway_capture_sets')->where('id', $capture->id)->first();
+        $afterObjects = DB::table('image_gateway_capture_objects')
+            ->where('capture_set_id', $capture->id)
+            ->orderBy('object_type')
+            ->get()
+            ->map(fn (object $object): array => [(string) $object->id, (string) $object->object_key, (string) $object->checksum])
+            ->all();
+        $this->assertSame($maxAttempts, (int) $afterCapture->attempts);
+        $this->assertSame((string) $beforeCapture->capture_metadata, (string) $afterCapture->capture_metadata);
+        $this->assertSame($beforeObjects, $afterObjects);
+        $this->assertSame($beforeManifest, Storage::disk('local')->get($manifestKey));
+        $this->assertSame($beforeSignature, Storage::disk('local')->get($signatureKey));
+        $this->assertSame($beforeFiles, Storage::disk('local')->allFiles());
+        $afterAudit = DB::table('audit_events')
+            ->orderBy('event_id')
+            ->get()
+            ->map(fn (object $event): array => (array) $event)
+            ->all();
+        $this->assertSame($beforeAudit, $afterAudit);
+        $this->assertSame(0, DB::table('audit_events')->where('action', 'image-gateway.detector-corrected')->count());
     }
 
     public function test_detector_correction_rejects_a_wrong_active_site(): void
