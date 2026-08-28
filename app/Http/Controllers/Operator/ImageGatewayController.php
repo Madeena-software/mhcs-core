@@ -141,53 +141,6 @@ final class ImageGatewayController extends Controller
         }
     }
 
-    public function correctDetector(
-        Request $request,
-        string $admission,
-        OperatorAuthorization $authorization,
-        ImageGatewayCaptureService $gateway,
-    ): RedirectResponse {
-        try {
-            $portal = $authorization->portal();
-            $site = $authorization->portalSite($portal);
-            $context = $authorization->current(ImageGatewayCaptureService::CAPTURE_PURPOSE);
-        } catch (OperatorException|ImageGatewayException) {
-            abort(403);
-        }
-
-        $validator = Validator::make($request->all(), [
-            'detector_type' => ['required', 'string', 'in:'.implode(',', ImageGatewayCaptureService::DETECTOR_TYPES)],
-        ], ImageGatewayCaptureService::metadataMessages());
-        if ($validator->fails()) {
-            return back()->withErrors($validator)->withInput();
-        }
-
-        try {
-            $gateway->correctDetectorAndRetry(
-                $context,
-                (string) $portal['profile']->getKey(),
-                (string) $site->getKey(),
-                (string) $site->operator_site_id,
-                $admission,
-                (string) $validator->validated()['detector_type'],
-            );
-
-            return redirect()->route('operator.study.results')->with('status', __('Detector correction accepted and DICOM processing queued.'));
-        } catch (ImageGatewayException $exception) {
-            if ($exception->category === 'capture_forbidden') {
-                abort(403);
-            }
-
-            return back()->withErrors(['capture' => __($exception->getMessage())])->withInput();
-        } catch (Throwable $exception) {
-            if ($exception instanceof HttpExceptionInterface) {
-                throw $exception;
-            }
-
-            return back()->withErrors(['capture' => __('The detector correction could not be accepted.')])->withInput();
-        }
-    }
-
     public function study(
         string $study,
         OperatorAuthorization $authorization,

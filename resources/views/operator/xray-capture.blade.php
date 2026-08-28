@@ -73,23 +73,6 @@
             <button type="submit">{{ $form['can_retry'] ? __('Retry DICOM processing') : __('Submit capture set') }}</button>
         @endif
     </form>
-    @if (($form['correction_eligible'] ?? false) && $form['metadata'] !== null)
-        <p class="warning" role="alert">{{ __('The failed capture is eligible for an explicit detector correction. All other capture metadata and source files remain frozen.') }}</p>
-        <form method="POST" action="{{ route('operator.xray-capture.correct-detector', $admissionId) }}">
-            @csrf
-            <fieldset>
-                <legend>{{ __('Correct detector type') }}</legend>
-                <label for="corrected_detector_type">{{ __('Corrected detector type') }}</label>
-                <select id="corrected_detector_type" name="detector_type" required>
-                    <option value="" disabled @selected(old('detector_type') === null)>{{ __('Select corrected detector type') }}</option>
-                    @foreach (\App\Modules\ImageGateway\Application\Services\ImageGatewayCaptureService::DETECTOR_TYPES as $option)
-                        <option value="{{ $option }}" @selected(old('detector_type') === $option)>{{ __($option) }}</option>
-                    @endforeach
-                </select>
-            </fieldset>
-            <button type="submit">{{ __('Correct detector type and retry DICOM processing') }}</button>
-        </form>
-    @endif
 </section>
 @vite('resources/js/app.js')
 @endsection
