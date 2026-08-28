@@ -1,7 +1,7 @@
 ---
 title: Production Normalized Radiograph Release and Validation
 document_id: MHCS-TASK-PRODUCTION-NORMALIZED-RADIOGRAPH-RELEASE-001
-version: 1.0
+version: 1.1
 status: Draft
 language: en-US
 last_updated: 2026-08-28
@@ -59,6 +59,13 @@ bounded authority because it pins a feature revision, requires proof of the
 manual deployment result, and authorizes one controlled clinical-data-free
 normalized-radiograph validation with source-integrity and MPIPS evidence.
 
+Planning review identified that no currently governed production workflow can
+prove the browser/client boundary. The prerequisite
+`.agents/tasks/production-normalized-radiograph-browser-validation-harness.md`
+therefore governs implementation of that capability separately. This release
+task remains Draft and MUST NOT be published or executed until the harness is
+published, implemented, reviewed, and accepted at an immutable revision.
+
 ## Baseline and task revision
 
 **Implementation baseline:**
@@ -66,6 +73,12 @@ normalized-radiograph validation with source-integrity and MPIPS evidence.
 
 **Accepted implementation revision:**
 `d6df79cd2c7028c46741c0bdf8d148d6d9220561`
+
+**Browser validation harness governing revision:**
+`resolved after prerequisite publication`
+
+**Accepted browser validation harness implementation revision:**
+`resolved after prerequisite acceptance`
 
 **Task revision:**
 `resolved when published`
@@ -102,8 +115,9 @@ existing authenticated DICOM result boundary.
 - `.github/workflows/validate-production-real-npz-end-to-end.yml` — historical direct multipart validation; useful for application/MPIPS evidence but insufficient for browser normalization evidence when unchanged.
 - `.agents/tasks/production-swarm-deployment.md` — existing recurring deployment-operation boundary, not the release authority for this feature.
 - `.agents/tasks/production-real-npz-end-to-end-validation.md` — historical exact-original fixture contract; MUST remain unchanged.
+- `.agents/tasks/production-normalized-radiograph-browser-validation-harness.md` — prerequisite harness contract; it MUST be published and accepted before this task is published.
 - `resources/js/operator-upload.js`, `package.json`, and accepted build output — browser normalization and existing client tooling.
-- Existing Pest browser/Playwright capability in the repository — preferred client-boundary evidence mechanism, subject to production-runner availability.
+- Accepted implementation of the browser-validation harness task — required client-boundary evidence mechanism; mere dependency availability is insufficient.
 - Existing Image Gateway/operator production-validation context and relevant tests — source persistence, checksum, processing, and authenticated DICOM evidence surfaces.
 
 ### Fixture inputs
@@ -137,10 +151,8 @@ is required; the transmitted radiograph MUST be smaller than the original.
   health boundary that the exact authorized revision is running.
 - One controlled production validation using one authorized radiograph/gain
   pair and the dedicated nonclinical validation identity/context.
-- Actual browser/headless-browser execution of the deployed Operator capture
-  page using the repository's existing Pest browser/Playwright capability, or
-  an equivalently bounded client harness that executes the exact built
-  normalization module before the authenticated multipart upload.
+- Actual execution of the separately governed, accepted browser-validation
+  harness against the deployed Operator page and exact application revision.
 - Client-side capture of the original radiograph member set and bytes, the
   normalized transmitted radiograph bytes, the exact target-member removal,
   material size reduction, non-target preservation, and unchanged gain bytes.
@@ -199,10 +211,11 @@ is required; the transmitted radiograph MUST be smaller than the original.
   task.
 - Exact fixture acquisition mechanism and integrity declarations remain
   available without exposing credentials or fixture contents.
-- Existing browser/headless-browser tooling can load the production Operator
-  page, select the two fixture files, observe the actual multipart request, and
-  retain only sanitized numeric/boolean evidence. This repository already has
-  Playwright/Pest browser capability; no new browser dependency is presumed.
+- The browser-validation harness task has been published, implemented, reviewed,
+  and accepted at an immutable revision recorded in this task before release
+  publication. Its accepted implementation can load the production Operator
+  page, observe the actual multipart request, and retain only sanitized
+  evidence. Playwright/Pest availability alone does not satisfy this dependency.
 
 ### Approved assumptions
 
@@ -227,6 +240,9 @@ is required; the transmitted radiograph MUST be smaller than the original.
 - Human/designated one-time authorization immediately before fixture download,
   browser submission, normal queue processing, and sanitized production
   observation.
+- Planner/Reviewer confirmation that the exact browser-validation harness
+  publication and accepted implementation revisions have been inserted into
+  this Draft before it is published.
 - Separate approval remains required for any production data deletion,
   historical-object operation, infrastructure/IAM change, new dependency, or
   MPIPS change; this task does not grant it.
@@ -253,6 +269,8 @@ printing secrets:
 
 - current MHCS `HEAD` and selected deployment ref are exactly
   `d6df79cd2c7028c46741c0bdf8d148d6d9220561`;
+- the browser-validation harness task is published and its implementation is
+  accepted at the exact immutable revision recorded above;
 - MHCS working tree is clean and no unrelated revision is substituted;
 - `.github/workflows/deploy-swarm.yml` remains `workflow_dispatch` only and
   uses its existing production concurrency group;
@@ -285,7 +303,8 @@ revision or health result is ambiguous.
 
 ### Phase C — normalized-radiograph validation
 
-Use one bounded authorized validation pair. Before submission:
+Use one bounded authorized validation pair through the accepted
+browser-validation harness. Before submission:
 
 1. Acquire the exact governed radiograph and gain fixtures into ephemeral
    workspace storage and verify filename, byte count, and SHA256. Emit only
@@ -325,14 +344,13 @@ authenticated DICOM result state.
 
 ### Client-boundary evidence decision
 
-The preferred mechanism is the repository's existing Pest browser/Playwright
-capability running the deployed Operator page and observing the real request.
-If that capability cannot run safely from the approved runner or cannot prove
-the actual multipart bytes, the Executor MUST stop and return to planning. A
-small purpose-built validation client may be considered only through a new
-planning decision that confirms it executes the exact released browser module,
-preserves authentication, and does not add an unapproved dependency or bypass
-the operator boundary. Direct `curl` of a pre-normalized file is never an
+The accepted browser-validation harness is the required client-boundary
+mechanism. It MUST execute the exact deployed application's browser module and
+observe the actual File/FormData used by the real Operator submission. If the
+harness is unavailable, its accepted revision cannot be proved, or it cannot
+observe the actual multipart bytes without replacing application behavior, the
+release task MUST remain unpublished or stop before fixture acquisition and
+return to planning. Direct `curl` of a pre-normalized file is never an
 acceptable substitute.
 
 ### Sanitized evidence
@@ -346,6 +364,9 @@ unbounded application logs.
 ## Acceptance criteria
 
 - [ ] This task is published at an immutable revision before any execution.
+- [ ] The browser-validation harness task is published, implemented, reviewed,
+  and accepted at an immutable revision, and both harness revision placeholders
+  in this task are replaced with exact values before release publication.
 - [ ] The exact authorized MHCS revision `d6df79cd2c7028c46741c0bdf8d148d6d9220561` is deployed through the existing manual workflow.
 - [ ] Production independently reports the exact expected application revision and passes deployment/health verification.
 - [ ] The last known good deployed revision is recorded and no rollback ambiguity remains.
@@ -404,7 +425,8 @@ The Executor MUST distinguish:
 Stop before or during execution and return `PLANNING REQUIRED` if:
 
 - the task is still Draft, its immutable publication revision is unresolved,
-  or required release/one-time validation authority is missing;
+  the prerequisite harness is not published and accepted at an immutable
+  revision, or required release/one-time validation authority is missing;
 - MHCS is not at the exact authorized revision, the deployment workflow cannot
   prove the exact SHA, or production health/rollout is ambiguous;
 - the deployment requires direct SSH/manual server mutation or unapproved
@@ -467,6 +489,8 @@ Stop before or during execution and return `PLANNING REQUIRED` if:
 ### The published task MUST keep unauthorized
 
 - execution while Draft or before explicit approvals;
+- publication or execution before the browser-validation harness dependency is
+  accepted and recorded here;
 - direct SSH/manual production mutation;
 - automatic deployment from a push assumption, repeated runs, retries, or
   arbitrary fixture uploads;
