@@ -2,13 +2,13 @@
 title: Production Combined NPZ and DICOM Hotfix Post-Deployment Validation
 document_id: MHCS-TASK-PRODUCTION-NPZ-DICOM-POSTDEPLOY-VALIDATION-001
 version: 1.0
-status: Draft
+status: validated-published
 language: en-US
 last_updated: 2026-08-30
 scope:
   - exact deployed combined hotfix release validation
   - non-mutating or explicitly approved post-deployment NPZ and DICOM evidence
-authority_note: This Draft task is a validation contract candidate only. It does not authorize execution, production mutation, deployment, release, or publication until Planner/Reviewer approval and immutable publication.
+authority_note: This published task authorizes only the bounded validation execution explicitly defined by the task and applicable repository authority. It does not authorize production mutation, deployment, release, or other side effects outside this task.
 ---
 
 # Executable Task
@@ -22,7 +22,7 @@ authority_note: This Draft task is a validation contract candidate only. It does
 `.agents/tasks/production-hotfix-npz-dicom-postdeploy-validation.md`
 
 **Task contract state:**
-`Draft — requires Planner/Reviewer review and immutable publication before execution.`
+`Validated/Published upon immutable publication of this exact content.`
 
 **Delivery objective / Work Package / MVP:**
 `Release Gate evidence — post-deployment validation of the combined NPZ and DICOM operator hotfix`
@@ -66,7 +66,7 @@ This is validation only. It does not redesign or implement either hotfix.
 `33317998144`
 
 **Task revision:**
-`Resolved when published; this Draft is not executable.`
+`The full immutable commit SHA containing this exact validated task content, supplied externally by version-control history / Planner handoff after publication.`
 
 The task MUST validate only the pinned release. The task revision and application
 release identity are separate identities.
@@ -185,13 +185,13 @@ through the relevant Operator paths.
 
 ### Remaining approval requirements
 
-- Planner/Reviewer must approve and immutably publish this task before any
-  execution.
 - Human approval is required immediately before any state-mutating production
   upload, fixture acquisition that creates production state, or other
   consequential external action.
-- Separate release/deployment approval remains required; this task does not
-  authorize redeployment or release.
+- Separate deployment/redeployment/restart/rollback authorization remains
+  required; this task does not authorize deployment or release.
+- Production data creation/mutation, infrastructure changes, secret changes,
+  permission changes, and destructive operations remain unauthorized.
 
 ## Required capabilities
 
@@ -292,8 +292,8 @@ Stop and return to Planner/Reviewer if:
 
 ## Side-effect authorization
 
-This Draft task authorizes no execution. If published, it would authorize only
-bounded read-only repository, CI, deployment-observability, runtime, and
+Once immutably published, this task authorizes only the bounded read-only,
+non-mutating repository, CI, deployment-observability, runtime, and
 representative validation checks explicitly described above.
 
 It does **not** authorize:
