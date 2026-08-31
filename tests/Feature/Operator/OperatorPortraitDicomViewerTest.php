@@ -143,6 +143,33 @@ final class OperatorPortraitDicomViewerTest extends TestCase
             ->assertHeader('Cache-Control', 'no-store, private');
     }
 
+    public function test_batch_download_fails_atomically_for_mixed_authority(): void
+    {
+        $fixture = $this->operatorFixture(false);
+        $this->actingAs($fixture['operator'])->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
+        $authorized = $this->createAcceptedStudy($fixture, $this->insertCalledXrayAdmission($fixture));
+        $foreign = (string) Str::uuid();
+
+        $this->post(route('operator.study.batch-download'), ['studies' => [$authorized, $foreign]])
+            ->assertForbidden()
+            ->assertDontSee('PK');
+    }
+
+    public function test_results_worklist_has_current_study_selection_and_no_dimensions_column(): void
+    {
+        $fixture = $this->operatorFixture(false);
+        $this->actingAs($fixture['operator'])->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
+        $first = $this->createAcceptedStudy($fixture, $this->insertCalledXrayAdmission($fixture));
+
+        $this->get(route('operator.study.results'))
+            ->assertOk()
+            ->assertDontSee('<th>Dimensi</th>', false)
+            ->assertSee('Unduh terpilih')
+            ->assertSee('select-all-studies', false)
+            ->assertSee('name="studies[]"', false)
+            ->assertSee($first);
+    }
+
     public function test_missing_private_dicom_is_denied_without_bubbling_a_storage_500(): void
     {
         $fixture = $this->operatorFixture(false);
@@ -228,9 +255,12 @@ final class OperatorPortraitDicomViewerTest extends TestCase
             ),
         ])->assertRedirect(route('operator.study.results'));
 
-        $captureId = (string) DB::table('image_gateway_capture_sets')->value('id');
+        $captureId = (string) DB::table('image_gateway_capture_sets')->where('admission_id', $admission)->value('id');
         app()->call([new ProcessCaptureSet($captureId), 'handle']);
 
-        return (string) DB::table('image_gateway_studies')->value('id');
+        return (string) DB::table('image_gateway_studies as studies')
+            ->join('image_gateway_capture_sets as captures', 'captures.id', '=', 'studies.capture_set_id')
+            ->where('captures.admission_id', $admission)
+            ->value('studies.id');
     }
 }

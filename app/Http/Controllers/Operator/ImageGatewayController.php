@@ -18,6 +18,7 @@ use Illuminate\Support\Facades\Validator;
 use Illuminate\View\View;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Throwable;
+use ZipArchive;
 
 final class ImageGatewayController extends Controller
 {
@@ -201,6 +202,59 @@ final class ImageGatewayController extends Controller
         ImageGatewayCaptureService $gateway,
     ): Response {
         return $this->dicomResponse($study, $authorization, $gateway, 'attachment');
+    }
+
+    public function batchDownload(
+        Request $request,
+        OperatorAuthorization $authorization,
+        ImageGatewayCaptureService $gateway,
+    ): Response {
+        $validated = Validator::make($request->all(), [
+            'studies' => ['required', 'array', 'min:1'],
+            'studies.*' => ['required', 'string', 'uuid'],
+        ])->validate();
+
+        try {
+            $portal = $authorization->portal();
+            $site = $authorization->portalSite($portal);
+            $entries = $gateway->batch(
+                $authorization->current(ImageGatewayCaptureService::STUDY_PURPOSE),
+                (string) $portal['profile']->getKey(),
+                (string) $site->getKey(),
+                (string) $site->operator_site_id,
+                $validated['studies'],
+            );
+            $path = tempnam(sys_get_temp_dir(), 'mhcs-dicom-');
+            if ($path === false) {
+                throw new ImageGatewayException('study_unavailable', 'The DICOM studies are unavailable.');
+            }
+            $zip = new ZipArchive;
+            if ($zip->open($path, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
+                @unlink($path);
+                throw new ImageGatewayException('study_unavailable', 'The DICOM studies are unavailable.');
+            }
+            try {
+                foreach ($entries as $entry) {
+                    $zip->addFromString($entry['name'], $entry['bytes']);
+                }
+                $zip->close();
+                $bytes = file_get_contents($path);
+                if ($bytes === false) {
+                    throw new ImageGatewayException('study_unavailable', 'The DICOM studies are unavailable.');
+                }
+            } finally {
+                @unlink($path);
+            }
+
+            return response($bytes, 200, [
+                'Content-Type' => 'application/zip',
+                'Content-Disposition' => 'attachment; filename="dicom-studies.zip"',
+                'Cache-Control' => 'no-store, private',
+                'X-Content-Type-Options' => 'nosniff',
+            ]);
+        } catch (OperatorException|ImageGatewayException) {
+            abort(403);
+        }
     }
 
     private function dicomResponse(
