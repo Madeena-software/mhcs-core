@@ -1,7 +1,7 @@
 ---
 title: MySQL Validation Baseline Remediation
 document_id: MHCS-TASK-MYSQL-VALIDATION-BASELINE-REMEDIATION-001
-version: 1.0
+version: 1.1
 status: validated-published
 language: en-US
 last_updated: 2026-08-31
@@ -33,7 +33,11 @@ Observed families include `Mvp04dVerifiedCheckInTicketIssueTest`, `Mvp04kBasicEx
 
 ## Baseline and task revision
 
-**Implementation baseline:** `768177b7c40f35a47e3f0d4a0bcfdfa726a5acb2`
+**Implementation baseline:** `976863ab50fd8fbf9104b6892c63c72b36550198`
+
+**Original implementation baseline:** `768177b7c40f35a47e3f0d4a0bcfdfa726a5acb2`
+
+**Previous governing task revision:** `4b1e436df6385ce74c56fb92a75579efcc1f9da9`
 
 **Task revision:** `The full SHA of the normal commit containing this exact task content.`
 
@@ -79,6 +83,64 @@ Observed families include `Mvp04dVerifiedCheckInTicketIssueTest`, `Mvp04kBasicEx
 - The 21 failures are pre-existing validation debt newly exposed by workflow stabilization; this is not proof that every exact failure occurred at the baseline because the baseline MySQL gate was skipped.
 - MySQL image tag/digest divergence is an investigation target, not an assumed root cause.
 
+## Remediation
+
+**Review basis:** `976863ab50fd8fbf9104b6892c63c72b36550198`
+
+### Accepted partial corrections
+
+Preserve unless contrary evidence is discovered:
+
+- SQLite-only PRAGMA is driver-guarded.
+- Over-length test fixture display references are corrected against the existing schema contract.
+- Associative JSON metadata comparisons no longer rely on object-key order.
+- Validation-context ownership uses canonical `App\\Models\\User` / `User::class` representation rather than a non-portable escaped literal.
+
+These are partial remediation findings, not final implementation acceptance.
+
+### Remaining diagnostic findings
+
+Current MySQL full-suite evidence contains 15 failures grouped into three causal boundaries:
+
+1. `NonclinicalValidationContextProvisioningTest`
+   - 13 failures.
+   - The command exits 1 instead of 0.
+   - The user-facing command catches the underlying exception and reports `SAFE_PROVISIONING_FAILURE`.
+   - The exact underlying exception is currently hidden.
+2. `Mvp04dVerifiedCheckInTicketIssueTest`
+   - 1 MySQL-only failure.
+   - The worker subprocess terminates with `InvalidArgumentException`.
+   - The exact originating input and call stack must be captured before correction.
+3. `Mvp04pPublicQueueDisplayTest`
+   - 1 MySQL-only failure.
+   - `callBasicExamination` returns HTTP 409 / `queue_call_conflict` after claim.
+   - The exact conflicting queue/admission state is currently unresolved.
+
+### Authorized diagnostic instrumentation
+
+The remediation execution MAY add narrow non-production diagnostic instrumentation to reveal these root causes:
+
+- For the provisioning command, add a focused test or harness that exposes the original caught exception, including class, message, relevant stack frame, and safe non-secret context. Bypass the command-level catch only within the focused diagnostic boundary; preserve `SAFE_PROVISIONING_FAILURE` for normal command execution.
+- For the worker subprocess, capture child stdout, stderr, exit code, and the relevant stack trace; identify the exact input reaching `InvalidArgumentException` and reproduce it independently where practical.
+- For the public queue flow, capture safe state around claim, queue/admission state, call, and `queue_call_conflict`; identify the exact guard, transition, uniqueness rule, transaction behavior, or constraint producing 409. Do not change production 409 behavior during diagnosis.
+- Record local and CI MySQL image identity and server version, including `SELECT VERSION()` or an equivalent non-production probe where available.
+
+Do not expose secrets, credentials, production data, or unnecessary patient/member data.
+
+### Root-cause classification gate
+
+Classify each remaining boundary before behavioral correction as one of:
+
+- same-task portability or test debt;
+- genuine product defect;
+- authorization or product-contract decision;
+- schema or migration change required;
+- architecture change required;
+- environment or CI policy decision required; or
+- unresolved.
+
+Continue implementation only for same-task portability or test debt. Return to Planner for all other classifications; continue diagnosis without guessing when unresolved.
+
 ### Remaining approval requirements
 
 - Any schema, migration, dependency, architecture, product, or production change returns to Planner/Reviewer.
@@ -91,6 +153,8 @@ Observed families include `Mvp04dVerifiedCheckInTicketIssueTest`, `Mvp04kBasicEx
 - Fix test/fixture data only when the existing authoritative schema contract is clear.
 - Do not classify cascading authorization/provisioning failures until upstream failures are resolved.
 - Reuse existing repository mechanisms; do not add a new database or test framework.
+- Use diagnostic instrumentation only within the explicitly authorized non-production boundaries in the Remediation section.
+- Do not alter user-facing safe-failure behavior or public queue 409 behavior merely to expose or suppress a defect.
 
 ## Acceptance criteria
 
@@ -101,6 +165,7 @@ Observed families include `Mvp04dVerifiedCheckInTicketIssueTest`, `Mvp04kBasicEx
 - [ ] `deployment/verify-mysql.sh` completes successfully against real MySQL, including migrations, representative checks, portability probes, integration checks, and the full PHP suite.
 - [ ] Default PHPUnit verification remains successful and no DICOM/MPIPS/storage/product behavior is changed.
 - [ ] No skipped/ignored/soft-failed validation or unauthorized side effect is introduced.
+- [ ] The three remaining causal boundaries have focused evidence and an explicit classification before correction.
 
 ## Required verification
 
