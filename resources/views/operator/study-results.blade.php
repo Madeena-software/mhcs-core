@@ -3,7 +3,7 @@
 @section('title', __('DICOM results worklist'))
 
 @section('content')
-<section aria-labelledby="dicom-results-title" data-worklist-auto-refresh>
+<section aria-labelledby="dicom-results-title">
     <h1 id="dicom-results-title">{{ __('DICOM results worklist') }}</h1>
     <p class="muted">{{ __('Accepted studies available to this active site and current shift.') }}</p>
     <form method="POST" action="{{ route('operator.study.batch-download') }}" data-study-selection>
@@ -12,7 +12,7 @@
             <label><input type="checkbox" data-select-all id="select-all-studies"> {{ __('Select all displayed studies') }}</label>
             <button type="submit">{{ __('Download selected') }}</button>
         </div>
-    <section class="card">
+        <section class="card">
         <div class="table-wrap">
             <table>
                 <thead>
@@ -47,18 +47,17 @@
                 </tbody>
             </table>
         </div>
-    </section>
+        </section>
     </form>
+    <script>
+    (() => {
+        const form = document.querySelector('[data-study-selection]');
+        if (!form) return;
+        const all = form.querySelector('[data-select-all]');
+        const studies = () => [...form.querySelectorAll('input[name="studies[]"]')];
+        all.addEventListener('change', () => studies().forEach((study) => { study.checked = all.checked; }));
+        form.addEventListener('submit', (event) => { if (!studies().some((study) => study.checked)) event.preventDefault(); });
+    })();
+    </script>
 </section>
 @endsection
-
-<script>
-(() => {
-    const form = document.querySelector('[data-study-selection]');
-    if (!form) return;
-    const all = form.querySelector('[data-select-all]');
-    const studies = () => [...form.querySelectorAll('input[name="studies[]"]')];
-    all.addEventListener('change', () => studies().forEach((study) => { study.checked = all.checked; }));
-    form.addEventListener('submit', (event) => { if (!studies().some((study) => study.checked)) event.preventDefault(); });
-})();
-</script>

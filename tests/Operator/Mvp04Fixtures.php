@@ -12,7 +12,7 @@ use Illuminate\Support\Str;
 trait Mvp04Fixtures
 {
     /** @return array<string, mixed> */
-    protected function operatorFixture(bool $administrator = true): array
+    protected function operatorFixture(bool $administrator = true, string $nik = '900000000001'): array
     {
         $now = now();
         $operator = User::factory()->create(['email' => 'operator-'.Str::lower(Str::random(8)).'@example.test']);
@@ -31,7 +31,7 @@ trait Mvp04Fixtures
         $eligibleId = (string) Str::uuid();
         $siteStart = '2040-01-10 03:00:00';
         $siteEnd = '2040-01-10 04:00:00';
-        $protected = app(ProtectedIdentifierService::class)->protect('900000000001');
+        $protected = app(ProtectedIdentifierService::class)->protect($nik);
 
         DB::table('members')->insert([
             'id' => $memberId,

@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Tests\Operator\Mvp04Fixtures;
 use Tests\TestCase;
+use ZipArchive;
 
 final class OperatorPortraitDicomViewerTest extends TestCase
 {
@@ -155,6 +156,22 @@ final class OperatorPortraitDicomViewerTest extends TestCase
             ->assertDontSee('PK');
     }
 
+    public function test_batch_download_rejects_empty_malformed_and_duplicate_input_safely(): void
+    {
+        $fixture = $this->operatorFixture(false);
+        $this->actingAs($fixture['operator'])->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
+        $study = $this->createAcceptedStudy($fixture, $this->insertCalledXrayAdmission($fixture));
+
+        $this->post(route('operator.study.batch-download'), [])->assertSessionHasErrors('studies');
+        $this->post(route('operator.study.batch-download'), ['studies' => ['not-a-uuid']])->assertSessionHasErrors('studies.0');
+        $response = $this->post(route('operator.study.batch-download'), ['studies' => [$study, $study]]);
+        $path = $response->baseResponse->getFile()->getPathname();
+        $zip = new ZipArchive;
+        $this->assertTrue($zip->open($path) === true);
+        $this->assertSame(1, $zip->numFiles);
+        $zip->close();
+    }
+
     public function test_results_worklist_has_current_study_selection_and_no_dimensions_column(): void
     {
         $fixture = $this->operatorFixture(false);
@@ -184,7 +201,7 @@ final class OperatorPortraitDicomViewerTest extends TestCase
         $this->get(route('operator.study.dicom', $studyId))->assertForbidden();
     }
 
-    private function insertCalledXrayAdmission(array $fixture): string
+    private function insertCalledXrayAdmission(array $fixture, string $ticketNumber = 'TEST-XRAY-01', ?string $bookingId = null): string
     {
         $now = now();
         $ticketId = (string) Str::uuid();
@@ -192,11 +209,11 @@ final class OperatorPortraitDicomViewerTest extends TestCase
 
         DB::table('operator_paper_tickets')->insert([
             'id' => $ticketId,
-            'booking_id' => $fixture['bookingId'],
+            'booking_id' => $bookingId ?? $fixture['bookingId'],
             'member_schedule_id' => $fixture['scheduleId'],
             'operator_site_id' => $fixture['siteLocalId'],
             'operator_profile_id' => $fixture['profileId'],
-            'ticket_number' => 'TEST-XRAY-01',
+            'ticket_number' => $ticketNumber,
             'issued_at' => $now,
             'created_at' => $now,
             'updated_at' => $now,
@@ -221,14 +238,16 @@ final class OperatorPortraitDicomViewerTest extends TestCase
 
     private function createAcceptedStudy(array $fixture, string $admission): string
     {
+        $jobId = (string) Str::uuid();
+        $correlationId = (string) Str::uuid();
         Http::fake([
             '*' => Http::response(
                 str_repeat("\0", 128).'DICM'.'valid dicom payload',
                 200,
                 [
                     'Content-Type' => 'application/dicom',
-                    'X-Conversion-Job-ID' => '6ba7b810-9dad-51d1-80b4-00c04fd430c8',
-                    'X-Correlation-ID' => '6ba7b810-9dad-41d1-80b4-00c04fd430c8',
+                    'X-Conversion-Job-ID' => $jobId,
+                    'X-Correlation-ID' => $correlationId,
                 ],
             ),
         ]);

@@ -293,9 +293,9 @@ final readonly class ImageGatewayCaptureService implements OperatorStudyQuery
     }
 
     /** @param list<string> $studyIds
-     * @return list<array{name: string, bytes: string}>
+     * @return \Generator<int, array{name: string, bytes: string}>
      */
-    public function batch(AuthenticatedContext $context, string $profileId, string $siteId, string $operatorSiteId, array $studyIds): array
+    public function batch(AuthenticatedContext $context, string $profileId, string $siteId, string $operatorSiteId, array $studyIds): \Generator
     {
         $this->assertContext($context, self::STUDY_PURPOSE);
         $studies = [];
@@ -305,7 +305,7 @@ final readonly class ImageGatewayCaptureService implements OperatorStudyQuery
 
         $usedNames = [];
 
-        return array_map(function (object $study) use ($context, &$usedNames): array {
+        foreach ($studies as $study) {
             $base = preg_replace('/[^A-Za-z0-9._-]/', '_', basename((string) $study->display_reference)) ?: 'study-'.str_replace('-', '', (string) $study->id);
             $base = trim($base, '._-').'.dcm';
             $name = $base;
@@ -316,8 +316,8 @@ final readonly class ImageGatewayCaptureService implements OperatorStudyQuery
             }
             $usedNames[$name] = true;
 
-            return ['name' => $name, 'bytes' => $this->readDicom($context, $study)];
-        }, $studies);
+            yield ['name' => $name, 'bytes' => $this->readDicom($context, $study)];
+        }
     }
 
     private function readDicom(AuthenticatedContext $context, object $study): string

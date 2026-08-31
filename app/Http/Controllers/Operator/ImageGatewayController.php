@@ -16,6 +16,7 @@ use Illuminate\Http\Response;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\View\View;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Throwable;
 use ZipArchive;
@@ -208,7 +209,7 @@ final class ImageGatewayController extends Controller
         Request $request,
         OperatorAuthorization $authorization,
         ImageGatewayCaptureService $gateway,
-    ): Response {
+    ): Response|BinaryFileResponse {
         $validated = Validator::make($request->all(), [
             'studies' => ['required', 'array', 'min:1'],
             'studies.*' => ['required', 'string', 'uuid'],
@@ -235,23 +236,27 @@ final class ImageGatewayController extends Controller
             }
             try {
                 foreach ($entries as $entry) {
-                    $zip->addFromString($entry['name'], $entry['bytes']);
+                    if ($zip->addFromString($entry['name'], $entry['bytes']) === false) {
+                        throw new ImageGatewayException('study_unavailable', 'The DICOM studies are unavailable.');
+                    }
                 }
-                $zip->close();
-                $bytes = file_get_contents($path);
-                if ($bytes === false) {
+                if ($zip->close() === false) {
                     throw new ImageGatewayException('study_unavailable', 'The DICOM studies are unavailable.');
                 }
-            } finally {
-                @unlink($path);
-            }
+                $response = response()->download($path, 'dicom-studies.zip', [
+                    'Content-Type' => 'application/zip',
+                    'Cache-Control' => 'no-store, private',
+                    'X-Content-Type-Options' => 'nosniff',
+                ]);
+                $response->deleteFileAfterSend(true);
+                $keepFile = true;
 
-            return response($bytes, 200, [
-                'Content-Type' => 'application/zip',
-                'Content-Disposition' => 'attachment; filename="dicom-studies.zip"',
-                'Cache-Control' => 'no-store, private',
-                'X-Content-Type-Options' => 'nosniff',
-            ]);
+                return $response;
+            } finally {
+                if (! ($keepFile ?? false)) {
+                    @unlink($path);
+                }
+            }
         } catch (OperatorException|ImageGatewayException) {
             abort(403);
         }
