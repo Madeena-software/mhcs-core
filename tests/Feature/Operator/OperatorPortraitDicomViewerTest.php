@@ -5,14 +5,17 @@ declare(strict_types=1);
 namespace Tests\Feature\Operator;
 
 use App\Models\User;
-use App\Modules\ImageGateway\Application\Jobs\ProcessCaptureSet;
+use App\Modules\ImageGateway\Application\Services\ImageGatewayCaptureService;
+use App\Shared\Context\AuthenticatedContext;
+use App\Shared\Context\CorrelationId;
+use App\Shared\Identity\LocalId;
 use App\Shared\Security\ProtectedIdentifierService;
+use App\Shared\Storage\PrivateObjectStore;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Ramsey\Uuid\Uuid;
 use Tests\Operator\Mvp04Fixtures;
 use Tests\TestCase;
 use ZipArchive;
@@ -178,12 +181,14 @@ final class OperatorPortraitDicomViewerTest extends TestCase
     {
         $fixture = $this->operatorFixture(false);
         $this->actingAs($fixture['operator'])->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
-        $first = $this->createAcceptedStudy($fixture, $this->insertCalledXrayAdmission($fixture));
+        $firstPayload = str_repeat("\0", 128).'DICM'.'study-a';
+        $first = $this->createAuthorizedStoredStudy($fixture, $this->insertCalledXrayAdmission($fixture), $firstPayload, 'STUDYA01');
         $secondBooking = $this->createSecondBookingForSameShift($fixture);
-        $secondAdmission = $this->insertCalledXrayAdmission($fixture, 'TEST-XRAY-02', $secondBooking);
-        $second = $this->createAcceptedStudy($fixture, $secondAdmission);
-        $firstResponse = $this->get(route('operator.study.dicom', $first))->assertOk();
-        $secondResponse = $this->get(route('operator.study.dicom', $second))->assertOk();
+        $secondAdmission = $this->insertCalledXrayAdmission($fixture, 'TEST-XRAY-02', $secondBooking, null);
+        $secondPayload = str_repeat("\0", 128).'DICM'.'study-b';
+        $second = $this->createAuthorizedStoredStudy($fixture, $secondAdmission, $secondPayload, 'STUDYB01', $secondBooking);
+        $firstResponse = $this->get(route('operator.study.dicom', $first))->assertOk()->getContent();
+        $secondResponse = $this->get(route('operator.study.dicom', $second))->assertOk()->getContent();
 
         $response = $this->post(route('operator.study.batch-download'), ['studies' => [$first, $second]]);
         $response->assertOk()->assertHeader('Content-Type', 'application/zip');
@@ -192,8 +197,8 @@ final class OperatorPortraitDicomViewerTest extends TestCase
         $this->assertTrue($zip->open($path) === true);
         $this->assertSame(2, $zip->numFiles);
         $names = [$zip->getNameIndex(0), $zip->getNameIndex(1)];
-        $this->assertSame($firstResponse->getContent(), $zip->getFromName($names[0]));
-        $this->assertSame($secondResponse->getContent(), $zip->getFromName($names[1]));
+        $this->assertSame($firstResponse, $zip->getFromName($names[0]));
+        $this->assertSame($secondResponse, $zip->getFromName($names[1]));
         $this->assertSame([$names[0], $names[1]], array_map('basename', $names));
         $zip->close();
     }
@@ -265,7 +270,7 @@ final class OperatorPortraitDicomViewerTest extends TestCase
         return $booking['id'];
     }
 
-    private function insertCalledXrayAdmission(array $fixture, string $ticketNumber = 'TEST-XRAY-01', ?string $bookingId = null): string
+    private function insertCalledXrayAdmission(array $fixture, string $ticketNumber = 'TEST-XRAY-01', ?string $bookingId = null, string|false|null $operatorProfileId = false): string
     {
         $now = now();
         $ticketId = (string) Str::uuid();
@@ -291,7 +296,7 @@ final class OperatorPortraitDicomViewerTest extends TestCase
             'stage' => 'xray',
             'state' => 'called',
             'ready_at' => $now,
-            'operator_profile_id' => $fixture['profileId'],
+            'operator_profile_id' => $operatorProfileId === false ? $fixture['profileId'] : $operatorProfileId,
             'claimed_at' => $now,
             'created_at' => $now,
             'updated_at' => $now,
@@ -300,50 +305,63 @@ final class OperatorPortraitDicomViewerTest extends TestCase
         return $admissionId;
     }
 
-    private function createAcceptedStudy(array $fixture, string $admission): string
+    private function createAuthorizedStoredStudy(array $fixture, string $admission, string $payload, string $label, ?string $bookingId = null): string
     {
-        $jobId = (string) Str::uuid();
-        $correlationId = (string) Str::uuid();
-        Http::fake([
-            '*' => Http::response(
-                str_repeat("\0", 128).'DICM'.'valid dicom payload',
-                200,
-                [
-                    'Content-Type' => 'application/dicom',
-                    'X-Conversion-Job-ID' => $jobId,
-                    'X-Correlation-ID' => $correlationId,
-                ],
-            ),
+        $now = now();
+        $captureId = (string) Str::uuid();
+        $context = new AuthenticatedContext(
+            actorId: LocalId::fromString($fixture['profileId']),
+            operationId: new CorrelationId((string) Str::uuid()),
+            purpose: ImageGatewayCaptureService::STUDY_PURPOSE,
+        );
+        $object = app(PrivateObjectStore::class)->put($payload, $context, ImageGatewayCaptureService::STUDY_PURPOSE);
+        DB::table('image_gateway_capture_sets')->insert([
+            'id' => $captureId,
+            'submission_id' => (string) Str::uuid(),
+            'admission_id' => $admission,
+            'booking_id' => $bookingId ?? $fixture['bookingId'],
+            'member_schedule_id' => $fixture['scheduleId'],
+            'operator_site_id' => $fixture['siteLocalId'],
+            'operator_profile_id' => $fixture['profileId'],
+            'radiograph_count' => 1,
+            'status' => 'accepted',
+            'accepted_at' => $now,
+            'processing_status' => 'completed',
+            'attempts' => 0,
+            'radiograph_status' => 'success',
+            'gain_status' => 'success',
+            'mpips_status' => 'success',
+            'dicom_status' => 'success',
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+        $studyId = (string) Str::uuid();
+        DB::table('image_gateway_studies')->insert([
+            'id' => $studyId,
+            'capture_set_id' => $captureId,
+            'display_reference' => 'DCM-'.$label,
+            'object_key' => (string) $object->key,
+            'checksum' => $object->checksum,
+            'bytes' => $object->bytes,
+            'format' => 'application/dicom',
+            'filename' => 'DCM-'.$label.'.dcm',
+            'study_instance_uid' => '2.25.'.Uuid::uuid4()->getInteger()->toString(),
+            'series_instance_uid' => '2.25.'.Uuid::uuid4()->getInteger()->toString(),
+            'sop_instance_uid' => '2.25.'.Uuid::uuid4()->getInteger()->toString(),
+            'transfer_syntax' => null,
+            'window_center' => null,
+            'window_width' => null,
+            'rows' => null,
+            'columns' => null,
+            'created_at' => $now,
+            'updated_at' => $now,
         ]);
 
-        $this->post(route('operator.xray-capture.store', $admission), [
-            'submission_id' => (string) Str::uuid(),
-            'metadata' => [
-                'examination' => ['study_description' => 'CHEST RADIOGRAPH'],
-                'capture' => ['detector_type' => 'BED', 'body_part_examined' => 'CHEST', 'laterality' => 'U', 'projection' => 'PA'],
-            ],
-            'radiograph_npz' => new UploadedFile(
-                base_path('resources/fixtures/image-gateway/synthetic-radiograph-01.npz'),
-                'synthetic-radiograph-01.npz',
-                'application/octet-stream',
-                null,
-                true,
-            ),
-            'gain_npz' => new UploadedFile(
-                base_path('resources/fixtures/image-gateway/synthetic-gain-01.npz'),
-                'synthetic-gain-01.npz',
-                'application/octet-stream',
-                null,
-                true,
-            ),
-        ])->assertRedirect(route('operator.study.results'));
+        return $studyId;
+    }
 
-        $captureId = (string) DB::table('image_gateway_capture_sets')->where('admission_id', $admission)->value('id');
-        app()->call([new ProcessCaptureSet($captureId), 'handle']);
-
-        return (string) DB::table('image_gateway_studies as studies')
-            ->join('image_gateway_capture_sets as captures', 'captures.id', '=', 'studies.capture_set_id')
-            ->where('captures.admission_id', $admission)
-            ->value('studies.id');
+    private function createAcceptedStudy(array $fixture, string $admission): string
+    {
+        return $this->createAuthorizedStoredStudy($fixture, $admission, str_repeat("\0", 128).'DICM'.'study', Str::upper(Str::random(8)));
     }
 }
