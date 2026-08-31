@@ -72,7 +72,7 @@ final class Mvp14ImageGatewayIntegrationTest extends TestCase
         $this->assertSame('awaiting_ai', DB::table('operator_queue_admissions')->where('id', $admission)->value('state'));
         $this->assertNull(DB::table('operator_queue_admissions')->where('id', $admission)->value('operator_profile_id'));
         $this->assertSame($fixture['profileId'], $capture->operator_profile_id);
-        $this->assertSame([
+        $this->assertEquals([
             'examination' => ['study_description' => 'CHEST RADIOGRAPH'],
             'capture' => ['detector_type' => 'BED', 'body_part_examined' => 'CHEST', 'laterality' => 'U', 'projection' => 'PA'],
         ], json_decode((string) $capture->capture_metadata, true, 512, JSON_THROW_ON_ERROR));
@@ -667,7 +667,9 @@ final class Mvp14ImageGatewayIntegrationTest extends TestCase
         $studyId = (string) DB::table('image_gateway_studies')->value('id');
 
         DB::table('image_gateway_studies')->where('id', $studyId)->update(['filename' => 'capture-'.$studyId.'.dcm']);
-        DB::statement('PRAGMA defer_foreign_keys = ON');
+        if (DB::connection()->getDriverName() === 'sqlite') {
+            DB::statement('PRAGMA defer_foreign_keys = ON');
+        }
         Schema::table('shift_schedules', function (Blueprint $table): void {
             $table->dropUnique('shift_schedules_display_reference_unique');
             $table->dropColumn('display_reference');

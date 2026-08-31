@@ -211,11 +211,14 @@ final readonly class NonclinicalValidationAccountProvisioningService
         }
 
         $metadata = json_decode((string) $events->first()->metadata, true);
-        if ($metadata !== [
+        $expected = [
             'validation_context' => NonclinicalValidationContext::KEY,
             'nonclinical' => true,
             'principal_type' => $principalType,
-        ]) {
+        ];
+        ksort($metadata);
+        ksort($expected);
+        if ($metadata !== $expected) {
             throw new AuthorizationException('Validation principal ownership is inconsistent.');
         }
     }
