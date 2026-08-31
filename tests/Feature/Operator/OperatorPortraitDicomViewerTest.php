@@ -161,6 +161,84 @@ final class OperatorPortraitDicomViewerTest extends TestCase
             ->assertDontSee('PK');
     }
 
+    public function test_batch_download_denies_actual_foreign_site_study_and_mixed_request(): void
+    {
+        $fixture = $this->operatorFixture(false);
+        $this->actingAs($fixture['operator'])->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
+        $foreign = $this->operatorFixture(false, '900000000002');
+        $foreignStudy = $this->createAcceptedStudy($foreign, $this->insertCalledXrayAdmission($foreign));
+        $booking = $this->createSecondBookingForSameShift($fixture);
+        $authorized = $this->createAcceptedStudy($fixture, $this->insertCalledXrayAdmission($fixture, 'TEST-XRAY-02', $booking, null));
+
+        $this->post(route('operator.study.batch-download'), ['studies' => [$foreignStudy]])
+            ->assertForbidden()
+            ->assertDontSee('PK')
+            ->assertDontSee((string) DB::table('image_gateway_studies')->where('id', $foreignStudy)->value('object_key'));
+        $this->post(route('operator.study.batch-download'), ['studies' => [$authorized, $foreignStudy]])
+            ->assertForbidden()
+            ->assertDontSee('PK');
+    }
+
+    public function test_batch_download_denies_actual_foreign_shift_and_mixed_request(): void
+    {
+        $fixture = $this->operatorFixture(false);
+        $this->actingAs($fixture['operator'])->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
+        $scheduleId = $this->createNonEligibleSameSiteSchedule($fixture);
+        $booking = $this->createSecondBookingForSameShift($fixture, $scheduleId);
+        $admission = $this->insertCalledXrayAdmission($fixture, 'TEST-XRAY-02', $booking, null, $scheduleId);
+        $foreignShift = $this->createAuthorizedStoredStudy($fixture, $admission, str_repeat("\0", 128).'DICM'.'foreign-shift', 'SHIFT001', $booking, $scheduleId);
+        $authorized = $this->createAcceptedStudy($fixture, $this->insertCalledXrayAdmission($fixture));
+
+        $this->post(route('operator.study.batch-download'), ['studies' => [$foreignShift]])
+            ->assertForbidden()
+            ->assertDontSee('PK');
+        $this->post(route('operator.study.batch-download'), ['studies' => [$authorized, $foreignShift]])
+            ->assertForbidden()
+            ->assertDontSee('PK');
+    }
+
+    public function test_batch_download_denies_unavailable_study_and_mixed_request(): void
+    {
+        $fixture = $this->operatorFixture(false);
+        $this->actingAs($fixture['operator'])->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
+        $unavailable = $this->createAcceptedStudy($fixture, $this->insertCalledXrayAdmission($fixture));
+        DB::table('image_gateway_studies')->where('id', $unavailable)->update(['object_key' => 'objects/'.Str::uuid()]);
+        $booking = $this->createSecondBookingForSameShift($fixture);
+        $authorized = $this->createAcceptedStudy($fixture, $this->insertCalledXrayAdmission($fixture, 'TEST-XRAY-02', $booking, null));
+
+        $this->post(route('operator.study.batch-download'), ['studies' => [$unavailable]])
+            ->assertForbidden()
+            ->assertDontSee('PK');
+        $this->post(route('operator.study.batch-download'), ['studies' => [$authorized, $unavailable]])
+            ->assertForbidden()
+            ->assertDontSee('PK');
+    }
+
+    public function test_batch_download_sanitizes_traversal_and_resolves_filename_collisions(): void
+    {
+        $fixture = $this->operatorFixture(false);
+        $this->actingAs($fixture['operator'])->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
+        $firstPayload = str_repeat("\0", 128).'DICM'.'collision-a';
+        $first = $this->createAuthorizedStoredStudy($fixture, $this->insertCalledXrayAdmission($fixture), $firstPayload, 'BASE001', null, null, '../base');
+        $booking = $this->createSecondBookingForSameShift($fixture);
+        $secondAdmission = $this->insertCalledXrayAdmission($fixture, 'TEST-XRAY-02', $booking, null);
+        $secondPayload = str_repeat("\0", 128).'DICM'.'collision-b';
+        $second = $this->createAuthorizedStoredStudy($fixture, $secondAdmission, $secondPayload, 'BASE002', $booking, null, './base');
+
+        $response = $this->post(route('operator.study.batch-download'), ['studies' => [$first, $second]])->assertOk();
+        $zip = new ZipArchive;
+        $this->assertTrue($zip->open($response->baseResponse->getFile()->getPathname()) === true);
+        $this->assertSame(['base.dcm', 'base-2.dcm'], [$zip->getNameIndex(0), $zip->getNameIndex(1)]);
+        foreach ([$zip->getNameIndex(0), $zip->getNameIndex(1)] as $name) {
+            $this->assertSame($name, basename($name));
+            $this->assertStringNotContainsString('..', $name);
+            $this->assertStringNotContainsString('objects/', $name);
+        }
+        $this->assertSame($firstPayload, $zip->getFromName('base.dcm'));
+        $this->assertSame($secondPayload, $zip->getFromName('base-2.dcm'));
+        $zip->close();
+    }
+
     public function test_batch_download_rejects_empty_malformed_and_duplicate_input_safely(): void
     {
         $fixture = $this->operatorFixture(false);
@@ -191,12 +269,13 @@ final class OperatorPortraitDicomViewerTest extends TestCase
         $secondResponse = $this->get(route('operator.study.dicom', $second))->assertOk()->getContent();
 
         $response = $this->post(route('operator.study.batch-download'), ['studies' => [$first, $second]]);
-        $response->assertOk()->assertHeader('Content-Type', 'application/zip');
+        $response->assertOk()->assertHeader('Content-Type', 'application/zip')->assertHeader('Content-Disposition');
         $zip = new ZipArchive;
         $path = $response->baseResponse->getFile()->getPathname();
         $this->assertTrue($zip->open($path) === true);
         $this->assertSame(2, $zip->numFiles);
         $names = [$zip->getNameIndex(0), $zip->getNameIndex(1)];
+        $this->assertSame(['DCM-STUDYA01.dcm', 'DCM-STUDYB01.dcm'], $names);
         $this->assertSame($firstResponse, $zip->getFromName($names[0]));
         $this->assertSame($secondResponse, $zip->getFromName($names[1]));
         $this->assertSame([$names[0], $names[1]], array_map('basename', $names));
@@ -216,6 +295,9 @@ final class OperatorPortraitDicomViewerTest extends TestCase
             ->assertSee('select-all-studies', false)
             ->assertSee('name="studies[]"', false)
             ->assertSee($first);
+        $view = (string) file_get_contents(resource_path('views/operator/study-results.blade.php'));
+        $this->assertStringContainsString('studies().forEach((study) => { study.checked = all.checked; })', $view);
+        $this->assertStringContainsString('if (!studies().some((study) => study.checked)) event.preventDefault();', $view);
     }
 
     public function test_missing_private_dicom_is_denied_without_bubbling_a_storage_500(): void
@@ -232,12 +314,24 @@ final class OperatorPortraitDicomViewerTest extends TestCase
         $this->get(route('operator.study.dicom', $studyId))->assertForbidden();
     }
 
-    private function createSecondBookingForSameShift(array $fixture): string
+    private function createNonEligibleSameSiteSchedule(array $fixture): string
+    {
+        $schedule = (array) DB::table('shift_schedules')->where('id', $fixture['scheduleId'])->first();
+        $schedule['id'] = (string) Str::uuid();
+        $schedule['display_reference'] = 'JAD-NELIG01';
+        $schedule['created_at'] = now();
+        $schedule['updated_at'] = now();
+        DB::table('shift_schedules')->insert($schedule);
+
+        return $schedule['id'];
+    }
+
+    private function createSecondBookingForSameShift(array $fixture, ?string $scheduleId = null): string
     {
         $now = now();
         $memberUser = User::factory()->create(['email' => 'member-'.Str::lower(Str::random(8)).'@example.test']);
         $memberId = (string) Str::uuid();
-        $protected = app(ProtectedIdentifierService::class)->protect('900000000002');
+        $protected = app(ProtectedIdentifierService::class)->protect('900000000003');
         DB::table('members')->insert([
             'id' => $memberId,
             'user_id' => $memberUser->id,
@@ -262,6 +356,7 @@ final class OperatorPortraitDicomViewerTest extends TestCase
         $booking = (array) DB::table('bookings')->where('id', $fixture['bookingId'])->first();
         $booking['id'] = (string) Str::uuid();
         $booking['member_id'] = $memberId;
+        $booking['shift_schedule_id'] = $scheduleId ?? $fixture['scheduleId'];
         $booking['created_at'] = $now;
         $booking['confirmed_at'] = $now;
         $booking['updated_at'] = $now;
@@ -270,7 +365,7 @@ final class OperatorPortraitDicomViewerTest extends TestCase
         return $booking['id'];
     }
 
-    private function insertCalledXrayAdmission(array $fixture, string $ticketNumber = 'TEST-XRAY-01', ?string $bookingId = null, string|false|null $operatorProfileId = false): string
+    private function insertCalledXrayAdmission(array $fixture, string $ticketNumber = 'TEST-XRAY-01', ?string $bookingId = null, string|false|null $operatorProfileId = false, ?string $scheduleId = null): string
     {
         $now = now();
         $ticketId = (string) Str::uuid();
@@ -279,7 +374,7 @@ final class OperatorPortraitDicomViewerTest extends TestCase
         DB::table('operator_paper_tickets')->insert([
             'id' => $ticketId,
             'booking_id' => $bookingId ?? $fixture['bookingId'],
-            'member_schedule_id' => $fixture['scheduleId'],
+            'member_schedule_id' => $scheduleId ?? $fixture['scheduleId'],
             'operator_site_id' => $fixture['siteLocalId'],
             'operator_profile_id' => $fixture['profileId'],
             'ticket_number' => $ticketNumber,
@@ -291,7 +386,7 @@ final class OperatorPortraitDicomViewerTest extends TestCase
             'id' => $admissionId,
             'operator_paper_ticket_id' => $ticketId,
             'operator_site_id' => $fixture['siteLocalId'],
-            'member_schedule_id' => $fixture['scheduleId'],
+            'member_schedule_id' => $scheduleId ?? $fixture['scheduleId'],
             'queue_class' => 'advance',
             'stage' => 'xray',
             'state' => 'called',
@@ -305,7 +400,7 @@ final class OperatorPortraitDicomViewerTest extends TestCase
         return $admissionId;
     }
 
-    private function createAuthorizedStoredStudy(array $fixture, string $admission, string $payload, string $label, ?string $bookingId = null): string
+    private function createAuthorizedStoredStudy(array $fixture, string $admission, string $payload, string $label, ?string $bookingId = null, ?string $scheduleId = null, ?string $displayReference = null): string
     {
         $now = now();
         $captureId = (string) Str::uuid();
@@ -320,7 +415,7 @@ final class OperatorPortraitDicomViewerTest extends TestCase
             'submission_id' => (string) Str::uuid(),
             'admission_id' => $admission,
             'booking_id' => $bookingId ?? $fixture['bookingId'],
-            'member_schedule_id' => $fixture['scheduleId'],
+            'member_schedule_id' => $scheduleId ?? $fixture['scheduleId'],
             'operator_site_id' => $fixture['siteLocalId'],
             'operator_profile_id' => $fixture['profileId'],
             'radiograph_count' => 1,
@@ -339,12 +434,12 @@ final class OperatorPortraitDicomViewerTest extends TestCase
         DB::table('image_gateway_studies')->insert([
             'id' => $studyId,
             'capture_set_id' => $captureId,
-            'display_reference' => 'DCM-'.$label,
+            'display_reference' => $displayReference ?? 'DCM-'.$label,
             'object_key' => (string) $object->key,
             'checksum' => $object->checksum,
             'bytes' => $object->bytes,
             'format' => 'application/dicom',
-            'filename' => 'DCM-'.$label.'.dcm',
+            'filename' => ($displayReference ?? 'DCM-'.$label).'.dcm',
             'study_instance_uid' => '2.25.'.Uuid::uuid4()->getInteger()->toString(),
             'series_instance_uid' => '2.25.'.Uuid::uuid4()->getInteger()->toString(),
             'sop_instance_uid' => '2.25.'.Uuid::uuid4()->getInteger()->toString(),
