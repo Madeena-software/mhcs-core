@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Operator;
 
+use App\Models\User;
 use App\Modules\ImageGateway\Application\Jobs\ProcessCaptureSet;
+use App\Shared\Security\ProtectedIdentifierService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
@@ -172,6 +174,32 @@ final class OperatorPortraitDicomViewerTest extends TestCase
         $zip->close();
     }
 
+    public function test_batch_download_returns_two_authorized_studies_for_two_members_on_same_shift(): void
+    {
+        $fixture = $this->operatorFixture(false);
+        $this->actingAs($fixture['operator'])->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
+        $first = $this->createAcceptedStudy($fixture, $this->insertCalledXrayAdmission($fixture));
+        $secondBooking = $this->createSecondBookingForSameShift($fixture);
+        $secondAdmission = $this->insertCalledXrayAdmission($fixture, 'TEST-XRAY-02', $secondBooking);
+        $this->createAcceptedStudy($fixture, $secondAdmission);
+        $second = $this->insertSyntheticStudyForCapture($secondAdmission, $first);
+        $firstResponse = $this->get(route('operator.study.dicom', $first))->assertOk();
+        $secondResponse = $this->get(route('operator.study.dicom', $second))->assertOk();
+
+        $response = $this->post(route('operator.study.batch-download'), ['studies' => [$first, $second]]);
+
+        $response->assertOk()->assertHeader('Content-Type', 'application/zip');
+        $zip = new ZipArchive;
+        $path = $response->baseResponse->getFile()->getPathname();
+        $this->assertTrue($zip->open($path) === true);
+        $this->assertSame(2, $zip->numFiles);
+        $names = [$zip->getNameIndex(0), $zip->getNameIndex(1)];
+        $this->assertSame($firstResponse->getContent(), $zip->getFromName($names[0]));
+        $this->assertSame($secondResponse->getContent(), $zip->getFromName($names[1]));
+        $this->assertSame([$names[0], $names[1]], array_map('basename', $names));
+        $zip->close();
+    }
+
     public function test_results_worklist_has_current_study_selection_and_no_dimensions_column(): void
     {
         $fixture = $this->operatorFixture(false);
@@ -199,6 +227,64 @@ final class OperatorPortraitDicomViewerTest extends TestCase
         ]);
 
         $this->get(route('operator.study.dicom', $studyId))->assertForbidden();
+    }
+
+    private function createSecondBookingForSameShift(array $fixture): string
+    {
+        $now = now();
+        $memberUser = User::factory()->create(['email' => 'member-'.Str::lower(Str::random(8)).'@example.test']);
+        $memberId = (string) Str::uuid();
+        $protected = app(ProtectedIdentifierService::class)->protect('900000000002');
+        DB::table('members')->insert([
+            'id' => $memberId,
+            'user_id' => $memberUser->id,
+            'family_id' => null,
+            'medical_record_number' => 'MRN-'.substr($memberId, 0, 8),
+            'identity_status' => 'verified',
+            'identity_document_type' => 'ktp',
+            'encrypted_nik' => $protected['encrypted_display'],
+            'nik_lookup_digest' => $protected['lookup_digest'],
+            'name' => 'Synthetic Second Member',
+            'birth_date' => '1989-01-10',
+            'administrative_gender' => 'unspecified',
+            'registration_source' => 'administrator',
+            'phone' => null,
+            'current_address' => 'Synthetic address',
+            'emergency_contact_name' => 'Synthetic contact',
+            'emergency_contact_relationship' => 'Sibling',
+            'emergency_contact_phone' => '0800000000',
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+        $booking = (array) DB::table('bookings')->where('id', $fixture['bookingId'])->first();
+        $booking['id'] = (string) Str::uuid();
+        $booking['member_id'] = $memberId;
+        $booking['created_at'] = $now;
+        $booking['confirmed_at'] = $now;
+        $booking['updated_at'] = $now;
+        DB::table('bookings')->insert($booking);
+
+        return $booking['id'];
+    }
+
+    private function insertSyntheticStudyForCapture(string $admissionId, string $sourceStudyId): string
+    {
+        $source = (array) DB::table('image_gateway_studies')->where('id', $sourceStudyId)->first();
+        $captureId = (string) DB::table('image_gateway_capture_sets')->where('admission_id', $admissionId)->value('id');
+        $sourceObjectKey = (string) $source['object_key'];
+        $source['id'] = (string) Str::uuid();
+        $source['capture_set_id'] = $captureId;
+        $source['object_key'] = 'objects/'.Str::uuid();
+        $source['study_instance_uid'] .= '.2';
+        $source['series_instance_uid'] .= '.2';
+        $source['sop_instance_uid'] .= '.2';
+        $source['display_reference'] = 'DCM-SYNTH02';
+        $source['filename'] = 'DCM-SYNTH02.dcm';
+        DB::table('image_gateway_capture_sets')->where('id', $captureId)->update(['status' => 'accepted']);
+        DB::table('image_gateway_studies')->insert($source);
+        Storage::disk('local')->put($source['object_key'], Storage::disk('local')->get($sourceObjectKey));
+
+        return $source['id'];
     }
 
     private function insertCalledXrayAdmission(array $fixture, string $ticketNumber = 'TEST-XRAY-01', ?string $bookingId = null): string
