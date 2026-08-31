@@ -96,7 +96,7 @@ final class PrestigeWebTestMembersSeederTest extends TestCase
 
             $this->actingAs(User::query()->whereKey($operator->id)->firstOrFail())
                 ->withSession(['operator.active_site_id' => $siteId])
-                ->get(route('operator.attendance', ['schedule' => $schedule->id, 'at' => now()->format(DATE_ATOM)]))
+                ->get(route('operator.attendance', ['schedule' => $schedule->id, 'at' => '2026-08-27T03:00:00+07:00']))
                 ->assertOk()
                 ->assertSee('gbsuparta')
                 ->assertSee('ipang');

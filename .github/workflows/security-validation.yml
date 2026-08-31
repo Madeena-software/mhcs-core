@@ -28,6 +28,11 @@ jobs:
       - name: Install PHP dependencies
         run: composer install --no-interaction --prefer-dist --no-progress
 
+      - name: Build frontend
+        run: |
+          npm ci --ignore-scripts
+          npm run build
+
       - name: Validate Composer metadata
         run: composer validate --strict
 
@@ -42,11 +47,6 @@ jobs:
 
       - name: Run isolated MySQL 8.4 verification
         run: bash deployment/verify-mysql.sh
-
-      - name: Build frontend
-        run: |
-          npm ci --ignore-scripts
-          npm run build
 
       - name: Validate deployment policy
         run: bash deployment/validate.sh
