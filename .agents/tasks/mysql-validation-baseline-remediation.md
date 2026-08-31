@@ -75,7 +75,7 @@ Observed families include `Mvp04dVerifiedCheckInTicketIssueTest`, `Mvp04kBasicEx
 
 ### Dependencies
 
-- Baseline remains `768177b7c40f35a47e3f0d4a0bcfdfa726a5acb2`.
+- The remediation execution baseline is `976863ab50fd8fbf9104b6892c63c72b36550198`. The original implementation baseline `768177b7c40f35a47e3f0d4a0bcfdfa726a5acb2` is retained for historical provenance only.
 - Task B, `deployment-validator-precision.md`, is an independent sibling task and is neither a prerequisite nor part of this task.
 
 ### Approved assumptions
