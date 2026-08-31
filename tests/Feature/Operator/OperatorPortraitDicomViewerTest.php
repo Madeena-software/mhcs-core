@@ -181,13 +181,11 @@ final class OperatorPortraitDicomViewerTest extends TestCase
         $first = $this->createAcceptedStudy($fixture, $this->insertCalledXrayAdmission($fixture));
         $secondBooking = $this->createSecondBookingForSameShift($fixture);
         $secondAdmission = $this->insertCalledXrayAdmission($fixture, 'TEST-XRAY-02', $secondBooking);
-        $this->createAcceptedStudy($fixture, $secondAdmission);
-        $second = $this->insertSyntheticStudyForCapture($secondAdmission, $first);
+        $second = $this->createAcceptedStudy($fixture, $secondAdmission);
         $firstResponse = $this->get(route('operator.study.dicom', $first))->assertOk();
         $secondResponse = $this->get(route('operator.study.dicom', $second))->assertOk();
 
         $response = $this->post(route('operator.study.batch-download'), ['studies' => [$first, $second]]);
-
         $response->assertOk()->assertHeader('Content-Type', 'application/zip');
         $zip = new ZipArchive;
         $path = $response->baseResponse->getFile()->getPathname();
@@ -265,26 +263,6 @@ final class OperatorPortraitDicomViewerTest extends TestCase
         DB::table('bookings')->insert($booking);
 
         return $booking['id'];
-    }
-
-    private function insertSyntheticStudyForCapture(string $admissionId, string $sourceStudyId): string
-    {
-        $source = (array) DB::table('image_gateway_studies')->where('id', $sourceStudyId)->first();
-        $captureId = (string) DB::table('image_gateway_capture_sets')->where('admission_id', $admissionId)->value('id');
-        $sourceObjectKey = (string) $source['object_key'];
-        $source['id'] = (string) Str::uuid();
-        $source['capture_set_id'] = $captureId;
-        $source['object_key'] = 'objects/'.Str::uuid();
-        $source['study_instance_uid'] .= '.2';
-        $source['series_instance_uid'] .= '.2';
-        $source['sop_instance_uid'] .= '.2';
-        $source['display_reference'] = 'DCM-SYNTH02';
-        $source['filename'] = 'DCM-SYNTH02.dcm';
-        DB::table('image_gateway_capture_sets')->where('id', $captureId)->update(['status' => 'accepted']);
-        DB::table('image_gateway_studies')->insert($source);
-        Storage::disk('local')->put($source['object_key'], Storage::disk('local')->get($sourceObjectKey));
-
-        return $source['id'];
     }
 
     private function insertCalledXrayAdmission(array $fixture, string $ticketNumber = 'TEST-XRAY-01', ?string $bookingId = null): string
