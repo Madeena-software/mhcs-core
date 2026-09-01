@@ -1,10 +1,10 @@
 ---
 title: Runtime-Neutral Software Delivery Protocol
 document_id: SD-PROTOCOL-001
-version: 2.2
+version: 2.3
 status: approved-reference
 language: en-US
-last_updated: 2026-08-10
+last_updated: 2026-08-30
 applies_to:
   - software repositories
   - services and APIs
@@ -100,6 +100,12 @@ This protocol does not define:
 - vendor-specific instruction discovery.
 
 Those concerns belong to the execution runtime, its installed methodology, repository tooling, or repository-specific instructions.
+
+## 3.3 Delivery-contract and execution granularity
+
+One task normally represents one coherent bounded delivery objective and acceptance boundary. That delivery-contract granularity is distinct from execution granularity: the same task MAY be implemented through multiple Executor runs, sessions, subagents, commits, slices, or review passes when its objective, authority, material scope, compatibility expectations, acceptance boundary, and risk boundary remain unchanged.
+
+Normal discovery of additional files, tests, helpers, functions, classes, bounded refactoring, documentation, integrations, or verification needed for the same objective does not by itself require a new task. Each execution slice SHOULD remain internally coherent, reviewable, and appropriately verified; umbrella semantics MUST NOT justify a mega-batch or knowingly broken intermediate state.
 
 ---
 
@@ -1190,6 +1196,8 @@ Examples of same-task remediation include:
 - incomplete audit behavior within the original scope;
 - insufficient verification evidence; and
 - bounded regression fixes required for the original objective.
+
+Operationally classify the result as **CONTINUE SAME TASK** when execution discovery remains within the same contract and no new decision boundary is crossed. Classify it as **REMEDIATE SAME TASK** when bounded corrections or evidence closure preserve that contract; republish the same stable task path if the executable contract changes. Classify it as **REPLAN / NEW CONTRACT** when a distinct objective, materially new behavior, substantive architecture or authority decision, incompatible dependency or sequencing, materially different risk boundary, or an incoherent/unbounded objective appears. Normal multi-file discovery alone is not REPLAN.
 
 ## 18.2 New-scope boundary
 

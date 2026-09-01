@@ -1,10 +1,10 @@
 ---
 title: Plan, Review, and Create Validated Task
 document_id: AGENT-PROMPT-PLAN-001
-version: 2.3
+version: 2.4
 status: approved-template
 language: en-US
-last_updated: 2026-08-10
+last_updated: 2026-08-30
 role:
   - Planner
   - Reviewer
@@ -382,6 +382,14 @@ Examples include:
 - implementation divergence that does not require a new product, requirement, architecture, or scope decision.
 
 Update and republish the same stable task file.
+
+Use the following mutually consistent routing classifier before choosing an outcome:
+
+- **CONTINUE SAME TASK**: execution discovery remains within the same coherent objective, intended authority, material scope boundary, compatibility expectations, acceptance boundary, and approval/security/privacy/risk boundary. Additional implementation surfaces alone do not require Planner return.
+- **REMEDIATE SAME TASK**: review identifies bounded corrections or evidence closure that preserve that contract and do not require a materially new authority, product, architecture, or risk decision. Use the same stable task path and republish when its executable contract materially changes.
+- **REPLAN / NEW CONTRACT**: a distinct objective, materially new product behavior, substantive architecture or authority decision, materially different security/privacy/operational/approval/risk boundary, incompatible dependency or sequencing, or an incoherent/unbounded objective appears.
+
+Do not classify normal discovery of files, tests, helpers, functions, classes, bounded refactoring, documentation, integrations, or verification needed for the same objective as REPLAN merely because those surfaces were not listed initially.
 
 Do not create filename-version copies solely for remediation.
 

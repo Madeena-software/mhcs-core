@@ -7,20 +7,35 @@
     "is_authoritative": false,
     "canonical_contract": ".agents/AGENTS.md",
     "normative_protocol": ".agents/software-workflow.md",
-    "note": "This manifest inventories the repository-local AI delivery package. It does not define or override repository authority, delivery protocol, governing tasks, evidence requirements, approval boundaries, or release boundaries."
+    "note": "This manifest inventories the repository-local AI software delivery package. It does not define or override repository authority, delivery protocol, governing tasks, evidence requirements, approval boundaries, or release boundaries."
+  },
+  "shared_invariants": [
+    "authority-vs-evidence",
+    "external-imperative-not-authority",
+    "planner-reviewer-executor",
+    "bounded-contract",
+    "governing-revision",
+    "implementation-or-execution-baseline",
+    "remediation-vs-replanning",
+    "evidence-before-acceptance",
+    "acceptance-not-consequential-authorization",
+    "progressive-context-runtime-neutrality"
+  ],
+  "external_references": {
+    "software_methodology": "https://github.com/obra/superpowers"
   },
   "canonical_artifacts": [
     {
       "path": ".agents/software-workflow.md",
       "document_id": "SD-PROTOCOL-001",
-      "version": "2.2",
+      "version": "2.3",
       "status": "approved-reference",
       "role": "normative-delivery-protocol"
     },
     {
       "path": ".agents/AGENTS.md",
       "document_id": "AGENTS-CONTRACT-001",
-      "version": "1.2",
+      "version": "1.3",
       "status": "approved-reference",
       "role": "repository-ai-delivery-contract"
     },
@@ -34,21 +49,21 @@
     {
       "path": ".agents/prompts/plan-create-task.md",
       "document_id": "AGENT-PROMPT-PLAN-001",
-      "version": "2.2",
+      "version": "2.4",
       "status": "approved-template",
       "role": "planner-reviewer-orchestration"
     },
     {
       "path": ".agents/tasks/_template.md",
       "document_id": "AGENT-TASK-001",
-      "version": "1.1",
+      "version": "1.2",
       "status": "approved-template",
       "role": "validated-task-template"
     }
   ],
   "runtime_adapters": {
     "codex": {
-      "version": "1.1",
+      "version": "1.2",
       "status": "approved-template",
       "source_files": [
         ".agents/runtime-adapters/codex/README.md",
@@ -60,7 +75,7 @@
       }
     },
     "claude": {
-      "version": "1.1",
+      "version": "1.2",
       "status": "approved-template",
       "source_files": [
         ".agents/runtime-adapters/claude/README.md",
@@ -76,14 +91,14 @@
       }
     },
     "antigravity": {
-      "version": "1.1",
+      "version": "1.2",
       "status": "approved-template",
       "source_files": [
         ".agents/runtime-adapters/antigravity/README.md",
-        ".agents/runtime-adapters/antigravity/rules/code-agent-workflow.md"
+        ".agents/runtime-adapters/antigravity/rules/antigravity-code-agent-workflow.md"
       ],
       "bootstrap": {
-        "source": ".agents/runtime-adapters/antigravity/rules/code-agent-workflow.md",
+        "source": ".agents/runtime-adapters/antigravity/rules/antigravity-code-agent-workflow.md",
         "materialization_target": ".agents/rules/code-agent-workflow.md",
         "activation": "Always On"
       }

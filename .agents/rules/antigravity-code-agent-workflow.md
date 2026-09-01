@@ -1,4 +1,4 @@
-<!-- runtime-adapter: antigravity | version: 1.1 | status: approved-template -->
+<!-- runtime-adapter: antigravity | version: 1.2 | status: approved-template -->
 
 # Repository AI Delivery Bootstrap for Antigravity
 

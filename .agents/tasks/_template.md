@@ -1,10 +1,10 @@
 ---
 title: Executable Task Template
 document_id: AGENT-TASK-001
-version: 1.1
+version: 1.2
 status: approved-template
 language: en-US
-last_updated: 2026-08-10
+last_updated: 2026-08-30
 scope:
   - validated executable delivery tasks
   - bounded implementation contracts
@@ -123,6 +123,8 @@ Do not use existing implementation as retroactive justification for missing auth
 If required authority is Draft, unresolved, contradictory, or unapproved, this task MUST NOT be validated for implementation unless repository policy explicitly permits it.
 
 ## Scope
+
+The task scope describes the coherent delivery objective and acceptance boundary. It is not the initial file list, an implementation guess, a function/class list, a commit count, an Executor-run count, or a list of internal technical steps. Record the boundaries and outcome below; normal discovery of additional surfaces needed for the same objective does not by itself expand the task.
 
 ### In scope
 
