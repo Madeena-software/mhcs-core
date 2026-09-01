@@ -13,6 +13,7 @@ use App\Modules\ImageGateway\Domain\Security\SignedManifest;
 use App\Shared\Audit\AuditStore;
 use App\Shared\Storage\PrivateObjectStore;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Factory;
 use Illuminate\Http\Client\Response;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
@@ -291,22 +292,28 @@ final class ProductionDicomRemediationT005Test extends TestCase
 
     public function test_unrelated_records_remain_unchanged_after_t005_completion(): void
     {
-        $unrelated = $this->operatorFixture(false, '900000000003');
-        $before = DB::table('bookings')->where('id', $unrelated['bookingId'])->first();
+        $unrelated = $this->seedUnrelatedCompletedStudy('900000000003');
+        $beforeCapture = DB::table('image_gateway_capture_sets')->where('id', $unrelated['capture']->id)->first();
+        $beforeStudy = DB::table('image_gateway_studies')->where('id', $unrelated['study']->id)->first();
+        $this->assertNotNull($beforeCapture);
+        $this->assertNotNull($beforeStudy);
         $case = $this->seedFailedT005();
         $service = app(ProductionDicomRemediationService::class);
         $service->run(...$this->runtime(ProductionDicomRemediationService::T005_FAILED_CAPTURE_RETRY, 'execute'));
         $this->completeT005($case);
 
-        $this->assertEquals((array) $before, (array) DB::table('bookings')->where('id', $unrelated['bookingId'])->first());
+        $this->assertEquals((array) $beforeCapture, (array) DB::table('image_gateway_capture_sets')->where('id', $unrelated['capture']->id)->firstOrFail());
+        $this->assertEquals((array) $beforeStudy, (array) DB::table('image_gateway_studies')->where('id', $unrelated['study']->id)->firstOrFail());
+        $this->assertTrue(Storage::disk('local')->exists((string) $beforeStudy->object_key));
         $this->assertSame(1, DB::table('image_gateway_studies')->where('capture_set_id', $case['capture']->id)->count());
     }
 
     public function test_dcm_regeneration_preserves_logical_study_and_activates_valid_candidate(): void
     {
-        $unrelated = $this->operatorFixture(false, '900000000004');
-        $unrelatedBooking = DB::table('bookings')->where('id', $unrelated['bookingId'])->first();
         $case = $this->seedCompletedDcm();
+        $unrelated = $this->seedUnrelatedCompletedStudy('900000000004');
+        $unrelatedCapture = DB::table('image_gateway_capture_sets')->where('id', $unrelated['capture']->id)->firstOrFail();
+        $unrelatedStudy = DB::table('image_gateway_studies')->where('id', $unrelated['study']->id)->firstOrFail();
         $beforeStudy = $case['study'];
         $beforeObjects = $this->captureObjects($case['capture']->id);
         $beforeFiles = Storage::disk('local')->allFiles();
@@ -341,7 +348,9 @@ final class ProductionDicomRemediationT005Test extends TestCase
             $this->assertSame($beforeObjects[$type]->bytes, $afterObjects[$type]->bytes);
         }
         $this->assertSame($relationships, $this->relationshipSnapshot($case['capture']->id));
-        $this->assertEquals((array) $unrelatedBooking, (array) DB::table('bookings')->where('id', $unrelated['bookingId'])->first());
+        $this->assertEquals((array) $unrelatedCapture, (array) DB::table('image_gateway_capture_sets')->where('id', $unrelated['capture']->id)->firstOrFail());
+        $this->assertEquals((array) $unrelatedStudy, (array) DB::table('image_gateway_studies')->where('id', $unrelated['study']->id)->firstOrFail());
+        $this->assertTrue(Storage::disk('local')->exists((string) $unrelatedStudy->object_key));
 
         $audit = DB::table('audit_events')->where('action', 'dcm_zshnsx90_replaced')->where('target_id', ProductionDicomRemediationService::DCM_STUDY_ID)->firstOrFail();
         $auditMetadata = json_decode((string) $audit->metadata, true, 512, JSON_THROW_ON_ERROR);
@@ -355,6 +364,14 @@ final class ProductionDicomRemediationT005Test extends TestCase
         $this->assertContains((string) $afterStudy->object_key, $afterFiles);
         $this->assertContains((string) $afterStudy->object_key.'.meta.json', $afterFiles);
         $this->assertSame('complete', $service->run(...$this->runtime(ProductionDicomRemediationService::DCM_ZSHNSX90_REGENERATE, 'verify'))['verification_status']);
+
+        $this->fakeDcmResponse((string) $case['capture']->id, 'dcm-rerun');
+        $service = app(ProductionDicomRemediationService::class);
+        $service->run(...$this->runtime(ProductionDicomRemediationService::DCM_ZSHNSX90_REGENERATE, 'execute'));
+        $rerunStudy = DB::table('image_gateway_studies')->where('id', ProductionDicomRemediationService::DCM_STUDY_ID)->firstOrFail();
+        $this->assertSame(1, DB::table('image_gateway_studies')->where('capture_set_id', $case['capture']->id)->count());
+        $this->assertSame(ProductionDicomRemediationService::DCM_REFERENCE, $rerunStudy->display_reference);
+        $this->assertTrue(Storage::disk('local')->exists((string) $afterStudy->object_key));
     }
 
     #[DataProvider('dcmRelationshipStates')]
@@ -386,6 +403,7 @@ final class ProductionDicomRemediationT005Test extends TestCase
             'site' => ['site'],
             'ticket operator' => ['ticket_operator'],
             'admission operator' => ['admission_operator'],
+            'member' => ['member'],
             'detector' => ['detector'],
             'not accepted' => ['not_accepted'],
             'not completed' => ['not_completed'],
@@ -644,6 +662,7 @@ final class ProductionDicomRemediationT005Test extends TestCase
     private function completeT005(array $case): object
     {
         Queue::fake();
+        Http::swap(new Factory);
         Http::fake(['*' => Http::response(str_repeat("\0", 128).'DICM'.'t005-dicom', 200, [
             'Content-Type' => 'application/dicom',
             'X-Conversion-Job-ID' => $case['capture']->id,
@@ -668,6 +687,50 @@ final class ProductionDicomRemediationT005Test extends TestCase
         ]);
 
         return ['fixture' => $case['fixture'], 'capture' => $case['capture'], 'study' => DB::table('image_gateway_studies')->where('id', ProductionDicomRemediationService::DCM_STUDY_ID)->firstOrFail()];
+    }
+
+    /** @return array{fixture: array<string, mixed>, capture: object, study: object} */
+    private function seedUnrelatedCompletedStudy(string $nik): array
+    {
+        $fixture = $this->operatorFixture(false, $nik);
+        $now = now();
+        $ticketId = (string) Str::uuid();
+        $admissionId = (string) Str::uuid();
+        DB::table('operator_paper_tickets')->insert([
+            'id' => $ticketId,
+            'booking_id' => $fixture['bookingId'],
+            'member_schedule_id' => $fixture['scheduleId'],
+            'operator_site_id' => $fixture['siteLocalId'],
+            'operator_profile_id' => $fixture['profileId'],
+            'ticket_number' => 'OTHER-'.Str::upper(Str::random(8)),
+            'issued_at' => $now,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+        DB::table('operator_queue_admissions')->insert([
+            'id' => $admissionId,
+            'operator_paper_ticket_id' => $ticketId,
+            'operator_site_id' => $fixture['siteLocalId'],
+            'member_schedule_id' => $fixture['scheduleId'],
+            'operator_profile_id' => $fixture['profileId'],
+            'queue_class' => 'advance',
+            'stage' => 'xray',
+            'state' => 'called',
+            'ready_at' => $now,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+        $this->actingAs($fixture['operator'])->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
+        $this->post(route('operator.xray-capture.store', $admissionId), [
+            'submission_id' => (string) Str::uuid(),
+            'metadata' => ['examination' => ['study_description' => 'CHEST RADIOGRAPH'], 'capture' => ['detector_type' => 'TRX', 'body_part_examined' => 'CHEST', 'laterality' => 'U', 'projection' => 'PA']],
+            'radiograph_npz' => new UploadedFile(base_path('resources/fixtures/image-gateway/synthetic-radiograph-01.npz'), 'radiograph.npz', null, null, true),
+            'gain_npz' => new UploadedFile(base_path('resources/fixtures/image-gateway/synthetic-gain-01.npz'), 'gain.npz', null, null, true),
+        ])->assertRedirect();
+        $capture = DB::table('image_gateway_capture_sets')->where('admission_id', $admissionId)->firstOrFail();
+        $study = $this->completeT005(['capture' => $capture]);
+
+        return ['fixture' => $fixture, 'capture' => DB::table('image_gateway_capture_sets')->where('id', $capture->id)->firstOrFail(), 'study' => $study];
     }
 
     private function fakeDcmResponse(string $jobId, string $suffix, int $status = 200, string|false|null $responseJobId = null, ?string $correlationId = null): void
@@ -733,6 +796,7 @@ final class ProductionDicomRemediationT005Test extends TestCase
             'site' => DB::table('image_gateway_capture_sets')->where('id', $captureId)->update(['operator_site_id' => $other['siteLocalId']]),
             'ticket_operator' => DB::table('operator_paper_tickets')->where('booking_id', $case['fixture']['bookingId'])->update(['operator_profile_id' => $other['profileId']]),
             'admission_operator' => DB::table('operator_queue_admissions')->where('id', ProductionDicomRemediationService::T005_ADMISSION_ID)->update(['operator_profile_id' => $other['profileId']]),
+            'member' => DB::table('bookings')->where('id', $case['fixture']['bookingId'])->update(['member_id' => $other['memberId']]),
             'detector' => DB::table('image_gateway_capture_sets')->where('id', $captureId)->update(['capture_metadata' => json_encode(['examination' => ['study_description' => 'CHEST RADIOGRAPH'], 'capture' => ['detector_type' => 'BED', 'body_part_examined' => 'CHEST', 'laterality' => 'U', 'projection' => 'PA']], JSON_THROW_ON_ERROR)]),
             'not_accepted' => DB::table('image_gateway_capture_sets')->where('id', $captureId)->update(['status' => 'pending']),
             'not_completed' => DB::table('image_gateway_capture_sets')->where('id', $captureId)->update(['processing_status' => 'pending']),
