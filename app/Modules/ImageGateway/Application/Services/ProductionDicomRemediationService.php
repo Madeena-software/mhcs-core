@@ -195,7 +195,7 @@ final class ProductionDicomRemediationService
             ->join('operator_profiles as operators', 'operators.id', '=', 'captures.operator_profile_id')
             ->where('captures.admission_id', self::T005_ADMISSION_ID)
             ->where('tickets.ticket_number', 'T-005')
-            ->select('captures.*', 'admissions.member_schedule_id as admission_schedule_id', 'admissions.operator_site_id as admission_site_id', 'tickets.ticket_number', 'bookings.member_id', 'sites.operator_site_id as stable_site_id', 'operators.id as operator_id')
+            ->select('captures.*', 'admissions.member_schedule_id as admission_schedule_id', 'admissions.operator_site_id as admission_site_id', 'admissions.operator_profile_id as admission_operator_id', 'tickets.ticket_number', 'bookings.member_id', 'sites.operator_site_id as stable_site_id', 'operators.id as operator_id')
             ->first();
         if ($capture === null) {
             throw new RuntimeException('T-005 post-processing verification failed.');
@@ -515,6 +515,7 @@ final class ProductionDicomRemediationService
             || (string) $capture->operator_profile_id !== (string) $ticket->operator_profile_id
             || (string) $capture->member_schedule_id !== (string) $admission->member_schedule_id
             || (string) $capture->operator_site_id !== (string) $admission->operator_site_id
+            || (string) $capture->operator_profile_id !== (string) $admission->operator_profile_id
             || (string) ($capture->member_id ?? $booking->member_id) !== (string) $booking->member_id) {
             throw new RuntimeException('Exact remediation relationship graph failed.');
         }
