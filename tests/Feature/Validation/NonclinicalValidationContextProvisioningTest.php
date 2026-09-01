@@ -409,6 +409,27 @@ final class NonclinicalValidationContextProvisioningTest extends TestCase
         $this->assertSame($hash, DB::table('users')->where('email', 'like', '%-operator@invalid')->value('password'));
     }
 
+    public function test_replay_accepts_semantically_identical_operator_ownership_metadata_in_different_key_order(): void
+    {
+        $this->fixture();
+        $secret = 'test-secret-'.Str::random(32);
+        putenv(NonclinicalValidationAccountProvisioningService::OPERATOR_SECRET_NAME.'='.$secret);
+
+        $this->artisan('mhcs:provision-nonclinical-validation-context')->assertExitCode(0);
+
+        DB::table('audit_events')
+            ->where('action', 'production.validation-context.operator-account.provisioned')
+            ->update(['metadata' => json_encode([
+                'principal_type' => 'operator',
+                'validation_context' => NonclinicalValidationContext::KEY,
+                'nonclinical' => true,
+            ], JSON_THROW_ON_ERROR)]);
+
+        $this->artisan('mhcs:provision-nonclinical-validation-context')
+            ->assertExitCode(0)
+            ->expectsOutput('booking_state=EXISTING_VALID');
+    }
+
     /** @return array{schedule_id: string, eligible_id: string} */
     private function fixture(bool $withEligible = true): array
     {

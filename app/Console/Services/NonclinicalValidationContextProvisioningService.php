@@ -171,7 +171,13 @@ final readonly class NonclinicalValidationContextProvisioningService
     private function assertPrincipalOwnership(string $userId, string $type): void
     {
         $events = DB::table('audit_events')->where('action', 'production.validation-context.'.$type.'-account.provisioned')->where('target_id', $userId)->where('outcome', 'success')->get();
-        if ($events->count() !== 1 || json_decode((string) $events->first()->metadata, true) !== ['validation_context' => NonclinicalValidationContext::KEY, 'nonclinical' => true, 'principal_type' => $type]) {
+        $metadata = $events->count() === 1 ? json_decode((string) $events->first()->metadata, true) : null;
+        $expected = ['validation_context' => NonclinicalValidationContext::KEY, 'nonclinical' => true, 'principal_type' => $type];
+        if (is_array($metadata)) {
+            ksort($metadata);
+            ksort($expected);
+        }
+        if ($events->count() !== 1 || $metadata !== $expected) {
             throw new RuntimeException('The validation principal ownership is inconsistent.');
         }
     }
@@ -183,6 +189,13 @@ final readonly class NonclinicalValidationContextProvisioningService
         }
         $events = DB::table('audit_events')->where('action', 'production.validation-context.'.$suffix)->where('target_id', $targetId)->where('outcome', 'success')->get();
 
-        return $events->count() === 1 && json_decode((string) $events->first()->metadata, true) === ['validation_context' => NonclinicalValidationContext::KEY, 'nonclinical' => true, 'provisioning_actor' => 'system', 'human_assignment_performed' => false];
+        $metadata = $events->count() === 1 ? json_decode((string) $events->first()->metadata, true) : null;
+        $expected = ['validation_context' => NonclinicalValidationContext::KEY, 'nonclinical' => true, 'provisioning_actor' => 'system', 'human_assignment_performed' => false];
+        if (is_array($metadata)) {
+            ksort($metadata);
+            ksort($expected);
+        }
+
+        return $events->count() === 1 && $metadata === $expected;
     }
 }
