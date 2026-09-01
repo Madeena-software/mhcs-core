@@ -69,12 +69,25 @@ final class ProductionDicomRemediationService
             throw new RuntimeException('The serving conversion runtime cannot be proven to contain the required fix.');
         }
 
-        if ($stage === 'verify') {
-            return $mode === self::T005_FAILED_CAPTURE_RETRY ? $this->verifyT005() : $this->verifyStudy();
+        if ($mode === self::T005_FAILED_CAPTURE_RETRY && $this->t005AlreadyCompleted()) {
+            $completed = $this->verifyT005();
+            if (($completed['verification_status'] ?? null) !== 'complete') {
+                throw new RuntimeException('T-005 completed state is not fully verified.');
+            }
+            if ($stage === 'preflight') {
+                $completed['processing'] = 'already_completed';
+
+                return $completed;
+            }
+            if ($stage === 'execute') {
+                return ['mode' => self::T005_FAILED_CAPTURE_RETRY, 'processing' => 'already_completed'];
+            }
+
+            return $completed;
         }
 
-        if ($stage === 'execute' && $mode === self::T005_FAILED_CAPTURE_RETRY && $this->t005AlreadyCompleted()) {
-            return ['mode' => self::T005_FAILED_CAPTURE_RETRY, 'processing' => 'already_completed'];
+        if ($stage === 'verify') {
+            return $mode === self::T005_FAILED_CAPTURE_RETRY ? $this->verifyT005() : $this->verifyStudy();
         }
 
         $result = $mode === self::T005_FAILED_CAPTURE_RETRY
@@ -200,7 +213,9 @@ final class ProductionDicomRemediationService
         $objects = $this->sourceObjects((string) $capture->id);
         $this->assertSourceChecksums($capture, $objects);
         [$manifest, $signed] = $this->verifiedManifest($capture, $objects);
-        if (($manifest['capture']['detector_type'] ?? null) !== 'TRX' || ! DB::table('audit_events')->where('action', 't005_detector_corrected')->where('target_id', $capture->id)->exists()) {
+        $audit = DB::table('audit_events')->where('action', 't005_detector_corrected')->where('target_id', $capture->id)->latest('occurred_at')->first();
+        $auditMetadata = $audit === null ? null : json_decode((string) $audit->metadata, true);
+        if (($manifest['capture']['detector_type'] ?? null) !== 'TRX' || ! is_array($auditMetadata) || $auditMetadata['replacement_manifest_object_key'] !== $objects['manifest']->object_key || $auditMetadata['replacement_manifest_checksum'] !== $objects['manifest']->checksum || (int) $auditMetadata['replacement_manifest_bytes'] !== (int) $objects['manifest']->bytes || $auditMetadata['replacement_signature_object_key'] !== $objects['manifest_signature']->object_key || $auditMetadata['replacement_signature_checksum'] !== $objects['manifest_signature']->checksum || (int) $auditMetadata['replacement_signature_bytes'] !== (int) $objects['manifest_signature']->bytes) {
             throw new RuntimeException('T-005 post-processing evidence failed.');
         }
         $study = DB::table('image_gateway_studies')->where('capture_set_id', $capture->id)->first();
@@ -221,7 +236,7 @@ final class ProductionDicomRemediationService
             throw new RuntimeException('DCM-ZSHNSX90 post-processing audit verification failed.');
         }
 
-        return ['mode' => self::DCM_ZSHNSX90_REGENERATE, 'study_id' => self::DCM_STUDY_ID, 'display_reference' => self::DCM_REFERENCE, 'active_dicom_integrity_verified' => true, 'relationship_integrity_verified' => true, 'audit_verified' => true];
+        return ['mode' => self::DCM_ZSHNSX90_REGENERATE, 'verification_status' => 'complete', 'study_id' => self::DCM_STUDY_ID, 'display_reference' => self::DCM_REFERENCE, 'active_dicom_integrity_verified' => true, 'relationship_integrity_verified' => true, 'audit_verified' => true];
     }
 
     /** @param array<string, mixed> $result @return array<string, mixed> */
@@ -244,7 +259,7 @@ final class ProductionDicomRemediationService
                 $row = DB::table('image_gateway_capture_sets')->where('id', $capture->id)->lockForUpdate()->first();
                 $currentObjects = $row === null ? collect() : DB::table('image_gateway_capture_objects')->where('capture_set_id', $row->id)->get()->keyBy('object_type');
                 if ($row !== null) {
-                    $this->assertRelationship($row);
+                    $this->assertRelationship($row, true);
                 }
                 if ($row === null || $row->admission_id !== $capture->admission_id || $row->status !== 'accepted' || ! DB::table('operator_queue_admissions as admissions')->join('operator_paper_tickets as tickets', 'tickets.id', '=', 'admissions.operator_paper_ticket_id')->where('admissions.id', $row->admission_id)->where('tickets.ticket_number', 'T-005')->exists() || $row->processing_status !== 'failed' || $row->accepted_at === null || $row->radiograph_status !== 'success' || $row->gain_status !== 'success' || $row->processing_claim_id !== null || $row->processing_lease_expires_at !== null || (int) $row->attempts !== (int) $capture->attempts || (int) $row->attempts >= (int) config('mhcs.m'.'pips.max_attempts', 5) || $row->radiograph_checksum !== $capture->radiograph_checksum || $row->gain_checksum !== $capture->gain_checksum || $row->manifest_checksum !== $capture->manifest_checksum || $row->manifest_bytes !== $capture->manifest_bytes || $row->signature_checksum !== $capture->signature_checksum || $row->signature_bytes !== $capture->signature_bytes || $this->objectSnapshotChanged($objects, $currentObjects) || $this->metadata($row) !== $result['metadata'] || $this->metadata($row)['capture']['detector_type'] !== 'BED' || DB::table('image_gateway_studies')->where('capture_set_id', $row->id)->exists()) {
                     throw new RuntimeException('T-005 drifted before mutation.');
@@ -320,9 +335,9 @@ final class ProductionDicomRemediationService
                 $capture = $row === null ? null : DB::table('image_gateway_capture_sets')->where('id', $row->capture_set_id)->lockForUpdate()->first();
                 $currentObjects = $capture === null ? collect() : DB::table('image_gateway_capture_objects')->where('capture_set_id', $capture->id)->get()->keyBy('object_type');
                 if ($capture !== null) {
-                    $this->assertRelationship($capture);
+                    $this->assertRelationship($capture, true);
                 }
-                if ($row === null || $capture === null || $row->display_reference !== self::DCM_REFERENCE || $row->object_key !== $study->object_key || $row->checksum !== $study->checksum || $row->bytes !== $study->bytes || $capture->id !== $study->capture_id || $capture->status !== 'accepted' || $capture->processing_status !== 'completed' || $capture->processing_claim_id !== null || $capture->processing_lease_expires_at !== null || $capture->radiograph_checksum !== $study->radiograph_checksum || $capture->gain_checksum !== $study->gain_checksum || $capture->manifest_checksum !== $study->manifest_checksum || $capture->manifest_bytes !== $study->manifest_bytes || $capture->signature_checksum !== $study->signature_checksum || $capture->signature_bytes !== $study->signature_bytes || $this->metadata($capture)['capture']['detector_type'] !== 'TRX' || $this->objectSnapshotChanged($objects, $currentObjects) || DB::table('image_gateway_studies')->where('capture_set_id', $row->capture_set_id)->where('id', '!=', $row->id)->exists()) {
+                if ($row === null || $capture === null || $row->display_reference !== self::DCM_REFERENCE || $row->object_key !== $study->object_key || $row->checksum !== $study->checksum || $row->bytes !== $study->bytes || $row->study_instance_uid !== $study->study_instance_uid || $row->series_instance_uid !== $study->series_instance_uid || $row->sop_instance_uid !== $study->sop_instance_uid || $capture->id !== $study->capture_id || $capture->status !== 'accepted' || $capture->processing_status !== 'completed' || $capture->processing_claim_id !== null || $capture->processing_lease_expires_at !== null || $capture->radiograph_checksum !== $study->radiograph_checksum || $capture->gain_checksum !== $study->gain_checksum || $capture->manifest_checksum !== $study->manifest_checksum || $capture->manifest_bytes !== $study->manifest_bytes || $capture->signature_checksum !== $study->signature_checksum || $capture->signature_bytes !== $study->signature_bytes || $this->metadata($capture)['capture']['detector_type'] !== 'TRX' || $this->objectSnapshotChanged($objects, $currentObjects) || DB::table('image_gateway_studies')->where('capture_set_id', $row->capture_set_id)->where('id', '!=', $row->id)->exists()) {
                     throw new RuntimeException('DCM-ZSHNSX90 drifted before replacement.');
                 }
                 DB::table('image_gateway_studies')->where('id', $row->id)->update(['object_key' => (string) $object->key, 'checksum' => $object->checksum, 'bytes' => $object->bytes, 'updated_at' => $this->clock->now()]);
@@ -481,12 +496,19 @@ final class ProductionDicomRemediationService
         return $capture !== null && $capture->processing_status === 'completed' && DB::table('operator_paper_tickets')->where('ticket_number', 'T-005')->where('booking_id', $capture->booking_id)->exists();
     }
 
-    private function assertRelationship(object $capture): void
+    private function assertRelationship(object $capture, bool $lock = false): void
     {
-        $admission = DB::table('operator_queue_admissions')->where('id', $capture->admission_id)->first();
-        $ticket = $admission === null ? null : DB::table('operator_paper_tickets')->where('id', $admission->operator_paper_ticket_id)->first();
-        $booking = DB::table('bookings')->where('id', $capture->booking_id)->first();
+        $admissionQuery = DB::table('operator_queue_admissions')->where('id', $capture->admission_id);
+        $admission = ($lock ? $admissionQuery->lockForUpdate() : $admissionQuery)->first();
+        $ticketQuery = $admission === null ? null : DB::table('operator_paper_tickets')->where('id', $admission->operator_paper_ticket_id);
+        $ticket = $ticketQuery === null ? null : ($lock ? $ticketQuery->lockForUpdate() : $ticketQuery)->first();
+        $bookingQuery = DB::table('bookings')->where('id', $capture->booking_id);
+        $booking = ($lock ? $bookingQuery->lockForUpdate() : $bookingQuery)->first();
+        $schedule = DB::table('shift_schedules')->where('id', $capture->member_schedule_id)->when($lock, static fn ($query) => $query->lockForUpdate())->first();
+        $site = DB::table('operator_sites')->where('id', $capture->operator_site_id)->when($lock, static fn ($query) => $query->lockForUpdate())->first();
+        $operator = DB::table('operator_profiles')->where('id', $capture->operator_profile_id)->when($lock, static fn ($query) => $query->lockForUpdate())->first();
         if ($admission === null || $ticket === null || $booking === null
+            || $schedule === null || $site === null || $operator === null
             || (string) $capture->booking_id !== (string) $ticket->booking_id
             || (string) $capture->member_schedule_id !== (string) $ticket->member_schedule_id
             || (string) $capture->operator_site_id !== (string) $ticket->operator_site_id
