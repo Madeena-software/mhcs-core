@@ -1,0 +1,103 @@
+name: Remediate exact production DICOM cases
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Select one approved exact-case remediation mode.
+        required: true
+        type: choice
+        options:
+          - t005_failed_capture_retry
+          - dcm_zshnsx90_regenerate
+      authorization_marker:
+        description: Type the exact one-time production authorization marker.
+        required: true
+        type: string
+      expected_application_revision:
+        description: Exact deployed MHCS revision to require.
+        required: true
+        type: string
+      expected_mpips_revision:
+        description: Exact serving MPIPS revision to require.
+        required: true
+        type: string
+
+concurrency:
+  group: production-deployment-mhcs_core
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  remediate:
+    name: Remediate one exact production DICOM case
+    runs-on: self-hosted
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      MODE: ${{ inputs.mode }}
+      AUTHORIZATION_MARKER: ${{ inputs.authorization_marker }}
+      EXPECTED_APPLICATION_REVISION: ${{ inputs.expected_application_revision }}
+      EXPECTED_MPIPS_REVISION: ${{ inputs.expected_mpips_revision }}
+      REQUIRED_MPIPS_FIX: f2bf7b9980f9af7649e1a6c45c46aaee7a55a36a
+      REQUIRED_AUTHORIZATION: AUTHORIZE_EXACT_PRODUCTION_DICOM_REMEDIATION
+      APP_SERVICE: mhcs_core_app
+      MPIPS_CONTAINER_NAME: mpips-api
+      T005_ADMISSION_ID: 46165c59-1fa6-4f58-9485-a515529c0f76
+      DCM_ZSHNSX90_STUDY_ID: ed367bcf-4430-496c-a006-f3e8479421d4
+      DCM_ZSHNSX90_REFERENCE: DCM-ZSHNSX90
+      T005_CASE_REFERENCE: T005
+    steps:
+      - name: Preflight and execute the selected exact case
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          [[ "$MODE" == t005_failed_capture_retry || "$MODE" == dcm_zshnsx90_regenerate ]] || { echo 'failure_family=invalid_mode'; exit 1; }
+          [[ "$AUTHORIZATION_MARKER" == "$REQUIRED_AUTHORIZATION" ]] || { echo 'failure_family=authorization'; exit 1; }
+          [[ "$EXPECTED_APPLICATION_REVISION" =~ ^[0-9a-f]{40}$ ]] || { echo 'failure_family=application_revision'; exit 1; }
+          [[ "$EXPECTED_MPIPS_REVISION" == "$REQUIRED_MPIPS_FIX" ]] || { echo 'failure_family=mpips_revision'; exit 1; }
+
+          app_task_id="$(docker service ps "$APP_SERVICE" --filter desired-state=running --no-trunc --format '{{.ID}}' 2>/dev/null | head -n 1 || true)"
+          app_container=""
+          if [ -n "$app_task_id" ]; then
+            while IFS= read -r candidate; do
+              [ -n "$candidate" ] || continue
+              candidate_task="$(docker inspect "$candidate" --format '{{index .Config.Labels "com.docker.swarm.task.id"}}' 2>/dev/null || true)"
+              if [ "$candidate_task" = "$app_task_id" ] || [[ "$candidate_task" == "$app_task_id"* ]] || [[ "$app_task_id" == "$candidate_task"* ]]; then
+                app_container="$candidate"
+                break
+              fi
+            done < <(docker ps -q --filter "label=com.docker.swarm.service.name=${APP_SERVICE}" --filter status=running 2>/dev/null)
+          fi
+          [ -n "$app_container" ] || { echo 'failure_family=application_container'; exit 1; }
+
+          service_image="$(docker service inspect "$APP_SERVICE" --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 2>/dev/null || true)"
+          container_image="$(docker inspect "$app_container" --format '{{.Config.Image}}' 2>/dev/null || true)"
+          version_current="$(docker exec "$app_container" cat /var/www/html/VERSION-CURRENT 2>/dev/null || true)"
+          image_revision() { local image="$1" revision="${image##*:}"; revision="${revision%%@*}"; [[ "$revision" =~ ^[0-9a-f]{40}$ ]] && printf '%s' "$revision"; }
+          service_revision="$(image_revision "$service_image")"
+          container_revision="$(image_revision "$container_image")"
+          if [ "$version_current" != "$EXPECTED_APPLICATION_REVISION" ] || [ "$service_revision" != "$EXPECTED_APPLICATION_REVISION" ] || [ "$container_revision" != "$EXPECTED_APPLICATION_REVISION" ]; then
+            echo 'failure_family=application_revision'
+            exit 1
+          fi
+          echo "application_revision_verified=$EXPECTED_APPLICATION_REVISION"
+
+          mpips_container="$(docker ps -q --filter "name=${MPIPS_CONTAINER_NAME}" --filter status=running | head -n 1 || true)"
+          [ -n "$mpips_container" ] || { echo 'failure_family=mpips_runtime'; exit 1; }
+          mpips_image="$(docker inspect "$mpips_container" --format '{{.Config.Image}}' 2>/dev/null || true)"
+          mpips_revision="$(image_revision "$mpips_image")"
+          [ "$mpips_revision" = "$EXPECTED_MPIPS_REVISION" ] || { echo 'failure_family=mpips_revision'; exit 1; }
+          echo "mpips_revision_verified=$mpips_revision"
+          echo "mpips_orientation_fix_required=$REQUIRED_MPIPS_FIX"
+
+          for stage in preflight execute; do
+            docker exec -i \
+              -e REMEDIATION_MPIPS_REVISION="$mpips_revision" \
+              -e REMEDIATION_MPIPS_FIX="$REQUIRED_MPIPS_FIX" \
+              "$app_container" php artisan mhcs:remediate-production-dicom "$MODE" --"$stage"
+          done

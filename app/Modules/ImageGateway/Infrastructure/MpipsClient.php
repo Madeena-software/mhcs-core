@@ -4,12 +4,13 @@ declare(strict_types=1);
 
 namespace App\Modules\ImageGateway\Infrastructure;
 
+use App\Modules\ImageGateway\Application\Contracts\DicomConverter;
 use GuzzleHttp\Promise\PromiseInterface;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
 
-final class MpipsClient
+final class MpipsClient implements DicomConverter
 {
     public function convert(string $radiograph, string $gain, string $manifest): Response
     {

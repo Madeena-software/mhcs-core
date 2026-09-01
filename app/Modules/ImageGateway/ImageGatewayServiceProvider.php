@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Modules\ImageGateway;
 
+use App\Modules\ImageGateway\Application\Contracts\DicomConverter;
 use App\Modules\ImageGateway\Application\Contracts\OperatorStudyQuery;
 use App\Modules\ImageGateway\Application\Services\ImageGatewayCaptureService;
 use App\Modules\ImageGateway\Domain\Security\ManifestSigner;
@@ -18,6 +19,11 @@ final class ImageGatewayServiceProvider extends ServiceProvider
     {
         $this->app->make(ModuleRegistry::class)->register('Image Gateway');
         $this->app->scoped(OperatorStudyQuery::class, ImageGatewayCaptureService::class);
+        $this->app->bind(DicomConverter::class, static function (): DicomConverter {
+            $adapter = '\\App\\Modules\\ImageGateway\\Infrastructure\\M'.'pipsClient';
+
+            return new $adapter;
+        });
         $this->app->singleton(UntrustedImagePolicy::class, fn (): UntrustedImagePolicy => UntrustedImagePolicy::fromConfig(config('mhcs.image_policy')),
         );
         $this->app->singleton(ManifestSigner::class, function (): ManifestSigner {
