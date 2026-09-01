@@ -245,8 +245,8 @@ final class NonclinicalValidationContextProvisioningTest extends TestCase
         $siteRef = DB::table('examination_site_refs')->first();
         $service = DB::table('service_offerings')->first();
         $rate = DB::table('point_exchange_rates')->first();
+        DB::table('shift_schedules')->insert(['id' => $otherSchedule, 'examination_site_id' => $siteRef->id, 'service_offering_id' => $service->id, 'display_reference' => 'JAD-ENDED', 'starts_at' => $now->copy()->subDays(2), 'ends_at' => $now->copy()->subDay(), 'quota' => 10, 'status' => 'closed', 'eligible_at' => $now->copy()->subDays(3), 'created_at' => $now, 'updated_at' => $now]);
         DB::table('members')->insert(['id' => $otherMember, 'user_id' => $otherUser->id, 'family_id' => null, 'medical_record_number' => (string) Str::uuid(), 'identity_status' => 'nonclinical_validation', 'identity_document_type' => null, 'encrypted_nik' => null, 'nik_lookup_digest' => null, 'name' => 'Unrelated Member', 'birth_date' => '1990-01-01', 'administrative_gender' => 'unknown', 'registration_source' => 'test', 'phone' => null, 'created_at' => $now, 'updated_at' => $now]);
-        DB::table('shift_schedules')->insert(['id' => $otherSchedule, 'examination_site_id' => $siteRef->id, 'service_offering_id' => $service->id, 'display_reference' => 'ENDED-UNRELATED', 'starts_at' => $now->copy()->subDays(2), 'ends_at' => $now->copy()->subDay(), 'quota' => 10, 'status' => 'closed', 'eligible_at' => $now->copy()->subDays(3), 'created_at' => $now, 'updated_at' => $now]);
         DB::table('bookings')->insert(['id' => $otherBooking, 'member_id' => $otherMember, 'shift_schedule_id' => $otherSchedule, 'service_offering_id' => $service->id, 'examination_site_id_snapshot' => $siteRef->id, 'booking_type' => 'b2c', 'funding_source' => 'personal', 'status' => 'confirmed', 'service_code_snapshot' => $service->code, 'point_cost_snapshot' => $service->point_price, 'point_exchange_rate_id' => $rate->id, 'includes_ai_snapshot' => false, 'includes_doctor_snapshot' => false, 'site_code_snapshot' => $siteRef->code, 'site_name_snapshot' => $siteRef->display_name, 'site_timezone_snapshot' => $siteRef->timezone, 'created_at' => $now, 'confirmed_at' => $now, 'updated_at' => $now]);
         DB::table('operator_profiles')->insert(['id' => $otherProfile, 'user_id' => $otherOperator->id, 'display_name' => 'Unrelated Operator', 'employee_code' => 'UNRELATED-1', 'active' => true, 'created_at' => $now, 'updated_at' => $now]);
         DB::table('operator_paper_tickets')->insert(['id' => $ticket, 'booking_id' => $otherBooking, 'member_schedule_id' => $otherSchedule, 'operator_site_id' => $site->id, 'operator_profile_id' => $otherProfile, 'ticket_number' => 'UNRELATED-1', 'issued_at' => $now, 'created_at' => $now, 'updated_at' => $now]);
@@ -409,6 +409,27 @@ final class NonclinicalValidationContextProvisioningTest extends TestCase
         $this->assertSame($hash, DB::table('users')->where('email', 'like', '%-operator@invalid')->value('password'));
     }
 
+    public function test_replay_accepts_semantically_identical_operator_ownership_metadata_in_different_key_order(): void
+    {
+        $this->fixture();
+        $secret = 'test-secret-'.Str::random(32);
+        putenv(NonclinicalValidationAccountProvisioningService::OPERATOR_SECRET_NAME.'='.$secret);
+
+        $this->artisan('mhcs:provision-nonclinical-validation-context')->assertExitCode(0);
+
+        DB::table('audit_events')
+            ->where('action', 'production.validation-context.operator-account.provisioned')
+            ->update(['metadata' => json_encode([
+                'principal_type' => 'operator',
+                'validation_context' => NonclinicalValidationContext::KEY,
+                'nonclinical' => true,
+            ], JSON_THROW_ON_ERROR)]);
+
+        $this->artisan('mhcs:provision-nonclinical-validation-context')
+            ->assertExitCode(0)
+            ->expectsOutput('booking_state=EXISTING_VALID');
+    }
+
     /** @return array{schedule_id: string, eligible_id: string} */
     private function fixture(bool $withEligible = true): array
     {
@@ -433,7 +454,7 @@ final class NonclinicalValidationContextProvisioningTest extends TestCase
         $now = now()->utc();
         DB::table('shift_schedules')->insert([
             'id' => $schedule, 'examination_site_id' => $source->examination_site_id, 'service_offering_id' => $source->service_offering_id,
-            'display_reference' => 'candidate-'.$schedule, 'starts_at' => $starts, 'ends_at' => $ends, 'quota' => 10, 'status' => 'open', 'eligible_at' => $now,
+            'display_reference' => 'JAD-'.Str::substr($schedule, -8), 'starts_at' => $starts, 'ends_at' => $ends, 'quota' => 10, 'status' => 'open', 'eligible_at' => $now,
             'created_at' => $now, 'updated_at' => $now,
         ]);
         DB::table('operator_eligible_shifts')->insert([

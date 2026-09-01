@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Shared\Validation;
 
+use App\Models\User;
 use App\Shared\Context\AuthenticatedContext;
 use App\Shared\Context\AuthenticatedContextProvider;
 use App\Shared\Context\CorrelationId;
@@ -93,15 +94,22 @@ final class NonclinicalValidationContextProvider implements AuthenticatedContext
     {
         $events = DB::table('audit_events')
             ->where('action', 'production.validation-context.member-account.provisioned')
-            ->where('target_type', 'App\\Models\\User')
+            ->where('target_type', User::class)
             ->where('target_id', $memberId)
             ->where('outcome', 'success')
             ->get();
 
-        return $events->count() === 1 && json_decode((string) $events->first()->metadata, true) === [
+        $metadata = json_decode((string) ($events->first()?->metadata ?? ''), true);
+        $expected = [
             'validation_context' => NonclinicalValidationContext::KEY,
             'nonclinical' => true,
             'principal_type' => 'member',
         ];
+        if (is_array($metadata)) {
+            ksort($metadata);
+            ksort($expected);
+        }
+
+        return $events->count() === 1 && $metadata === $expected;
     }
 }

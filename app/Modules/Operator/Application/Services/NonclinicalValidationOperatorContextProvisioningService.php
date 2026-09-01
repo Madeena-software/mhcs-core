@@ -73,11 +73,17 @@ final readonly class NonclinicalValidationOperatorContextProvisioningService
             ->where('target_id', $userId)
             ->where('outcome', 'success')
             ->get();
-        if ($ownership->count() !== 1 || json_decode((string) $ownership->first()->metadata, true) !== [
+        $metadata = $ownership->count() === 1 ? json_decode((string) $ownership->first()->metadata, true) : null;
+        $expected = [
             'validation_context' => NonclinicalValidationContext::KEY,
             'nonclinical' => true,
             'principal_type' => 'operator',
-        ]) {
+        ];
+        if (is_array($metadata)) {
+            ksort($metadata);
+            ksort($expected);
+        }
+        if ($ownership->count() !== 1 || $metadata !== $expected) {
             throw new RuntimeException('The validation Operator ownership is unproven.');
         }
         $roles = DB::table('authorization_role_assignments')->where('user_id', $userId)->where('active', true)->orderBy('role')->pluck('role')->all();
@@ -172,12 +178,19 @@ final readonly class NonclinicalValidationOperatorContextProvisioningService
             return false;
         }
 
-        return json_decode((string) $events->first()->metadata, true) === [
+        $metadata = json_decode((string) $events->first()->metadata, true);
+        $expected = [
             'validation_context' => NonclinicalValidationContext::KEY,
             'nonclinical' => true,
             'provisioning_actor' => 'system',
             'human_assignment_performed' => false,
         ];
+        if (is_array($metadata)) {
+            ksort($metadata);
+            ksort($expected);
+        }
+
+        return $metadata === $expected;
     }
 
     private function event($context, string $suffix, string $type, string $id, \DateTimeImmutable $now): AuditEvent

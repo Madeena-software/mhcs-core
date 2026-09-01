@@ -118,7 +118,7 @@ final class Mvp04kBasicExaminationCompletionTest extends TestCase
         $this->assertSame(0, DB::table('operator_vital_signs_executions')->where('operator_queue_admission_id', $admission->id)->count());
         $this->assertSame(0, DB::table('member_paper_questionnaires')->where('booking_id', $fixture['bookingId'])->count());
         $metadata = json_decode((string) DB::table('audit_events')->where('action', 'operator.basic-examination.completed')->value('metadata'), true, flags: JSON_THROW_ON_ERROR);
-        $this->assertSame(['nonclinical' => true, 'clinical_basic_examination_performed' => false, 'vital_signs_recorded' => false, 'questionnaire_recorded' => false], array_intersect_key($metadata, array_flip(['nonclinical', 'clinical_basic_examination_performed', 'vital_signs_recorded', 'questionnaire_recorded'])));
+        $this->assertEquals(['nonclinical' => true, 'clinical_basic_examination_performed' => false, 'vital_signs_recorded' => false, 'questionnaire_recorded' => false], array_intersect_key($metadata, array_flip(['nonclinical', 'clinical_basic_examination_performed', 'vital_signs_recorded', 'questionnaire_recorded'])));
     }
 
     public function test_normal_admission_cannot_invoke_nonclinical_completion_route(): void

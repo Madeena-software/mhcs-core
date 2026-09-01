@@ -245,7 +245,7 @@ final readonly class ImageGatewayCaptureService implements OperatorStudyQuery
         $this->assertContext($context, self::STUDY_PURPOSE);
 
         return $this->authorizedStudiesQuery($profileId, $siteId, $operatorSiteId)
-            ->select(['studies.id', 'studies.display_reference', 'captures.booking_id', 'tickets.ticket_number', 'members.name as member_name', 'members.medical_record_number as medical_record_number', 'schedules.display_reference as schedule_display_reference', 'studies.format', 'studies.rows', 'studies.columns', 'captures.accepted_at'])
+            ->select(['studies.id', 'studies.display_reference', 'captures.booking_id', 'tickets.ticket_number', 'members.name as member_name', 'members.medical_record_number as medical_record_number', 'schedules.display_reference as schedule_display_reference', 'studies.format', 'captures.accepted_at'])
             ->orderByDesc('captures.accepted_at')
             ->get()
             ->map(static fn (object $study): array => [
@@ -257,8 +257,6 @@ final readonly class ImageGatewayCaptureService implements OperatorStudyQuery
                 'medical_record_number' => (string) $study->medical_record_number,
                 'schedule_display_reference' => (string) $study->schedule_display_reference,
                 'format' => (string) $study->format,
-                'rows' => $study->rows === null ? null : (int) $study->rows,
-                'columns' => $study->columns === null ? null : (int) $study->columns,
                 'accepted_at' => (string) $study->accepted_at,
             ])
             ->all();
@@ -290,6 +288,40 @@ final readonly class ImageGatewayCaptureService implements OperatorStudyQuery
     {
         $this->assertContext($context, self::STUDY_PURPOSE);
         $study = $this->authorizedStudy($profileId, $siteId, $operatorSiteId, $studyId);
+
+        return $this->readDicom($context, $study);
+    }
+
+    /** @param list<string> $studyIds
+     * @return \Generator<int, array{name: string, bytes: string}>
+     */
+    public function batch(AuthenticatedContext $context, string $profileId, string $siteId, string $operatorSiteId, array $studyIds): \Generator
+    {
+        $this->assertContext($context, self::STUDY_PURPOSE);
+        $studies = [];
+        foreach (array_values(array_unique($studyIds, SORT_STRING)) as $studyId) {
+            $studies[] = $this->authorizedStudy($profileId, $siteId, $operatorSiteId, $studyId);
+        }
+
+        $usedNames = [];
+
+        foreach ($studies as $study) {
+            $base = preg_replace('/[^A-Za-z0-9._-]/', '_', basename((string) $study->display_reference)) ?: 'study-'.str_replace('-', '', (string) $study->id);
+            $base = trim($base, '._-').'.dcm';
+            $name = $base;
+            $suffix = 2;
+            while (isset($usedNames[$name])) {
+                $name = pathinfo($base, PATHINFO_FILENAME).'-'.$suffix.'.dcm';
+                $suffix++;
+            }
+            $usedNames[$name] = true;
+
+            yield ['name' => $name, 'bytes' => $this->readDicom($context, $study)];
+        }
+    }
+
+    private function readDicom(AuthenticatedContext $context, object $study): string
+    {
         $object = new PrivateObject(
             OpaqueObjectKey::fromString((string) $study->object_key),
             (string) $study->checksum,
