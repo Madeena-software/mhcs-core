@@ -42,9 +42,10 @@ final class ProductionExactDicomRemediationWorkflowTest extends TestCase
         $this->assertStringNotContainsString('capture_id:', $workflow);
         $this->assertStringNotContainsString('study_id:', $workflow);
         $this->assertStringContainsString('cancel-in-progress: false', $workflow);
-        $this->assertStringContainsString('git -C /app merge-base --is-ancestor', $workflow);
+        $this->assertStringContainsString('/var/www/mpips-runtime/.mpips-version', $workflow);
         $this->assertStringContainsString('mpips_fix_containment_unproven', $workflow);
         $this->assertStringContainsString('verified-ancestor:', $workflow);
+        $this->assertStringContainsString('verify', $workflow);
         $this->assertStringNotContainsString('EXPECTED_MPIPS_REVISION" == "$REQUIRED_MPIPS_FIX', $workflow);
     }
 }

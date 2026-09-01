@@ -43,6 +43,11 @@ final class ProductionDicomRemediationService
 
     public const REQUIRED_RUNTIME_FIX = 'f2bf7b9980f9af7649e1a6c45c46aaee7a55a36a';
 
+    public const ALLOWED_RUNTIME_REVISIONS = [
+        self::REQUIRED_RUNTIME_FIX,
+        'e94784db65bb134d43e87a2046037ab4d1cbfe02',
+    ];
+
     private const PURPOSE = 'image-gateway.production-dicom-remediation';
 
     public function __construct(
@@ -57,11 +62,15 @@ final class ProductionDicomRemediationService
     public function run(string $mode, string $stage, ?string $runtimeRevision = null, ?string $runtimeFix = null): array
     {
         $this->assertMode($mode);
-        if (! in_array($stage, ['preflight', 'execute'], true)) {
+        if (! in_array($stage, ['preflight', 'execute', 'verify'], true)) {
             throw new RuntimeException('Invalid remediation stage.');
         }
-        if (! is_string($runtimeRevision) || preg_match('/\A[0-9a-f]{40}\z/', $runtimeRevision) !== 1 || $runtimeFix !== 'verified-ancestor:'.self::REQUIRED_RUNTIME_FIX) {
+        if (! is_string($runtimeRevision) || ! in_array($runtimeRevision, self::ALLOWED_RUNTIME_REVISIONS, true) || $runtimeFix !== 'verified-ancestor:'.self::REQUIRED_RUNTIME_FIX) {
             throw new RuntimeException('The serving conversion runtime cannot be proven to contain the required fix.');
+        }
+
+        if ($stage === 'verify') {
+            return $mode === self::T005_FAILED_CAPTURE_RETRY ? $this->verifyT005() : $this->verifyStudy();
         }
 
         $result = $mode === self::T005_FAILED_CAPTURE_RETRY
@@ -155,6 +164,46 @@ final class ProductionDicomRemediationService
         return ['study' => $study, 'objects' => $objects, 'manifest' => $manifest, 'signed' => $signed, 'metadata' => $this->metadata($study)];
     }
 
+    /** @return array<string, mixed> */
+    private function verifyT005(): array
+    {
+        $capture = DB::table('image_gateway_capture_sets as captures')
+            ->join('operator_queue_admissions as admissions', 'admissions.id', '=', 'captures.admission_id')
+            ->join('operator_paper_tickets as tickets', 'tickets.id', '=', 'admissions.operator_paper_ticket_id')
+            ->where('captures.admission_id', self::T005_ADMISSION_ID)
+            ->where('tickets.ticket_number', 'T-005')
+            ->select('captures.*', 'tickets.ticket_number')
+            ->first();
+        if ($capture === null || $capture->status !== 'accepted' || $capture->processing_status !== 'completed' || $capture->{'m'.'pips_status'} !== 'success' || $capture->dicom_status !== 'success' || $capture->accepted_at === null || $this->metadata($capture)['capture']['detector_type'] !== 'TRX' || ! DB::table('image_gateway_studies')->where('capture_set_id', $capture->id)->exists()) {
+            throw new RuntimeException('T-005 post-processing verification failed.');
+        }
+        $objects = $this->sourceObjects((string) $capture->id);
+        $this->assertSourceChecksums($capture, $objects);
+        [$manifest, $signed] = $this->verifiedManifest($capture, $objects);
+        if (($manifest['capture']['detector_type'] ?? null) !== 'TRX' || ! DB::table('audit_events')->where('action', 't005_detector_corrected')->where('target_id', $capture->id)->exists()) {
+            throw new RuntimeException('T-005 post-processing evidence failed.');
+        }
+        $study = DB::table('image_gateway_studies')->where('capture_set_id', $capture->id)->first();
+        $dicom = $this->readObject((object) ['object_key' => $study->object_key, 'checksum' => $study->checksum, 'bytes' => $study->bytes, 'created_at' => $study->created_at], 'study');
+        if ($this->uids($signed->manifest->conversionJobId) !== ['study' => $study->study_instance_uid, 'series' => $study->series_instance_uid, 'sop' => $study->sop_instance_uid] || hash('sha256', $dicom) !== $study->checksum || strlen($dicom) !== (int) $study->bytes || DB::table('image_gateway_studies')->where('capture_set_id', $capture->id)->count() !== 1) {
+            throw new RuntimeException('T-005 post-processing DICOM verification failed.');
+        }
+
+        return ['mode' => self::T005_FAILED_CAPTURE_RETRY, 'capture_id' => (string) $capture->id, 'processing_status' => 'completed', 'study_count' => 1, 'relationship_integrity_verified' => true, 'source_integrity_verified' => true, 'audit_verified' => true];
+    }
+
+    /** @return array<string, mixed> */
+    private function verifyStudy(): array
+    {
+        $result = $this->studyPreflight();
+        $study = $result['study'];
+        if (! DB::table('audit_events')->where('action', 'dcm_zshnsx90_replaced')->where('target_id', $study->id)->exists()) {
+            throw new RuntimeException('DCM-ZSHNSX90 post-processing audit verification failed.');
+        }
+
+        return ['mode' => self::DCM_ZSHNSX90_REGENERATE, 'study_id' => self::DCM_STUDY_ID, 'display_reference' => self::DCM_REFERENCE, 'active_dicom_integrity_verified' => true, 'relationship_integrity_verified' => true, 'audit_verified' => true];
+    }
+
     /** @param array<string, mixed> $result @return array<string, mixed> */
     private function retryT005(array $result): array
     {
@@ -187,6 +236,21 @@ final class ProductionDicomRemediationService
                 ]);
                 $this->replaceObjectRow((string) $row->id, 'manifest', $manifestObject);
                 $this->replaceObjectRow((string) $row->id, 'manifest_signature', $signatureObject);
+                $this->audit('t005_detector_corrected', (string) $capture->id, hash('sha256', json_encode($result['metadata'], JSON_THROW_ON_ERROR)), hash('sha256', json_encode($metadata, JSON_THROW_ON_ERROR)), [
+                    'mode' => self::T005_FAILED_CAPTURE_RETRY,
+                    'previous_manifest_object_key' => (string) $objects['manifest']->object_key,
+                    'previous_manifest_checksum' => (string) $objects['manifest']->checksum,
+                    'previous_manifest_bytes' => (int) $objects['manifest']->bytes,
+                    'previous_signature_object_key' => (string) $objects['manifest_signature']->object_key,
+                    'previous_signature_checksum' => (string) $objects['manifest_signature']->checksum,
+                    'previous_signature_bytes' => (int) $objects['manifest_signature']->bytes,
+                    'replacement_manifest_object_key' => (string) $manifestObject->key,
+                    'replacement_manifest_checksum' => $manifestObject->checksum,
+                    'replacement_manifest_bytes' => $manifestObject->bytes,
+                    'replacement_signature_object_key' => (string) $signatureObject->key,
+                    'replacement_signature_checksum' => $signatureObject->checksum,
+                    'replacement_signature_bytes' => $signatureObject->bytes,
+                ]);
             });
         } catch (\Throwable $e) {
             $this->objects->delete($manifestObject);
@@ -194,21 +258,6 @@ final class ProductionDicomRemediationService
             throw $e;
         }
         ProcessCaptureSet::dispatch((string) $capture->id)->onQueue('image-gateway')->afterCommit();
-        $this->audit('t005_detector_corrected', (string) $capture->id, hash('sha256', json_encode($result['metadata'], JSON_THROW_ON_ERROR)), hash('sha256', json_encode($metadata, JSON_THROW_ON_ERROR)), [
-            'mode' => self::T005_FAILED_CAPTURE_RETRY,
-            'previous_manifest_checksum' => (string) $objects['manifest']->checksum,
-            'previous_manifest_object_key' => (string) $objects['manifest']->object_key,
-            'previous_manifest_bytes' => (int) $objects['manifest']->bytes,
-            'previous_signature_checksum' => (string) $objects['manifest_signature']->checksum,
-            'previous_signature_object_key' => (string) $objects['manifest_signature']->object_key,
-            'previous_signature_bytes' => (int) $objects['manifest_signature']->bytes,
-            'replacement_manifest_object_key' => (string) $manifestObject->key,
-            'replacement_manifest_bytes' => $manifestObject->bytes,
-            'replacement_manifest_checksum' => $manifestObject->checksum,
-            'replacement_signature_object_key' => (string) $signatureObject->key,
-            'replacement_signature_bytes' => $signatureObject->bytes,
-            'replacement_signature_checksum' => $signatureObject->checksum,
-        ]);
 
         return ['mode' => self::T005_FAILED_CAPTURE_RETRY, 'capture_id' => (string) $capture->id, 'processing' => 'dispatched'];
     }
@@ -251,22 +300,22 @@ final class ProductionDicomRemediationService
                     throw new RuntimeException('DCM-ZSHNSX90 drifted before replacement.');
                 }
                 DB::table('image_gateway_studies')->where('id', $row->id)->update(['object_key' => (string) $object->key, 'checksum' => $object->checksum, 'bytes' => $object->bytes, 'updated_at' => $this->clock->now()]);
+                $this->audit('dcm_zshnsx90_replaced', (string) $study->id, (string) $study->checksum, $object->checksum, [
+                    'mode' => self::DCM_ZSHNSX90_REGENERATE,
+                    'logical_study_id' => (string) $study->id,
+                    'display_reference' => self::DCM_REFERENCE,
+                    'old_object_key' => (string) $study->object_key,
+                    'old_object_checksum' => (string) $study->checksum,
+                    'old_object_bytes' => (int) $study->bytes,
+                    'replacement_object_key' => (string) $object->key,
+                    'new_object_checksum' => $object->checksum,
+                    'new_object_bytes' => $object->bytes,
+                ]);
             });
         } catch (\Throwable $e) {
             $this->objects->delete($object);
             throw $e;
         }
-        $this->audit('dcm_zshnsx90_replaced', (string) $study->id, (string) $study->checksum, $object->checksum, [
-            'mode' => self::DCM_ZSHNSX90_REGENERATE,
-            'logical_study_id' => (string) $study->id,
-            'display_reference' => self::DCM_REFERENCE,
-            'old_object_key' => (string) $study->object_key,
-            'old_object_checksum' => (string) $study->checksum,
-            'old_object_bytes' => (int) $study->bytes,
-            'replacement_object_key' => (string) $object->key,
-            'new_object_checksum' => $object->checksum,
-            'new_object_bytes' => $object->bytes,
-        ]);
 
         return ['mode' => self::DCM_ZSHNSX90_REGENERATE, 'study_id' => (string) $study->id, 'display_reference' => self::DCM_REFERENCE, 'old_object_checksum' => (string) $study->checksum, 'new_object_checksum' => $object->checksum];
     }
@@ -333,6 +382,19 @@ final class ProductionDicomRemediationService
             if (($manifestCapture[$key] ?? null) !== $value) {
                 throw new RuntimeException('Manifest capture metadata failed.');
             }
+        }
+        $examination = $manifest['examination'] ?? null;
+        $patient = $manifest['patient'] ?? null;
+        $operator = $manifest['operator'] ?? null;
+        $site = $manifest['site'] ?? null;
+        if (! is_array($examination) || ! is_array($patient) || ! is_array($operator) || ! is_array($site)
+            || (string) ($examination['service_request_id'] ?? '') !== (string) ($capture->booking_id ?? '')
+            || (string) ($examination['encounter_id'] ?? '') !== (string) ($capture->booking_id ?? '')
+            || (string) ($patient['member_id'] ?? '') !== (string) ($capture->member_id ?? '')
+            || (string) ($operator['operator_id'] ?? '') !== (string) ($capture->operator_id ?? $capture->operator_profile_id ?? '')
+            || (string) ($site['site_id'] ?? '') !== (string) ($capture->stable_site_id ?? '')
+            || (string) ($examination['study_description'] ?? '') !== (string) ($captureMetadata['examination']['study_description'] ?? '')) {
+            throw new RuntimeException('Manifest relationship identity failed.');
         }
         if (! hash_equals($signed->manifest->metadataChecksum, hash('sha256', $manifestBytes))) {
             throw new RuntimeException('Manifest metadata checksum failed.');
@@ -451,10 +513,15 @@ final class ProductionDicomRemediationService
                 'attempts' => (int) $capture->attempts,
                 'detector_type' => $result['metadata']['capture']['detector_type'],
                 'radiograph_checksum' => (string) $result['objects']['radiograph']->checksum,
+                'radiograph_bytes' => (int) $result['objects']['radiograph']->bytes,
                 'gain_checksum' => (string) $result['objects']['gain']->checksum,
+                'gain_bytes' => (int) $result['objects']['gain']->bytes,
                 'manifest_checksum' => (string) $result['objects']['manifest']->checksum,
+                'manifest_bytes' => (int) $result['objects']['manifest']->bytes,
                 'signature_checksum' => (string) $result['objects']['manifest_signature']->checksum,
+                'signature_bytes' => (int) $result['objects']['manifest_signature']->bytes,
                 'signature_valid' => true,
+                'relationship_integrity_verified' => true,
                 'study_exists' => false,
             ];
         }
@@ -469,14 +536,20 @@ final class ProductionDicomRemediationService
             'processing_status' => (string) $study->processing_status,
             'detector_type' => $result['metadata']['capture']['detector_type'],
             'radiograph_checksum' => (string) $result['objects']['radiograph']->checksum,
+            'radiograph_bytes' => (int) $result['objects']['radiograph']->bytes,
             'gain_checksum' => (string) $result['objects']['gain']->checksum,
+            'gain_bytes' => (int) $result['objects']['gain']->bytes,
             'manifest_checksum' => (string) $result['objects']['manifest']->checksum,
+            'manifest_bytes' => (int) $result['objects']['manifest']->bytes,
             'signature_checksum' => (string) $result['objects']['manifest_signature']->checksum,
+            'signature_bytes' => (int) $result['objects']['manifest_signature']->bytes,
             'dicom_checksum' => (string) $study->checksum,
+            'dicom_bytes' => (int) $study->bytes,
             'study_instance_uid' => (string) $study->study_instance_uid,
             'series_instance_uid' => (string) $study->series_instance_uid,
             'sop_instance_uid' => (string) $study->sop_instance_uid,
             'signature_valid' => true,
+            'relationship_integrity_verified' => true,
         ];
     }
 

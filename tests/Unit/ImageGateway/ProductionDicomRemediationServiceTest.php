@@ -24,6 +24,8 @@ final class ProductionDicomRemediationServiceTest extends TestCase
         $this->assertSame('46165c59-1fa6-4f58-9485-a515529c0f76', ProductionDicomRemediationService::T005_ADMISSION_ID);
         $this->assertSame('ed367bcf-4430-496c-a006-f3e8479421d4', ProductionDicomRemediationService::DCM_STUDY_ID);
         $this->assertSame('DCM-ZSHNSX90', ProductionDicomRemediationService::DCM_REFERENCE);
+        $this->assertContains(ProductionDicomRemediationService::REQUIRED_RUNTIME_FIX, ProductionDicomRemediationService::ALLOWED_RUNTIME_REVISIONS);
+        $this->assertContains('e94784db65bb134d43e87a2046037ab4d1cbfe02', ProductionDicomRemediationService::ALLOWED_RUNTIME_REVISIONS);
     }
 
     public function test_invalid_mode_is_rejected_before_any_target_lookup(): void

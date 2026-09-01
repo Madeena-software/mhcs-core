@@ -10,20 +10,20 @@ use Throwable;
 
 final class RemediateProductionDicom extends Command
 {
-    protected $signature = 'mhcs:remediate-production-dicom {mode} {--preflight} {--execute}';
+    protected $signature = 'mhcs:remediate-production-dicom {mode} {--preflight} {--execute} {--verify}';
 
     protected $description = 'Run one bounded exact-case production DICOM remediation.';
 
     public function handle(ProductionDicomRemediationService $remediation): int
     {
-        $stage = $this->option('preflight') ? 'preflight' : ($this->option('execute') ? 'execute' : null);
-        if ($stage === null || ($this->option('preflight') && $this->option('execute'))) {
-            $this->error('Exactly one of --preflight or --execute is required.');
+        $stages = array_filter(['preflight' => $this->option('preflight'), 'execute' => $this->option('execute'), 'verify' => $this->option('verify')]);
+        if (count($stages) !== 1) {
+            $this->error('Exactly one remediation stage is required.');
 
             return self::INVALID;
         }
         try {
-            $result = $remediation->run($this->argument('mode'), $stage, getenv('REMEDIATION_MPIPS_REVISION') ?: null, getenv('REMEDIATION_MPIPS_FIX') ?: null);
+            $result = $remediation->run($this->argument('mode'), array_key_first($stages), getenv('REMEDIATION_MPIPS_REVISION') ?: null, getenv('REMEDIATION_MPIPS_FIX') ?: null);
             foreach ($result as $key => $value) {
                 $this->line($key.'='.(is_scalar($value) ? (string) $value : json_encode($value, JSON_THROW_ON_ERROR)));
             }

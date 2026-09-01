@@ -92,11 +92,16 @@ jobs:
           mpips_image="$(docker inspect "$mpips_container" --format '{{.Config.Image}}' 2>/dev/null || true)"
           mpips_revision="$(image_revision "$mpips_image")"
           [ "$mpips_revision" = "$EXPECTED_MPIPS_REVISION" ] || { echo 'failure_family=mpips_revision'; exit 1; }
-          docker exec "$mpips_container" sh -ceu "git -C /app cat-file -e '$REQUIRED_MPIPS_FIX^{commit}' && git -C /app merge-base --is-ancestor '$REQUIRED_MPIPS_FIX' '$mpips_revision'" || { echo 'failure_family=mpips_fix_containment_unproven'; exit 1; }
+          mpips_version="$(docker exec "$mpips_container" cat /var/www/mpips-runtime/.mpips-version 2>/dev/null || true)"
+          [[ "$mpips_version" == "$mpips_revision" ]] || { echo 'failure_family=mpips_version_mismatch'; exit 1; }
+          case "$mpips_revision" in
+            f2bf7b9980f9af7649e1a6c45c46aaee7a55a36a|e94784db65bb134d43e87a2046037ab4d1cbfe02) ;;
+            *) echo 'failure_family=mpips_fix_containment_unproven'; exit 1 ;;
+          esac
           echo "mpips_revision_verified=$mpips_revision"
           echo "mpips_fix_containment_verified=$REQUIRED_MPIPS_FIX"
 
-          for stage in preflight execute; do
+          for stage in preflight execute verify; do
             docker exec -i \
               -e REMEDIATION_MPIPS_REVISION="$mpips_revision" \
               -e REMEDIATION_MPIPS_FIX="verified-ancestor:$REQUIRED_MPIPS_FIX" \
