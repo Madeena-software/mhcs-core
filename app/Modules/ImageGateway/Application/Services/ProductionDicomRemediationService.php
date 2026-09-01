@@ -104,7 +104,7 @@ final class ProductionDicomRemediationService
             ->join('operator_profiles as operators', 'operators.id', '=', 'captures.operator_profile_id')
             ->where('captures.admission_id', self::T005_ADMISSION_ID)
             ->where('tickets.ticket_number', 'T-005')
-            ->select('captures.*', 'admissions.state as admission_state', 'admissions.stage', 'tickets.ticket_number', 'bookings.member_id', 'schedules.examination_site_id', 'sites.operator_site_id as stable_site_id', 'operators.id as operator_id')
+            ->select('captures.*', 'admissions.state as admission_state', 'admissions.stage', 'admissions.member_schedule_id as admission_schedule_id', 'admissions.operator_site_id as admission_site_id', 'admissions.operator_profile_id as admission_operator_id', 'tickets.ticket_number', 'bookings.member_id', 'schedules.examination_site_id', 'sites.operator_site_id as stable_site_id', 'operators.id as operator_id')
             ->first();
         if ($capture === null) {
             throw new RuntimeException('T-005 target could not be resolved exactly.');
@@ -137,7 +137,7 @@ final class ProductionDicomRemediationService
             ->join('operator_profiles as operators', 'operators.id', '=', 'captures.operator_profile_id')
             ->where('studies.id', self::DCM_STUDY_ID)
             ->where('studies.display_reference', self::DCM_REFERENCE)
-            ->select('studies.id as study_id', 'studies.capture_set_id', 'studies.object_key as study_object_key', 'studies.checksum as study_checksum', 'studies.bytes as study_bytes', 'studies.display_reference', 'studies.study_instance_uid', 'studies.series_instance_uid', 'studies.sop_instance_uid', 'studies.created_at as study_created_at', 'captures.id as capture_id', 'captures.admission_id', 'captures.booking_id', 'captures.member_schedule_id', 'captures.operator_site_id', 'captures.operator_profile_id', 'captures.status as capture_status', 'captures.accepted_at', 'captures.processing_status', 'captures.attempts', 'captures.processing_claim_id', 'captures.processing_lease_expires_at', 'captures.capture_metadata', 'captures.radiograph_status', 'captures.gain_status', 'captures.manifest_checksum', 'captures.manifest_bytes', 'captures.signature_checksum', 'captures.signature_bytes', 'admissions.id as resolved_admission_id', 'tickets.ticket_number', 'bookings.member_id', 'schedules.examination_site_id', 'sites.operator_site_id as stable_site_id', 'operators.id as operator_id')
+            ->select('studies.id as study_id', 'studies.capture_set_id', 'studies.object_key as study_object_key', 'studies.checksum as study_checksum', 'studies.bytes as study_bytes', 'studies.display_reference', 'studies.study_instance_uid', 'studies.series_instance_uid', 'studies.sop_instance_uid', 'studies.created_at as study_created_at', 'captures.id as capture_id', 'captures.admission_id', 'captures.booking_id', 'captures.member_schedule_id', 'captures.operator_site_id', 'captures.operator_profile_id', 'captures.status as capture_status', 'captures.accepted_at', 'captures.processing_status', 'captures.attempts', 'captures.processing_claim_id', 'captures.processing_lease_expires_at', 'captures.capture_metadata', 'captures.radiograph_status', 'captures.gain_status', 'captures.manifest_checksum', 'captures.manifest_bytes', 'captures.signature_checksum', 'captures.signature_bytes', 'admissions.id as resolved_admission_id', 'admissions.member_schedule_id as admission_schedule_id', 'admissions.operator_site_id as admission_site_id', 'admissions.operator_profile_id as admission_operator_id', 'tickets.ticket_number', 'bookings.member_id', 'schedules.examination_site_id', 'sites.operator_site_id as stable_site_id', 'operators.id as operator_id')
             ->first();
         if ($study === null) {
             throw new RuntimeException('DCM-ZSHNSX90 target could not be resolved exactly.');
@@ -390,6 +390,9 @@ final class ProductionDicomRemediationService
         if (! is_array($examination) || ! is_array($patient) || ! is_array($operator) || ! is_array($site)
             || (string) ($examination['service_request_id'] ?? '') !== (string) ($capture->booking_id ?? '')
             || (string) ($examination['encounter_id'] ?? '') !== (string) ($capture->booking_id ?? '')
+            || (string) ($capture->member_schedule_id ?? '') !== (string) ($capture->admission_schedule_id ?? '')
+            || (string) ($capture->operator_site_id ?? '') !== (string) ($capture->admission_site_id ?? '')
+            || (string) ($capture->operator_profile_id ?? '') !== (string) ($capture->admission_operator_id ?? '')
             || (string) ($patient['member_id'] ?? '') !== (string) ($capture->member_id ?? '')
             || (string) ($operator['operator_id'] ?? '') !== (string) ($capture->operator_id ?? $capture->operator_profile_id ?? '')
             || (string) ($site['site_id'] ?? '') !== (string) ($capture->stable_site_id ?? '')
