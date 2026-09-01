@@ -73,6 +73,10 @@ final class ProductionDicomRemediationService
             return $mode === self::T005_FAILED_CAPTURE_RETRY ? $this->verifyT005() : $this->verifyStudy();
         }
 
+        if ($stage === 'execute' && $mode === self::T005_FAILED_CAPTURE_RETRY && $this->t005AlreadyCompleted()) {
+            return ['mode' => self::T005_FAILED_CAPTURE_RETRY, 'processing' => 'already_completed'];
+        }
+
         $result = $mode === self::T005_FAILED_CAPTURE_RETRY
             ? $this->t005Preflight()
             : $this->studyPreflight();
@@ -109,6 +113,7 @@ final class ProductionDicomRemediationService
         if ($capture === null) {
             throw new RuntimeException('T-005 target could not be resolved exactly.');
         }
+        $this->assertRelationship($capture);
         $metadata = $this->metadata($capture);
         if ($metadata['capture']['detector_type'] !== 'BED' || $capture->accepted_at === null || $capture->processing_status !== 'failed' || $capture->radiograph_status !== 'success' || $capture->gain_status !== 'success' || $capture->processing_claim_id !== null || $capture->processing_lease_expires_at !== null || DB::table('image_gateway_studies')->where('capture_set_id', $capture->id)->exists() || (int) $capture->attempts >= (int) config('mhcs.m'.'pips.max_attempts', 5)) {
             throw new RuntimeException('T-005 is not in the exact eligible failed BED state.');
@@ -137,11 +142,12 @@ final class ProductionDicomRemediationService
             ->join('operator_profiles as operators', 'operators.id', '=', 'captures.operator_profile_id')
             ->where('studies.id', self::DCM_STUDY_ID)
             ->where('studies.display_reference', self::DCM_REFERENCE)
-            ->select('studies.id as study_id', 'studies.capture_set_id', 'studies.object_key as study_object_key', 'studies.checksum as study_checksum', 'studies.bytes as study_bytes', 'studies.display_reference', 'studies.study_instance_uid', 'studies.series_instance_uid', 'studies.sop_instance_uid', 'studies.created_at as study_created_at', 'captures.id as capture_id', 'captures.admission_id', 'captures.booking_id', 'captures.member_schedule_id', 'captures.operator_site_id', 'captures.operator_profile_id', 'captures.status as capture_status', 'captures.accepted_at', 'captures.processing_status', 'captures.attempts', 'captures.processing_claim_id', 'captures.processing_lease_expires_at', 'captures.capture_metadata', 'captures.radiograph_status', 'captures.gain_status', 'captures.manifest_checksum', 'captures.manifest_bytes', 'captures.signature_checksum', 'captures.signature_bytes', 'admissions.id as resolved_admission_id', 'admissions.member_schedule_id as admission_schedule_id', 'admissions.operator_site_id as admission_site_id', 'admissions.operator_profile_id as admission_operator_id', 'tickets.ticket_number', 'bookings.member_id', 'schedules.examination_site_id', 'sites.operator_site_id as stable_site_id', 'operators.id as operator_id')
+            ->select('studies.id as study_id', 'studies.capture_set_id', 'studies.object_key as study_object_key', 'studies.checksum as study_checksum', 'studies.bytes as study_bytes', 'studies.display_reference', 'studies.study_instance_uid', 'studies.series_instance_uid', 'studies.sop_instance_uid', 'studies.created_at as study_created_at', 'captures.id as capture_id', 'captures.admission_id', 'captures.booking_id', 'captures.member_schedule_id', 'captures.operator_site_id', 'captures.operator_profile_id', 'captures.status as capture_status', 'captures.accepted_at', 'captures.processing_status', 'captures.attempts', 'captures.processing_claim_id', 'captures.processing_lease_expires_at', 'captures.capture_metadata', 'captures.radiograph_status', 'captures.gain_status', 'captures.radiograph_checksum', 'captures.gain_checksum', 'captures.manifest_checksum', 'captures.manifest_bytes', 'captures.signature_checksum', 'captures.signature_bytes', 'admissions.id as resolved_admission_id', 'admissions.member_schedule_id as admission_schedule_id', 'admissions.operator_site_id as admission_site_id', 'admissions.operator_profile_id as admission_operator_id', 'tickets.ticket_number', 'bookings.member_id', 'schedules.examination_site_id', 'sites.operator_site_id as stable_site_id', 'operators.id as operator_id')
             ->first();
         if ($study === null) {
             throw new RuntimeException('DCM-ZSHNSX90 target could not be resolved exactly.');
         }
+        $this->assertRelationship($study);
         if ($this->metadata($study)['capture']['detector_type'] !== 'TRX' || $study->accepted_at === null || $study->processing_status !== 'completed') {
             throw new RuntimeException('DCM-ZSHNSX90 is not in the exact eligible TRX completed state.');
         }
@@ -170,11 +176,25 @@ final class ProductionDicomRemediationService
         $capture = DB::table('image_gateway_capture_sets as captures')
             ->join('operator_queue_admissions as admissions', 'admissions.id', '=', 'captures.admission_id')
             ->join('operator_paper_tickets as tickets', 'tickets.id', '=', 'admissions.operator_paper_ticket_id')
+            ->join('bookings', 'bookings.id', '=', 'tickets.booking_id')
+            ->join('shift_schedules as schedules', 'schedules.id', '=', 'captures.member_schedule_id')
+            ->join('operator_sites as sites', 'sites.id', '=', 'captures.operator_site_id')
+            ->join('operator_profiles as operators', 'operators.id', '=', 'captures.operator_profile_id')
             ->where('captures.admission_id', self::T005_ADMISSION_ID)
             ->where('tickets.ticket_number', 'T-005')
-            ->select('captures.*', 'tickets.ticket_number')
+            ->select('captures.*', 'admissions.member_schedule_id as admission_schedule_id', 'admissions.operator_site_id as admission_site_id', 'tickets.ticket_number', 'bookings.member_id', 'sites.operator_site_id as stable_site_id', 'operators.id as operator_id')
             ->first();
-        if ($capture === null || $capture->status !== 'accepted' || $capture->processing_status !== 'completed' || $capture->{'m'.'pips_status'} !== 'success' || $capture->dicom_status !== 'success' || $capture->accepted_at === null || $this->metadata($capture)['capture']['detector_type'] !== 'TRX' || ! DB::table('image_gateway_studies')->where('capture_set_id', $capture->id)->exists()) {
+        if ($capture === null) {
+            throw new RuntimeException('T-005 post-processing verification failed.');
+        }
+        if ($capture->processing_status === 'failed' || $capture->{'m'.'pips_status'} === 'failed' || $capture->dicom_status === 'failed') {
+            throw new RuntimeException('T-005 post-processing reached a terminal failure.');
+        }
+        if ($capture->processing_status !== 'completed' || $capture->{'m'.'pips_status'} !== 'success' || $capture->dicom_status !== 'success') {
+            return ['mode' => self::T005_FAILED_CAPTURE_RETRY, 'verification_status' => 'pending', 'processing_status' => (string) $capture->processing_status];
+        }
+        $this->assertRelationship($capture);
+        if ($capture->status !== 'accepted' || $capture->accepted_at === null || $this->metadata($capture)['capture']['detector_type'] !== 'TRX' || ! DB::table('image_gateway_studies')->where('capture_set_id', $capture->id)->exists()) {
             throw new RuntimeException('T-005 post-processing verification failed.');
         }
         $objects = $this->sourceObjects((string) $capture->id);
@@ -189,7 +209,7 @@ final class ProductionDicomRemediationService
             throw new RuntimeException('T-005 post-processing DICOM verification failed.');
         }
 
-        return ['mode' => self::T005_FAILED_CAPTURE_RETRY, 'capture_id' => (string) $capture->id, 'processing_status' => 'completed', 'study_count' => 1, 'relationship_integrity_verified' => true, 'source_integrity_verified' => true, 'audit_verified' => true];
+        return ['mode' => self::T005_FAILED_CAPTURE_RETRY, 'verification_status' => 'complete', 'capture_id' => (string) $capture->id, 'processing_status' => 'completed', 'study_count' => 1, 'relationship_integrity_verified' => true, 'source_integrity_verified' => true, 'audit_verified' => true];
     }
 
     /** @return array<string, mixed> */
@@ -197,7 +217,7 @@ final class ProductionDicomRemediationService
     {
         $result = $this->studyPreflight();
         $study = $result['study'];
-        if (! DB::table('audit_events')->where('action', 'dcm_zshnsx90_replaced')->where('target_id', $study->id)->exists()) {
+        if (! DB::table('audit_events')->where('action', 'dcm_zshnsx90_replaced')->where('target_id', $study->id)->where('metadata', 'like', '%"replacement_object_key":"'.addslashes((string) $study->object_key).'"%')->where('metadata', 'like', '%"new_object_checksum":"'.addslashes((string) $study->checksum).'"%')->exists()) {
             throw new RuntimeException('DCM-ZSHNSX90 post-processing audit verification failed.');
         }
 
@@ -223,6 +243,9 @@ final class ProductionDicomRemediationService
             DB::transaction(function () use ($capture, $objects, $metadata, $manifestObject, $signatureObject, $manifestBytes, $signatureBytes, $result): void {
                 $row = DB::table('image_gateway_capture_sets')->where('id', $capture->id)->lockForUpdate()->first();
                 $currentObjects = $row === null ? collect() : DB::table('image_gateway_capture_objects')->where('capture_set_id', $row->id)->get()->keyBy('object_type');
+                if ($row !== null) {
+                    $this->assertRelationship($row);
+                }
                 if ($row === null || $row->admission_id !== $capture->admission_id || $row->status !== 'accepted' || ! DB::table('operator_queue_admissions as admissions')->join('operator_paper_tickets as tickets', 'tickets.id', '=', 'admissions.operator_paper_ticket_id')->where('admissions.id', $row->admission_id)->where('tickets.ticket_number', 'T-005')->exists() || $row->processing_status !== 'failed' || $row->accepted_at === null || $row->radiograph_status !== 'success' || $row->gain_status !== 'success' || $row->processing_claim_id !== null || $row->processing_lease_expires_at !== null || (int) $row->attempts !== (int) $capture->attempts || (int) $row->attempts >= (int) config('mhcs.m'.'pips.max_attempts', 5) || $row->radiograph_checksum !== $capture->radiograph_checksum || $row->gain_checksum !== $capture->gain_checksum || $row->manifest_checksum !== $capture->manifest_checksum || $row->manifest_bytes !== $capture->manifest_bytes || $row->signature_checksum !== $capture->signature_checksum || $row->signature_bytes !== $capture->signature_bytes || $this->objectSnapshotChanged($objects, $currentObjects) || $this->metadata($row) !== $result['metadata'] || $this->metadata($row)['capture']['detector_type'] !== 'BED' || DB::table('image_gateway_studies')->where('capture_set_id', $row->id)->exists()) {
                     throw new RuntimeException('T-005 drifted before mutation.');
                 }
@@ -296,7 +319,10 @@ final class ProductionDicomRemediationService
                 $row = DB::table('image_gateway_studies')->where('id', $study->id)->lockForUpdate()->first();
                 $capture = $row === null ? null : DB::table('image_gateway_capture_sets')->where('id', $row->capture_set_id)->lockForUpdate()->first();
                 $currentObjects = $capture === null ? collect() : DB::table('image_gateway_capture_objects')->where('capture_set_id', $capture->id)->get()->keyBy('object_type');
-                if ($row === null || $capture === null || $row->display_reference !== self::DCM_REFERENCE || $row->object_key !== $study->object_key || $row->checksum !== $study->checksum || $row->bytes !== $study->bytes || $capture->id !== $study->capture_id || $this->metadata($capture)['capture']['detector_type'] !== 'TRX' || $this->objectSnapshotChanged($objects, $currentObjects) || DB::table('image_gateway_studies')->where('capture_set_id', $row->capture_set_id)->where('id', '!=', $row->id)->exists()) {
+                if ($capture !== null) {
+                    $this->assertRelationship($capture);
+                }
+                if ($row === null || $capture === null || $row->display_reference !== self::DCM_REFERENCE || $row->object_key !== $study->object_key || $row->checksum !== $study->checksum || $row->bytes !== $study->bytes || $capture->id !== $study->capture_id || $capture->status !== 'accepted' || $capture->processing_status !== 'completed' || $capture->processing_claim_id !== null || $capture->processing_lease_expires_at !== null || $capture->radiograph_checksum !== $study->radiograph_checksum || $capture->gain_checksum !== $study->gain_checksum || $capture->manifest_checksum !== $study->manifest_checksum || $capture->manifest_bytes !== $study->manifest_bytes || $capture->signature_checksum !== $study->signature_checksum || $capture->signature_bytes !== $study->signature_bytes || $this->metadata($capture)['capture']['detector_type'] !== 'TRX' || $this->objectSnapshotChanged($objects, $currentObjects) || DB::table('image_gateway_studies')->where('capture_set_id', $row->capture_set_id)->where('id', '!=', $row->id)->exists()) {
                     throw new RuntimeException('DCM-ZSHNSX90 drifted before replacement.');
                 }
                 DB::table('image_gateway_studies')->where('id', $row->id)->update(['object_key' => (string) $object->key, 'checksum' => $object->checksum, 'bytes' => $object->bytes, 'updated_at' => $this->clock->now()]);
@@ -446,6 +472,30 @@ final class ProductionDicomRemediationService
         }
 
         return false;
+    }
+
+    private function t005AlreadyCompleted(): bool
+    {
+        $capture = DB::table('image_gateway_capture_sets')->where('admission_id', self::T005_ADMISSION_ID)->first();
+
+        return $capture !== null && $capture->processing_status === 'completed' && DB::table('operator_paper_tickets')->where('ticket_number', 'T-005')->where('booking_id', $capture->booking_id)->exists();
+    }
+
+    private function assertRelationship(object $capture): void
+    {
+        $admission = DB::table('operator_queue_admissions')->where('id', $capture->admission_id)->first();
+        $ticket = $admission === null ? null : DB::table('operator_paper_tickets')->where('id', $admission->operator_paper_ticket_id)->first();
+        $booking = DB::table('bookings')->where('id', $capture->booking_id)->first();
+        if ($admission === null || $ticket === null || $booking === null
+            || (string) $capture->booking_id !== (string) $ticket->booking_id
+            || (string) $capture->member_schedule_id !== (string) $ticket->member_schedule_id
+            || (string) $capture->operator_site_id !== (string) $ticket->operator_site_id
+            || (string) $capture->operator_profile_id !== (string) $ticket->operator_profile_id
+            || (string) $capture->member_schedule_id !== (string) $admission->member_schedule_id
+            || (string) $capture->operator_site_id !== (string) $admission->operator_site_id
+            || (string) ($capture->member_id ?? $booking->member_id) !== (string) $booking->member_id) {
+            throw new RuntimeException('Exact remediation relationship graph failed.');
+        }
     }
 
     private function signManifest(object $capture, string $bytes): SignedManifest

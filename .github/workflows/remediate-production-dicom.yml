@@ -92,7 +92,7 @@ jobs:
           mpips_image="$(docker inspect "$mpips_container" --format '{{.Config.Image}}' 2>/dev/null || true)"
           mpips_revision="$(image_revision "$mpips_image")"
           [ "$mpips_revision" = "$EXPECTED_MPIPS_REVISION" ] || { echo 'failure_family=mpips_revision'; exit 1; }
-          mpips_version="$(docker exec "$mpips_container" cat /var/www/mpips-runtime/.mpips-version 2>/dev/null || true)"
+          mpips_version="$(cat /var/www/mpips-runtime/.mpips-version 2>/dev/null || true)"
           [[ "$mpips_version" == "$mpips_revision" ]] || { echo 'failure_family=mpips_version_mismatch'; exit 1; }
           case "$mpips_revision" in
             f2bf7b9980f9af7649e1a6c45c46aaee7a55a36a|e94784db65bb134d43e87a2046037ab4d1cbfe02) ;;
@@ -101,9 +101,24 @@ jobs:
           echo "mpips_revision_verified=$mpips_revision"
           echo "mpips_fix_containment_verified=$REQUIRED_MPIPS_FIX"
 
-          for stage in preflight execute verify; do
+          for stage in preflight execute; do
             docker exec -i \
               -e REMEDIATION_MPIPS_REVISION="$mpips_revision" \
               -e REMEDIATION_MPIPS_FIX="verified-ancestor:$REQUIRED_MPIPS_FIX" \
               "$app_container" php artisan mhcs:remediate-production-dicom "$MODE" --"$stage"
           done
+
+          max_polls=36
+          for ((poll=1; poll<=max_polls; poll++)); do
+            verification="$(docker exec -i \
+              -e REMEDIATION_MPIPS_REVISION="$mpips_revision" \
+              -e REMEDIATION_MPIPS_FIX="verified-ancestor:$REQUIRED_MPIPS_FIX" \
+              "$app_container" php artisan mhcs:remediate-production-dicom "$MODE" --verify)"
+            echo "$verification"
+            if grep -q '^verification_status=complete$' <<<"$verification"; then
+              exit 0
+            fi
+            sleep 5
+          done
+          echo 'failure_family=verification_timeout'
+          exit 1
