@@ -60,7 +60,7 @@ final class ProductionDicomRemediationService
         if (! in_array($stage, ['preflight', 'execute'], true)) {
             throw new RuntimeException('Invalid remediation stage.');
         }
-        if ($runtimeRevision !== self::REQUIRED_RUNTIME_FIX || $runtimeFix !== self::REQUIRED_RUNTIME_FIX) {
+        if (! is_string($runtimeRevision) || preg_match('/\A[0-9a-f]{40}\z/', $runtimeRevision) !== 1 || $runtimeFix !== 'verified-ancestor:'.self::REQUIRED_RUNTIME_FIX) {
             throw new RuntimeException('The serving conversion runtime cannot be proven to contain the required fix.');
         }
 
@@ -171,9 +171,10 @@ final class ProductionDicomRemediationService
         $signatureBytes = json_encode($signed->toArray(), JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
         $signatureObject = $this->objects->put($signatureBytes, $context, self::PURPOSE);
         try {
-            DB::transaction(function () use ($capture, $metadata, $manifestObject, $signatureObject, $manifestBytes, $signatureBytes): void {
+            DB::transaction(function () use ($capture, $objects, $metadata, $manifestObject, $signatureObject, $manifestBytes, $signatureBytes, $result): void {
                 $row = DB::table('image_gateway_capture_sets')->where('id', $capture->id)->lockForUpdate()->first();
-                if ($row === null || $row->processing_status !== 'failed' || $row->processing_claim_id !== null || DB::table('image_gateway_studies')->where('capture_set_id', $row->id)->exists() || $this->metadata($row)['capture']['detector_type'] !== 'BED') {
+                $currentObjects = $row === null ? collect() : DB::table('image_gateway_capture_objects')->where('capture_set_id', $row->id)->get()->keyBy('object_type');
+                if ($row === null || $row->admission_id !== $capture->admission_id || $row->status !== 'accepted' || ! DB::table('operator_queue_admissions as admissions')->join('operator_paper_tickets as tickets', 'tickets.id', '=', 'admissions.operator_paper_ticket_id')->where('admissions.id', $row->admission_id)->where('tickets.ticket_number', 'T-005')->exists() || $row->processing_status !== 'failed' || $row->accepted_at === null || $row->radiograph_status !== 'success' || $row->gain_status !== 'success' || $row->processing_claim_id !== null || $row->processing_lease_expires_at !== null || (int) $row->attempts !== (int) $capture->attempts || (int) $row->attempts >= (int) config('mhcs.m'.'pips.max_attempts', 5) || $row->radiograph_checksum !== $capture->radiograph_checksum || $row->gain_checksum !== $capture->gain_checksum || $row->manifest_checksum !== $capture->manifest_checksum || $row->manifest_bytes !== $capture->manifest_bytes || $row->signature_checksum !== $capture->signature_checksum || $row->signature_bytes !== $capture->signature_bytes || $this->objectSnapshotChanged($objects, $currentObjects) || $this->metadata($row) !== $result['metadata'] || $this->metadata($row)['capture']['detector_type'] !== 'BED' || DB::table('image_gateway_studies')->where('capture_set_id', $row->id)->exists()) {
                     throw new RuntimeException('T-005 drifted before mutation.');
                 }
                 DB::table('image_gateway_capture_sets')->where('id', $row->id)->update([
@@ -196,8 +197,16 @@ final class ProductionDicomRemediationService
         $this->audit('t005_detector_corrected', (string) $capture->id, hash('sha256', json_encode($result['metadata'], JSON_THROW_ON_ERROR)), hash('sha256', json_encode($metadata, JSON_THROW_ON_ERROR)), [
             'mode' => self::T005_FAILED_CAPTURE_RETRY,
             'previous_manifest_checksum' => (string) $objects['manifest']->checksum,
+            'previous_manifest_object_key' => (string) $objects['manifest']->object_key,
+            'previous_manifest_bytes' => (int) $objects['manifest']->bytes,
             'previous_signature_checksum' => (string) $objects['manifest_signature']->checksum,
+            'previous_signature_object_key' => (string) $objects['manifest_signature']->object_key,
+            'previous_signature_bytes' => (int) $objects['manifest_signature']->bytes,
+            'replacement_manifest_object_key' => (string) $manifestObject->key,
+            'replacement_manifest_bytes' => $manifestObject->bytes,
             'replacement_manifest_checksum' => $manifestObject->checksum,
+            'replacement_signature_object_key' => (string) $signatureObject->key,
+            'replacement_signature_bytes' => $signatureObject->bytes,
             'replacement_signature_checksum' => $signatureObject->checksum,
         ]);
 
@@ -213,7 +222,7 @@ final class ProductionDicomRemediationService
         $radiograph = $this->readObject($objects['radiograph'], 'radiograph');
         $gain = $this->readObject($objects['gain'], 'gain');
         $response = $this->converter->convert($radiograph, $gain, $manifestBytes);
-        $candidate = $this->validateDicom($response);
+        $candidate = $this->validateDicom($response, $result['signed']->manifest->conversionJobId);
         $identifiers = $this->uids($candidate['job_id']);
         if ($identifiers !== ['study' => $study->study_instance_uid, 'series' => $study->series_instance_uid, 'sop' => $study->sop_instance_uid]) {
             throw new RuntimeException('Replacement DICOM identifiers do not match the existing study.');
@@ -223,8 +232,8 @@ final class ProductionDicomRemediationService
             new ValidationEvidence(
                 valid: true,
                 conversionJobId: $result['signed']->manifest->conversionJobId,
-                radiographChecksum: $result['signed']->manifest->radiographChecksum,
-                gainChecksum: $result['signed']->manifest->gainChecksum,
+                radiographChecksum: (string) $objects['radiograph']->checksum,
+                gainChecksum: (string) $objects['gain']->checksum,
                 metadataChecksum: hash('sha256', $manifestBytes),
                 manifestSignature: $result['signed']->signature,
                 identifiers: $identifiers,
@@ -234,9 +243,11 @@ final class ProductionDicomRemediationService
         $context = $this->context('dcm-zshnsx90');
         $object = $this->objects->put($candidate['bytes'], $context, self::PURPOSE);
         try {
-            DB::transaction(function () use ($study, $object): void {
+            DB::transaction(function () use ($study, $objects, $object): void {
                 $row = DB::table('image_gateway_studies')->where('id', $study->id)->lockForUpdate()->first();
-                if ($row === null || $row->display_reference !== self::DCM_REFERENCE || $row->object_key !== $study->object_key || DB::table('image_gateway_studies')->where('capture_set_id', $row->capture_set_id)->where('id', '!=', $row->id)->exists()) {
+                $capture = $row === null ? null : DB::table('image_gateway_capture_sets')->where('id', $row->capture_set_id)->lockForUpdate()->first();
+                $currentObjects = $capture === null ? collect() : DB::table('image_gateway_capture_objects')->where('capture_set_id', $capture->id)->get()->keyBy('object_type');
+                if ($row === null || $capture === null || $row->display_reference !== self::DCM_REFERENCE || $row->object_key !== $study->object_key || $row->checksum !== $study->checksum || $row->bytes !== $study->bytes || $capture->id !== $study->capture_id || $this->metadata($capture)['capture']['detector_type'] !== 'TRX' || $this->objectSnapshotChanged($objects, $currentObjects) || DB::table('image_gateway_studies')->where('capture_set_id', $row->capture_set_id)->where('id', '!=', $row->id)->exists()) {
                     throw new RuntimeException('DCM-ZSHNSX90 drifted before replacement.');
                 }
                 DB::table('image_gateway_studies')->where('id', $row->id)->update(['object_key' => (string) $object->key, 'checksum' => $object->checksum, 'bytes' => $object->bytes, 'updated_at' => $this->clock->now()]);
@@ -245,7 +256,17 @@ final class ProductionDicomRemediationService
             $this->objects->delete($object);
             throw $e;
         }
-        $this->audit('dcm_zshnsx90_replaced', (string) $study->id, (string) $study->checksum, $object->checksum, ['mode' => self::DCM_ZSHNSX90_REGENERATE, 'old_object_checksum' => (string) $study->checksum, 'new_object_checksum' => $object->checksum]);
+        $this->audit('dcm_zshnsx90_replaced', (string) $study->id, (string) $study->checksum, $object->checksum, [
+            'mode' => self::DCM_ZSHNSX90_REGENERATE,
+            'logical_study_id' => (string) $study->id,
+            'display_reference' => self::DCM_REFERENCE,
+            'old_object_key' => (string) $study->object_key,
+            'old_object_checksum' => (string) $study->checksum,
+            'old_object_bytes' => (int) $study->bytes,
+            'replacement_object_key' => (string) $object->key,
+            'new_object_checksum' => $object->checksum,
+            'new_object_bytes' => $object->bytes,
+        ]);
 
         return ['mode' => self::DCM_ZSHNSX90_REGENERATE, 'study_id' => (string) $study->id, 'display_reference' => self::DCM_REFERENCE, 'old_object_checksum' => (string) $study->checksum, 'new_object_checksum' => $object->checksum];
     }
@@ -292,11 +313,32 @@ final class ProductionDicomRemediationService
         }
         $signed = SignedManifest::fromArray(json_decode($signatureBytes, true, 512, JSON_THROW_ON_ERROR));
         $this->signer->verify($signed);
+        $manifest = json_decode($manifestBytes, true, 512, JSON_THROW_ON_ERROR);
+        if ($signed->manifest->conversionJobId !== (string) $capture->id) {
+            throw new RuntimeException('Manifest conversion identity failed.');
+        }
+        foreach (['radiograph', 'gain'] as $type) {
+            $authoritative = $type.'_checksum';
+            $actual = (string) $objects[$type]->checksum;
+            if (! is_string($capture->{$authoritative} ?? null) || ! hash_equals($capture->{$authoritative}, $actual) || ! hash_equals($signed->manifest->{$type.'Checksum'}, $actual)) {
+                throw new RuntimeException('Signed source checksum failed.');
+            }
+        }
+        $captureMetadata = $this->metadata($capture);
+        $manifestCapture = $manifest['capture'] ?? null;
+        if (! is_array($manifestCapture) || ($manifestCapture['detector_type'] ?? null) !== ($captureMetadata['capture']['detector_type'] ?? null)) {
+            throw new RuntimeException('Manifest capture metadata failed.');
+        }
+        foreach ($captureMetadata['capture'] as $key => $value) {
+            if (($manifestCapture[$key] ?? null) !== $value) {
+                throw new RuntimeException('Manifest capture metadata failed.');
+            }
+        }
         if (! hash_equals($signed->manifest->metadataChecksum, hash('sha256', $manifestBytes))) {
             throw new RuntimeException('Manifest metadata checksum failed.');
         }
 
-        return [json_decode($manifestBytes, true, 512, JSON_THROW_ON_ERROR), $signed];
+        return [$manifest, $signed];
     }
 
     /** @param array<string, object> $objects */
@@ -304,7 +346,7 @@ final class ProductionDicomRemediationService
     {
         foreach (['radiograph', 'gain'] as $type) {
             $field = $type.'_checksum';
-            if (($capture->{$field} ?? null) !== null && ! hash_equals((string) $capture->{$field}, (string) $objects[$type]->checksum)) {
+            if (! is_string($capture->{$field} ?? null) || ! hash_equals($capture->{$field}, (string) $objects[$type]->checksum)) {
                 throw new RuntimeException('Capture source checksum failed.');
             }
         }
@@ -327,6 +369,20 @@ final class ProductionDicomRemediationService
         DB::table('image_gateway_capture_objects')->where('capture_set_id', $captureId)->where('object_type', $type)->update(['object_key' => (string) $object->key, 'checksum' => $object->checksum, 'bytes' => $object->bytes, 'updated_at' => $object->createdAt]);
     }
 
+    /** @param array<string, object> $expected */
+    private function objectSnapshotChanged(array $expected, mixed $actual): bool
+    {
+        foreach (['radiograph', 'gain', 'manifest', 'manifest_signature'] as $type) {
+            $before = $expected[$type] ?? null;
+            $after = is_object($actual) ? ($actual->{$type} ?? null) : $actual->get($type);
+            if ($before === null || $after === null || (string) $before->object_key !== (string) $after->object_key || (string) $before->checksum !== (string) $after->checksum || (int) $before->bytes !== (int) $after->bytes) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private function signManifest(object $capture, string $bytes): SignedManifest
     {
         $old = $this->readObject(DB::table('image_gateway_capture_objects')->where('capture_set_id', $capture->id)->where('object_type', 'manifest_signature')->first(), 'manifest_signature');
@@ -336,11 +392,12 @@ final class ProductionDicomRemediationService
     }
 
     /** @return array{job_id: string, bytes: string} */
-    private function validateDicom(Response $response): array
+    private function validateDicom(Response $response, string $expectedJobId): array
     {
         $bytes = $response->body();
         $jobId = (string) $response->header('X-Conversion-Job-ID');
-        if (strtolower(trim(explode(';', (string) $response->header('Content-Type'))[0])) !== 'application/dicom' || strlen($bytes) < 132 || substr($bytes, 128, 4) !== 'DICM' || ! Str::isUuid($jobId)) {
+        $correlationId = (string) $response->header('X-Correlation-ID');
+        if (! $response->successful() || strtolower(trim(explode(';', (string) $response->header('Content-Type'))[0])) !== 'application/dicom' || $bytes === '' || strlen($bytes) < 132 || substr($bytes, 128, 4) !== 'DICM' || ! Str::isUuid($jobId) || $jobId !== $expectedJobId || ! Str::isUuid($correlationId)) {
             throw new RuntimeException('Invalid DICOM response.');
         }
 

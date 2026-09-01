@@ -53,4 +53,18 @@ final class ProductionDicomRemediationServiceTest extends TestCase
         $this->expectException(\RuntimeException::class);
         $service->run(ProductionDicomRemediationService::T005_FAILED_CAPTURE_RETRY, 'preflight', 'unknown', ProductionDicomRemediationService::REQUIRED_RUNTIME_FIX);
     }
+
+    public function test_mpips_revision_must_be_a_sha_and_carry_a_verified_ancestor_proof(): void
+    {
+        $service = new ProductionDicomRemediationService(
+            Mockery::mock(PrivateObjectStore::class),
+            Mockery::mock(DicomConverter::class),
+            new ManifestSigner([]),
+            Mockery::mock(AuditStore::class),
+            Mockery::mock(Clock::class),
+        );
+
+        $this->expectException(\RuntimeException::class);
+        $service->run(ProductionDicomRemediationService::T005_FAILED_CAPTURE_RETRY, 'preflight', 'not-a-revision', 'verified-ancestor:'.ProductionDicomRemediationService::REQUIRED_RUNTIME_FIX);
+    }
 }

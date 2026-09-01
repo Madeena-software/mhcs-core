@@ -11,7 +11,7 @@ on:
           - t005_failed_capture_retry
           - dcm_zshnsx90_regenerate
       authorization_marker:
-        description: Type the exact one-time production authorization marker.
+        description: Type the exact deliberate production authorization marker immediately before execution.
         required: true
         type: string
       expected_application_revision:
@@ -19,7 +19,7 @@ on:
         required: true
         type: string
       expected_mpips_revision:
-        description: Exact serving MPIPS revision to require.
+        description: Exact serving MPIPS revision whose immutable source history must contain the required fix.
         required: true
         type: string
 
@@ -59,7 +59,7 @@ jobs:
           [[ "$MODE" == t005_failed_capture_retry || "$MODE" == dcm_zshnsx90_regenerate ]] || { echo 'failure_family=invalid_mode'; exit 1; }
           [[ "$AUTHORIZATION_MARKER" == "$REQUIRED_AUTHORIZATION" ]] || { echo 'failure_family=authorization'; exit 1; }
           [[ "$EXPECTED_APPLICATION_REVISION" =~ ^[0-9a-f]{40}$ ]] || { echo 'failure_family=application_revision'; exit 1; }
-          [[ "$EXPECTED_MPIPS_REVISION" == "$REQUIRED_MPIPS_FIX" ]] || { echo 'failure_family=mpips_revision'; exit 1; }
+          [[ "$EXPECTED_MPIPS_REVISION" =~ ^[0-9a-f]{40}$ ]] || { echo 'failure_family=mpips_revision'; exit 1; }
 
           app_task_id="$(docker service ps "$APP_SERVICE" --filter desired-state=running --no-trunc --format '{{.ID}}' 2>/dev/null | head -n 1 || true)"
           app_container=""
@@ -92,12 +92,13 @@ jobs:
           mpips_image="$(docker inspect "$mpips_container" --format '{{.Config.Image}}' 2>/dev/null || true)"
           mpips_revision="$(image_revision "$mpips_image")"
           [ "$mpips_revision" = "$EXPECTED_MPIPS_REVISION" ] || { echo 'failure_family=mpips_revision'; exit 1; }
+          docker exec "$mpips_container" sh -ceu "git -C /app cat-file -e '$REQUIRED_MPIPS_FIX^{commit}' && git -C /app merge-base --is-ancestor '$REQUIRED_MPIPS_FIX' '$mpips_revision'" || { echo 'failure_family=mpips_fix_containment_unproven'; exit 1; }
           echo "mpips_revision_verified=$mpips_revision"
-          echo "mpips_orientation_fix_required=$REQUIRED_MPIPS_FIX"
+          echo "mpips_fix_containment_verified=$REQUIRED_MPIPS_FIX"
 
           for stage in preflight execute; do
             docker exec -i \
               -e REMEDIATION_MPIPS_REVISION="$mpips_revision" \
-              -e REMEDIATION_MPIPS_FIX="$REQUIRED_MPIPS_FIX" \
+              -e REMEDIATION_MPIPS_FIX="verified-ancestor:$REQUIRED_MPIPS_FIX" \
               "$app_container" php artisan mhcs:remediate-production-dicom "$MODE" --"$stage"
           done
