@@ -68,7 +68,7 @@ final readonly class OperatorCheckInTicketService
     }
 
     /** @return array<string, mixed> */
-    public function issue(string $caseId, string $ticketNumber, string $operationId): array
+    public function issue(string $caseId, string $ticketNumber, string $operationId, bool $bypassBasicExamination = false): array
     {
         [$identity, $site, $case] = $this->matchedCase($caseId);
         $number = trim($ticketNumber) === '' ? null : $this->normalizeTicketNumber($ticketNumber);
@@ -80,6 +80,8 @@ final readonly class OperatorCheckInTicketService
             throw new OperatorException('ticket_assignment_denied', 'The Operator is not assigned to this shift.');
         }
 
+        $this->assertConsentNotWithdrawn($bookingId);
+
         $payload = [
             'case_id' => $caseId,
             'schedule_id' => $scheduleId,
@@ -87,6 +89,7 @@ final readonly class OperatorCheckInTicketService
             'operator_profile_id' => $profileId,
             'operator_site_id' => (string) $site->operator_site_id,
             'ticket_number' => $number,
+            'bypass_basic_examination' => $bypassBasicExamination,
         ];
         $context = $this->context($identity['context'], self::PURPOSE, $caseId);
 
@@ -95,7 +98,7 @@ final readonly class OperatorCheckInTicketService
                 $operationId,
                 self::PURPOSE,
                 $payload,
-                function () use ($context, $site, $profileId, $scheduleId, $bookingId, $caseId, $number, $operationId): array {
+                function () use ($context, $site, $profileId, $scheduleId, $bookingId, $caseId, $number, $operationId, $bypassBasicExamination): array {
                     if ($number === null) {
                         DB::table('shift_schedules')
                             ->where('id', $scheduleId)
@@ -129,31 +132,145 @@ final readonly class OperatorCheckInTicketService
                         'created_at' => $now,
                         'updated_at' => $now,
                     ]);
-                    $queueAdmissionId = (string) Str::uuid();
-                    DB::table('operator_queue_admissions')->insert([
-                        'id' => $queueAdmissionId,
-                        'operator_paper_ticket_id' => $ticketId,
-                        'operator_site_id' => (string) $site->getKey(),
-                        'member_schedule_id' => $memberResult['schedule_id'],
-                        'queue_class' => 'advance',
-                        'stage' => 'basic_examination',
-                        'state' => 'waiting',
-                        'ready_at' => $now,
-                        'created_at' => $now,
-                        'updated_at' => $now,
-                    ]);
-                    DB::table('operator_queue_admission_history')->insert([
-                        'id' => (string) Str::uuid(),
-                        'operator_queue_admission_id' => $queueAdmissionId,
-                        'operator_profile_id' => $profileId,
-                        'event_type' => 'admitted',
-                        'from_state' => null,
-                        'to_state' => 'waiting',
-                        'operation_id' => $operationId,
-                        'occurred_at' => $now,
-                        'created_at' => $now,
-                        'updated_at' => $now,
-                    ]);
+
+                    if ($bypassBasicExamination) {
+                        $queueAdmissionId = (string) Str::uuid();
+                        DB::table('operator_queue_admissions')->insert([
+                            'id' => $queueAdmissionId,
+                            'operator_paper_ticket_id' => $ticketId,
+                            'operator_site_id' => (string) $site->getKey(),
+                            'member_schedule_id' => $memberResult['schedule_id'],
+                            'queue_class' => 'advance',
+                            'stage' => 'basic_examination',
+                            'state' => 'skipped',
+                            'ready_at' => $now,
+                            'created_at' => $now,
+                            'updated_at' => $now,
+                        ]);
+                        DB::table('operator_queue_admission_history')->insert([
+                            'id' => (string) Str::uuid(),
+                            'operator_queue_admission_id' => $queueAdmissionId,
+                            'operator_profile_id' => $profileId,
+                            'event_type' => 'skipped',
+                            'from_state' => null,
+                            'to_state' => 'skipped',
+                            'operation_id' => $operationId,
+                            'occurred_at' => $now,
+                            'created_at' => $now,
+                            'updated_at' => $now,
+                        ]);
+
+                        $xrayAdmissionId = (string) Str::uuid();
+                        DB::table('operator_queue_admissions')->insert([
+                            'id' => $xrayAdmissionId,
+                            'operator_paper_ticket_id' => $ticketId,
+                            'operator_site_id' => (string) $site->getKey(),
+                            'member_schedule_id' => $memberResult['schedule_id'],
+                            'queue_class' => 'advance',
+                            'stage' => 'xray',
+                            'state' => 'waiting',
+                            'ready_at' => $now,
+                            'created_at' => $now,
+                            'updated_at' => $now,
+                        ]);
+                        DB::table('operator_queue_admission_history')->insert([
+                            'id' => (string) Str::uuid(),
+                            'operator_queue_admission_id' => $xrayAdmissionId,
+                            'operator_profile_id' => $profileId,
+                            'event_type' => 'admitted',
+                            'from_state' => null,
+                            'to_state' => 'waiting',
+                            'operation_id' => (string) Str::uuid(),
+                            'occurred_at' => $now,
+                            'created_at' => $now,
+                            'updated_at' => $now,
+                        ]);
+
+                        $this->audit->append(AuditEvent::fromContext(
+                            $context,
+                            'operator.basic-examination.skipped',
+                            'operator',
+                            'success',
+                            $now,
+                            'queue-admission',
+                            $queueAdmissionId,
+                            metadata: [
+                                'ticket_id' => $ticketId,
+                                'ticket_number' => $number,
+                                'schedule_id' => $scheduleId,
+                                'operator_site_id' => $site->operator_site_id,
+                                'operator_id' => $profileId,
+                                'stage' => 'basic_examination',
+                                'state' => 'skipped',
+                                'xray_admission_id' => $xrayAdmissionId,
+                            ],
+                        ));
+                    } else {
+                        $queueAdmissionId = (string) Str::uuid();
+                        DB::table('operator_queue_admissions')->insert([
+                            'id' => $queueAdmissionId,
+                            'operator_paper_ticket_id' => $ticketId,
+                            'operator_site_id' => (string) $site->getKey(),
+                            'member_schedule_id' => $memberResult['schedule_id'],
+                            'queue_class' => 'advance',
+                            'stage' => 'basic_examination',
+                            'state' => 'waiting',
+                            'ready_at' => $now,
+                            'created_at' => $now,
+                            'updated_at' => $now,
+                        ]);
+                        DB::table('operator_queue_admission_history')->insert([
+                            'id' => (string) Str::uuid(),
+                            'operator_queue_admission_id' => $queueAdmissionId,
+                            'operator_profile_id' => $profileId,
+                            'event_type' => 'admitted',
+                            'from_state' => null,
+                            'to_state' => 'waiting',
+                            'operation_id' => $operationId,
+                            'occurred_at' => $now,
+                            'created_at' => $now,
+                            'updated_at' => $now,
+                        ]);
+                        $this->audit->append(AuditEvent::fromContext(
+                            $context,
+                            'operator.queue-admission.created',
+                            'operator',
+                            'success',
+                            $now,
+                            'queue-admission',
+                            $queueAdmissionId,
+                            metadata: [
+                                'ticket_id' => $ticketId,
+                                'ticket_number' => $number,
+                                'schedule_id' => $scheduleId,
+                                'operator_site_id' => $site->operator_site_id,
+                                'queue_class' => 'advance',
+                                'stage' => 'basic_examination',
+                                'state' => 'waiting',
+                                'ready_at_utc' => $now->format(DATE_ATOM),
+                            ],
+                        ));
+                        $this->outbox->record(new VersionedDomainEvent(
+                            LocalId::fromString($queueAdmissionId),
+                            'operator.queue-admission-created',
+                            1,
+                            $now,
+                            [
+                                'queue_admission_id' => $queueAdmissionId,
+                                'ticket_id' => $ticketId,
+                                'ticket_number' => $number,
+                                'schedule_id' => $scheduleId,
+                                'operator_site_id' => $site->operator_site_id,
+                                'queue_class' => 'advance',
+                                'stage' => 'basic_examination',
+                                'state' => 'waiting',
+                                'ready_at' => $now->format(DATE_ATOM),
+                            ],
+                            LocalId::fromString($queueAdmissionId),
+                            $context->operationId,
+                        ));
+                    }
+
                     $this->audit->append(AuditEvent::fromContext(
                         $context,
                         'operator.paper-ticket.issued',
@@ -171,25 +288,6 @@ final readonly class OperatorCheckInTicketService
                             'issued_at_utc' => $now->format(DATE_ATOM),
                         ],
                     ));
-                    $this->audit->append(AuditEvent::fromContext(
-                        $context,
-                        'operator.queue-admission.created',
-                        'operator',
-                        'success',
-                        $now,
-                        'queue-admission',
-                        $queueAdmissionId,
-                        metadata: [
-                            'ticket_id' => $ticketId,
-                            'ticket_number' => $number,
-                            'schedule_id' => $scheduleId,
-                            'operator_site_id' => $site->operator_site_id,
-                            'queue_class' => 'advance',
-                            'stage' => 'basic_examination',
-                            'state' => 'waiting',
-                            'ready_at_utc' => $now->format(DATE_ATOM),
-                        ],
-                    ));
                     $this->outbox->record(new VersionedDomainEvent(
                         LocalId::fromString((string) Str::uuid()),
                         'operator.paper-ticket-issued',
@@ -204,25 +302,6 @@ final readonly class OperatorCheckInTicketService
                             'issued_at' => $now->format(DATE_ATOM),
                         ],
                         LocalId::fromString($ticketId),
-                        $context->operationId,
-                    ));
-                    $this->outbox->record(new VersionedDomainEvent(
-                        LocalId::fromString($queueAdmissionId),
-                        'operator.queue-admission-created',
-                        1,
-                        $now,
-                        [
-                            'queue_admission_id' => $queueAdmissionId,
-                            'ticket_id' => $ticketId,
-                            'ticket_number' => $number,
-                            'schedule_id' => $scheduleId,
-                            'operator_site_id' => $site->operator_site_id,
-                            'queue_class' => 'advance',
-                            'stage' => 'basic_examination',
-                            'state' => 'waiting',
-                            'ready_at' => $now->format(DATE_ATOM),
-                        ],
-                        LocalId::fromString($queueAdmissionId),
                         $context->operationId,
                     ));
 
@@ -458,5 +537,34 @@ final readonly class OperatorCheckInTicketService
             'issued_at' => (string) $ticket->issued_at,
             'status' => 'issued',
         ];
+    }
+
+    private function assertConsentNotWithdrawn(string $bookingId): void
+    {
+        $consent = DB::table('examination_consents')
+            ->where('booking_id', $bookingId)
+            ->first();
+        if ($consent !== null && $consent->status === 'withdrawn') {
+            throw new OperatorException('consent_withdrawn', 'Informed consent has been withdrawn. Paper ticket issue is blocked.');
+        }
+
+        $memberId = DB::table('bookings')->where('id', $bookingId)->value('member_id');
+        if (is_string($memberId)) {
+            $withdrawnMaster = DB::table('member_master_consents')
+                ->where('member_id', $memberId)
+                ->where('status', 'withdrawn')
+                ->orderByDesc('consent_version')
+                ->first();
+            if ($withdrawnMaster !== null) {
+                $hasNewerActive = DB::table('member_master_consents')
+                    ->where('member_id', $memberId)
+                    ->where('status', 'active')
+                    ->where('consent_version', '>', $withdrawnMaster->consent_version)
+                    ->exists();
+                if (! $hasNewerActive) {
+                    throw new OperatorException('consent_withdrawn', 'Informed consent has been withdrawn. Paper ticket issue is blocked.');
+                }
+            }
+        }
     }
 }

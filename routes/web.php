@@ -91,6 +91,16 @@ Route::middleware(['auth', EnsureOperatorPortalAccess::class])->group(function (
     Route::post('/operator/paper-consent/{case}', [OperatorPortalController::class, 'recordPaperConsent'])->name('operator.paper-consent.store');
     Route::get('/operator/check-in/{case}', [OperatorPortalController::class, 'checkInTicket'])->name('operator.check-in.show');
     Route::post('/operator/check-in/{case}', [OperatorPortalController::class, 'issueTicket'])->name('operator.check-in.store');
+    Route::get('/operator/shifts/create', [OperatorPortalController::class, 'createShift'])->name('operator.shifts.create');
+    Route::post('/operator/shifts', [OperatorPortalController::class, 'storeShift'])->name('operator.shifts.store');
+    Route::get('/operator/shifts/{schedule}/members/add', [OperatorPortalController::class, 'searchAndAddMemberView'])->name('operator.shifts.members.add');
+    Route::get('/operator/shifts/{schedule}/members/search', [OperatorPortalController::class, 'searchMembers'])->name('operator.shifts.members.search');
+    Route::post('/operator/shifts/{schedule}/members/add-existing', [OperatorPortalController::class, 'addExistingMemberToShift'])->name('operator.shifts.members.add-existing');
+    Route::get('/operator/shifts/{schedule}/members/register', [OperatorPortalController::class, 'registerMemberView'])->name('operator.shifts.members.register');
+    Route::post('/operator/shifts/{schedule}/members/register', [OperatorPortalController::class, 'registerAndAdmitMember'])->name('operator.shifts.members.register.store');
+    Route::post('/operator/paper-consent/{case}/visit-confirm', [OperatorPortalController::class, 'confirmConsentVisit'])->name('operator.paper-consent.visit-confirm');
+    Route::post('/operator/paper-consent/{case}/withdraw', [OperatorPortalController::class, 'withdrawConsent'])->name('operator.paper-consent.withdraw');
+    Route::post('/operator/basic-examination-worklist/{admission}/bypass', [OperatorPortalController::class, 'bypassBasicExamination'])->name('operator.basic-examination-worklist.bypass');
     Route::get('/operator/paper-tickets/{ticket}', [OperatorPortalController::class, 'ticketResult'])->name('operator.paper-ticket.show');
     Route::get('/operator/paper-tickets/{ticket}/print', [OperatorPortalController::class, 'printTicket'])->name('operator.paper-ticket.print');
     Route::post('/operator/paper-tickets/{ticket}/reprint', [OperatorPortalController::class, 'reprintTicket'])->name('operator.paper-ticket.reprint');

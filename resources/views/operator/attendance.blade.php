@@ -6,6 +6,10 @@
 <section aria-labelledby="attendance-title">
     <h1 id="attendance-title">{{ __('Attendance list') }}</h1>
     <p class="muted">{{ $site->display_name }} · {{ __('Schedule reference') }} <strong>{{ $scheduleDisplayReference ?: __('Identifier withheld') }}</strong> · {{ __(':count eligible members', ['count' => count($rows)]) }}</p>
+    <div style="margin: 16px 0; display: flex; gap: 10px">
+        <a href="{{ route('operator.shifts.members.add', $scheduleId) }}" class="btn">{{ __('+ Add / Search Member for Shift') }}</a>
+        <a href="{{ route('operator.shifts.members.register', $scheduleId) }}" class="btn-secondary">{{ __('+ Register New Member On-the-Spot') }}</a>
+    </div>
     <section class="card" style="margin-top: 18px">
         <div class="table-wrap">
             <table>
