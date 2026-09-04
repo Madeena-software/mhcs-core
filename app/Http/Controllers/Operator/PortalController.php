@@ -22,8 +22,8 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
-use Illuminate\View\View;
 use Illuminate\Support\Str;
+use Illuminate\View\View;
 use Throwable;
 
 final class PortalController extends Controller
@@ -692,32 +692,47 @@ final class PortalController extends Controller
         }
 
         $input = $validator->validated();
-        $isLegacyForm = (string) $input['form_name'] === 'Informed Consent';
 
         try {
-            if ($isLegacyForm) {
-                // Standard legacy paper-consent path: enforces idempotency, audit, and outbox event.
-                $consent->confirm(
-                    $case,
-                    (string) $input['form_name'],
-                    (string) $input['form_version'],
-                    (string) $input['signer_type'],
-                    (bool) $input['signature_confirmed'],
-                    (string) $input['signed_at'],
-                    (string) $input['operation_id'],
-                    $request->file('scan'),
-                );
-            }
+            // Confirm legacy paper consent and record reusable master consent atomically.
+            // A failure in either rolls back the entire state to prevent partial/inconsistent outcomes.
+            DB::transaction(function () use ($consent, $reusableConsent, $case, $input, $request): void {
+                $verificationCase = DB::table('operator_identity_verifications')->where('id', $case)->first();
+                $existingLegacy = $verificationCase !== null
+                    ? DB::table('examination_consents')->where('booking_id', $verificationCase->booking_id)->first()
+                    : null;
 
-            // Reusable versioned master consent — recorded for all form types.
-            $reusableConsent->recordMasterConsent(
-                $case,
-                (string) $input['signer_type'],
-                (string) $input['signed_at'],
-                (string) $input['operation_id'],
-                $request->file('scan'),
-                (string) ($input['consent_scope'] ?? OperatorReusableConsentService::DEFAULT_SCOPE),
-            );
+                $legacyConsentId = $existingLegacy !== null ? (string) $existingLegacy->id : null;
+                if ($existingLegacy === null) {
+                    $legacyFormName = (string) $input['form_name'] === 'Master Screening Consent'
+                        ? 'Informed Consent'
+                        : (string) $input['form_name'];
+
+                    $legacyResult = $consent->confirm(
+                        $case,
+                        $legacyFormName,
+                        (string) $input['form_version'],
+                        (string) $input['signer_type'],
+                        (bool) $input['signature_confirmed'],
+                        (string) $input['signed_at'],
+                        (string) $input['operation_id'],
+                        $request->file('scan'),
+                    );
+                    $legacyConsentId = isset($legacyResult['consent_id']) ? (string) $legacyResult['consent_id'] : null;
+                }
+
+                $reusableConsent->recordMasterConsent(
+                    caseId: $case,
+                    signerType: (string) $input['signer_type'],
+                    signedAt: (string) $input['signed_at'],
+                    operationId: (string) $input['operation_id'],
+                    scan: $request->file('scan'),
+                    screeningScope: (string) ($input['consent_scope'] ?? OperatorReusableConsentService::DEFAULT_SCOPE),
+                    formName: (string) $input['form_name'],
+                    formVersion: (string) $input['form_version'],
+                    legacyConsentId: $legacyConsentId,
+                );
+            });
 
             return redirect()->route('operator.paper-consent.show', $case)->with('status', __('Paper consent confirmed.'));
         } catch (Throwable $exception) {
@@ -762,6 +777,7 @@ final class PortalController extends Controller
         $input = $validator->validated();
         try {
             $reusableConsent->withdrawConsent(
+                $case,
                 (string) $input['master_consent_id'],
                 (string) $input['reason'],
                 (string) $input['operation_id'],
@@ -871,12 +887,25 @@ final class PortalController extends Controller
         }
     }
 
-    public function searchAndAddMemberView(string $schedule, OperatorAuthorization $authorization): View|RedirectResponse
+    public function searchAndAddMemberView(string $schedule, OperatorAuthorization $authorization, OperatorShiftAssignmentService $assignments): View|RedirectResponse
     {
         try {
             $portal = $authorization->portal();
             $activeSite = $authorization->portalSite($portal);
-            $shiftSchedule = DB::table('shift_schedules')->where('id', $schedule)->first();
+            $profileId = (string) $portal['profile']->getKey();
+
+            if (! $assignments->isAssigned($profileId, $schedule, $activeSite->operator_site_id)) {
+                return redirect()->route('operator.eligible-shifts')->withErrors(['shift' => __('The Operator is not assigned to this shift.')]);
+            }
+
+            $shiftSchedule = DB::table('shift_schedules')
+                ->join('examination_site_refs', 'examination_site_refs.id', '=', 'shift_schedules.examination_site_id')
+                ->where('shift_schedules.id', $schedule)
+                ->where('examination_site_refs.operator_site_id', $activeSite->operator_site_id)
+                ->where('examination_site_refs.active', true)
+                ->select('shift_schedules.*')
+                ->first();
+
             if ($shiftSchedule === null) {
                 return redirect()->route('operator.eligible-shifts')->withErrors(['shift' => __('Shift not found.')]);
             }
@@ -893,7 +922,21 @@ final class PortalController extends Controller
     public function searchMembers(Request $request, string $schedule, OperatorFieldOperationsService $fieldOps)
     {
         $query = (string) $request->input('query', $request->input('q', ''));
-        $results = $fieldOps->searchMembers($query);
+        try {
+            $results = $fieldOps->searchMembers($schedule, $query);
+        } catch (OperatorException $exception) {
+            if ($request->wantsJson() || $request->ajax()) {
+                abort(403, __($exception->getMessage()));
+            }
+
+            return redirect()->route('operator.eligible-shifts')->withErrors(['shift' => __($exception->getMessage())]);
+        } catch (Throwable) {
+            if ($request->wantsJson() || $request->ajax()) {
+                abort(403);
+            }
+
+            return redirect()->route('operator.eligible-shifts')->withErrors(['shift' => __('Member search unavailable.')]);
+        }
 
         if ($request->wantsJson() || $request->ajax()) {
             return response()->json($results);
@@ -934,12 +977,25 @@ final class PortalController extends Controller
         }
     }
 
-    public function registerMemberView(string $schedule, OperatorAuthorization $authorization): View|RedirectResponse
+    public function registerMemberView(string $schedule, OperatorAuthorization $authorization, OperatorShiftAssignmentService $assignments): View|RedirectResponse
     {
         try {
             $portal = $authorization->portal();
             $activeSite = $authorization->portalSite($portal);
-            $shiftSchedule = DB::table('shift_schedules')->where('id', $schedule)->first();
+            $profileId = (string) $portal['profile']->getKey();
+
+            if (! $assignments->isAssigned($profileId, $schedule, $activeSite->operator_site_id)) {
+                return redirect()->route('operator.eligible-shifts')->withErrors(['shift' => __('The Operator is not assigned to this shift.')]);
+            }
+
+            $shiftSchedule = DB::table('shift_schedules')
+                ->join('examination_site_refs', 'examination_site_refs.id', '=', 'shift_schedules.examination_site_id')
+                ->where('shift_schedules.id', $schedule)
+                ->where('examination_site_refs.operator_site_id', $activeSite->operator_site_id)
+                ->where('examination_site_refs.active', true)
+                ->select('shift_schedules.*')
+                ->first();
+
             if ($shiftSchedule === null) {
                 return redirect()->route('operator.eligible-shifts')->withErrors(['shift' => __('Shift not found.')]);
             }
@@ -986,10 +1042,25 @@ final class PortalController extends Controller
                 $operationId,
             );
 
-            return redirect()->route('operator.paper-consent.show', $result['case_id'])->with('status', __('Member registered and admitted to shift.'));
+            $statusMessage = ($result['reused_existing_member'] ?? false)
+                ? __('Existing member identity resolved and admitted to shift.')
+                : __('Member registered and admitted to shift.');
+
+            return redirect()->route('operator.paper-consent.show', $result['case_id'])->with('status', $statusMessage);
+        } catch (OperatorException $exception) {
+            logger()->warning('Member field registration rejected', [
+                'category' => $exception->category,
+                'schedule_id' => $schedule,
+            ]);
+
+            return back()->withErrors(['registration' => __($exception->getMessage())])->withInput();
         } catch (Throwable $exception) {
-            logger()->error('Registration failed exception', ['exception' => $exception]);
-            return back()->withErrors(['registration' => $exception->getMessage()])->withInput();
+            logger()->error('Member field registration failed unexpectedly', [
+                'error_type' => get_class($exception),
+                'schedule_id' => $schedule,
+            ]);
+
+            return back()->withErrors(['registration' => __('The member registration could not be completed.')])->withInput();
         }
     }
 

@@ -8,13 +8,11 @@ use App\Modules\Member\Application\Services\MedicalRecordNumberGenerator;
 use App\Modules\Member\Domain\Models\Booking;
 use App\Modules\Member\Domain\Models\Member;
 use App\Modules\Operator\Domain\Models\OperatorEligibleShift;
-use App\Modules\Operator\Domain\Models\OperatorProfile;
 use App\Modules\Operator\Domain\Models\OperatorShiftAssignment;
 use App\Modules\Operator\Domain\Models\OperatorSite;
 use App\Modules\Operator\Domain\OperatorException;
 use App\Shared\Audit\AuditEvent;
 use App\Shared\Audit\AuditStore;
-use App\Shared\Context\AuthenticatedContext;
 use App\Shared\Events\VersionedDomainEvent;
 use App\Shared\Identity\LocalId;
 use App\Shared\Infrastructure\Outbox\OutboxStore;
@@ -22,6 +20,8 @@ use App\Shared\Security\ProtectedIdentifierService;
 use App\Shared\Time\Clock;
 use DateTimeImmutable;
 use DateTimeZone;
+use Illuminate\Database\QueryException;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
@@ -52,7 +52,7 @@ final readonly class OperatorFieldOperationsService
         $site = OperatorSite::query()
             ->where(function ($q) use ($operatorSiteId) {
                 $q->where('operator_site_id', $operatorSiteId)
-                  ->orWhere('id', $operatorSiteId);
+                    ->orWhere('id', $operatorSiteId);
             })
             ->where('active', true)
             ->first();
@@ -198,8 +198,30 @@ final readonly class OperatorFieldOperationsService
     }
 
     /** @return list<array<string, mixed>> */
-    public function searchMembers(string $query): array
+    public function searchMembers(string $scheduleId, string $query): array
     {
+        $portal = $this->authorization->portal();
+        $site = $this->authorization->portalSite($portal);
+        $profileId = (string) $portal['profile']->getKey();
+
+        // 1. Authorize schedule against current operator profile and active site
+        if (! $this->assignments->isAssigned($profileId, $scheduleId, $site->operator_site_id)) {
+            throw new OperatorException('shift_assignment_denied', 'The Operator is not assigned to this shift.');
+        }
+
+        // 2. Fail closed for foreign, inactive, nonexistent, or unauthorized schedules
+        $schedule = DB::table('shift_schedules')
+            ->join('examination_site_refs', 'examination_site_refs.id', '=', 'shift_schedules.examination_site_id')
+            ->where('shift_schedules.id', $scheduleId)
+            ->where('examination_site_refs.operator_site_id', $site->operator_site_id)
+            ->where('examination_site_refs.active', true)
+            ->whereIn('shift_schedules.status', ['open', 'in_progress'])
+            ->first();
+
+        if ($schedule === null) {
+            throw new OperatorException('shift_unavailable', 'The shift schedule is unavailable.');
+        }
+
         $query = trim($query);
         if ($query === '') {
             return [];
@@ -214,13 +236,14 @@ final readonly class OperatorFieldOperationsService
         } else {
             $builder->where(function ($q) use ($query): void {
                 $q->where('medical_record_number', 'like', '%'.$query.'%')
-                    ->orWhere('name', 'like', '%'.$query.'%')
-                    ->orWhere('phone', 'like', '%'.$query.'%');
+                    ->orWhere('name', 'like', '%'.$query.'%');
             });
         }
 
         $results = $builder->limit(20)->get();
 
+        // Minimized response: only fields necessary to identify and select an existing Member.
+        // DO NOT expose phone, affiliation, office location, NIK, or health information!
         return $results->map(function (object $m): array {
             return [
                 'member_id' => (string) $m->id,
@@ -228,9 +251,6 @@ final readonly class OperatorFieldOperationsService
                 'name' => (string) $m->name,
                 'birth_date' => (string) $m->birth_date,
                 'administrative_gender' => (string) $m->administrative_gender,
-                'phone' => (string) ($m->phone ?? ''),
-                'affiliation' => (string) ($m->affiliation ?? ''),
-                'office_location' => (string) ($m->office_location ?? ''),
             ];
         })->all();
     }
@@ -444,7 +464,7 @@ final readonly class OperatorFieldOperationsService
         $digest = $this->identifiers->lookupDigest($nikRaw);
         $now = $this->clock->now();
 
-        $memberId = DB::transaction(function () use ($data, $nikRaw, $digest, $portal, $now): string {
+        $memberResult = DB::transaction(function () use ($data, $nikRaw, $digest, $portal, $site, $scheduleId, $now): array {
             // Deduplication check by NIK digest
             $existingMember = DB::table('members')
                 ->where('nik_lookup_digest', $digest)
@@ -452,17 +472,8 @@ final readonly class OperatorFieldOperationsService
                 ->first();
 
             if ($existingMember !== null) {
-                // Member already exists. Update non-immutable contact and affiliation fields.
-                DB::table('members')->where('id', $existingMember->id)->update([
-                    'name' => trim($data['name']),
-                    'administrative_gender' => trim($data['administrative_gender']),
-                    'phone' => trim($data['phone']),
-                    'birth_date' => trim($data['birth_date']),
-                    'affiliation' => trim($data['affiliation']),
-                    'office_location' => trim($data['office_location']),
-                    'updated_at' => $now,
-                ]);
-
+                // Member already exists.
+                // DO NOT overwrite established identity, demographic, contact, or affiliation data!
                 $this->audit->append(AuditEvent::fromContext(
                     $portal['context'],
                     'operator.member.resolved-existing',
@@ -472,11 +483,16 @@ final readonly class OperatorFieldOperationsService
                     Member::class,
                     (string) $existingMember->id,
                     metadata: [
-                        'medical_record_number' => $existingMember->medical_record_number,
+                        'schedule_id' => $scheduleId,
+                        'operator_site_id' => $site->operator_site_id,
+                        'resolved_existing' => true,
                     ],
                 ));
 
-                return (string) $existingMember->id;
+                return [
+                    'member_id' => (string) $existingMember->id,
+                    'reused_existing_member' => true,
+                ];
             }
 
             // Create new User and Member
@@ -502,25 +518,37 @@ final readonly class OperatorFieldOperationsService
                 'updated_at' => $now,
             ]);
 
-            DB::table('members')->insert([
-                'id' => $memberId,
-                'user_id' => $userId,
-                'family_id' => null,
-                'medical_record_number' => $mrn,
-                'identity_status' => 'verified',
-                'identity_document_type' => 'nik',
-                'encrypted_nik' => $protectedNik['encrypted_display'],
-                'nik_lookup_digest' => $digest,
-                'name' => trim($data['name']),
-                'birth_date' => trim($data['birth_date']),
-                'administrative_gender' => trim($data['administrative_gender']),
-                'registration_source' => 'operator_field',
-                'phone' => trim($data['phone']),
-                'affiliation' => trim($data['affiliation']),
-                'office_location' => trim($data['office_location']),
-                'created_at' => $now,
-                'updated_at' => $now,
-            ]);
+            try {
+                DB::table('members')->insert([
+                    'id' => $memberId,
+                    'user_id' => $userId,
+                    'family_id' => null,
+                    'medical_record_number' => $mrn,
+                    'identity_status' => 'verified',
+                    'identity_document_type' => 'nik',
+                    'encrypted_nik' => $protectedNik['encrypted_display'],
+                    'nik_lookup_digest' => $digest,
+                    'name' => trim($data['name']),
+                    'birth_date' => trim($data['birth_date']),
+                    'administrative_gender' => trim($data['administrative_gender']),
+                    'registration_source' => 'operator_field',
+                    'phone' => trim($data['phone']),
+                    'affiliation' => trim($data['affiliation']),
+                    'office_location' => trim($data['office_location']),
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ]);
+            } catch (UniqueConstraintViolationException|QueryException $e) {
+                // If concurrent registration raced, safely reuse the existing member
+                $racedMember = DB::table('members')->where('nik_lookup_digest', $digest)->first();
+                if ($racedMember !== null) {
+                    return [
+                        'member_id' => (string) $racedMember->id,
+                        'reused_existing_member' => true,
+                    ];
+                }
+                throw $e;
+            }
 
             $this->audit->append(AuditEvent::fromContext(
                 $portal['context'],
@@ -536,11 +564,17 @@ final readonly class OperatorFieldOperationsService
                 ],
             ));
 
-            return $memberId;
+            return [
+                'member_id' => $memberId,
+                'reused_existing_member' => false,
+            ];
         });
 
         // Now admit member directly to shift
-        return $this->addExistingMemberToShift($memberId, $scheduleId, $operationId);
+        $admitResult = $this->addExistingMemberToShift($memberResult['member_id'], $scheduleId, $operationId);
+        $admitResult['reused_existing_member'] = $memberResult['reused_existing_member'];
+
+        return $admitResult;
     }
 
     /** @param array<string, mixed> $data */

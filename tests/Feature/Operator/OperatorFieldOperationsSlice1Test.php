@@ -4,12 +4,9 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Operator;
 
-use App\Models\User;
 use App\Modules\Operator\Application\Services\OperatorArrivalService;
+use App\Modules\Operator\Application\Services\OperatorFieldOperationsService;
 use App\Modules\Operator\Application\Services\OperatorIdentityVerificationService;
-use App\Modules\Operator\Application\Services\OperatorReusableConsentService;
-use App\Shared\Audit\AuditEvent;
-use App\Shared\Audit\AuditStore;
 use App\Shared\Context\AuthenticatedContext;
 use App\Shared\Context\CorrelationId;
 use App\Shared\Identity\LocalId;
@@ -259,14 +256,20 @@ final class OperatorFieldOperationsSlice1Test extends TestCase
         ]);
 
         $response->assertRedirect();
+        $response->assertSessionHas('status', __('Existing member identity resolved and admitted to shift.'));
 
         // No new member row should be inserted
         $this->assertSame($existingMemberBeforeCount, DB::table('members')->count());
 
-        // Affiliation and office location should be updated on the existing member
+        // Every existing Member field and MRN must be preserved without mutation
         $existing = DB::table('members')->where('id', $fixture['memberId'])->first();
-        $this->assertSame('Org X', $existing->affiliation);
-        $this->assertSame('Office Y', $existing->office_location);
+        $this->assertSame('Synthetic Arrival Member', $existing->name);
+        $this->assertSame('unspecified', $existing->administrative_gender);
+        $this->assertSame('1988-01-10', $existing->birth_date);
+        $this->assertNull($existing->phone);
+        $this->assertNull($existing->affiliation);
+        $this->assertNull($existing->office_location);
+        $this->assertSame('MRN-'.substr($fixture['memberId'], 0, 8), $existing->medical_record_number);
     }
 
     public function test_reusable_master_informed_consent_and_lightweight_visit_confirmation(): void
@@ -304,7 +307,7 @@ final class OperatorFieldOperationsSlice1Test extends TestCase
         $this->assertNotNull($projected1);
 
         // 2. Second Visit for the SAME Member (different shift & verification case)
-        $shift2 = app(\App\Modules\Operator\Application\Services\OperatorFieldOperationsService::class)->createShift(
+        $shift2 = app(OperatorFieldOperationsService::class)->createShift(
             operatorSiteId: (string) $fixture['siteLocalId'],
             startsAt: '2040-06-02 08:00:00',
             endsAt: '2040-06-02 12:00:00',
@@ -312,7 +315,7 @@ final class OperatorFieldOperationsSlice1Test extends TestCase
         );
         $scheduleId2 = $shift2['schedule_id'];
 
-        $admitResult = app(\App\Modules\Operator\Application\Services\OperatorFieldOperationsService::class)->addExistingMemberToShift(
+        $admitResult = app(OperatorFieldOperationsService::class)->addExistingMemberToShift(
             $fixture['memberId'],
             $scheduleId2,
             (string) Str::uuid(),
@@ -566,11 +569,412 @@ final class OperatorFieldOperationsSlice1Test extends TestCase
         $this->assertSame('waiting', $xrayAdmissions->first()->state);
     }
 
-    /** @return array<string, mixed> */
-    private function matchedFixture(): array
+    public function test_consent_withdrawal_rejects_cross_member_cross_site_and_unassigned_shift(): void
     {
-        $fixture = $this->operatorFixture(false);
-        $this->makeMemberDigestUnique($fixture);
+        $fixture1 = $this->matchedFixture();
+        $this->startOperatorSession($fixture1);
+
+        // Record master consent for fixture 1
+        $plainPdf = "%PDF-1.7\nsynthetic master consent\n%%EOF";
+        $this->post(route('operator.paper-consent.store', $fixture1['caseId']), [
+            'form_name' => 'Master Screening Consent',
+            'form_version' => 'V1',
+            'signer_type' => 'member',
+            'signature_confirmed' => '1',
+            'signed_at' => '2040-01-10',
+            'operation_id' => (string) Str::uuid(),
+            'is_master_consent' => '1',
+            'consent_scope' => 'general_screening_radiography',
+            'scan' => UploadedFile::fake()->createWithContent('master-consent.pdf', $plainPdf),
+        ])->assertRedirect();
+
+        $master1 = DB::table('member_master_consents')
+            ->where('member_id', $fixture1['memberId'])
+            ->first();
+        $this->assertNotNull($master1);
+
+        // Create fixture 2 for a different member
+        $fixture2 = $this->matchedFixture('900000000002');
+
+        // 1. Cross-member withdrawal attempt: using fixture 2's case to withdraw master 1
+        $this->startOperatorSession($fixture2);
+        $crossMemberResponse = $this->post(route('operator.paper-consent.withdraw', $fixture2['caseId']), [
+            'operation_id' => (string) Str::uuid(),
+            'master_consent_id' => $master1->id,
+            'reason' => 'Malicious cross-member withdrawal attempt',
+        ]);
+        $crossMemberResponse->assertRedirect();
+        $crossMemberResponse->assertSessionHasErrors(['consent']);
+        $this->assertSame('active', DB::table('member_master_consents')->where('id', $master1->id)->value('status'));
+
+        // 2. Nonexistent consent ID attempt
+        $nonexistentResponse = $this->post(route('operator.paper-consent.withdraw', $fixture1['caseId']), [
+            'operation_id' => (string) Str::uuid(),
+            'master_consent_id' => (string) Str::uuid(),
+            'reason' => 'Nonexistent consent ID attempt',
+        ]);
+        $nonexistentResponse->assertRedirect();
+        $nonexistentResponse->assertSessionHasErrors(['consent']);
+
+        // 3. Authorized withdrawal succeeds
+        $this->startOperatorSession($fixture1);
+        $opId = (string) Str::uuid();
+        $authResponse = $this->post(route('operator.paper-consent.withdraw', $fixture1['caseId']), [
+            'operation_id' => $opId,
+            'master_consent_id' => $master1->id,
+            'reason' => 'Valid patient withdrawal',
+        ]);
+        $authResponse->assertRedirect();
+        $authResponse->assertSessionHas('status', __('Informed consent has been withdrawn.'));
+        $this->assertSame('withdrawn', DB::table('member_master_consents')->where('id', $master1->id)->value('status'));
+
+        // 4. Idempotent retry of the exact same authorized withdrawal returns success
+        $retryResponse = $this->post(route('operator.paper-consent.withdraw', $fixture1['caseId']), [
+            'operation_id' => $opId,
+            'master_consent_id' => $master1->id,
+            'reason' => 'Valid patient withdrawal',
+        ]);
+        $retryResponse->assertRedirect();
+        $this->assertSame('withdrawn', DB::table('member_master_consents')->where('id', $master1->id)->value('status'));
+
+        // 5. Verify audit log contains NO PII (no NIK or member name)
+        $audit = DB::table('audit_events')
+            ->where('action', 'operator.consent.withdrawn')
+            ->latest('occurred_at')
+            ->first();
+        $this->assertNotNull($audit);
+        $this->assertSame('success', $audit->outcome);
+        $this->assertStringNotContainsString('900000000001', (string) $audit->metadata);
+        $this->assertStringNotContainsString('Synthetic Arrival', (string) $audit->metadata);
+    }
+
+    public function test_schedule_bound_member_search_authorization_and_response_minimization(): void
+    {
+        $fixture = $this->operatorFixture();
+        $this->startOperatorSession($fixture);
+
+        // 1. Authorized JSON search returns minimized attributes and strips forbidden PII
+        $jsonResponse = $this->getJson(route('operator.shifts.members.search', [
+            'schedule' => $fixture['scheduleId'],
+            'query' => 'Synthetic Arrival',
+        ]));
+        $jsonResponse->assertOk();
+        $data = $jsonResponse->json();
+        $this->assertIsArray($data);
+        $this->assertNotEmpty($data);
+
+        $first = $data[0];
+        $this->assertArrayHasKey('member_id', $first);
+        $this->assertArrayHasKey('medical_record_number', $first);
+        $this->assertArrayHasKey('name', $first);
+        $this->assertArrayHasKey('birth_date', $first);
+        $this->assertArrayHasKey('administrative_gender', $first);
+
+        // Strict data minimization: phone, affiliation, office location, and NIK must NOT be in the response
+        $this->assertArrayNotHasKey('phone', $first);
+        $this->assertArrayNotHasKey('affiliation', $first);
+        $this->assertArrayNotHasKey('office_location', $first);
+        $this->assertArrayNotHasKey('nik', $first);
+        $this->assertArrayNotHasKey('encrypted_nik', $first);
+        $this->assertArrayNotHasKey('nik_lookup_digest', $first);
+
+        // 2. Authorized HTML search does not contain phone or affiliation table headers
+        $htmlResponse = $this->get(route('operator.shifts.members.search', [
+            'schedule' => $fixture['scheduleId'],
+            'query' => 'Synthetic Arrival',
+        ]));
+        $htmlResponse->assertOk();
+        $htmlResponse->assertSee('Synthetic Arrival Member');
+        $htmlResponse->assertDontSee('<th>Phone</th>', false);
+        $htmlResponse->assertDontSee('<th>Affiliation</th>', false);
+
+        // 3. Unauthorized search (schedule from different site / unassigned operator) must fail closed
+        $unassignedScheduleId = (string) Str::uuid();
+        $unassignedResponse = $this->get(route('operator.shifts.members.search', [
+            'schedule' => $unassignedScheduleId,
+            'query' => 'Synthetic Arrival',
+        ]));
+        $unassignedResponse->assertRedirect(route('operator.eligible-shifts'));
+        $unassignedResponse->assertSessionHasErrors(['shift']);
+
+        $unassignedJsonResponse = $this->getJson(route('operator.shifts.members.search', [
+            'schedule' => $unassignedScheduleId,
+            'query' => 'Synthetic Arrival',
+        ]));
+        $unassignedJsonResponse->assertForbidden();
+    }
+
+    public function test_concurrent_duplicate_nik_registration_recovers_and_preserves_identity(): void
+    {
+        $fixture = $this->operatorFixture();
+        $this->startOperatorSession($fixture);
+
+        // Existing member is in the fixture ('900000000001')
+        $existing = DB::table('members')->where('id', $fixture['memberId'])->first();
+        $this->assertNotNull($existing);
+
+        $fieldOps = app(OperatorFieldOperationsService::class);
+        $result = $fieldOps->registerAndAdmitMember(
+            [
+                'name' => 'Concurrent Racer Name',
+                'administrative_gender' => 'female',
+                'nik' => '900000000001',
+                'birth_date' => '1995-05-05',
+                'phone' => '0899998888',
+                'affiliation' => 'Concurrent Org',
+                'office_location' => 'Concurrent Loc',
+            ],
+            $fixture['scheduleId'],
+            (string) Str::uuid(),
+        );
+
+        $this->assertTrue($result['reused_existing_member']);
+        $this->assertSame($fixture['memberId'], $result['member_id']);
+
+        // Assert all existing fields preserved
+        $preserved = DB::table('members')->where('id', $fixture['memberId'])->first();
+        $this->assertSame($existing->name, $preserved->name);
+        $this->assertSame($existing->administrative_gender, $preserved->administrative_gender);
+        $this->assertSame($existing->birth_date, $preserved->birth_date);
+        $this->assertSame($existing->phone, $preserved->phone);
+        $this->assertSame($existing->affiliation, $preserved->affiliation);
+        $this->assertSame($existing->medical_record_number, $preserved->medical_record_number);
+    }
+
+    public function test_master_consent_private_evidence_persistence_and_binding(): void
+    {
+        $fixture = $this->matchedFixture();
+        $this->startOperatorSession($fixture);
+
+        $pdfBytes = "%PDF-1.7\nsynthetic signed evidence\n%%EOF";
+        $operationId = (string) Str::uuid();
+
+        $response = $this->post(route('operator.paper-consent.store', $fixture['caseId']), [
+            'form_name' => 'Informed Consent',
+            'form_version' => 'V1',
+            'signer_type' => 'member',
+            'signature_confirmed' => '1',
+            'signed_at' => '2040-01-10',
+            'operation_id' => $operationId,
+            'is_master_consent' => '1',
+            'consent_scope' => 'general_screening_radiography',
+            'scan' => UploadedFile::fake()->createWithContent('signed-consent.pdf', $pdfBytes),
+        ]);
+        $response->assertRedirect();
+
+        $master = DB::table('member_master_consents')
+            ->where('member_id', $fixture['memberId'])
+            ->first();
+        $this->assertNotNull($master);
+
+        // Verification of private object store persistence and binding
+        $this->assertNotNull($master->examination_consent_id);
+        $this->assertNotNull($master->private_scan_object_key);
+        $this->assertNotNull($master->private_scan_checksum);
+        $this->assertSame(strlen($pdfBytes), (int) $master->private_scan_bytes);
+        $this->assertSame('application/pdf', $master->private_scan_format);
+
+        // Linked examination_consent must match
+        $examConsent = DB::table('examination_consents')->where('id', $master->examination_consent_id)->first();
+        $this->assertNotNull($examConsent);
+        $this->assertSame($master->private_scan_object_key, $examConsent->private_scan_object_key);
+        $this->assertSame($master->private_scan_checksum, $examConsent->private_scan_checksum);
+
+        // Evidence exists in private object store
+        Storage::disk('local')->assertExists($master->private_scan_object_key);
+    }
+
+    public function test_invalid_form_identity_rejects_with_zero_side_effects(): void
+    {
+        $fixture = $this->matchedFixture();
+        $this->startOperatorSession($fixture);
+
+        $initialMasterCount = DB::table('member_master_consents')->count();
+        $initialExamCount = DB::table('examination_consents')->count();
+
+        // Reject invalid form name
+        $response = $this->post(route('operator.paper-consent.store', $fixture['caseId']), [
+            'form_name' => 'Invalid Clinical Form',
+            'form_version' => 'V1',
+            'signer_type' => 'member',
+            'signature_confirmed' => '1',
+            'signed_at' => '2040-01-10',
+            'operation_id' => (string) Str::uuid(),
+            'scan' => UploadedFile::fake()->createWithContent('signed.pdf', "%PDF-1.7\n%%EOF"),
+        ]);
+        $response->assertRedirect();
+        $response->assertSessionHasErrors(['form_name']);
+
+        // Zero side effects
+        $this->assertSame($initialMasterCount, DB::table('member_master_consents')->count());
+        $this->assertSame($initialExamCount, DB::table('examination_consents')->count());
+    }
+
+    public function test_atomic_legacy_and_master_consent_handling_rolls_back_on_failure(): void
+    {
+        $fixture = $this->matchedFixture();
+        $this->startOperatorSession($fixture);
+
+        $initialLegacyCount = DB::table('examination_consents')->count();
+        $initialMasterCount = DB::table('member_master_consents')->count();
+
+        // Form version V99 passes controller input validator but fails reusable master consent approved forms check
+        $response = $this->post(route('operator.paper-consent.store', $fixture['caseId']), [
+            'form_name' => 'Informed Consent',
+            'form_version' => 'V99',
+            'signer_type' => 'member',
+            'signature_confirmed' => '1',
+            'signed_at' => '2040-01-10',
+            'operation_id' => (string) Str::uuid(),
+            'is_master_consent' => '1',
+            'scan' => UploadedFile::fake()->createWithContent('signed.pdf', "%PDF-1.7\n%%EOF"),
+        ]);
+
+        $response->assertRedirect();
+        $response->assertSessionHasErrors(['consent']);
+
+        // Atomic transaction rolled back: zero rows inserted in either table
+        $this->assertSame($initialLegacyCount, DB::table('examination_consents')->count());
+        $this->assertSame($initialMasterCount, DB::table('member_master_consents')->count());
+    }
+
+    public function test_repeated_consent_operation_idempotency(): void
+    {
+        $fixture = $this->matchedFixture();
+        $this->startOperatorSession($fixture);
+
+        $operationId = (string) Str::uuid();
+        $plainPdf = "%PDF-1.7\nsynthetic\n%%EOF";
+
+        // First attempt
+        $res1 = $this->post(route('operator.paper-consent.store', $fixture['caseId']), [
+            'form_name' => 'Informed Consent',
+            'form_version' => 'V1',
+            'signer_type' => 'member',
+            'signature_confirmed' => '1',
+            'signed_at' => '2040-01-10',
+            'operation_id' => $operationId,
+            'is_master_consent' => '1',
+            'consent_scope' => 'general_screening_radiography',
+            'scan' => UploadedFile::fake()->createWithContent('signed.pdf', $plainPdf),
+        ]);
+        $res1->assertRedirect();
+
+        $masterCount1 = DB::table('member_master_consents')->where('member_id', $fixture['memberId'])->count();
+        $this->assertSame(1, $masterCount1);
+
+        // Repeated request with same operation ID
+        $res2 = $this->post(route('operator.paper-consent.store', $fixture['caseId']), [
+            'form_name' => 'Informed Consent',
+            'form_version' => 'V1',
+            'signer_type' => 'member',
+            'signature_confirmed' => '1',
+            'signed_at' => '2040-01-10',
+            'operation_id' => $operationId,
+            'is_master_consent' => '1',
+            'consent_scope' => 'general_screening_radiography',
+            'scan' => UploadedFile::fake()->createWithContent('signed.pdf', $plainPdf),
+        ]);
+        $res2->assertRedirect();
+
+        // Idempotency ensures no duplicate master consent is created
+        $masterCount2 = DB::table('member_master_consents')->where('member_id', $fixture['memberId'])->count();
+        $this->assertSame(1, $masterCount2);
+    }
+
+    public function test_new_consent_version_during_same_booking_updates_visit_confirmation(): void
+    {
+        $fixture = $this->matchedFixture();
+        $this->startOperatorSession($fixture);
+
+        // 1. Initial consent V1 on visit 1
+        $this->post(route('operator.paper-consent.store', $fixture['caseId']), [
+            'form_name' => 'Informed Consent',
+            'form_version' => 'V1',
+            'signer_type' => 'member',
+            'signature_confirmed' => '1',
+            'signed_at' => '2040-01-10',
+            'operation_id' => (string) Str::uuid(),
+            'is_master_consent' => '1',
+            'consent_scope' => 'general_screening_radiography',
+            'scan' => UploadedFile::fake()->createWithContent('v1.pdf', "%PDF-1.7\nv1\n%%EOF"),
+        ])->assertRedirect();
+
+        $v1 = DB::table('member_master_consents')->where('member_id', $fixture['memberId'])->where('status', 'active')->first();
+        $this->assertNotNull($v1);
+        $this->assertSame(1, (int) $v1->consent_version);
+
+        // 2. Member attends a second shift (visit 2)
+        $shift2 = app(OperatorFieldOperationsService::class)->createShift(
+            operatorSiteId: (string) $fixture['siteLocalId'],
+            startsAt: '2040-06-02 08:00:00',
+            endsAt: '2040-06-02 12:00:00',
+            quota: 10,
+        );
+        $admitResult = app(OperatorFieldOperationsService::class)->addExistingMemberToShift(
+            $fixture['memberId'],
+            $shift2['schedule_id'],
+            (string) Str::uuid(),
+        );
+        $case2Id = $admitResult['case_id'];
+        $booking2Id = $admitResult['booking_id'];
+
+        // Confirm visit initially referencing reusable consent V1
+        $this->post(route('operator.paper-consent.visit-confirm', $case2Id), [
+            'operation_id' => (string) Str::uuid(),
+        ])->assertRedirect();
+
+        $initialConfirmation = DB::table('consent_visit_confirmations')->where('booking_id', $booking2Id)->first();
+        $this->assertNotNull($initialConfirmation);
+        $this->assertSame($v1->id, $initialConfirmation->member_master_consent_id);
+
+        // 3. Later during that SAME booking 2, a new master consent V2 is recorded
+        $this->post(route('operator.paper-consent.store', $case2Id), [
+            'form_name' => 'Informed Consent',
+            'form_version' => 'V1',
+            'signer_type' => 'member',
+            'signature_confirmed' => '1',
+            'signed_at' => '2040-01-11',
+            'operation_id' => (string) Str::uuid(),
+            'is_master_consent' => '1',
+            'consent_scope' => 'general_screening_radiography',
+            'scan' => UploadedFile::fake()->createWithContent('v2.pdf', "%PDF-1.7\nv2\n%%EOF"),
+        ])->assertRedirect();
+
+        $v2 = DB::table('member_master_consents')->where('member_id', $fixture['memberId'])->where('status', 'active')->first();
+        $this->assertNotNull($v2);
+        $this->assertSame(2, (int) $v2->consent_version);
+        $this->assertNotSame($v1->id, $v2->id);
+
+        // Visit confirmation must be updated to point to V2 without duplicate row or unique constraint violation
+        $confirmations = DB::table('consent_visit_confirmations')->where('booking_id', $booking2Id)->get();
+        $this->assertCount(1, $confirmations);
+        $this->assertSame($v2->id, $confirmations->first()->member_master_consent_id);
+    }
+
+    public function test_safe_browser_errors_and_sanitized_logging_on_registration_failure(): void
+    {
+        $fixture = $this->operatorFixture();
+        $this->startOperatorSession($fixture);
+
+        // Post invalid data missing required fields
+        $response = $this->post(route('operator.shifts.members.register.store', $fixture['scheduleId']), [
+            'name' => 'Test',
+            'administrative_gender' => 'invalid_gender',
+            'nik' => '123', // too short
+        ]);
+
+        $response->assertSessionHasErrors(['administrative_gender', 'nik', 'birth_date', 'phone', 'affiliation', 'office_location']);
+
+        // Ensure no raw SQL or DB exception is in session
+        $this->assertNull(session('error'));
+    }
+
+    /** @return array<string, mixed> */
+    private function matchedFixture(string $nik = '900000000001'): array
+    {
+        $fixture = $this->operatorFixture(false, $nik);
+        $this->makeMemberDigestUnique($fixture, $nik);
         $this->grantIdentityPermission($fixture);
         $this->insertIdentityAssets($fixture);
         $this->startOperatorSession($fixture);
@@ -615,9 +1019,9 @@ final class OperatorFieldOperationsSlice1Test extends TestCase
     }
 
     /** @param array<string, mixed> $fixture */
-    private function makeMemberDigestUnique(array $fixture): void
+    private function makeMemberDigestUnique(array $fixture, string $nik = '900000000001'): void
     {
-        $protected = app(ProtectedIdentifierService::class)->protect('900000000001');
+        $protected = app(ProtectedIdentifierService::class)->protect($nik);
         DB::table('members')->where('id', $fixture['memberId'])->update([
             'encrypted_nik' => $protected['encrypted_display'],
             'nik_lookup_digest' => $protected['lookup_digest'],
