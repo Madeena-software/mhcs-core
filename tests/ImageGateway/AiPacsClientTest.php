@@ -117,34 +117,120 @@ final class AiPacsClientTest extends TestCase
         }
     }
 
-    public function test_upload_study_success(): void
+    public function test_raw_authorization_header_without_bearer(): void
     {
         Http::fake([
-            "{$this->baseUrl}/api/v1/studies" => Http::response([
+            "{$this->baseUrl}/api/v1/studies*" => Http::response([
                 'code' => 0,
-                'message' => 'success',
+                'data' => ['list' => []],
+            ], 200),
+        ]);
+
+        $session = new AiPacsSession(token: 'raw-secret-jwt-token-999');
+        $this->client->findStudyByAccession('ACC-1234', $session);
+
+        Http::assertSent(function ($request) {
+            $authHeader = $request->header('Authorization')[0] ?? '';
+            return $authHeader === 'raw-secret-jwt-token-999'
+                && ! str_starts_with($authHeader, 'Bearer ');
+        });
+    }
+
+    public function test_upload_study_targets_correct_route(): void
+    {
+        Http::fake([
+            "{$this->baseUrl}/api/v1/study/upload" => Http::response([
+                'code' => 0,
+                'message' => '请求成功',
+                'data' => ['failNum' => 0, 'successNum' => 1, 'sid' => 121, 'aiCalcId' => 124],
+            ], 200),
+        ]);
+
+        $session = new AiPacsSession(token: 'mock-token');
+        $this->client->uploadStudy('fake-dicom-bytes', 'bypass.dcm', $session);
+
+        Http::assertSent(function ($request) {
+            return $request->url() === "{$this->baseUrl}/api/v1/study/upload";
+        });
+        Http::assertNotSent(function ($request) {
+            return $request->url() === "{$this->baseUrl}/api/v1/studies";
+        });
+    }
+
+    public function test_upload_study_uses_multipart_field_files(): void
+    {
+        Http::fake([
+            "{$this->baseUrl}/api/v1/study/upload" => Http::response([
+                'code' => 0,
+                'data' => ['failNum' => 0, 'successNum' => 1, 'sid' => 121, 'aiCalcId' => 124],
+            ], 200),
+        ]);
+
+        $session = new AiPacsSession(token: 'mock-token');
+        $this->client->uploadStudy('DICOM_PAYLOAD_123', 'bypass.dcm', $session);
+
+        Http::assertSent(function ($request) {
+            $body = (string) $request->body();
+            return str_contains($body, 'name="files"')
+                && str_contains($body, 'filename="bypass.dcm"')
+                && str_contains($body, 'Content-Type: application/dicom')
+                && ! str_contains($body, 'name="file";');
+        });
+    }
+
+    public function test_upload_study_has_fixed_content_length(): void
+    {
+        Http::fake([
+            "{$this->baseUrl}/api/v1/study/upload" => Http::response([
+                'code' => 0,
+                'data' => ['failNum' => 0, 'successNum' => 1, 'sid' => 121, 'aiCalcId' => 124],
+            ], 200),
+        ]);
+
+        $session = new AiPacsSession(token: 'mock-token');
+        $this->client->uploadStudy('DICOM_PAYLOAD_123456789', 'bypass.dcm', $session);
+
+        Http::assertSent(function ($request) {
+            $hasLength = $request->hasHeader('Content-Length');
+            $length = (int) ($request->header('Content-Length')[0] ?? 0);
+            $hasChunked = in_array('chunked', $request->header('Transfer-Encoding') ?? [], true);
+            return $hasLength && $length > 0 && ! $hasChunked;
+        });
+    }
+
+    public function test_upload_study_success_with_success_num_one(): void
+    {
+        Http::fake([
+            "{$this->baseUrl}/api/v1/study/upload" => Http::response([
+                'code' => 0,
+                'message' => '请求成功',
                 'data' => [
-                    'sid' => 12345,
-                    'aiCalcId' => 67890,
-                    'status' => 'uploaded',
+                    'failNum' => 0,
+                    'successNum' => 1,
+                    'sid' => 121,
+                    'aiCalcId' => 124,
                 ],
             ], 200),
         ]);
 
         $session = new AiPacsSession(token: 'mock-token');
-        $result = $this->client->uploadStudy('fake-dicom-bytes', 'test.dcm', $session);
+        $result = $this->client->uploadStudy('fake-dicom-bytes', 'bypass.dcm', $session);
 
-        $this->assertSame(12345, $result->studyIdentifier);
-        $this->assertSame(67890, $result->aiCalcId);
+        $this->assertSame(121, $result->studyIdentifier);
+        $this->assertSame(124, $result->aiCalcId);
         $this->assertSame('uploaded', $result->rawStatus);
     }
 
-    public function test_upload_study_failure(): void
+    public function test_upload_study_rejection_when_fail_num_greater_than_zero(): void
     {
         Http::fake([
-            "{$this->baseUrl}/api/v1/studies" => Http::response([
-                'code' => 5001,
-                'message' => 'corrupt dicom format',
+            "{$this->baseUrl}/api/v1/study/upload" => Http::response([
+                'code' => 0,
+                'message' => '部分失败',
+                'data' => [
+                    'failNum' => 1,
+                    'successNum' => 0,
+                ],
             ], 200),
         ]);
 
@@ -152,16 +238,16 @@ final class AiPacsClientTest extends TestCase
 
         try {
             $this->client->uploadStudy('invalid-bytes', 'test.dcm', $session);
-            $this->fail('Expected ImageGatewayException on upload rejection');
+            $this->fail('Expected ImageGatewayException on failNum > 0');
         } catch (ImageGatewayException $exception) {
             $this->assertSame(AiErrorCode::AI_PACS_UPLOAD_FAILED, $exception->category);
         }
     }
 
-    public function test_upload_study_timeout(): void
+    public function test_upload_study_timeout_is_retryable(): void
     {
         Http::fake([
-            "{$this->baseUrl}/api/v1/studies" => fn () => throw new ConnectionException('Upload connection timed out'),
+            "{$this->baseUrl}/api/v1/study/upload" => fn () => throw new ConnectionException('Upload connection timed out'),
         ]);
 
         $session = new AiPacsSession(token: 'mock-token');
@@ -171,6 +257,99 @@ final class AiPacsClientTest extends TestCase
             $this->fail('Expected ImageGatewayException on upload timeout');
         } catch (ImageGatewayException $exception) {
             $this->assertSame(AiErrorCode::AI_PACS_TIMEOUT, $exception->category);
+        }
+    }
+
+    public function test_reconciliation_after_ambiguous_timeout(): void
+    {
+        Http::fake([
+            "{$this->baseUrl}/api/v1/studies*" => Http::response([
+                'code' => 0,
+                'data' => [
+                    'total' => 1,
+                    'list' => [
+                        [
+                            'studyId' => 121,
+                            'aiCalcId' => 124,
+                            'aiCalcStatus' => '已完成',
+                            'accessionNumber' => 'ACC-RECON-001',
+                            'patientName' => 'Reconciled Patient',
+                        ],
+                    ],
+                ],
+            ], 200),
+        ]);
+
+        $session = new AiPacsSession(token: 'mock-token');
+        $result = $this->client->findStudyByAccession('ACC-RECON-001', $session);
+
+        $this->assertNotNull($result);
+        $this->assertSame(121, $result->studyIdentifier);
+        $this->assertSame(124, $result->aiCalcId);
+        $this->assertSame('已完成', $result->rawStatus);
+    }
+
+    public function test_no_duplicate_upload_if_study_already_exists(): void
+    {
+        Http::fake([
+            "{$this->baseUrl}/api/v1/studies*" => Http::response([
+                'code' => 0,
+                'data' => [
+                    'total' => 1,
+                    'list' => [
+                        [
+                            'studyId' => 121,
+                            'aiCalcId' => 124,
+                            'aiCalcStatus' => '已完成',
+                            'accessionNumber' => 'ACC-EXISTING-999',
+                        ],
+                    ],
+                ],
+            ], 200),
+        ]);
+
+        $session = new AiPacsSession(token: 'mock-token');
+        $existing = $this->client->findStudyByAccession('ACC-EXISTING-999', $session);
+
+        $this->assertNotNull($existing);
+        $this->assertSame(121, $existing->studyIdentifier);
+
+        // Assert upload route was never called
+        Http::assertNotSent(function ($request) {
+            return $request->url() === "{$this->baseUrl}/api/v1/study/upload";
+        });
+    }
+
+    public function test_sanitized_exceptions_do_not_leak_credentials_tokens_or_bytes(): void
+    {
+        $sensitivePassword = 'super-secret-password-xyz';
+        $sensitiveToken = 'confidential-raw-bearer-token';
+        $sensitiveDicom = 'BINARY_DICOM_DATA_\x00\x01\x02';
+
+        Http::fake([
+            "{$this->baseUrl}/api/v1/study/upload" => Http::response([
+                'code' => 500,
+                'message' => "Internal failure with {$sensitivePassword} and {$sensitiveToken}",
+            ], 500),
+        ]);
+
+        $client = new AiPacsClient(
+            baseUrl: $this->baseUrl,
+            username: 'test_user',
+            password: $sensitivePassword,
+            timeout: 5,
+        );
+
+        $session = new AiPacsSession(token: $sensitiveToken);
+
+        try {
+            $client->uploadStudy($sensitiveDicom, 'bypass.dcm', $session);
+            $this->fail('Expected ImageGatewayException');
+        } catch (ImageGatewayException $exception) {
+            $this->assertSame(AiErrorCode::AI_PACS_UNAVAILABLE, $exception->category);
+            $this->assertStringNotContainsString($sensitivePassword, $exception->getMessage());
+            $this->assertStringNotContainsString($sensitiveToken, $exception->getMessage());
+            $this->assertStringNotContainsString($sensitiveDicom, $exception->getMessage());
         }
     }
 

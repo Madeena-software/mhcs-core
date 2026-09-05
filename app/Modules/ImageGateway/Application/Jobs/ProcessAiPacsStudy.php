@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Modules\ImageGateway\Application\Jobs;
 
 use App\Modules\ImageGateway\Application\Contracts\AiPacsAdapterContract;
+use App\Modules\ImageGateway\Application\Contracts\AiPacsReportDownloaderContract;
 use App\Modules\ImageGateway\Application\Contracts\ImageGatewayAiServiceContract;
 use App\Modules\ImageGateway\Domain\AiErrorCode;
 use App\Modules\ImageGateway\Domain\AiJobStatus;
@@ -25,6 +26,7 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Throwable;
 
@@ -49,15 +51,36 @@ final class ProcessAiPacsStudy implements ShouldQueue
         AuditStore $audit,
         ?AiPacsAdapterContract $adapter = null,
         ?PrivateObjectStore $objects = null,
+        ?AiPacsReportDownloaderContract $downloader = null,
     ): void {
         $job = DB::table('image_gateway_ai_jobs')->where('id', $this->aiJobId)->first();
-        if ($job === null || AiJobStatus::isTerminal((string) $job->status)) {
+        if ($job === null) {
+            return;
+        }
+
+        // Idempotency: If already report_ready and report exists in PrivateObjectStore, return idempotently
+        if ($job->status === AiJobStatus::REPORT_READY) {
+            $existingReport = DB::table('image_gateway_ai_reports')->where('ai_job_id', $this->aiJobId)->first();
+            if ($existingReport !== null && $existingReport->original_object_key !== null && $existingReport->original_checksum !== null) {
+                return;
+            }
+        }
+
+        if (AiJobStatus::isTerminal((string) $job->status)) {
             return;
         }
 
         $claimed = DB::transaction(function () use ($clock, $audit): ?object {
             $row = DB::table('image_gateway_ai_jobs')->where('id', $this->aiJobId)->lockForUpdate()->first();
-            if ($row === null || AiJobStatus::isTerminal((string) $row->status)) {
+            if ($row === null) {
+                return null;
+            }
+
+            if ($row->status === AiJobStatus::REPORT_READY) {
+                return null;
+            }
+
+            if (AiJobStatus::isTerminal((string) $row->status)) {
                 return null;
             }
 
@@ -157,6 +180,8 @@ final class ProcessAiPacsStudy implements ShouldQueue
                 'study_id' => (string) $row->study_id,
                 'correlation_id' => $row->correlation_id,
                 'max_attempts' => (int) $row->max_attempts,
+                'pacs_sid' => $row->pacs_sid !== null ? (int) $row->pacs_sid : null,
+                'pacs_ai_calc_id' => $row->pacs_ai_calc_id !== null ? (int) $row->pacs_ai_calc_id : null,
             ];
         });
 
@@ -170,6 +195,7 @@ final class ProcessAiPacsStudy implements ShouldQueue
 
         $activeAdapter = $adapter ?? (app()->bound(AiPacsAdapterContract::class) ? app(AiPacsAdapterContract::class) : null);
         $activeObjects = $objects ?? (app()->bound(PrivateObjectStore::class) ? app(PrivateObjectStore::class) : null);
+        $activeDownloader = $downloader;
 
         if ($activeAdapter === null || $activeObjects === null) {
             return;
@@ -211,83 +237,158 @@ final class ProcessAiPacsStudy implements ShouldQueue
                 ],
             ));
 
-            // 2. Fetch DICOM study from PrivateObjectStore
             $study = DB::table('image_gateway_studies')->where('id', $claimed->study_id)->first();
             if ($study === null) {
                 throw new ImageGatewayException(AiErrorCode::STUDY_NOT_FOUND, 'DICOM study record not found.');
             }
 
-            $dicomObject = new PrivateObject(
-                key: OpaqueObjectKey::fromString((string) $study->object_key),
-                checksum: (string) $study->checksum,
-                bytes: (int) $study->bytes,
-                createdAt: new DateTimeImmutable((string) $study->created_at),
-            );
-            $grant = $activeObjects->grant(
-                object: $dicomObject,
-                context: $workerContext,
-                audience: 'image-worker',
-                purpose: ImageGatewayAiServiceContract::AI_DISPATCH_PURPOSE,
-                expiresAt: $clock->now()->modify('+300 seconds'),
-            );
-            $dicomBytes = $activeObjects->get($grant, $workerContext, 'image-worker', ImageGatewayAiServiceContract::AI_DISPATCH_PURPOSE);
+            $accession = (string) ($study->display_reference ?? $study->id);
+            $sid = $claimed->pacs_sid;
+            $aiCalcId = $claimed->pacs_ai_calc_id;
 
-            // 3. Upload study to AI PACS
-            $filename = (string) ($study->filename ?? "study-{$study->id}.dcm");
-            $uploadResult = $activeAdapter->uploadStudy($dicomBytes, $filename, $session);
-            $now = $clock->now();
-            $audit->append(new AuditEvent(
-                eventId: (string) Str::uuid(),
-                eventVersion: 1,
-                actorId: null,
-                sessionId: null,
-                roles: [],
-                permissions: [],
-                siteId: null,
-                caseId: null,
-                targetType: 'image-gateway.ai-job',
-                targetId: $this->aiJobId,
-                action: 'image-gateway.ai-pacs-study-uploaded',
-                previousStateDigest: null,
-                newStateDigest: null,
-                reason: null,
-                occurredAt: $now,
-                recordedAt: $now,
-                correlationId: $claimed->correlation_id,
-                source: 'image-gateway.ai-worker',
-                outcome: 'success',
-                metadata: [
-                    'study_id' => $claimed->study_id,
-                    'status' => 'uploaded',
-                ],
-            ));
+            // 2. Durable upload stage & reconciliation check
+            if ($sid === null) {
+                // Fetch DICOM study from PrivateObjectStore
+                $dicomObject = new PrivateObject(
+                    key: OpaqueObjectKey::fromString((string) $study->object_key),
+                    checksum: (string) $study->checksum,
+                    bytes: (int) $study->bytes,
+                    createdAt: new DateTimeImmutable((string) $study->created_at),
+                );
+                $grant = $activeObjects->grant(
+                    object: $dicomObject,
+                    context: $workerContext,
+                    audience: 'image-worker',
+                    purpose: ImageGatewayAiServiceContract::AI_DISPATCH_PURPOSE,
+                    expiresAt: $clock->now()->modify('+600 seconds'),
+                );
+                $dicomBytes = $activeObjects->get($grant, $workerContext, 'image-worker', ImageGatewayAiServiceContract::AI_DISPATCH_PURPOSE);
+                $effectiveAccession = $this->extractAccessionNumber($dicomBytes) ?? $accession;
 
-            // 4. Poll calculation status
-            $maxPollAttempts = (int) config('services.ai_pacs.max_polling_attempts', 10);
-            $calcStatus = null;
-            for ($poll = 0; $poll < $maxPollAttempts; $poll++) {
-                $calcStatus = $activeAdapter->pollCalculationStatus($uploadResult->studyIdentifier, $session);
-                if ($calcStatus->isCompleted || $calcStatus->isFailed) {
-                    break;
+                // Check if study already exists on vendor (e.g. registered during a timed-out upload attempt)
+                $reconciled = $activeAdapter->findStudyByAccession($effectiveAccession, $session);
+                if ($reconciled !== null) {
+                    $sid = (int) $reconciled->studyIdentifier;
+                    $aiCalcId = $reconciled->aiCalcId;
+
+                    DB::table('image_gateway_ai_jobs')->where('id', $this->aiJobId)->update([
+                        'pacs_sid' => $sid,
+                        'pacs_ai_calc_id' => $aiCalcId,
+                        'updated_at' => $clock->now(),
+                    ]);
+                } else {
+                    // 3. Upload study with fixed-length request
+                    $filename = (string) ($study->filename ?? "study-{$study->id}.dcm");
+                    try {
+                        $uploadResult = $activeAdapter->uploadStudy($dicomBytes, $filename, $session, $effectiveAccession);
+                        $sid = (int) $uploadResult->studyIdentifier;
+                        $aiCalcId = $uploadResult->aiCalcId;
+                    } catch (ImageGatewayException $uploadException) {
+                        if ($uploadException->category === AiErrorCode::AI_PACS_TIMEOUT) {
+                            // Ambiguous timeout: reconcile against studies list
+                            $reconciled = $activeAdapter->findStudyByAccession($effectiveAccession, $session);
+                            if ($reconciled !== null) {
+                                $sid = (int) $reconciled->studyIdentifier;
+                                $aiCalcId = $reconciled->aiCalcId;
+                            } else {
+                                throw $uploadException;
+                            }
+                        } else {
+                            throw $uploadException;
+                        }
+                    }
+
+                    DB::table('image_gateway_ai_jobs')->where('id', $this->aiJobId)->update([
+                        'pacs_sid' => $sid,
+                        'pacs_ai_calc_id' => $aiCalcId,
+                        'updated_at' => $clock->now(),
+                    ]);
+
+                    $now = $clock->now();
+                    $audit->append(new AuditEvent(
+                        eventId: (string) Str::uuid(),
+                        eventVersion: 1,
+                        actorId: null,
+                        sessionId: null,
+                        roles: [],
+                        permissions: [],
+                        siteId: null,
+                        caseId: null,
+                        targetType: 'image-gateway.ai-job',
+                        targetId: $this->aiJobId,
+                        action: 'image-gateway.ai-pacs-study-uploaded',
+                        previousStateDigest: null,
+                        newStateDigest: null,
+                        reason: null,
+                        occurredAt: $now,
+                        recordedAt: $now,
+                        correlationId: $claimed->correlation_id,
+                        source: 'image-gateway.ai-worker',
+                        outcome: 'success',
+                        metadata: [
+                            'study_id' => $claimed->study_id,
+                            'pacs_sid' => $sid,
+                            'status' => 'uploaded',
+                        ],
+                    ));
                 }
             }
 
-            if ($calcStatus === null || ! $calcStatus->isCompleted) {
-                if ($calcStatus?->isFailed) {
+            // 4. Poll calculation status if not already completed
+            if ($aiCalcId === null) {
+                $maxPollAttempts = (int) config('services.ai_pacs.max_polling_attempts', 30);
+                $pollInterval = (int) config('services.ai_pacs.polling_interval_seconds', 2);
+                $calcStatus = null;
+                for ($poll = 0; $poll < $maxPollAttempts; $poll++) {
+                    $calcStatus = $activeAdapter->pollCalculationStatus($sid, $session);
+                    if ($calcStatus->isCompleted || $calcStatus->isFailed) {
+                        break;
+                    }
+                    if ($poll < $maxPollAttempts - 1 && $pollInterval > 0) {
+                        sleep($pollInterval);
+                    }
+                }
+
+                if ($calcStatus === null || ! $calcStatus->isCompleted) {
+                    if ($calcStatus?->isFailed) {
+                        throw new ImageGatewayException(
+                            $calcStatus->errorCode ?? AiErrorCode::AI_PACS_UPLOAD_FAILED,
+                            'AI PACS calculation marked as failed.',
+                        );
+                    }
+
                     throw new ImageGatewayException(
-                        $calcStatus->errorCode ?? AiErrorCode::AI_PACS_UPLOAD_FAILED,
-                        'AI PACS calculation marked as failed.',
+                        AiErrorCode::AI_PACS_TIMEOUT,
+                        'AI PACS calculation polling exceeded attempt budget.',
                     );
                 }
 
-                throw new ImageGatewayException(
-                    AiErrorCode::AI_PACS_TIMEOUT,
-                    'AI PACS calculation polling exceeded attempt budget.',
-                );
+                $aiCalcId = $calcStatus->aiCalcId ?? $sid;
+                DB::table('image_gateway_ai_jobs')->where('id', $this->aiJobId)->update([
+                    'pacs_ai_calc_id' => $aiCalcId,
+                    'updated_at' => $clock->now(),
+                ]);
             }
 
-            // 5. Retrieve original report PDF
-            $reportResult = $activeAdapter->retrieveOriginalReport($uploadResult->studyIdentifier, $session);
+            // 5. Retrieve original Image Report PDF
+            if ($activeDownloader !== null && $aiCalcId !== null) {
+                $tempDest = sys_get_temp_dir().'/ai_pacs_report_'.$this->aiJobId.'_'.Str::uuid().'.pdf';
+                try {
+                    $reportResult = $activeDownloader->downloadImageReport(
+                        studyIdentifier: $sid,
+                        aiCalcId: $aiCalcId,
+                        destinationPath: $tempDest,
+                        correlationId: (string) $claimed->correlation_id,
+                    );
+                } finally {
+                    if (file_exists($tempDest)) {
+                        @unlink($tempDest);
+                    }
+                }
+            } else {
+                $reportResult = $activeAdapter->retrieveOriginalReport($sid, $session, $aiCalcId);
+            }
+
             $now = $clock->now();
             $audit->append(new AuditEvent(
                 eventId: (string) Str::uuid(),
@@ -311,6 +412,10 @@ final class ProcessAiPacsStudy implements ShouldQueue
                 outcome: 'success',
                 metadata: [
                     'study_id' => $claimed->study_id,
+                    'pacs_sid' => $sid,
+                    'pacs_ai_calc_id' => $aiCalcId,
+                    'checksum' => $reportResult->checksum,
+                    'bytes' => $reportResult->bytes,
                     'status' => 'downloaded',
                 ],
             ));
@@ -328,11 +433,19 @@ final class ProcessAiPacsStudy implements ShouldQueue
             );
 
             // 7. Update image_gateway_ai_reports & image_gateway_ai_jobs
-            DB::transaction(function () use ($claimed, $storedReport, $reportResult, $now, $audit): void {
+            DB::transaction(function () use ($claimed, $storedReport, $reportResult, $sid, $aiCalcId, $now, $audit): void {
                 $jobRow = DB::table('image_gateway_ai_jobs')->where('id', $this->aiJobId)->first();
                 if ($jobRow === null) {
                     return;
                 }
+
+                $findingsSummary = json_encode([
+                    'pacs_sid' => $sid,
+                    'pacs_ai_calc_id' => $aiCalcId,
+                    'report_type' => 'image_report',
+                    'original_checksum' => $storedReport->checksum,
+                    'original_bytes' => $storedReport->bytes,
+                ], JSON_THROW_ON_ERROR);
 
                 DB::table('image_gateway_ai_reports')->updateOrInsert(
                     ['ai_job_id' => $this->aiJobId],
@@ -342,6 +455,8 @@ final class ProcessAiPacsStudy implements ShouldQueue
                         'capture_set_id' => $jobRow->capture_set_id,
                         'booking_id' => $jobRow->booking_id,
                         'member_id' => $jobRow->member_id,
+                        'pacs_sid' => $sid,
+                        'pacs_ai_calc_id' => $aiCalcId,
                         'original_object_key' => (string) $storedReport->key,
                         'original_checksum' => $storedReport->checksum,
                         'original_bytes' => $storedReport->bytes,
@@ -349,6 +464,7 @@ final class ProcessAiPacsStudy implements ShouldQueue
                         'status' => 'original_ready',
                         'language' => 'id',
                         'clinical_disclaimer' => 'Laporan Hasil Analisis Kecerdasan Buatan (Bukan Pengganti Diagnosis Dokter)',
+                        'findings_summary' => $findingsSummary,
                         'created_at' => $now,
                         'updated_at' => $now,
                     ],
@@ -356,6 +472,8 @@ final class ProcessAiPacsStudy implements ShouldQueue
 
                 DB::table('image_gateway_ai_jobs')->where('id', $this->aiJobId)->update([
                     'status' => AiJobStatus::REPORT_READY,
+                    'pacs_sid' => $sid,
+                    'pacs_ai_calc_id' => $aiCalcId,
                     'last_error_code' => null,
                     'completed_at' => $now,
                     'processing_claim_id' => null,
@@ -385,6 +503,8 @@ final class ProcessAiPacsStudy implements ShouldQueue
                     outcome: 'success',
                     metadata: [
                         'study_id' => $claimed->study_id,
+                        'pacs_sid' => $sid,
+                        'pacs_ai_calc_id' => $aiCalcId,
                         'status' => AiJobStatus::REPORT_READY,
                     ],
                 ));
@@ -472,5 +592,24 @@ final class ProcessAiPacsStudy implements ShouldQueue
     private function queueLeaseSeconds(): int
     {
         return max(1, (int) config('queue.connections.database.retry_after', 300));
+    }
+
+    private function extractAccessionNumber(string $dicomBytes): ?string
+    {
+        $pos = strpos($dicomBytes, "\x08\x00\x50\x00");
+        if ($pos === false || $pos + 8 > strlen($dicomBytes)) {
+            return null;
+        }
+
+        $vr = substr($dicomBytes, $pos + 4, 2);
+        if ($vr === 'SH' || $vr === 'LO' || $vr === 'CS') {
+            $len = unpack('v', substr($dicomBytes, $pos + 6, 2))[1] ?? 0;
+            if ($len > 0 && $pos + 8 + $len <= strlen($dicomBytes)) {
+                $val = trim(substr($dicomBytes, $pos + 8, $len), " \0");
+                return $val !== '' ? $val : null;
+            }
+        }
+
+        return null;
     }
 }

@@ -50,6 +50,7 @@ final class ProcessAiPacsStudyIntegrationTest extends TestCase
             'services.ai_pacs.password' => 'test_password',
             'services.ai_pacs.timeout_seconds' => 5,
             'services.ai_pacs.max_polling_attempts' => 5,
+            'services.ai_pacs.polling_interval_seconds' => 0,
         ]);
 
         $this->aiService = app(ImageGatewayAiServiceContract::class);
@@ -69,9 +70,14 @@ final class ProcessAiPacsStudyIntegrationTest extends TestCase
                 'code' => 0,
                 'data' => ['token' => 'test-token-jwt-123'],
             ], 200),
-            "{$this->baseUrl}/api/v1/studies" => Http::response([
+            "{$this->baseUrl}/api/v1/study/upload" => Http::response([
                 'code' => 0,
-                'data' => ['sid' => 54321, 'aiCalcId' => 88],
+                'message' => '请求成功',
+                'data' => ['failNum' => 0, 'successNum' => 1, 'sid' => 54321, 'aiCalcId' => 88],
+            ], 200),
+            "{$this->baseUrl}/api/v1/studies*" => Http::response([
+                'code' => 0,
+                'data' => ['list' => []],
             ], 200),
             "{$this->baseUrl}/api/v1/study/ai/calc*" => Http::sequence()
                 ->push(['code' => 0, 'data' => ['status' => 'calculating', 'progress' => 50]], 200)
@@ -99,6 +105,8 @@ final class ProcessAiPacsStudyIntegrationTest extends TestCase
         $this->assertSame(AiJobStatus::REPORT_READY, $job->status);
         $this->assertNull($job->last_error_code);
         $this->assertNotNull($job->completed_at);
+        $this->assertSame(54321, (int) $job->pacs_sid);
+        $this->assertSame(88, (int) $job->pacs_ai_calc_id);
 
         // Verify report record in image_gateway_ai_reports
         $report = DB::table('image_gateway_ai_reports')->where('ai_job_id', $aiJobId)->first();
@@ -106,9 +114,18 @@ final class ProcessAiPacsStudyIntegrationTest extends TestCase
         $this->assertSame($studyId, $report->study_id);
         $this->assertSame($fixture['captureSetId'], $report->capture_set_id);
         $this->assertSame($fixture['memberId'], $report->member_id);
+        $this->assertSame(54321, (int) $report->pacs_sid);
+        $this->assertSame(88, (int) $report->pacs_ai_calc_id);
         $this->assertSame(hash('sha256', $validPdf), $report->original_checksum);
         $this->assertSame(strlen($validPdf), (int) $report->original_bytes);
         $this->assertSame('original_ready', $report->status);
+
+        // Verify findings_summary JSON records provenance and vendor identifiers
+        $this->assertNotNull($report->findings_summary);
+        $summary = json_decode((string) $report->findings_summary, true);
+        $this->assertSame(54321, $summary['pacs_sid']);
+        $this->assertSame(88, $summary['pacs_ai_calc_id']);
+        $this->assertSame('image_report', $summary['report_type']);
 
         // Verify original PDF exists in PrivateObjectStore
         $pdfObject = new \App\Shared\Storage\PrivateObject(
@@ -161,12 +178,76 @@ final class ProcessAiPacsStudyIntegrationTest extends TestCase
         $this->assertSame('success', $capture->dicom_status);
     }
 
-    public function test_process_study_authentication_failure(): void
+    public function test_process_study_resumes_from_upload_if_already_uploaded(): void
     {
+        $validPdf = "%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\nxref\n0 1\n0000000000 65535 f\ntrailer<</Size 1>>\nstartxref\n50\n%%EOF";
+        $validPdf = str_pad($validPdf, 256, "\n")."%%EOF";
+
         Http::fake([
             "{$this->baseUrl}/api/v1/login" => Http::response([
-                'code' => 1002,
-                'message' => '账号不存在',
+                'code' => 0,
+                'data' => ['token' => 'test-token-jwt-123'],
+            ], 200),
+            // Upload must NEVER be called because pacs_sid already exists
+            "{$this->baseUrl}/api/v1/study/ai/calc*" => Http::response([
+                'code' => 0,
+                'data' => ['status' => 'success', 'progress' => 100, 'aiCalcId' => 999],
+            ], 200),
+            "{$this->baseUrl}/api/v1/view-report/download*" => Http::response(
+                $validPdf,
+                200,
+                ['Content-Type' => 'application/pdf'],
+            ),
+        ]);
+
+        $fixture = $this->createStudyFixture();
+        $studyId = $fixture['studyId'];
+        $context = $this->createContext();
+
+        \Illuminate\Support\Facades\Queue::fake();
+        $dispatch = $this->aiService->dispatchStudy($studyId, $context);
+        $aiJobId = $dispatch['ai_job_id'];
+
+        // Simulate study was already uploaded previously
+        DB::table('image_gateway_ai_jobs')->where('id', $aiJobId)->update([
+            'pacs_sid' => 777,
+            'pacs_ai_calc_id' => 999,
+        ]);
+
+        $worker = new ProcessAiPacsStudy($aiJobId);
+        $worker->handle($this->clock, $this->audit, $this->adapter, $this->objects);
+
+        // Upload route was not called
+        Http::assertNotSent(function ($request) {
+            return $request->url() === "{$this->baseUrl}/api/v1/study/upload";
+        });
+
+        $job = DB::table('image_gateway_ai_jobs')->where('id', $aiJobId)->first();
+        $this->assertSame(AiJobStatus::REPORT_READY, $job->status);
+        $this->assertSame(777, (int) $job->pacs_sid);
+    }
+
+    public function test_process_study_with_playwright_downloader_contract(): void
+    {
+        $validPdf = "%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\nxref\n0 1\n0000000000 65535 f\ntrailer<</Size 1>>\nstartxref\n50\n%%EOF";
+        $validPdf = str_pad($validPdf, 256, "\n")."%%EOF";
+
+        Http::fake([
+            "{$this->baseUrl}/api/v1/login" => Http::response([
+                'code' => 0,
+                'data' => ['token' => 'test-token-jwt-123'],
+            ], 200),
+            "{$this->baseUrl}/api/v1/study/upload" => Http::response([
+                'code' => 0,
+                'data' => ['failNum' => 0, 'successNum' => 1, 'sid' => 9121, 'aiCalcId' => 9124],
+            ], 200),
+            "{$this->baseUrl}/api/v1/studies*" => Http::response([
+                'code' => 0,
+                'data' => ['list' => []],
+            ], 200),
+            "{$this->baseUrl}/api/v1/study/ai/calc*" => Http::response([
+                'code' => 0,
+                'data' => ['status' => 'success', 'progress' => 100, 'aiCalcId' => 9124],
             ], 200),
         ]);
 
@@ -174,6 +255,103 @@ final class ProcessAiPacsStudyIntegrationTest extends TestCase
         $studyId = $fixture['studyId'];
         $context = $this->createContext();
 
+        \Illuminate\Support\Facades\Queue::fake();
+        $dispatch = $this->aiService->dispatchStudy($studyId, $context);
+        $aiJobId = $dispatch['ai_job_id'];
+
+        $mockDownloader = new class($validPdf) implements \App\Modules\ImageGateway\Application\Contracts\AiPacsReportDownloaderContract {
+            public bool $wasCalled = false;
+            public ?int $recordedSid = null;
+            public ?int $recordedAiCalcId = null;
+
+            public function __construct(private string $pdf) {}
+
+            public function downloadImageReport(
+                string|int $studyIdentifier,
+                int $aiCalcId,
+                string $destinationPath,
+                ?string $correlationId = null,
+                string $viewerType = 'CR',
+                string $pacs = 'fei',
+            ): \App\Modules\ImageGateway\Infrastructure\AiPacs\AiPacsReportResult {
+                $this->wasCalled = true;
+                $this->recordedSid = (int) $studyIdentifier;
+                $this->recordedAiCalcId = $aiCalcId;
+
+                return new \App\Modules\ImageGateway\Infrastructure\AiPacs\AiPacsReportResult(
+                    pdfBytes: $this->pdf,
+                    filename: 'mocked_image_report.pdf',
+                    metadata: [
+                        'aiReportSelected' => true,
+                        'imageReportSelected' => true,
+                        'customReportInactive' => true,
+                    ],
+                );
+            }
+        };
+
+        $worker = new ProcessAiPacsStudy($aiJobId);
+        $worker->handle($this->clock, $this->audit, $this->adapter, $this->objects, $mockDownloader);
+
+        $this->assertTrue($mockDownloader->wasCalled);
+        $this->assertSame(9121, $mockDownloader->recordedSid);
+        $this->assertSame(9124, $mockDownloader->recordedAiCalcId);
+
+        $job = DB::table('image_gateway_ai_jobs')->where('id', $aiJobId)->first();
+        $this->assertSame(AiJobStatus::REPORT_READY, $job->status);
+        $this->assertSame(9121, (int) $job->pacs_sid);
+        $this->assertSame(9124, (int) $job->pacs_ai_calc_id);
+
+        $report = DB::table('image_gateway_ai_reports')->where('ai_job_id', $aiJobId)->first();
+        $this->assertSame('original_ready', $report->status);
+        $this->assertSame(9121, (int) $report->pacs_sid);
+        $this->assertSame(9124, (int) $report->pacs_ai_calc_id);
+    }
+
+    public function test_process_study_reconciles_study_after_ambiguous_upload_timeout(): void
+    {
+        $validPdf = "%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\nxref\n0 1\n0000000000 65535 f\ntrailer<</Size 1>>\nstartxref\n50\n%%EOF";
+        $validPdf = str_pad($validPdf, 256, "\n")."%%EOF";
+
+        $fixture = $this->createStudyFixture();
+        $studyId = $fixture['studyId'];
+        $studyRecord = DB::table('image_gateway_studies')->where('id', $studyId)->first();
+        $accession = (string) $studyRecord->display_reference;
+
+        Http::fake([
+            "{$this->baseUrl}/api/v1/login" => Http::response([
+                'code' => 0,
+                'data' => ['token' => 'valid-token'],
+            ], 200),
+            // First upload call times out (ambiguous network failure)
+            "{$this->baseUrl}/api/v1/study/upload" => fn () => throw new ConnectionException('Upload timed out ambiguously'),
+            // Reconciliation check succeeds: study was registered on PACS!
+            "{$this->baseUrl}/api/v1/studies*" => Http::response([
+                'code' => 0,
+                'data' => [
+                    'total' => 1,
+                    'list' => [
+                        [
+                            'studyId' => 888,
+                            'aiCalcId' => 889,
+                            'aiCalcStatus' => '已完成',
+                            'accessionNumber' => $accession,
+                        ],
+                    ],
+                ],
+            ], 200),
+            "{$this->baseUrl}/api/v1/study/ai/calc*" => Http::response([
+                'code' => 0,
+                'data' => ['status' => 'success', 'progress' => 100, 'aiCalcId' => 889],
+            ], 200),
+            "{$this->baseUrl}/api/v1/view-report/download*" => Http::response(
+                $validPdf,
+                200,
+                ['Content-Type' => 'application/pdf'],
+            ),
+        ]);
+
+        $context = $this->createContext();
         $dispatch = $this->aiService->dispatchStudy($studyId, $context);
         $aiJobId = $dispatch['ai_job_id'];
 
@@ -181,13 +359,52 @@ final class ProcessAiPacsStudyIntegrationTest extends TestCase
         $worker->handle($this->clock, $this->audit, $this->adapter, $this->objects);
 
         $job = DB::table('image_gateway_ai_jobs')->where('id', $aiJobId)->first();
-        $this->assertSame(AiJobStatus::RETRYABLE_FAILURE, $job->status);
-        $this->assertSame(AiErrorCode::AI_PACS_AUTH_FAILED, $job->last_error_code);
+        $this->assertSame(AiJobStatus::REPORT_READY, $job->status);
+        $this->assertSame(888, (int) $job->pacs_sid);
+        $this->assertSame(889, (int) $job->pacs_ai_calc_id);
+    }
 
-        // Radiography capture set must NOT be affected
-        $capture = DB::table('image_gateway_capture_sets')->where('id', $fixture['captureSetId'])->first();
-        $this->assertSame('completed', $capture->processing_status);
-        $this->assertSame('success', $capture->dicom_status);
+    public function test_process_study_idempotent_when_already_report_ready(): void
+    {
+        $fixture = $this->createStudyFixture();
+        $studyId = $fixture['studyId'];
+        $context = $this->createContext();
+
+        $dispatch = $this->aiService->dispatchStudy($studyId, $context);
+        $aiJobId = $dispatch['ai_job_id'];
+
+        // Create completed report
+        DB::table('image_gateway_ai_reports')->insert([
+            'id' => (string) Str::uuid(),
+            'ai_job_id' => $aiJobId,
+            'study_id' => $studyId,
+            'capture_set_id' => $fixture['captureSetId'],
+            'booking_id' => $fixture['bookingId'],
+            'member_id' => $fixture['memberId'],
+            'original_object_key' => 'stored/ai-reports/test.pdf',
+            'original_checksum' => str_repeat('a', 64),
+            'original_bytes' => 1000,
+            'original_filename' => 'report.pdf',
+            'status' => 'original_ready',
+            'language' => 'id',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('image_gateway_ai_jobs')->where('id', $aiJobId)->update([
+            'status' => AiJobStatus::REPORT_READY,
+            'pacs_sid' => 500,
+            'pacs_ai_calc_id' => 501,
+            'completed_at' => now(),
+        ]);
+
+        // Re-run worker; no HTTP requests should be sent
+        Http::fake();
+
+        $worker = new ProcessAiPacsStudy($aiJobId);
+        $worker->handle($this->clock, $this->audit, $this->adapter, $this->objects);
+
+        Http::assertNothingSent();
     }
 
     public function test_process_study_upload_failure(): void
@@ -197,9 +414,13 @@ final class ProcessAiPacsStudyIntegrationTest extends TestCase
                 'code' => 0,
                 'data' => ['token' => 'valid-token'],
             ], 200),
-            "{$this->baseUrl}/api/v1/studies" => Http::response([
-                'code' => 5001,
-                'message' => 'file format error',
+            "{$this->baseUrl}/api/v1/study/upload" => Http::response([
+                'code' => 0,
+                'data' => ['failNum' => 1, 'successNum' => 0],
+            ], 200),
+            "{$this->baseUrl}/api/v1/studies*" => Http::response([
+                'code' => 0,
+                'data' => ['list' => []],
             ], 200),
         ]);
 
@@ -225,9 +446,13 @@ final class ProcessAiPacsStudyIntegrationTest extends TestCase
                 'code' => 0,
                 'data' => ['token' => 'valid-token'],
             ], 200),
-            "{$this->baseUrl}/api/v1/studies" => Http::response([
+            "{$this->baseUrl}/api/v1/study/upload" => Http::response([
                 'code' => 0,
-                'data' => ['sid' => 99999, 'aiCalcId' => 11],
+                'data' => ['failNum' => 0, 'successNum' => 1, 'sid' => 99999, 'aiCalcId' => null],
+            ], 200),
+            "{$this->baseUrl}/api/v1/studies*" => Http::response([
+                'code' => 0,
+                'data' => ['list' => []],
             ], 200),
             // Always pending
             "{$this->baseUrl}/api/v1/study/ai/calc*" => Http::response([

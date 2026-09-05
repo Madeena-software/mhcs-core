@@ -24,7 +24,22 @@ interface AiPacsAdapterContract
      * @param string|resource $dicomPayload
      * @throws \App\Modules\ImageGateway\Domain\ImageGatewayException
      */
-    public function uploadStudy(mixed $dicomPayload, string $filename, ?AiPacsSession $session = null): AiPacsUploadResult;
+    public function uploadStudy(
+        mixed $dicomPayload,
+        string $filename,
+        ?AiPacsSession $session = null,
+        ?string $accessionNumber = null,
+    ): AiPacsUploadResult;
+
+    /**
+     * Find an existing study on AI PACS by accession number for reconciliation.
+     *
+     * @throws \App\Modules\ImageGateway\Domain\ImageGatewayException
+     */
+    public function findStudyByAccession(
+        string $accessionNumber,
+        ?AiPacsSession $session = null,
+    ): ?AiPacsUploadResult;
 
     /**
      * Poll calculation status for an uploaded study.
@@ -38,5 +53,9 @@ interface AiPacsAdapterContract
      *
      * @throws \App\Modules\ImageGateway\Domain\ImageGatewayException
      */
-    public function retrieveOriginalReport(string|int $studyIdentifier, ?AiPacsSession $session = null): AiPacsReportResult;
+    public function retrieveOriginalReport(
+        string|int $studyIdentifier,
+        ?AiPacsSession $session = null,
+        ?int $aiCalcId = null,
+    ): AiPacsReportResult;
 }
