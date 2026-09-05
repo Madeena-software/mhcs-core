@@ -4,9 +4,6 @@ declare(strict_types=1);
 
 namespace App\Modules\Operator\Application\Services;
 
-use App\Modules\Member\Application\Services\MedicalRecordNumberGenerator;
-use App\Modules\Member\Domain\Models\Booking;
-use App\Modules\Member\Domain\Models\Member;
 use App\Modules\Operator\Domain\Models\OperatorEligibleShift;
 use App\Modules\Operator\Domain\Models\OperatorShiftAssignment;
 use App\Modules\Operator\Domain\Models\OperatorSite;
@@ -32,7 +29,6 @@ final readonly class OperatorFieldOperationsService
         private OperatorAuthorization $authorization,
         private OperatorShiftAssignmentService $assignments,
         private ProtectedIdentifierService $identifiers,
-        private MedicalRecordNumberGenerator $mrn,
         private AuditStore $audit,
         private OutboxStore $outbox,
         private Clock $clock,
@@ -400,7 +396,7 @@ final readonly class OperatorFieldOperationsService
                 'operator',
                 'success',
                 $now,
-                Booking::class,
+                'booking',
                 $bookingId,
                 metadata: [
                     'schedule_id' => (string) $schedule->id,
@@ -480,7 +476,7 @@ final readonly class OperatorFieldOperationsService
                     'operator',
                     'success',
                     $now,
-                    Member::class,
+                    'member',
                     (string) $existingMember->id,
                     metadata: [
                         'schedule_id' => $scheduleId,
@@ -498,7 +494,7 @@ final readonly class OperatorFieldOperationsService
             // Create new User and Member
             $userId = (string) Str::uuid();
             $memberId = (string) Str::uuid();
-            $mrn = $this->mrn->generate();
+            $mrn = 'MRN-'.Str::upper(Str::random(8));
 
             // Invariant check: NIK must never be MRN
             if ($mrn === $nikRaw) {
@@ -539,9 +535,28 @@ final readonly class OperatorFieldOperationsService
                     'updated_at' => $now,
                 ]);
             } catch (UniqueConstraintViolationException|QueryException $e) {
-                // If concurrent registration raced, safely reuse the existing member
+                // Lost concurrent NIK race: atomically clean up the unused user record
+                DB::table('users')->where('id', $userId)->delete();
+
+                // Safely reuse the winning existing member
                 $racedMember = DB::table('members')->where('nik_lookup_digest', $digest)->first();
                 if ($racedMember !== null) {
+                    $this->audit->append(AuditEvent::fromContext(
+                        $portal['context'],
+                        'operator.member.resolved-existing',
+                        'operator',
+                        'success',
+                        $now,
+                        'member',
+                        (string) $racedMember->id,
+                        metadata: [
+                            'schedule_id' => $scheduleId,
+                            'operator_site_id' => $site->operator_site_id,
+                            'resolved_existing' => true,
+                            'recovered_from_collision' => true,
+                        ],
+                    ));
+
                     return [
                         'member_id' => (string) $racedMember->id,
                         'reused_existing_member' => true,
@@ -556,7 +571,7 @@ final readonly class OperatorFieldOperationsService
                 'operator',
                 'success',
                 $now,
-                Member::class,
+                'member',
                 $memberId,
                 metadata: [
                     'medical_record_number' => $mrn,

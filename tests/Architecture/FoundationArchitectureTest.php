@@ -149,6 +149,9 @@ final class FoundationArchitectureTest extends TestCase
             '2026_08_13_000003_add_operator_display_references.php',
             '2026_08_26_000001_allow_nonclinical_validation_member_identity.php',
             '2026_08_26_000002_make_validation_shift_assignment_provenance_nullable.php',
+            '2026_09_04_000001_add_field_operations_columns_to_members_table.php',
+            '2026_09_04_000002_create_reusable_informed_consent_tables.php',
+            '2026_09_05_000001_add_evidence_and_binding_to_member_master_consents_table.php',
         ];
 
         $this->assertSame([], array_values(array_diff($migrations, $allowed)));

@@ -8,11 +8,16 @@ use App\Models\User;
 use App\Modules\Operator\Application\Services\OperatorArrivalService;
 use App\Modules\Operator\Application\Services\OperatorFieldOperationsService;
 use App\Modules\Operator\Application\Services\OperatorIdentityVerificationService;
+use App\Modules\Operator\Application\Services\OperatorReusableConsentService;
 use App\Shared\Context\AuthenticatedContext;
 use App\Shared\Context\CorrelationId;
 use App\Shared\Identity\LocalId;
 use App\Shared\Security\ProtectedIdentifierService;
+use App\Shared\Storage\AccessGrant;
+use App\Shared\Storage\OpaqueObjectKey;
+use App\Shared\Storage\PrivateObject;
 use App\Shared\Storage\PrivateObjectStore;
+use GuzzleHttp\Promise\PromiseInterface;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
@@ -738,7 +743,7 @@ final class OperatorFieldOperationsSlice1Test extends TestCase
         $unassignedJsonResponse->assertForbidden();
     }
 
-    public function test_concurrent_duplicate_nik_registration_recovers_and_preserves_identity(): void
+    public function test_sequential_existing_nik_registration_deduplicates_and_preserves_identity(): void
     {
         $fixture = $this->operatorFixture();
         $this->startOperatorSession($fixture);
@@ -773,6 +778,128 @@ final class OperatorFieldOperationsSlice1Test extends TestCase
         $this->assertSame($existing->phone, $preserved->phone);
         $this->assertSame($existing->affiliation, $preserved->affiliation);
         $this->assertSame($existing->medical_record_number, $preserved->medical_record_number);
+    }
+
+    public function test_concurrent_duplicate_nik_registration_collision_branch_recovers_and_preserves_identity(): void
+    {
+        $fixture = $this->operatorFixture();
+        $this->startOperatorSession($fixture);
+
+        $now = now()->toImmutable();
+        $nik = '900000000088';
+        $protected = app(ProtectedIdentifierService::class)->protect($nik);
+        $digest = $protected['lookup_digest'];
+
+        $winningUserId = (string) Str::uuid();
+        $winningMemberId = (string) Str::uuid();
+        $winningMrn = 'MRN-WINNER88';
+
+        $initialUserCount = DB::table('users')->count();
+        $initialMemberCount = DB::table('members')->count();
+
+        $collisionInjected = false;
+        $losingUserId = null;
+
+        // Deterministic collision harness:
+        // When registerAndAdmitMember inserts into users for the losing registration attempt,
+        // we inject the winning user & member with the exact same NIK digest.
+        // The subsequent insert into members by registerAndAdmitMember will hit the unique NIK
+        // constraint, proving that the collision recovery catch-block executes.
+        DB::listen(function ($query) use (
+            &$collisionInjected, &$losingUserId, $winningUserId, $winningMemberId, $winningMrn, $protected, $digest, $now
+        ): void {
+            if (! $collisionInjected && (str_contains(strtolower($query->sql), 'into "users"') || str_contains(strtolower($query->sql), 'into `users`'))) {
+                $losingUserId = (string) ($query->bindings[0] ?? '');
+                $collisionInjected = true;
+
+                DB::table('users')->insert([
+                    'id' => $winningUserId,
+                    'email' => null,
+                    'password' => 'winning-hash',
+                    'account_status' => 'active',
+                    'login_enabled' => false,
+                    'must_change_password' => false,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ]);
+
+                DB::table('members')->insert([
+                    'id' => $winningMemberId,
+                    'user_id' => $winningUserId,
+                    'family_id' => null,
+                    'medical_record_number' => $winningMrn,
+                    'identity_status' => 'verified',
+                    'identity_document_type' => 'nik',
+                    'encrypted_nik' => $protected['encrypted_display'],
+                    'nik_lookup_digest' => $digest,
+                    'name' => 'Winning Member Before Collision',
+                    'birth_date' => '1988-08-18',
+                    'administrative_gender' => 'female',
+                    'registration_source' => 'operator_field',
+                    'phone' => '081288889999',
+                    'affiliation' => 'Winning Organization',
+                    'office_location' => 'Winning Room 101',
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ]);
+            }
+        });
+
+        $fieldOps = app(OperatorFieldOperationsService::class);
+        $result = $fieldOps->registerAndAdmitMember(
+            [
+                'name' => 'Losing Concurrent Racer',
+                'administrative_gender' => 'male',
+                'nik' => $nik,
+                'birth_date' => '1999-09-09',
+                'phone' => '089911112222',
+                'affiliation' => 'Losing Org',
+                'office_location' => 'Losing Loc',
+            ],
+            $fixture['scheduleId'],
+            (string) Str::uuid(),
+        );
+
+        // 1. Assert collision harness was actually triggered
+        $this->assertTrue($collisionInjected);
+        $this->assertNotNull($losingUserId);
+        $this->assertNotEmpty($losingUserId);
+
+        // 2. Assert winning member was reused
+        $this->assertTrue($result['reused_existing_member']);
+        $this->assertSame($winningMemberId, $result['member_id']);
+
+        // 3. Assert user count increased by exactly 1 (winning user only; losing user was deleted)
+        $this->assertSame($initialUserCount + 1, DB::table('users')->count());
+        $this->assertFalse(DB::table('users')->where('id', $losingUserId)->exists());
+
+        // 4. Assert member count increased by exactly 1 (winning member only)
+        $this->assertSame($initialMemberCount + 1, DB::table('members')->count());
+
+        // 5. Assert no row references the losing generated user ID
+        $this->assertFalse(DB::table('members')->where('user_id', $losingUserId)->exists());
+
+        // 6. Assert winning Member and every existing field remain completely unchanged
+        $winning = DB::table('members')->where('id', $winningMemberId)->first();
+        $this->assertNotNull($winning);
+        $this->assertSame('Winning Member Before Collision', $winning->name);
+        $this->assertSame('female', $winning->administrative_gender);
+        $this->assertSame('1988-08-18', $winning->birth_date);
+        $this->assertSame('081288889999', $winning->phone);
+        $this->assertSame('Winning Organization', $winning->affiliation);
+        $this->assertSame('Winning Room 101', $winning->office_location);
+        $this->assertSame($winningMrn, $winning->medical_record_number);
+        $this->assertSame($winningUserId, $winning->user_id);
+
+        // 7. Assert audit event recorded the collision recovery
+        $this->assertSame(
+            1,
+            DB::table('audit_events')
+                ->where('action', 'operator.member.resolved-existing')
+                ->where('target_id', $winningMemberId)
+                ->whereJsonContains('metadata->recovered_from_collision', true)
+                ->count()
+        );
     }
 
     public function test_master_consent_private_evidence_persistence_and_binding(): void
@@ -864,6 +991,7 @@ final class OperatorFieldOperationsSlice1Test extends TestCase
 
         $initialLegacyCount = DB::table('examination_consents')->count();
         $initialMasterCount = DB::table('member_master_consents')->count();
+        $initialFiles = Storage::disk('local')->allFiles();
 
         // Form version V99 passes controller input validator but fails reusable master consent approved forms check
         $response = $this->post(route('operator.paper-consent.store', $fixture['caseId']), [
@@ -883,6 +1011,304 @@ final class OperatorFieldOperationsSlice1Test extends TestCase
         // Atomic transaction rolled back: zero rows inserted in either table
         $this->assertSame($initialLegacyCount, DB::table('examination_consents')->count());
         $this->assertSame($initialMasterCount, DB::table('member_master_consents')->count());
+
+        // Zero orphan objects remain in storage
+        $this->assertSame($initialFiles, Storage::disk('local')->allFiles());
+    }
+
+    public function test_consent_failure_after_private_object_creation_leaves_zero_consent_rows_and_zero_orphan_objects(): void
+    {
+        $fixture = $this->matchedFixture();
+        $this->startOperatorSession($fixture);
+
+        $initialLegacyCount = DB::table('examination_consents')->count();
+        $initialMasterCount = DB::table('member_master_consents')->count();
+        $initialFiles = Storage::disk('local')->allFiles();
+
+        $pdfBytes = "%PDF-1.7\nsynthetic fail test\n%%EOF";
+
+        // Form version V99 will pass controller validation but fail inside reusable master consent,
+        // after legacy consent has already executed and stored the private scan object.
+        $response = $this->post(route('operator.paper-consent.store', $fixture['caseId']), [
+            'form_name' => 'Informed Consent',
+            'form_version' => 'V99',
+            'signer_type' => 'member',
+            'signature_confirmed' => '1',
+            'signed_at' => '2040-01-10',
+            'operation_id' => (string) Str::uuid(),
+            'is_master_consent' => '1',
+            'scan' => UploadedFile::fake()->createWithContent('fail-scan.pdf', $pdfBytes),
+        ]);
+
+        $response->assertRedirect();
+        $response->assertSessionHasErrors(['consent']);
+
+        // Assert database rollback: zero new consent rows in either table
+        $this->assertSame($initialLegacyCount, DB::table('examination_consents')->count());
+        $this->assertSame($initialMasterCount, DB::table('member_master_consents')->count());
+
+        // Assert storage rollback: zero orphan objects left on disk
+        $this->assertSame($initialFiles, Storage::disk('local')->allFiles());
+    }
+
+    public function test_consent_retry_of_same_successful_operation_creates_no_additional_object(): void
+    {
+        $fixture = $this->matchedFixture();
+        $this->startOperatorSession($fixture);
+
+        $operationId = (string) Str::uuid();
+        $pdfBytes = "%PDF-1.7\nsynthetic retry test\n%%EOF";
+
+        $response1 = $this->post(route('operator.paper-consent.store', $fixture['caseId']), [
+            'form_name' => 'Informed Consent',
+            'form_version' => 'V1',
+            'signer_type' => 'member',
+            'signature_confirmed' => '1',
+            'signed_at' => '2040-01-10',
+            'operation_id' => $operationId,
+            'is_master_consent' => '1',
+            'scan' => UploadedFile::fake()->createWithContent('retry-scan.pdf', $pdfBytes),
+        ]);
+        $response1->assertRedirect();
+
+        $filesAfterFirst = Storage::disk('local')->allFiles();
+        $this->assertNotEmpty($filesAfterFirst);
+
+        $master1 = DB::table('member_master_consents')->where('member_id', $fixture['memberId'])->first();
+        $this->assertNotNull($master1);
+        $firstKey = $master1->private_scan_object_key;
+
+        // Replaying with identical operation ID
+        $response2 = $this->post(route('operator.paper-consent.store', $fixture['caseId']), [
+            'form_name' => 'Informed Consent',
+            'form_version' => 'V1',
+            'signer_type' => 'member',
+            'signature_confirmed' => '1',
+            'signed_at' => '2040-01-10',
+            'operation_id' => $operationId,
+            'is_master_consent' => '1',
+            'scan' => UploadedFile::fake()->createWithContent('retry-scan.pdf', $pdfBytes),
+        ]);
+        $response2->assertRedirect();
+
+        // Idempotency reuses outcome and creates no additional storage object
+        $this->assertSame($filesAfterFirst, Storage::disk('local')->allFiles());
+        $master2 = DB::table('member_master_consents')->where('member_id', $fixture['memberId'])->first();
+        $this->assertSame($firstKey, $master2->private_scan_object_key);
+    }
+
+    public function test_consent_idempotency_conflict_creates_no_additional_object(): void
+    {
+        $fixture = $this->matchedFixture();
+        $this->startOperatorSession($fixture);
+
+        $operationId = (string) Str::uuid();
+        $pdfBytes = "%PDF-1.7\nsynthetic conflict test\n%%EOF";
+
+        $response1 = $this->post(route('operator.paper-consent.store', $fixture['caseId']), [
+            'form_name' => 'Informed Consent',
+            'form_version' => 'V1',
+            'signer_type' => 'member',
+            'signature_confirmed' => '1',
+            'signed_at' => '2040-01-10',
+            'operation_id' => $operationId,
+            'is_master_consent' => '1',
+            'scan' => UploadedFile::fake()->createWithContent('conflict-scan.pdf', $pdfBytes),
+        ]);
+        $response1->assertRedirect();
+
+        $filesAfterFirst = Storage::disk('local')->allFiles();
+
+        // Send conflicting request: same operation_id but different signed_at date
+        $response2 = $this->post(route('operator.paper-consent.store', $fixture['caseId']), [
+            'form_name' => 'Informed Consent',
+            'form_version' => 'V1',
+            'signer_type' => 'member',
+            'signature_confirmed' => '1',
+            'signed_at' => '2040-02-20',
+            'operation_id' => $operationId,
+            'is_master_consent' => '1',
+            'scan' => UploadedFile::fake()->createWithContent('conflict-scan.pdf', $pdfBytes),
+        ]);
+        $response2->assertRedirect();
+        $response2->assertSessionHasErrors(['consent']);
+
+        // Assert no additional object created during conflict
+        $this->assertSame($filesAfterFirst, Storage::disk('local')->allFiles());
+    }
+
+    public function test_successful_consent_leaves_exactly_one_referenced_private_object(): void
+    {
+        $fixture = $this->matchedFixture();
+        $this->startOperatorSession($fixture);
+
+        $operationId = (string) Str::uuid();
+        $pdfBytes = "%PDF-1.7\nsynthetic single object test\n%%EOF";
+
+        $filesBefore = Storage::disk('local')->allFiles();
+
+        $response = $this->post(route('operator.paper-consent.store', $fixture['caseId']), [
+            'form_name' => 'Informed Consent',
+            'form_version' => 'V1',
+            'signer_type' => 'member',
+            'signature_confirmed' => '1',
+            'signed_at' => '2040-01-10',
+            'operation_id' => $operationId,
+            'is_master_consent' => '1',
+            'scan' => UploadedFile::fake()->createWithContent('single-scan.pdf', $pdfBytes),
+        ]);
+        $response->assertRedirect();
+
+        $master = DB::table('member_master_consents')->where('member_id', $fixture['memberId'])->first();
+        $this->assertNotNull($master);
+        $legacy = DB::table('examination_consents')->where('booking_id', $fixture['bookingId'])->first();
+        $this->assertNotNull($legacy);
+
+        // Exactly one referenced key across both master and legacy consent records
+        $this->assertNotNull($master->private_scan_object_key);
+        $this->assertSame($master->private_scan_object_key, $legacy->private_scan_object_key);
+
+        // Storage contains exactly this object (file + metadata)
+        $filesAfter = Storage::disk('local')->allFiles();
+        $newFiles = array_diff($filesAfter, $filesBefore);
+        $this->assertCount(2, $newFiles);
+        $this->assertTrue(in_array((string) $master->private_scan_object_key, $newFiles, true));
+        $this->assertTrue(in_array((string) $master->private_scan_object_key.'.meta.json', $newFiles, true));
+    }
+
+    public function test_new_intentional_consent_version_stores_its_own_evidence_without_affecting_historical_evidence(): void
+    {
+        $fixture = $this->matchedFixture();
+        $this->startOperatorSession($fixture);
+
+        // Step 1: Initial consent V1
+        $pdf1 = "%PDF-1.7\nsynthetic v1 evidence\n%%EOF";
+        $op1 = (string) Str::uuid();
+
+        $this->post(route('operator.paper-consent.store', $fixture['caseId']), [
+            'form_name' => 'Informed Consent',
+            'form_version' => 'V1',
+            'signer_type' => 'member',
+            'signature_confirmed' => '1',
+            'signed_at' => '2040-01-10',
+            'operation_id' => $op1,
+            'is_master_consent' => '1',
+            'scan' => UploadedFile::fake()->createWithContent('v1.pdf', $pdf1),
+        ])->assertRedirect();
+
+        $v1 = DB::table('member_master_consents')
+            ->where('member_id', $fixture['memberId'])
+            ->where('consent_version', 1)
+            ->first();
+        $this->assertNotNull($v1);
+        $v1Key = $v1->private_scan_object_key;
+        $this->assertNotNull($v1Key);
+        Storage::disk('local')->assertExists($v1Key);
+
+        // Step 2: Second intentional version V2 using reusable consent service directly with new evidence scan
+        $pdf2 = "%PDF-1.7\nsynthetic v2 evidence\n%%EOF";
+        $op2 = (string) Str::uuid();
+        $scan2 = UploadedFile::fake()->createWithContent('v2.pdf', $pdf2);
+
+        $reusable = app(OperatorReusableConsentService::class);
+        $v2Result = $reusable->recordMasterConsent(
+            caseId: $fixture['caseId'],
+            signerType: 'member',
+            signedAt: '2040-02-15',
+            operationId: $op2,
+            scan: $scan2,
+            formName: 'Informed Consent',
+            formVersion: 'V1',
+        );
+
+        $this->assertSame('confirmed', $v2Result['status']);
+        $this->assertSame(2, $v2Result['consent_version']);
+
+        $v2 = DB::table('member_master_consents')
+            ->where('member_id', $fixture['memberId'])
+            ->where('consent_version', 2)
+            ->first();
+        $this->assertNotNull($v2);
+        $v2Key = $v2->private_scan_object_key;
+        $this->assertNotNull($v2Key);
+        $this->assertNotSame($v1Key, $v2Key);
+
+        // Assert: Historical V1 evidence file is still present and unchanged
+        Storage::disk('local')->assertExists($v1Key);
+        $this->assertSame($pdf1, Storage::disk('local')->get($v1Key));
+
+        // Assert: New V2 evidence file is also present
+        Storage::disk('local')->assertExists($v2Key);
+        $this->assertSame($pdf2, Storage::disk('local')->get($v2Key));
+
+        // Historical status superseded, current status active
+        $v1Refreshed = DB::table('member_master_consents')->where('id', $v1->id)->first();
+        $this->assertSame('superseded', $v1Refreshed->status);
+        $this->assertSame($v1Key, $v1Refreshed->private_scan_object_key);
+        $this->assertSame('active', $v2->status);
+    }
+
+    public function test_consent_cleanup_failure_handles_and_surfaces_error_without_falsely_declaring_success(): void
+    {
+        $fixture = $this->matchedFixture();
+        $this->startOperatorSession($fixture);
+
+        $failingStore = new class(app(PrivateObjectStore::class)) implements PrivateObjectStore
+        {
+            public function __construct(private PrivateObjectStore $inner) {}
+
+            public function put(string $contents, $context, string $purpose): PrivateObject
+            {
+                return $this->inner->put($contents, $context, $purpose);
+            }
+
+            public function putStream($stream, int $bytes, string $checksum, $context, string $purpose, ?OpaqueObjectKey $key = null): PrivateObject
+            {
+                return $this->inner->putStream($stream, $bytes, $checksum, $context, $purpose, $key);
+            }
+
+            public function putStreamAsync($stream, int $bytes, string $checksum, $context, string $purpose, ?OpaqueObjectKey $key = null): PromiseInterface
+            {
+                return $this->inner->putStreamAsync($stream, $bytes, $checksum, $context, $purpose, $key);
+            }
+
+            public function delete(PrivateObject $object): void
+            {
+                throw new \RuntimeException('Storage backend delete unavailable.');
+            }
+
+            public function grant(PrivateObject $object, $context, string $audience, string $purpose, \DateTimeImmutable $expiresAt): AccessGrant
+            {
+                return $this->inner->grant($object, $context, $audience, $purpose, $expiresAt);
+            }
+
+            public function get(AccessGrant $grant, $context, string $audience, string $purpose): string
+            {
+                return $this->inner->get($grant, $context, $audience, $purpose);
+            }
+
+            public function getStream(AccessGrant $grant, $context, string $audience, string $purpose)
+            {
+                return $this->inner->getStream($grant, $context, $audience, $purpose);
+            }
+        };
+
+        app()->instance(PrivateObjectStore::class, $failingStore);
+
+        $response = $this->post(route('operator.paper-consent.store', $fixture['caseId']), [
+            'form_name' => 'Informed Consent',
+            'form_version' => 'V99',
+            'signer_type' => 'member',
+            'signature_confirmed' => '1',
+            'signed_at' => '2040-01-10',
+            'operation_id' => (string) Str::uuid(),
+            'is_master_consent' => '1',
+            'scan' => UploadedFile::fake()->createWithContent('fail.pdf', "%PDF-1.7\n%%EOF"),
+        ]);
+
+        $response->assertRedirect();
+        $response->assertSessionHasErrors(['consent']);
+        $this->assertSame(0, DB::table('member_master_consents')->count());
     }
 
     public function test_repeated_and_concurrent_consent_operation_idempotency(): void

@@ -17,6 +17,9 @@ use App\Modules\Operator\Application\Services\OperatorReusableConsentService;
 use App\Modules\Operator\Application\Services\OperatorShiftAssignmentService;
 use App\Modules\Operator\Application\Services\OperatorWorklistService;
 use App\Modules\Operator\Domain\OperatorException;
+use App\Shared\Storage\OpaqueObjectKey;
+use App\Shared\Storage\PrivateObject;
+use App\Shared\Storage\PrivateObjectStore;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -693,10 +696,12 @@ final class PortalController extends Controller
 
         $input = $validator->validated();
 
+        $trackedScanKey = null;
+
         try {
             // Confirm legacy paper consent and record reusable master consent atomically.
             // A failure in either rolls back the entire state to prevent partial/inconsistent outcomes.
-            DB::transaction(function () use ($consent, $reusableConsent, $case, $input, $request): void {
+            DB::transaction(function () use ($consent, $reusableConsent, $case, $input, $request, &$trackedScanKey): void {
                 $verificationCase = DB::table('operator_identity_verifications')->where('id', $case)->first();
                 $existingLegacy = $verificationCase !== null
                     ? DB::table('examination_consents')->where('booking_id', $verificationCase->booking_id)->first()
@@ -719,9 +724,15 @@ final class PortalController extends Controller
                         $request->file('scan'),
                     );
                     $legacyConsentId = isset($legacyResult['consent_id']) ? (string) $legacyResult['consent_id'] : null;
+                    if ($legacyConsentId !== null) {
+                        $legacyConsentRow = DB::table('examination_consents')->where('id', $legacyConsentId)->first();
+                        if ($legacyConsentRow !== null && $legacyConsentRow->private_scan_object_key !== null) {
+                            $trackedScanKey = (string) $legacyConsentRow->private_scan_object_key;
+                        }
+                    }
                 }
 
-                $reusableConsent->recordMasterConsent(
+                $reusableResult = $reusableConsent->recordMasterConsent(
                     caseId: $case,
                     signerType: (string) $input['signer_type'],
                     signedAt: (string) $input['signed_at'],
@@ -732,12 +743,30 @@ final class PortalController extends Controller
                     formVersion: (string) $input['form_version'],
                     legacyConsentId: $legacyConsentId,
                 );
+
+                if ($trackedScanKey === null && isset($reusableResult['private_scan_object_key']) && is_string($reusableResult['private_scan_object_key'])) {
+                    $trackedScanKey = $reusableResult['private_scan_object_key'];
+                }
             });
 
             return redirect()->route('operator.paper-consent.show', $case)->with('status', __('Paper consent confirmed.'));
         } catch (Throwable $exception) {
+            // Coordinate rollback cleanup: If DB transaction rolled back, delete newly uploaded object if not referenced by any committed consent
+            if ($trackedScanKey !== null) {
+                $referencedInLegacy = DB::table('examination_consents')->where('private_scan_object_key', $trackedScanKey)->exists();
+                $referencedInMaster = DB::table('member_master_consents')->where('private_scan_object_key', $trackedScanKey)->exists();
+                if (! $referencedInLegacy && ! $referencedInMaster) {
+                    try {
+                        $store = app(PrivateObjectStore::class);
+                        $store->delete(new PrivateObject(OpaqueObjectKey::fromString($trackedScanKey), '', 0, new \DateTimeImmutable));
+                    } catch (Throwable) {
+                    }
+                }
+            }
+
             return back()->withErrors(['consent' => $exception instanceof OperatorException ? __($exception->getMessage()) : __('The paper consent could not be confirmed.')])->withInput();
         }
+
     }
 
     public function confirmConsentVisit(Request $request, string $case, OperatorReusableConsentService $reusableConsent): RedirectResponse

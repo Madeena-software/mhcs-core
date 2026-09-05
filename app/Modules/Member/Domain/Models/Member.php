@@ -62,9 +62,4 @@ final class Member extends Model
     {
         return $this->hasMany(MemberExternalIdentifier::class);
     }
-
-    public function masterConsents(): HasMany
-    {
-        return $this->hasMany(\App\Modules\Operator\Domain\Models\MemberMasterConsent::class);
-    }
 }

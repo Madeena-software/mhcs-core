@@ -4,9 +4,7 @@ declare(strict_types=1);
 
 namespace App\Modules\Operator\Domain\Models;
 
-use App\Modules\Member\Domain\Models\Member;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 final class MemberMasterConsent extends Model
@@ -26,16 +24,6 @@ final class MemberMasterConsent extends Model
             'signed_at' => 'datetime',
             'withdrawn_at' => 'datetime',
         ];
-    }
-
-    public function member(): BelongsTo
-    {
-        return $this->belongsTo(Member::class, 'member_id');
-    }
-
-    public function signer(): BelongsTo
-    {
-        return $this->belongsTo(Member::class, 'signer_member_id');
     }
 
     public function visitConfirmations(): HasMany

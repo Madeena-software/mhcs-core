@@ -10,6 +10,7 @@ use App\Modules\Operator\Domain\OperatorException;
 use App\Shared\Audit\AuditEvent;
 use App\Shared\Audit\AuditStore;
 use App\Shared\Infrastructure\Idempotency\IdempotencyStore;
+use App\Shared\Storage\PrivateObject;
 use App\Shared\Storage\PrivateObjectStore;
 use App\Shared\Time\Clock;
 use DateTimeImmutable;
@@ -17,6 +18,7 @@ use DateTimeZone;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Throwable;
 
 final readonly class OperatorReusableConsentService
 {
@@ -135,34 +137,9 @@ final readonly class OperatorReusableConsentService
         $signedInstant = $this->instant($signedAt);
         $now = $this->clock->now();
 
-        // Resolve scan evidence
-        $scanObjectKey = null;
-        $scanChecksum = null;
-        $scanBytes = null;
-        $scanFormat = null;
-
-        if ($legacyConsentId !== null) {
-            $legacyConsent = DB::table('examination_consents')->where('id', $legacyConsentId)->first();
-            if ($legacyConsent !== null) {
-                $scanObjectKey = $legacyConsent->private_scan_object_key;
-                $scanChecksum = $legacyConsent->private_scan_checksum;
-                $scanBytes = $legacyConsent->private_scan_bytes !== null ? (int) $legacyConsent->private_scan_bytes : null;
-                $scanFormat = $legacyConsent->private_scan_format;
-            }
-        } elseif ($scan !== null) {
+        $upload = null;
+        if ($legacyConsentId === null && $scan !== null) {
             $upload = $this->validatedUpload($scan);
-            $scanChecksum = $upload['checksum'];
-            $scanBytes = $upload['bytes'];
-            $scanFormat = $upload['format'];
-
-            if ($this->objects !== null) {
-                $storedObject = $this->objects->put(
-                    $upload['contents'],
-                    $identity['context']->forPurpose(self::UPLOAD_PURPOSE),
-                    self::UPLOAD_PURPOSE,
-                );
-                $scanObjectKey = (string) $storedObject->key;
-            }
         }
 
         $payload = [
@@ -175,141 +152,176 @@ final readonly class OperatorReusableConsentService
             'form_name' => $formName,
             'form_version' => $formVersion,
             'signed_at' => $signedInstant->format(DATE_ATOM),
-            'has_scan' => $scanObjectKey !== null,
+            'has_scan' => $upload !== null || $legacyConsentId !== null,
         ];
 
-        $outcome = $this->idempotency->run(
-            'master-consent:'.$operationId,
-            'operator.master-consent.record',
-            $payload,
-            function () use (
-                $identity, $site, $case, $profileId, $booking, $memberId, $signerType, $signedInstant,
-                $operationId, $screeningScope, $formName, $formVersion, $legacyConsentId,
-                $scanObjectKey, $scanChecksum, $scanBytes, $scanFormat, $now
-            ): array {
-                return DB::transaction(function () use (
-                    $identity, $site, $case, $profileId, $booking, $memberId, $signerType, $signedInstant,
+        $storedObject = null;
+
+        try {
+            $outcome = $this->idempotency->run(
+                'master-consent:'.$operationId,
+                'operator.master-consent.record',
+                $payload,
+                function () use (
+                    &$storedObject, $identity, $site, $case, $profileId, $booking, $memberId, $signerType, $signedInstant,
                     $operationId, $screeningScope, $formName, $formVersion, $legacyConsentId,
-                    $scanObjectKey, $scanChecksum, $scanBytes, $scanFormat, $now
+                    $upload, $now
                 ): array {
-                    // Supersede any existing active consent for this member and scope
-                    $existingActive = MemberMasterConsent::query()
-                        ->where('member_id', $memberId)
-                        ->where('screening_scope', $screeningScope)
-                        ->where('status', 'active')
-                        ->lockForUpdate()
-                        ->get();
+                    return DB::transaction(function () use (
+                        &$storedObject, $identity, $site, $case, $profileId, $booking, $memberId, $signerType, $signedInstant,
+                        $operationId, $screeningScope, $formName, $formVersion, $legacyConsentId,
+                        $upload, $now
+                    ): array {
+                        // Resolve scan evidence inside idempotency runner
+                        $scanObjectKey = null;
+                        $scanChecksum = null;
+                        $scanBytes = null;
+                        $scanFormat = null;
 
-                    foreach ($existingActive as $active) {
-                        $active->update(['status' => 'superseded']);
-                    }
+                        if ($legacyConsentId !== null) {
+                            $legacyConsent = DB::table('examination_consents')->where('id', $legacyConsentId)->first();
+                            if ($legacyConsent !== null) {
+                                $scanObjectKey = $legacyConsent->private_scan_object_key;
+                                $scanChecksum = $legacyConsent->private_scan_checksum;
+                                $scanBytes = $legacyConsent->private_scan_bytes !== null ? (int) $legacyConsent->private_scan_bytes : null;
+                                $scanFormat = $legacyConsent->private_scan_format;
+                            }
+                        } elseif ($upload !== null && $this->objects !== null) {
+                            $storedObject = $this->objects->put(
+                                $upload['contents'],
+                                $identity['context']->forPurpose(self::UPLOAD_PURPOSE),
+                                self::UPLOAD_PURPOSE,
+                            );
+                            $scanObjectKey = (string) $storedObject->key;
+                            $scanChecksum = $upload['checksum'];
+                            $scanBytes = $upload['bytes'];
+                            $scanFormat = $upload['format'];
+                        }
+                        // Supersede any existing active consent for this member and scope
+                        $existingActive = MemberMasterConsent::query()
+                            ->where('member_id', $memberId)
+                            ->where('screening_scope', $screeningScope)
+                            ->where('status', 'active')
+                            ->lockForUpdate()
+                            ->get();
 
-                    $latestVersion = (int) MemberMasterConsent::query()
-                        ->where('member_id', $memberId)
-                        ->max('consent_version');
-                    $newVersion = $latestVersion + 1;
+                        foreach ($existingActive as $active) {
+                            $active->update(['status' => 'superseded']);
+                        }
 
-                    $masterConsentId = (string) Str::uuid();
-                    MemberMasterConsent::query()->create([
-                        'id' => $masterConsentId,
-                        'member_id' => $memberId,
-                        'examination_consent_id' => $legacyConsentId,
-                        'consent_version' => $newVersion,
-                        'form_name' => $formName,
-                        'form_version' => $formVersion,
-                        'screening_scope' => $screeningScope,
-                        'signer_type' => $signerType,
-                        'signer_member_id' => $memberId,
-                        'signed_at' => $signedInstant,
-                        'private_scan_object_key' => $scanObjectKey,
-                        'private_scan_checksum' => $scanChecksum,
-                        'private_scan_bytes' => $scanBytes,
-                        'private_scan_format' => $scanFormat,
-                        'status' => 'active',
-                        'withdrawn_at' => null,
-                        'withdrawn_reason' => null,
-                        'withdrawn_by_operator_id' => null,
-                        'created_by_operator_id' => $profileId,
-                        'created_at' => $now,
-                        'updated_at' => $now,
-                    ]);
+                        $latestVersion = (int) MemberMasterConsent::query()
+                            ->where('member_id', $memberId)
+                            ->max('consent_version');
+                        $newVersion = $latestVersion + 1;
 
-                    // Per-visit confirmation: update if existing for booking (new version recorded during same booking), or create
-                    $existingConfirmation = ConsentVisitConfirmation::query()
-                        ->where('booking_id', (string) $case->booking_id)
-                        ->lockForUpdate()
-                        ->first();
-
-                    if ($existingConfirmation !== null) {
-                        $existingConfirmation->update([
-                            'member_master_consent_id' => $masterConsentId,
-                            'confirmed_by_operator_id' => $profileId,
-                            'confirmed_at' => $now,
-                            'updated_at' => $now,
-                        ]);
-                        $visitConfirmationId = (string) $existingConfirmation->id;
-                    } else {
-                        $visitConfirmationId = (string) Str::uuid();
-                        ConsentVisitConfirmation::query()->create([
-                            'id' => $visitConfirmationId,
-                            'booking_id' => (string) $case->booking_id,
+                        $masterConsentId = (string) Str::uuid();
+                        MemberMasterConsent::query()->create([
+                            'id' => $masterConsentId,
                             'member_id' => $memberId,
-                            'member_master_consent_id' => $masterConsentId,
-                            'examination_site_id' => (string) $booking->examination_site_id_snapshot,
-                            'operator_site_id' => (string) $site->operator_site_id,
-                            'confirmed_by_operator_id' => $profileId,
-                            'confirmed_at' => $now,
+                            'examination_consent_id' => $legacyConsentId,
+                            'consent_version' => $newVersion,
+                            'form_name' => $formName,
+                            'form_version' => $formVersion,
+                            'screening_scope' => $screeningScope,
+                            'signer_type' => $signerType,
+                            'signer_member_id' => $memberId,
+                            'signed_at' => $signedInstant,
+                            'private_scan_object_key' => $scanObjectKey,
+                            'private_scan_checksum' => $scanChecksum,
+                            'private_scan_bytes' => $scanBytes,
+                            'private_scan_format' => $scanFormat,
+                            'status' => 'active',
+                            'withdrawn_at' => null,
+                            'withdrawn_reason' => null,
+                            'withdrawn_by_operator_id' => null,
+                            'created_by_operator_id' => $profileId,
                             'created_at' => $now,
                             'updated_at' => $now,
                         ]);
-                    }
 
-                    // Backward-compatible examination_consents entry if not already created by legacy confirm
-                    if ($legacyConsentId === null) {
-                        $this->upsertExaminationConsent(
-                            bookingId: (string) $case->booking_id,
-                            memberId: $memberId,
-                            examinationSiteId: (string) $booking->examination_site_id_snapshot,
-                            operatorSiteId: (string) $site->operator_site_id,
-                            signerType: $signerType,
-                            signedAt: $signedInstant,
-                            operatorProfileId: $profileId,
-                            operationId: $operationId,
-                            scanObjectKey: $scanObjectKey,
-                            scanChecksum: $scanChecksum,
-                            scanBytes: $scanBytes,
-                            scanFormat: $scanFormat,
-                            now: $now,
-                        );
-                    }
+                        // Per-visit confirmation: update if existing for booking (new version recorded during same booking), or create
+                        $existingConfirmation = ConsentVisitConfirmation::query()
+                            ->where('booking_id', (string) $case->booking_id)
+                            ->lockForUpdate()
+                            ->first();
 
-                    $this->audit->append(AuditEvent::fromContext(
-                        $identity['context'],
-                        'operator.master-consent.recorded',
-                        'operator',
-                        'success',
-                        $now,
-                        MemberMasterConsent::class,
-                        $masterConsentId,
-                        metadata: [
+                        if ($existingConfirmation !== null) {
+                            $existingConfirmation->update([
+                                'member_master_consent_id' => $masterConsentId,
+                                'confirmed_by_operator_id' => $profileId,
+                                'confirmed_at' => $now,
+                                'updated_at' => $now,
+                            ]);
+                            $visitConfirmationId = (string) $existingConfirmation->id;
+                        } else {
+                            $visitConfirmationId = (string) Str::uuid();
+                            ConsentVisitConfirmation::query()->create([
+                                'id' => $visitConfirmationId,
+                                'booking_id' => (string) $case->booking_id,
+                                'member_id' => $memberId,
+                                'member_master_consent_id' => $masterConsentId,
+                                'examination_site_id' => (string) $booking->examination_site_id_snapshot,
+                                'operator_site_id' => (string) $site->operator_site_id,
+                                'confirmed_by_operator_id' => $profileId,
+                                'confirmed_at' => $now,
+                                'created_at' => $now,
+                                'updated_at' => $now,
+                            ]);
+                        }
+
+                        // Backward-compatible examination_consents entry if not already created by legacy confirm
+                        if ($legacyConsentId === null) {
+                            $this->upsertExaminationConsent(
+                                bookingId: (string) $case->booking_id,
+                                memberId: $memberId,
+                                examinationSiteId: (string) $booking->examination_site_id_snapshot,
+                                operatorSiteId: (string) $site->operator_site_id,
+                                signerType: $signerType,
+                                signedAt: $signedInstant,
+                                operatorProfileId: $profileId,
+                                operationId: $operationId,
+                                scanObjectKey: $scanObjectKey,
+                                scanChecksum: $scanChecksum,
+                                scanBytes: $scanBytes,
+                                scanFormat: $scanFormat,
+                                now: $now,
+                            );
+                        }
+
+                        $this->audit->append(AuditEvent::fromContext(
+                            $identity['context'],
+                            'operator.master-consent.recorded',
+                            'operator',
+                            'success',
+                            $now,
+                            MemberMasterConsent::class,
+                            $masterConsentId,
+                            metadata: [
+                                'consent_version' => $newVersion,
+                                'operator_site_id' => $site->operator_site_id,
+                                'booking_id' => (string) $case->booking_id,
+                                'form_name' => $formName,
+                                'form_version' => $formVersion,
+                                'has_private_scan' => $scanObjectKey !== null,
+                            ],
+                        ));
+
+                        return [
+                            'master_consent_id' => $masterConsentId,
                             'consent_version' => $newVersion,
-                            'operator_site_id' => $site->operator_site_id,
-                            'booking_id' => (string) $case->booking_id,
-                            'form_name' => $formName,
-                            'form_version' => $formVersion,
-                            'has_private_scan' => $scanObjectKey !== null,
-                        ],
-                    ));
-
-                    return [
-                        'master_consent_id' => $masterConsentId,
-                        'consent_version' => $newVersion,
-                        'visit_confirmation_id' => $visitConfirmationId,
-                        'status' => 'confirmed',
-                    ];
-                });
+                            'visit_confirmation_id' => $visitConfirmationId,
+                            'private_scan_object_key' => $scanObjectKey,
+                            'status' => 'confirmed',
+                        ];
+                    });
+                }
+            );
+        } catch (Throwable $exception) {
+            if ($storedObject !== null && $this->objects !== null) {
+                $this->deleteQuietly($storedObject);
             }
-        );
+            throw $exception;
+        }
 
         return (array) $outcome->result;
     }
@@ -713,5 +725,13 @@ final readonly class OperatorReusableConsentService
         }
 
         return (new DateTimeImmutable($raw))->setTimezone(new DateTimeZone('UTC'));
+    }
+
+    private function deleteQuietly(PrivateObject $object): void
+    {
+        try {
+            $this->objects?->delete($object);
+        } catch (Throwable) {
+        }
     }
 }
