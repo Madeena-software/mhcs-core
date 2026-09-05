@@ -35,4 +35,14 @@ return [
         ],
     ],
 
+    'ai_pacs' => [
+        'base_url' => env('AI_PACS_URL', 'http://124.225.183.175:8361'),
+        'username' => env('AI_PACS_USERNAME'),
+        'password' => env('AI_PACS_PASSWORD'),
+        'driver' => env('AI_PACS_DRIVER', 'http'),
+        'timeout_seconds' => (int) env('AI_PACS_TIMEOUT_SECONDS', 30),
+        'polling_interval_seconds' => (int) env('AI_PACS_POLLING_INTERVAL_SECONDS', 2),
+        'max_polling_attempts' => (int) env('AI_PACS_MAX_POLLING_ATTEMPTS', 10),
+    ],
+
 ];

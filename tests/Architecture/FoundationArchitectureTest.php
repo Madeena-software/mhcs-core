@@ -84,6 +84,7 @@ final class FoundationArchitectureTest extends TestCase
             app_path('Modules/ImageGateway/Application/Services/ImageGatewayCaptureService.php'),
             app_path('Modules/ImageGateway/Application/Jobs/ProcessCaptureSet.php'),
             app_path('Modules/ImageGateway/Infrastructure/MpipsClient.php'),
+            app_path('Modules/ImageGateway/Infrastructure/AiPacsClient.php'),
         ];
 
         foreach ($this->phpFiles(app_path('Modules')) as $file) {
