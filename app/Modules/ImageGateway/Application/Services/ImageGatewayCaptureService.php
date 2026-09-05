@@ -85,6 +85,7 @@ final readonly class ImageGatewayCaptureService implements OperatorStudyQuery
             'status' => (string) ($capture->status ?? 'capturing'),
             'can_retry' => $this->canRetryProcessing($capture, $missing),
             'ticket_number' => (string) $admission->ticket_number,
+            'locator_code' => (string) ($admission->locator_code ?? ''),
             'metadata' => $metadata,
             'metadata_editable' => $capture === null,
         ];
@@ -544,6 +545,13 @@ final readonly class ImageGatewayCaptureService implements OperatorStudyQuery
             $now = $this->clock->now();
             DB::table('image_gateway_capture_sets')->where('id', $row->id)->update(['status' => 'accepted', 'accepted_at' => $now, 'updated_at' => $now]);
             DB::table('operator_queue_admissions')->where('id', $row->admission_id)->update(['state' => 'awaiting_ai', 'operator_profile_id' => null, 'claimed_at' => null, 'updated_at' => $now]);
+            DB::table('radiography_session_locators')->where('operator_queue_admission_id', $row->admission_id)->where('status', 'active')->update([
+                'status' => 'completed',
+                'active_key' => null,
+                'invalidated_at' => $now,
+                'invalidation_reason' => 'capture_accepted',
+                'updated_at' => $now,
+            ]);
             DB::table('operator_queue_admission_history')->insert([
                 'id' => (string) Str::uuid(), 'operator_queue_admission_id' => $row->admission_id, 'operator_profile_id' => $profileId,
                 'event_type' => 'capture_accepted', 'from_state' => (string) $admissionRow->state, 'to_state' => 'awaiting_ai', 'operation_id' => $submissionId,

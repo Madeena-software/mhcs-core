@@ -52,6 +52,7 @@ final readonly class OperatorWorklistService
         private AuditStore $audit,
         private OutboxStore $outbox,
         private Clock $clock,
+        private ?RadiographySessionLocatorService $locators = null,
     ) {}
 
     /** @return list<array<string, mixed>> */
@@ -237,6 +238,7 @@ final readonly class OperatorWorklistService
             ->select([
                 'admissions.id as admission_id',
                 'admissions.operator_profile_id as claim_operator_profile_id',
+                'admissions.locator_code',
                 'tickets.ticket_number',
                 'members.name as member_name',
                 'members.medical_record_number as medical_record_number',
@@ -255,6 +257,7 @@ final readonly class OperatorWorklistService
             ->map(static fn (object $row): array => [
                 'admission_id' => (string) $row->admission_id,
                 'ticket_number' => (string) $row->ticket_number,
+                'locator_code' => (string) ($row->locator_code ?? ''),
                 'member_name' => (string) $row->member_name,
                 'medical_record_number' => (string) $row->medical_record_number,
                 'schedule_display_reference' => (string) $row->schedule_display_reference,
@@ -615,6 +618,12 @@ final readonly class OperatorWorklistService
                         'created_at' => $now,
                         'updated_at' => $now,
                     ]);
+
+                    ($this->locators ?? app(RadiographySessionLocatorService::class))->allocate(
+                        $xrayAdmissionId,
+                        (string) $admission->operator_site_id,
+                        (string) $admission->member_schedule_id,
+                    );
                     DB::table('operator_queue_admission_history')->insert([
                         'id' => (string) Str::uuid(),
                         'operator_queue_admission_id' => $xrayAdmissionId,
@@ -1445,6 +1454,12 @@ final readonly class OperatorWorklistService
                     'created_at' => $now,
                     'updated_at' => $now,
                 ]);
+
+                ($this->locators ?? app(RadiographySessionLocatorService::class))->allocate(
+                    $xrayAdmissionId,
+                    (string) $admission->operator_site_id,
+                    (string) $admission->member_schedule_id,
+                );
             }
 
             $this->audit->append(AuditEvent::fromContext(

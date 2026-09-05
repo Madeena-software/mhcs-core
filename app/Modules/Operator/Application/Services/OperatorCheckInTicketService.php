@@ -33,6 +33,7 @@ final readonly class OperatorCheckInTicketService
         private AuditStore $audit,
         private OutboxStore $outbox,
         private Clock $clock,
+        private ?RadiographySessionLocatorService $locators = null,
     ) {}
 
     /** @return array<string, mixed> */
@@ -173,6 +174,12 @@ final readonly class OperatorCheckInTicketService
                             'created_at' => $now,
                             'updated_at' => $now,
                         ]);
+
+                        ($this->locators ?? app(RadiographySessionLocatorService::class))->allocate(
+                            $xrayAdmissionId,
+                            (string) $site->getKey(),
+                            (string) $memberResult['schedule_id'],
+                        );
                         DB::table('operator_queue_admission_history')->insert([
                             'id' => (string) Str::uuid(),
                             'operator_queue_admission_id' => $xrayAdmissionId,

@@ -152,6 +152,7 @@ final class FoundationArchitectureTest extends TestCase
             '2026_09_04_000001_add_field_operations_columns_to_members_table.php',
             '2026_09_04_000002_create_reusable_informed_consent_tables.php',
             '2026_09_05_000001_add_evidence_and_binding_to_member_master_consents_table.php',
+            '2026_09_05_000002_create_radiography_session_locators_and_grabber_clients.php',
         ];
 
         $this->assertSame([], array_values(array_diff($migrations, $allowed)));
