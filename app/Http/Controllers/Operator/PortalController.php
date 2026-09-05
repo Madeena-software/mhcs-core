@@ -312,6 +312,38 @@ final class PortalController extends Controller
         }
     }
 
+    public function cancelXray(Request $request, string $admission, OperatorWorklistService $worklist): RedirectResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'operation_id' => ['required', 'uuid'],
+            'reason' => ['nullable', 'string', 'max:255'],
+        ]);
+        if ($validator->fails()) {
+            return back()->withErrors($validator);
+        }
+
+        try {
+            $worklist->cancelXray(
+                $admission,
+                (string) $validator->validated()['operation_id'],
+                (string) ($validator->validated()['reason'] ?? 'session_cancelled'),
+            );
+
+            return redirect()->route('operator.xray-readiness-worklist')->with('status', __('X-ray admission cancelled.'));
+        } catch (OperatorException $exception) {
+            if ($exception->category === 'xray_cancel_conflict') {
+                abort(409);
+            }
+            if ($exception->category === 'xray_cancel_failure') {
+                return back()->withErrors(['queue' => __('The X-ray admission could not be cancelled.')]);
+            }
+
+            abort(403);
+        } catch (Throwable) {
+            return back()->withErrors(['queue' => __('The X-ray admission could not be cancelled.')]);
+        }
+    }
+
     public function callBasicExamination(Request $request, string $admission, OperatorWorklistService $worklist): RedirectResponse
     {
         $validator = Validator::make($request->all(), ['operation_id' => ['required', 'uuid']]);

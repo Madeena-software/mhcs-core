@@ -6,6 +6,9 @@ namespace Tests\Feature\Operator;
 
 use App\Models\User;
 use App\Modules\ImageGateway\Application\Services\ImageGatewayCaptureService;
+use App\Modules\Member\Application\Services\Mvp03ScheduleService;
+use App\Modules\Member\Domain\Models\ShiftSchedule;
+use App\Modules\Member\Filament\Resources\ShiftSchedules\Pages\EditShiftSchedule;
 use App\Modules\Operator\Application\Services\GrabberClientService;
 use App\Modules\Operator\Application\Services\OperatorArrivalService;
 use App\Modules\Operator\Application\Services\OperatorIdentityVerificationService;
@@ -17,12 +20,14 @@ use App\Shared\Context\CorrelationId;
 use App\Shared\Identity\LocalId;
 use App\Shared\Security\ProtectedIdentifierService;
 use App\Shared\Storage\PrivateObjectStore;
+use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Livewire\Livewire;
 use Tests\Operator\Mvp04Fixtures;
 use Tests\TestCase;
 
@@ -75,7 +80,7 @@ final class OperatorFieldOperationsSlice2Test extends TestCase
             'operator_paper_ticket_id' => $ticketId,
             'operator_site_id' => $fixture['siteLocalId'],
             'member_schedule_id' => $fixture['scheduleId'],
-            'queue_class' => 'standard',
+            'queue_class' => 'advance',
             'stage' => 'xray',
             'state' => 'waiting',
             'ready_at' => $now,
@@ -468,6 +473,157 @@ final class OperatorFieldOperationsSlice2Test extends TestCase
         $this->assertSame('expired', $locator->status);
         $this->assertNull($locator->active_key);
         $this->assertSame('shift_closed', $locator->invalidation_reason);
+    }
+
+    private function scheduleAdminUser(): User
+    {
+        $admin = User::factory()->create(['email' => 'schedule-admin-'.Str::lower(Str::random(8)).'@example.test']);
+        $this->grant($admin, true, ['member.admin.access', 'member.schedule.read', 'member.schedule.manage']);
+
+        return $admin;
+    }
+
+    public function test_shift_closure_via_mvp03_schedule_service_invalidates_all_active_locators(): void
+    {
+        $session = $this->createActiveRadiographySession('900000000041');
+        $admin = $this->scheduleAdminUser();
+        $this->actingAs($admin);
+
+        $schedule = ShiftSchedule::query()->findOrFail($session['fixture']['scheduleId']);
+        app(Mvp03ScheduleService::class)->update($schedule, ['status' => 'closed']);
+
+        $this->assertSame('closed', $schedule->refresh()->status);
+
+        $locator = RadiographySessionLocator::query()->find($session['locator']->id);
+        $this->assertNotNull($locator);
+        $this->assertSame('expired', $locator->status);
+        $this->assertNull($locator->active_key);
+        $this->assertNotNull($locator->invalidated_at);
+        $this->assertSame('shift_closed', $locator->invalidation_reason);
+    }
+
+    public function test_shift_closure_via_filament_edit_shift_schedule_page_invalidates_all_active_locators(): void
+    {
+        $session = $this->createActiveRadiographySession('900000000042');
+        $admin = $this->scheduleAdminUser();
+        $this->actingAs($admin);
+        Filament::setCurrentPanel('admin');
+
+        Livewire::test(EditShiftSchedule::class, ['record' => $session['fixture']['scheduleId']])
+            ->fillForm(['status' => 'closed'])
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $schedule = ShiftSchedule::query()->findOrFail($session['fixture']['scheduleId']);
+        $this->assertSame('closed', $schedule->status);
+
+        $locator = RadiographySessionLocator::query()->find($session['locator']->id);
+        $this->assertNotNull($locator);
+        $this->assertSame('expired', $locator->status);
+        $this->assertNull($locator->active_key);
+        $this->assertNotNull($locator->invalidated_at);
+        $this->assertSame('shift_closed', $locator->invalidation_reason);
+    }
+
+    public function test_xray_admission_cancellation_via_worklist_route_invalidates_locator(): void
+    {
+        $session = $this->createActiveRadiographySession('900000000043');
+        $this->startOperatorSession($session['fixture']);
+        $this->grantIdentityPermission($session['fixture']);
+
+        $operationId = (string) Str::uuid();
+        $response = $this->post(route('operator.xray-readiness-worklist.cancel', $session['admissionId']), [
+            'operation_id' => $operationId,
+            'reason' => 'patient_cancelled',
+        ]);
+
+        $response->assertRedirect(route('operator.xray-readiness-worklist'));
+
+        $admission = DB::table('operator_queue_admissions')->where('id', $session['admissionId'])->first();
+        $this->assertNotNull($admission);
+        $this->assertSame('cancelled', $admission->state);
+
+        $locator = RadiographySessionLocator::query()->find($session['locator']->id);
+        $this->assertNotNull($locator);
+        $this->assertSame('cancelled', $locator->status);
+        $this->assertNull($locator->active_key);
+        $this->assertNotNull($locator->invalidated_at);
+        $this->assertSame('patient_cancelled', $locator->invalidation_reason);
+
+        $this->assertDatabaseHas('operator_queue_admission_history', [
+            'operator_queue_admission_id' => $session['admissionId'],
+            'event_type' => 'cancelled',
+            'from_state' => 'waiting',
+            'to_state' => 'cancelled',
+            'operation_id' => $operationId,
+        ]);
+
+        $this->assertSame(1, DB::table('audit_events')->where('action', 'operator.xray.cancelled')->where('target_id', $session['admissionId'])->count());
+    }
+
+    public function test_consent_withdrawal_invalidates_active_radiography_locator_and_cancels_admission(): void
+    {
+        $fixture = $this->matchedFixture('900000000044');
+        $this->startOperatorSession($fixture);
+        $this->grantIdentityPermission($fixture);
+
+        // Store master consent
+        $this->post(route('operator.paper-consent.store', $fixture['caseId']), [
+            'form_name' => 'Informed Consent',
+            'form_version' => 'V1',
+            'signer_type' => 'member',
+            'signature_confirmed' => '1',
+            'signed_at' => '2040-01-10',
+            'operation_id' => (string) Str::uuid(),
+            'is_master_consent' => '1',
+            'consent_scope' => 'general_screening_radiography',
+            'scan' => UploadedFile::fake()->createWithContent('signed-consent.pdf', "%PDF-1.7\nsynthetic\n%%EOF"),
+        ])->assertRedirect();
+
+        // Check in with bypass basic examination directly into xray readiness
+        $this->post(route('operator.check-in.store', $fixture['caseId']), [
+            'operation_id' => (string) Str::uuid(),
+            'bypass_basic_examination' => '1',
+        ])->assertRedirect();
+
+        $xrayAdmission = DB::table('operator_queue_admissions')->where('stage', 'xray')->first();
+        $this->assertNotNull($xrayAdmission);
+        $this->assertSame('waiting', $xrayAdmission->state);
+
+        $locatorBefore = DB::table('radiography_session_locators')
+            ->where('operator_queue_admission_id', $xrayAdmission->id)
+            ->where('status', 'active')
+            ->first();
+        $this->assertNotNull($locatorBefore);
+        $this->assertNotNull($locatorBefore->active_key);
+
+        $masterConsent = DB::table('member_master_consents')
+            ->where('member_id', $fixture['memberId'])
+            ->where('status', 'active')
+            ->first();
+        $this->assertNotNull($masterConsent);
+
+        // Now withdraw consent via route
+        $withdrawResponse = $this->post(route('operator.paper-consent.withdraw', $fixture['caseId']), [
+            'operation_id' => (string) Str::uuid(),
+            'master_consent_id' => $masterConsent->id,
+            'reason' => 'Patient revoked consent',
+        ]);
+        $withdrawResponse->assertRedirect();
+
+        // Master consent must be withdrawn
+        $this->assertSame('withdrawn', DB::table('member_master_consents')->where('id', $masterConsent->id)->value('status'));
+
+        // Admission must be cancelled
+        $admissionAfter = DB::table('operator_queue_admissions')->where('id', $xrayAdmission->id)->first();
+        $this->assertSame('cancelled', $admissionAfter->state);
+
+        // Locator must be cancelled with null active_key and invalidation_reason consent_withdrawn
+        $locatorAfter = DB::table('radiography_session_locators')->where('id', $locatorBefore->id)->first();
+        $this->assertSame('cancelled', $locatorAfter->status);
+        $this->assertNull($locatorAfter->active_key);
+        $this->assertNotNull($locatorAfter->invalidated_at);
+        $this->assertSame('consent_withdrawn', $locatorAfter->invalidation_reason);
     }
 
     // =========================================================================

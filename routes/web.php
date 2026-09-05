@@ -71,6 +71,7 @@ Route::middleware(['auth', EnsureOperatorPortalAccess::class])->group(function (
     Route::post('/operator/studies/batch-download', [ImageGatewayController::class, 'batchDownload'])->name('operator.study.batch-download');
     Route::post('/operator/xray-readiness-worklist/{admission}/claim', [OperatorPortalController::class, 'claimXray'])->name('operator.xray-readiness-worklist.claim');
     Route::post('/operator/xray-readiness-worklist/{admission}/call', [OperatorPortalController::class, 'callXray'])->name('operator.xray-readiness-worklist.call');
+    Route::post('/operator/xray-readiness-worklist/{admission}/cancel', [OperatorPortalController::class, 'cancelXray'])->name('operator.xray-readiness-worklist.cancel');
     Route::post('/operator/basic-examination-worklist/{admission}/claim', [OperatorPortalController::class, 'claimBasicExamination'])->name('operator.basic-examination-worklist.claim');
     Route::post('/operator/basic-examination-worklist/{admission}/call', [OperatorPortalController::class, 'callBasicExamination'])->name('operator.basic-examination-worklist.call');
     Route::post('/operator/basic-examination-worklist/{admission}/start', [OperatorPortalController::class, 'startBasicExamination'])->name('operator.basic-examination-worklist.start');

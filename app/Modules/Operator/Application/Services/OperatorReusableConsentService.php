@@ -6,6 +6,7 @@ namespace App\Modules\Operator\Application\Services;
 
 use App\Modules\Operator\Domain\Models\ConsentVisitConfirmation;
 use App\Modules\Operator\Domain\Models\MemberMasterConsent;
+use App\Modules\Operator\Domain\Models\RadiographySessionLocator;
 use App\Modules\Operator\Domain\OperatorException;
 use App\Shared\Audit\AuditEvent;
 use App\Shared\Audit\AuditStore;
@@ -549,6 +550,38 @@ final readonly class OperatorReusableConsentService
                         DB::table('examination_consents')
                             ->whereIn('id', $consentIdsToWithdraw)
                             ->update(['status' => 'withdrawn']);
+                    }
+
+                    // Invalidate any active radiography session locators for this member
+                    $activeLocators = RadiographySessionLocator::query()
+                        ->whereIn('operator_queue_admission_id', function ($query) use ($record): void {
+                            $query->select('admissions.id')
+                                ->from('operator_queue_admissions as admissions')
+                                ->join('operator_paper_tickets as tickets', 'tickets.id', '=', 'admissions.operator_paper_ticket_id')
+                                ->join('bookings', 'bookings.id', '=', 'tickets.booking_id')
+                                ->where('bookings.member_id', $record->member_id);
+                        })
+                        ->where('status', 'active')
+                        ->get();
+
+                    foreach ($activeLocators as $loc) {
+                        $loc->update([
+                            'status' => 'cancelled',
+                            'active_key' => null,
+                            'invalidated_at' => $now,
+                            'invalidation_reason' => 'consent_withdrawn',
+                            'updated_at' => $now,
+                        ]);
+                    }
+
+                    if ($activeLocators->isNotEmpty()) {
+                        DB::table('operator_queue_admissions')
+                            ->whereIn('id', $activeLocators->pluck('operator_queue_admission_id'))
+                            ->whereIn('state', ['waiting', 'called', 'in_service'])
+                            ->update([
+                                'state' => 'cancelled',
+                                'updated_at' => $now,
+                            ]);
                     }
 
                     $this->audit->append(AuditEvent::fromContext(

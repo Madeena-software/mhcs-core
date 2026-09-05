@@ -15,6 +15,7 @@ use App\Shared\Identity\LocalId;
 use App\Shared\Infrastructure\Idempotency\IdempotencyConflict;
 use App\Shared\Infrastructure\Idempotency\IdempotencyStore;
 use App\Shared\Infrastructure\Outbox\OutboxStore;
+use App\Shared\Security\SensitiveDataSanitizer;
 use App\Shared\Time\Clock;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\UploadedFile;
@@ -29,6 +30,8 @@ final readonly class OperatorWorklistService
     public const XRAY_CLAIM_PURPOSE = 'operator.xray.claim';
 
     public const XRAY_CALL_PURPOSE = 'operator.xray.call';
+
+    public const XRAY_CANCEL_PURPOSE = 'operator.xray.cancel';
 
     public const CALL_PURPOSE = 'operator.basic-examination.call';
 
@@ -1075,6 +1078,145 @@ final readonly class OperatorWorklistService
             throw new OperatorException('xray_call_conflict', 'The X-ray admission could not be called.', $exception);
         } catch (Throwable $exception) {
             throw new OperatorException('xray_call_failure', 'The X-ray admission could not be called.', $exception);
+        }
+    }
+
+    /** @return array{admission_id: string, stage: string, state: string, cancelled_at: string} */
+    public function cancelXray(string $admissionId, string $operationId, string $reason = 'session_cancelled'): array
+    {
+        $admissionId = trim($admissionId);
+        $operationId = trim($operationId);
+        $reason = trim($reason) !== '' ? trim($reason) : 'session_cancelled';
+        if (! Str::isUuid($admissionId) || ! Str::isUuid($operationId)) {
+            throw new OperatorException('xray_cancel_forbidden', 'The X-ray admission is unavailable.');
+        }
+
+        $portal = $this->authorization->portal();
+        $site = $this->authorization->portalSite($portal);
+        $profileId = (string) $portal['profile']->getKey();
+        $payload = [
+            'admission_id' => $admissionId,
+            'operator_profile_id' => $profileId,
+            'operator_site_id' => (string) $site->operator_site_id,
+            'reason' => $reason,
+        ];
+        $context = $this->authorization->current(self::XRAY_CANCEL_PURPOSE);
+
+        try {
+            return $this->idempotency->run(
+                $operationId,
+                self::XRAY_CANCEL_PURPOSE,
+                $payload,
+                function () use ($admissionId, $profileId, $site, $context, $operationId, $reason): array {
+                    $transactionPortal = $this->authorization->portal();
+                    $transactionSite = $this->authorization->portalSite($transactionPortal);
+                    if ((string) $transactionPortal['profile']->getKey() !== $profileId || (string) $transactionSite->getKey() !== (string) $site->getKey()) {
+                        throw new OperatorException('xray_cancel_forbidden', 'The X-ray admission is unavailable.');
+                    }
+
+                    $admission = DB::table('operator_queue_admissions as admissions')
+                        ->join('shift_schedules as schedules', 'schedules.id', '=', 'admissions.member_schedule_id')
+                        ->join('examination_site_refs as member_sites', 'member_sites.id', '=', 'schedules.examination_site_id')
+                        ->where('admissions.id', $admissionId)
+                        ->where('admissions.operator_site_id', $site->getKey())
+                        ->where('member_sites.operator_site_id', $site->operator_site_id)
+                        ->select('admissions.*')
+                        ->lockForUpdate()
+                        ->first();
+                    if ($admission === null) {
+                        throw new OperatorException('xray_cancel_forbidden', 'The X-ray admission is unavailable.');
+                    }
+                    if (! in_array($admission->queue_class, ['advance', 'standard'], true) || $admission->stage !== 'xray') {
+                        throw new OperatorException('xray_cancel_conflict', 'The X-ray admission could not be cancelled.');
+                    }
+                    if (! $this->assignments->isAssigned($profileId, (string) $admission->member_schedule_id, $site->operator_site_id)) {
+                        throw new OperatorException('xray_cancel_forbidden', 'The X-ray admission is unavailable.');
+                    }
+                    if ($admission->operator_profile_id !== null && (string) $admission->operator_profile_id !== $profileId) {
+                        throw new OperatorException('xray_cancel_forbidden', 'The X-ray admission is unavailable.');
+                    }
+                    if (! in_array($admission->state, ['waiting', 'called', 'in_service'], true)) {
+                        throw new OperatorException('xray_cancel_conflict', 'The X-ray admission could not be cancelled.');
+                    }
+
+                    $now = $this->clock->now();
+                    $fromState = (string) $admission->state;
+                    DB::table('operator_queue_admissions')
+                        ->where('id', $admissionId)
+                        ->update([
+                            'state' => 'cancelled',
+                            'updated_at' => $now,
+                        ]);
+                    DB::table('operator_queue_admission_history')->insert([
+                        'id' => (string) Str::uuid(),
+                        'operator_queue_admission_id' => $admissionId,
+                        'operator_profile_id' => $profileId,
+                        'event_type' => 'cancelled',
+                        'from_state' => $fromState,
+                        'to_state' => 'cancelled',
+                        'operation_id' => $operationId,
+                        'occurred_at' => $now,
+                        'created_at' => $now,
+                        'updated_at' => $now,
+                    ]);
+
+                    ($this->locators ?? app(RadiographySessionLocatorService::class))->markCancelled(
+                        $admissionId,
+                        $reason,
+                    );
+
+                    $metadata = [
+                        'admission_id' => $admissionId,
+                        'operator_profile_id' => $profileId,
+                        'queue_class' => (string) $admission->queue_class,
+                        'previous_state' => $fromState,
+                        'state' => 'cancelled',
+                        'cancelled_at_utc' => $now->format(DATE_ATOM),
+                    ];
+                    $safeReason = 'session_cancelled';
+                    try {
+                        SensitiveDataSanitizer::assertSafeString($reason);
+                        $safeReason = $reason;
+                    } catch (Throwable) {
+                        $safeReason = 'session_cancelled';
+                    }
+                    $this->audit->append(AuditEvent::fromContext(
+                        $context,
+                        'operator.xray.cancelled',
+                        'operator',
+                        'success',
+                        $now,
+                        'queue-admission',
+                        $admissionId,
+                        reason: $safeReason,
+                        metadata: $metadata,
+                    ));
+                    $this->outbox->record(new VersionedDomainEvent(
+                        LocalId::fromString((string) Str::uuid()),
+                        'operator.xray-cancelled',
+                        1,
+                        $now,
+                        $metadata,
+                        LocalId::fromString($admissionId),
+                        $context->operationId,
+                    ));
+
+                    return [
+                        'admission_id' => $admissionId,
+                        'stage' => 'xray',
+                        'state' => 'cancelled',
+                        'cancelled_at' => $now->format(DATE_ATOM),
+                    ];
+                },
+            )->result;
+        } catch (IdempotencyConflict $exception) {
+            throw new OperatorException('xray_cancel_conflict', 'The X-ray admission could not be cancelled.', $exception);
+        } catch (OperatorException $exception) {
+            throw $exception;
+        } catch (QueryException $exception) {
+            throw new OperatorException('xray_cancel_conflict', 'The X-ray admission could not be cancelled.', $exception);
+        } catch (Throwable $exception) {
+            throw new OperatorException('xray_cancel_failure', 'The X-ray admission could not be cancelled.', $exception);
         }
     }
 

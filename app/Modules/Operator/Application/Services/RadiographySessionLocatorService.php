@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Modules\Operator\Application\Services;
 
+use App\Modules\Member\Application\Contracts\ShiftScheduleClosureHandler;
 use App\Modules\Operator\Domain\Models\RadiographySessionLocator;
 use App\Modules\Operator\Domain\OperatorException;
 use App\Shared\Audit\AuditEvent;
@@ -14,7 +15,7 @@ use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
-final readonly class RadiographySessionLocatorService
+final readonly class RadiographySessionLocatorService implements ShiftScheduleClosureHandler
 {
     private const int MAX_CODES = 10000;
 
@@ -168,6 +169,11 @@ final readonly class RadiographySessionLocatorService
                 'invalidation_reason' => 'shift_closed',
                 'updated_at' => $now,
             ]);
+    }
+
+    public function onShiftClosed(string $shiftScheduleId): void
+    {
+        $this->closeShiftLocators($shiftScheduleId);
     }
 
     /**
