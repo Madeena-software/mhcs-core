@@ -139,9 +139,9 @@ final readonly class RadiographySessionLocatorService implements ShiftScheduleCl
     /**
      * Mark code unusable when the session completes.
      */
-    public function markCompleted(string $admissionId): void
+    public function markCompleted(string $admissionId, string $reason = 'session_completed'): void
     {
-        $this->invalidate($admissionId, 'completed', 'session_completed');
+        $this->invalidate($admissionId, 'completed', $reason);
     }
 
     /**
