@@ -1,7 +1,7 @@
 ---
 title: AI PACS Integration and Indonesian Report Processing
 document_id: MHCS-TASK-AI-PACS-INTEGRATION-001
-version: 1.0
+version: 1.1
 status: validated-published
 language: en-US
 last_updated: 2026-09-05
@@ -10,7 +10,7 @@ scope:
   - Asynchronous DICOM dispatch and AI result polling
   - Immutable original PDF and derived Indonesian PDF storage
   - Full provenance, audit, idempotency, and error handling
-  - Stable public integration interface for Operator workflows
+  - Actionable integration contract for Operator workflows
   - Clinical distinction between AI output and doctor clinical reports
 authority_note: >
   This published task authorizes only the bounded implementation, tests, and verification defined here.
@@ -50,10 +50,10 @@ In Indonesia, preventive healthcare screening and diagnostic examinations often 
 
 Within MHCS Core, the **Image Gateway** module owns durable private persistence of radiographs, atomic submission acceptance, queued MPIPS processing coordination, DICOM storage/viewer access, result publication, and audit trails.
 
-To support high-throughput chest screening, MHCS Core integrates with an external AI PACS ("Yizhun AI" / "Insight ChestDR" platform) to perform automated chest radiograph analysis and report generation. The external AI PACS analyzes DICOM radiographs and outputs an AI Image Report PDF. However, the external AI PACS is a third-party vendor system with several specific architectural characteristics:
-1. It is served as a vendor React Single Page Application (SPA) over cleartext HTTP (`http://124.225.183.175:8361/`);
-2. It lacks an official, public, documented external REST API for study submission and report extraction, requiring browser-level automation (Playwright) or validated reverse-engineered protocol adapters;
-3. Its native PDF reports are formatted in Chinese/English with partial localization, requiring transformation into an Indonesian-localized MHCS screening report matching the agreed design reference (`05_final_indonesia_v10`);
+To support high-throughput chest screening, MHCS Core coordinates with an external AI PACS ("Yizhun AI" / "Insight ChestDR" platform) to perform automated chest radiograph analysis and report generation. The external AI PACS analyzes DICOM radiographs and generates an AI Image Report PDF. Key observed characteristics and constraints include:
+1. The external system is currently observed as a vendor React Single Page Application (SPA) served over cleartext HTTP (`http://124.225.183.175:8361/`).
+2. Observed automation repositories (`ai-report-download-automation` and `ai-pacs-indonesian-localization`) demonstrate successful browser-based navigation and PDF blob interception; however, they constitute observed reference evidence rather than a mandated implementation recipe. A provisional browser path or any evidenced direct API must be evaluated against repository constraints, and no new heavy dependency is pre-approved.
+3. Vendor-native PDF reports are formatted in Chinese/English with partial localization, requiring transformation into an Indonesian-localized MHCS screening report matching the agreed design reference (`05_final_indonesia_v10`).
 4. Crucially, AI outputs are screening aids and clinical decision-support artifacts only. They must never be represented automatically as doctor-finalized or clinically verified diagnostic reports, which remain strictly doctor-owned within Doctor Core.
 
 This task establishes the delivery contract authorizing the implementation of the AI PACS integration pipeline inside `mhcs-core`, strictly decoupled from the urgent Operator field-operations workstream (`task/urgent-operator-field-operations`).
@@ -70,7 +70,19 @@ The task revision and implementation baseline are separate references. The basel
 
 ## Objective
 
-Authorizes a later implementation workstream to integrate external AI PACS (Yizhun AI / Insight ChestDR) into `mhcs-core` Image Gateway, accepting existing MHCS DICOM studies, executing asynchronous processing, retrieving original AI reports, persisting them immutably in `PrivateObjectStore`, generating Indonesian-localized derived PDFs adhering to the agreed design reference (`05_final_indonesia_v10`), maintaining full provenance and audit trails, and exposing a stable integration contract for operator workflows without altering existing NPZ/MPIPS/DICOM or doctor reporting pathways.
+Authorizes a later implementation workstream to integrate external AI PACS (Yizhun AI / Insight ChestDR) into `mhcs-core` Image Gateway, accepting existing MHCS DICOM studies, executing asynchronous processing, retrieving original AI reports, persisting them immutably in `PrivateObjectStore`, generating Indonesian-localized derived PDFs adhering to the agreed design reference (`05_final_indonesia_v10`), maintaining full provenance and audit trails, and exposing an actionable integration contract for operator workflows without altering existing NPZ/MPIPS/DICOM or doctor reporting pathways.
+
+## Remediation
+
+**Review basis:** `bc0cc60a968b3fad1841fa7a89da6b1687eacc86`
+
+### Required corrections
+
+- **GitHub Repository Secrets Authorization:** Clarify that adding only `AI_PACS_USERNAME`, `AI_PACS_PASSWORD`, and `AI_PACS_URL` via `gh` is authorized if, and only if, a safe validated GitHub Actions workflow requires them. Values must be sourced locally without logging or printing. Verification is restricted to `gh secret list --repo Madeena-software/mhcs-core` reporting names only. No other secret, deployment dispatch, production mutation, or credential disclosure is authorized.
+- **Controlled Smoke Test Requirement:** Mandate a controlled local smoke test using synthetic or de-identified DICOM when AI PACS access is available and the transport/permission boundary permits it. Real patient PHI is strictly prohibited over cleartext HTTP. The smoke test must not be represented as production validation.
+- **Actionable Operator Integration Contract:** Refine the Image Gateway interface and status model to expose granular, actionable states (`queued`, `processing`, `retryable_failure`, `terminal_failure`, `report_ready`, `can_retry`, `last_error_code`, and audit/reference identity) while strictly preventing exposure of credentials, session cookies, private object keys, raw DICOM bytes, public URLs, or raw external exception details. Direct urgent Operator UI modifications remain strictly out of scope.
+- **Dependency & Technical Evidence Discipline:** Remove any implication that new packages (e.g. Playwright, PDF engines) are pre-approved. Mandate reuse of existing runtime capabilities where adequate. If materially consequential packages, runtimes, services, queues, or storage mechanisms are required, stop and return to planning. Treat existing browser-automation repositories as observed reference evidence, not definitive proof of API absence. Do not assume vendor acceptance of all MPIPS DICOM files; verify compatibility via mocked tests and the controlled smoke test.
+- **Preserved Boundary Invariants:** Reaffirm strict isolation of `task/urgent-operator-field-operations` and `main`, preservation of clinical authority separation (AI output never automatically becomes doctor final reports), immutability of source artifacts, and prohibition of PRs, merges, or production deployments.
 
 ## Authoritative inputs
 
@@ -82,11 +94,12 @@ Authorizes a later implementation workstream to integrate external AI PACS (Yizh
   - `docs/business/03-system-responsibilities.md#business-to-technical-traceability` — Mapping of system responsibilities and implementation boundaries.
 - `.agents/context/project.md` — MHCS Core Product Context, authority map, and repository conventions.
 - `.agents/AGENTS.md` and `.agents/software-workflow.md` — Repository AI Delivery Contract and Software Delivery Protocol.
+- Human Request directives governing task authoring, remediation, secret scoping, and boundary constraints.
 
 ### Technical references (Observed evidence, not governing authority)
 
 - `https://github.com/Madeena-software/ai-report-download-automation` (observed revision `21e062029e67f3ef7a59d01aecc11f042c2d68f6`):
-  - Implementation reference for headless Chromium/Playwright automation against the Yizhun PACS SPA (`PacsBrowser`, selector fallbacks, session management, viewport capture, PDF Blob hook via `URL.createObjectURL`, retry loops, diagnostics).
+  - Observed reference evidence demonstrating headless Chromium/Playwright automation against the Yizhun PACS SPA (`PacsBrowser`, selector fallbacks, session management, viewport capture, PDF Blob hook via `URL.createObjectURL`, retry loops, diagnostics).
 - `https://github.com/Madeena-software/ai-pacs-indonesian-localization` (observed revision `2045c5a091cbb03ab5939be46f663f2ff90d853f` / `15f3e69ab1c71c9ef1447b2ce193be0f86dd113b`):
   - Medical terminology dictionary, Indonesian localization glossary, classification logic, and UI element references.
 - Google Drive folder `05_final_indonesia_v10` (`https://drive.google.com/drive/folders/1Zw95DNnIpL0nYDLg9R4svJZN8Tu-UBT0`):
@@ -95,7 +108,7 @@ Authorizes a later implementation workstream to integrate external AI PACS (Yizh
   - De-identified DICOM test fixtures for offline and synthetic testing.
 - Observed AI PACS runtime evidence:
   - Origin `http://124.225.183.175:8361/` serves Nginx 1.17.8 and React SPA (`window.name="yizhun_web_ct"`, `webpackJsonpyizhun_pacs`).
-  - Cleartext HTTP transport over public IP; no authenticated HTTPS endpoint currently exposed.
+  - Cleartext HTTP transport over public IP; no authenticated HTTPS endpoint currently observed.
 
 ### Requirement traceability
 
@@ -109,8 +122,9 @@ Authorizes a later implementation workstream to integrate external AI PACS (Yizh
 - `IMG-AI-008` → Derived Indonesian PDF generation: Reformat original AI results into an Indonesian screening report matching `05_final_indonesia_v10`, without altering or overwriting the original PDF.
 - `IMG-AI-009` → Idempotency and duplicate prevention: Database unique constraints and `IdempotencyStore` prevent duplicate AI jobs for the same DICOM study.
 - `IMG-AI-010` → Structured audit trail: State transitions, auth attempts, uploads, downloads, errors, and retrievals are recorded via `AuditStore`.
-- `IMG-AI-011` → Stable integration interface contract: Stable public application service interface is exposed for consumption by Operator and Member modules.
+- `IMG-AI-011` → Actionable Operator integration contract: Image Gateway exposes an actionable status and integration model (queued, processing, retryable failure, terminal failure, report-ready, retry eligibility, last safe error code, audit/reference identity) without exposing private keys, credentials, raw DICOM, public URLs, or raw exception traces.
 - `IMG-AI-012` → Clinical authority separation: AI reports are permanently labeled as AI decision support and cannot automatically finalize or replace a Doctor clinical report.
+- `IMG-AI-013` → Controlled local smoke test: Validation includes a controlled local test using synthetic/deidentified DICOM when access permits, strictly barring real patient PHI across cleartext HTTP.
 
 ## Scope
 
@@ -120,9 +134,9 @@ Authorizes a later implementation workstream to integrate external AI PACS (Yizh
   - Create asynchronous queue job (`ProcessAiPacsStudy` or equivalent) within Image Gateway.
   - Job claiming, leasing, exponential backoff, retry budget (default 3 tries), and timeout configuration.
 - **AI PACS Client & Adapter:**
-  - Configurable adapter boundary supporting browser automation (Playwright/Node or Python bridge) or evidenced API endpoints.
+  - Configurable adapter boundary supporting evidenced interaction mechanisms, prioritizing reuse of existing runtime capabilities.
   - Secure credential consumption from environment variables (`AI_PACS_USERNAME`, `AI_PACS_PASSWORD`, `AI_PACS_URL`).
-  - Resilient authentication, session retention, selector fallbacks, and diagnostic screenshot capture on failure.
+  - Resilient authentication, session retention, selector/endpoint fallbacks, and diagnostic capture on failure.
   - DICOM transmission, study calculation polling, and original AI Image Report PDF download.
 - **Private Storage & Provenance:**
   - Persist downloaded original AI PDF as an immutable private object via `PrivateObjectStore`.
@@ -135,25 +149,27 @@ Authorizes a later implementation workstream to integrate external AI PACS (Yizh
 - **Audit & Idempotency:**
   - Audit logging of all AI job lifecycle events through `AuditStore` (`ai_job_dispatched`, `ai_pacs_authenticated`, `ai_pacs_study_uploaded`, `ai_pacs_report_downloaded`, `ai_pdf_derived`, `ai_job_failed`).
   - Idempotent job submission preventing concurrent or repeated processing for the same DICOM study.
-- **Integration Contract:**
-  - Define a clean, stable public interface/service in Image Gateway (`AiPacsServiceContract` or `ImageGatewayAiService`) exposing methods:
-    - `dispatchAiAnalysis(string $studyId): AiJobReference`
-    - `getAiAnalysisStatus(string $studyId): AiAnalysisStatus`
-    - `getOriginalReportObject(string $studyId): ?PrivateObject`
-    - `getDerivedReportObject(string $studyId): ?PrivateObject`
-- **Testing & Verification:**
+- **Actionable Operator Integration Contract:**
+  - Expose a clean, stable public interface/service in Image Gateway (`ImageGatewayAiServiceContract`) providing an actionable status model:
+    - Status values: `queued`, `processing`, `retryable_failure`, `terminal_failure`, `report_ready`.
+    - Operational metadata: retry eligibility (`can_retry: bool`), last safe error code (`last_error_code: string`), audit/job reference identity (`ai_job_id`, `correlation_id`).
+    - Protected accessors for report objects (accessible only via authorized context and signed grants).
+    - Zero exposure of PACS credentials, session cookies, raw internal storage paths/keys, DICOM byte buffers, public URLs, or raw external exception details.
+- **Testing & Controlled Verification:**
   - Comprehensive unit, integration (mocked external service), idempotency, provenance, failure isolation, and visual comparison tests.
+  - Controlled local smoke test with synthetic/de-identified DICOM when external PACS access is available and permitted.
 
 ### Out of scope
 
+- Direct modification of Operator UI views or frontend components in `task/urgent-operator-field-operations`.
 - Modifying the existing NPZ capture, upload, normalization, or MPIPS conversion pipeline.
 - Modifying, merging, or rebasing `task/urgent-operator-field-operations` (branch `854100e246e25585fe135d6946eaa80b7558ad1f`).
-- Direct integration into Operator UI views (which will consume the stable contract in a subsequent task).
 - Doctor clinical report generation or modification of Doctor Core review workflows or earnings calculations.
 - Direct public unauthenticated download endpoints for DICOM or PDF files.
 - Live production PHI transmission to external unencrypted endpoints.
+- Pre-approving new heavy libraries or browser runtimes without proven necessity.
 - Modifications to `Madeena-software/mhcs-business-docs`.
-- Adding GitHub repository secrets during task authoring.
+- Setting GitHub repository secrets unless a safe validated workflow strictly requires them.
 
 ### Preserved behavior
 
@@ -170,23 +186,25 @@ Authorizes a later implementation workstream to integrate external AI PACS (Yizh
 
 - PHP 8.2+ runtime with existing Laravel 11 application architecture.
 - Working MySQL database with migration execution capabilities.
-- Configured Redis or database queue driver for Laravel background jobs.
+- Existing configured Redis or database queue driver for Laravel background jobs.
 - `PrivateObjectStore` for secure, grant-controlled object persistence.
 - `AuditStore` and `IdempotencyStore` shared infrastructure.
-- Local Playwright runtime (Chromium) or HTTP adapter client for AI PACS interaction.
-- PDF generation/manipulation tool (e.g. Dompdf, TCPDF, Puppeteer, or Python reportlab) compatible with repository PHP/system environment.
+- Existing application runtime capabilities (HTTP client, PHP extensions).
+- **Dependency Constraint:** No new external package, browser runtime (e.g. Playwright), PDF rendering engine, or queue/storage infrastructure is pre-approved. Reuse existing runtime capabilities where adequate. If a materially consequential package or infrastructure component is necessary, stop and return to Planner/Reviewer for approval.
 
 ### Approved assumptions
 
-- The external AI PACS is reachable at `http://124.225.183.175:8361/` but operates over cleartext HTTP; live tests with real patient data require transport security resolution.
-- Existing MPIPS-generated DICOM files conform to standard DICOM PS 3.10 and are accepted by the Yizhun Chest DR platform.
+- The external AI PACS origin (`http://124.225.183.175:8361/`) operates over cleartext HTTP; transfer of real patient PHI is strictly barred.
+- Observed browser-automation scripts are reference evidence of past automated interaction; they do not foreclose direct HTTP/API interaction if a valid endpoint is evidenced.
+- Vendor acceptance of MPIPS-generated DICOM files is **not** assumed and must be explicitly verified through mocked tests and the controlled de-identified smoke test.
 - AI analysis results are decision-support outputs that enhance screening efficiency; they do not trigger doctor report fees or replace accredited radiologist review.
 - The derived Indonesian PDF design follows `05_final_indonesia_v10` as the authoritative aesthetic and structural reference.
 
 ### Remaining approval requirements
 
 - **Transport Security & PHI Policy:** Explicit designated human approval before any production or real-patient PHI is transmitted over cleartext HTTP to the external AI PACS.
-- **GitHub Secrets Configuration:** Approval and manual/CLI provisioning of `AI_PACS_USERNAME`, `AI_PACS_PASSWORD`, and `AI_PACS_URL` in CI/CD environments without printing or exposing values.
+- **GitHub Secrets Configuration Gate:** Provisioning of `AI_PACS_USERNAME`, `AI_PACS_PASSWORD`, and `AI_PACS_URL` via `gh` is authorized if, and only if, a safe validated GitHub Actions workflow requires them. Values must be sourced locally without printing or logging. Verification may use only `gh secret list --repo Madeena-software/mhcs-core` reporting names only.
+- **Consequential Dependency Approval:** Explicit approval from Planner/Reviewer if existing runtime capabilities cannot support PDF transformation or PACS communication without adding new packages or browser runtimes.
 - **Code Review & Release:** Final implementation acceptance by Reviewer and separate release authorization before deployment.
 
 ## Required capabilities
@@ -194,32 +212,36 @@ Authorizes a later implementation workstream to integrate external AI PACS (Yizh
 - Repository read and write access on branch `task/ai-pacs-integration`.
 - PHP CLI and Composer for testing and static analysis.
 - Database migration execution on local/testing MySQL.
-- Network access for local testing against sandboxed/mocked AI PACS endpoints.
-- Ability to run Playwright or headless browser instances for adapter verification.
+- Network access for local testing against sandboxed/mocked AI PACS endpoints and controlled smoke test when permitted.
+- `gh` CLI for secret management when validated workflow requires it.
 
 ## Execution constraints
 
 ### Constraints
 
-- **Repository Reuse Discipline:** Reuse `PrivateObjectStore`, `AuditStore`, `IdempotencyStore`, `Clock`, `CorrelationId`, and `LocalId` primitives. Do not introduce parallel storage or queue mechanisms.
+- **Repository Reuse Discipline:** Reuse `PrivateObjectStore`, `AuditStore`, `IdempotencyStore`, `Clock`, `CorrelationId`, and `LocalId` primitives. Do not introduce parallel storage or queue mechanisms. Reuse existing PHP/Laravel runtime tools before proposing new dependencies.
 - **Credential Hygiene:** Consume `AI_PACS_USERNAME`, `AI_PACS_PASSWORD`, and `AI_PACS_URL` strictly from environment configuration (`config('services.ai_pacs')` backed by `.env`). Never print, log, or commit credentials.
 - **Immutability of Source:** The original AI PDF retrieved from PACS must be saved immutably. The derived Indonesian PDF must be stored as a separate private object with explicit forward/backward provenance references.
 - **Visual Fidelity:** The derived PDF must strictly adhere to the layout, typography, section hierarchy, and branding established in `05_final_indonesia_v10`.
 - **Clinical Safety Disclaimer:** Every page of the derived PDF must feature prominent disclaimers in Bahasa Indonesia stating that the report is an AI analysis and not a final medical diagnosis by a certified physician.
+- **Actionable Operator Surface Protection:** The status contract for Operator integration must provide clear operational states (`queued`, `processing`, `retryable_failure`, `terminal_failure`, `report_ready`, `can_retry`, `last_error_code`), while completely redacting sensitive storage keys, tokens, credentials, or raw stack traces.
+- **Controlled Smoke Test Boundaries:** The local smoke test must use synthetic or de-identified DICOM only. It must never use real patient PHI, and must not be represented as production validation.
 - **Failure Resilience:** Failures during AI PACS processing (auth failure, timeouts, rate limits, corrupt PDF) must be recorded with actionable error codes, retried up to configured limits, and cleanly marked as failed without halting or invalidating the underlying radiography capture or DICOM generation.
 
 ## Acceptance criteria
 
 - [ ] `ProcessAiPacsStudy` queue job accepts an authorized MHCS DICOM reference and processes it asynchronously.
-- [ ] AI PACS client authenticates strictly using environment variables (`AI_PACS_USERNAME`, `AI_PACS_PASSWORD`, `AI_PACS_URL`) without leaking credentials in logs or exceptions.
+- [ ] AI PACS client authenticates strictly using environment variables (`AI_PACS_USERNAME`, `AI_PACS_PASSWORD`, `AI_PACS_URL`) without leaking credentials in logs, console output, or exceptions.
 - [ ] AI PACS client uploads DICOM, polls study status with configurable timeout and retry backoff, and downloads the original AI Image Report PDF.
+- [ ] Vendor DICOM compatibility with MPIPS output is verified through mocked integration tests and the controlled local smoke test.
 - [ ] Original AI PDF is immutably stored in `PrivateObjectStore` under dedicated purpose/prefix.
 - [ ] Derived PDF generator transforms AI output into a localized Indonesian screening report matching `05_final_indonesia_v10` styling, branding, and content.
 - [ ] Derived PDF is stored as an independent private object, preserving full bidirectional provenance links to the original PDF, AI job, DICOM study, radiography session, examination, and member.
 - [ ] Derived PDF prominently includes Bahasa Indonesia clinical disclaimers clarifying that AI output is not a doctor's final diagnostic report.
 - [ ] AI job execution is idempotent; duplicate dispatch requests for the same DICOM study return the existing job reference without duplicate processing.
 - [ ] Comprehensive audit events are emitted for all lifecycle stages via `AuditStore`.
-- [ ] A stable public integration service interface (`ImageGatewayAiServiceContract`) is published for downstream consumption by Operator modules.
+- [ ] A stable, actionable integration service interface (`ImageGatewayAiServiceContract`) is published, exposing `queued`, `processing`, `retryable_failure`, `terminal_failure`, `report_ready`, `can_retry`, `last_error_code`, and reference identities without exposing private keys, credentials, raw DICOM, public URLs, or raw exception traces.
+- [ ] Controlled local smoke test with synthetic/de-identified DICOM succeeds when access permits, with no real patient PHI transferred over cleartext HTTP.
 - [ ] AI job failure is recorded with structured error diagnostics, and does not falsely complete or fail the radiography session.
 - [ ] All required automated tests pass, and `git diff --check` passes with no whitespace or syntax violations.
 
@@ -236,6 +258,7 @@ Authorizes a later implementation workstream to integrate external AI PACS (Yizh
    - Full flow simulation: dispatch → upload → poll → download → store → derive.
    - Handling of transient network timeouts, HTTP 5xx errors, and exponential backoff.
    - Selector fallback and diagnostic artifact generation if browser automation is used.
+   - Compatibility validation between MPIPS DICOM structure and AI PACS ingestion requirements.
 3. **Idempotency & Concurrency Tests:**
    - Multiple concurrent dispatch calls for the same study produce exactly one AI job and one set of stored artifacts.
 4. **Provenance & Immutability Tests:**
@@ -244,13 +267,20 @@ Authorizes a later implementation workstream to integrate external AI PACS (Yizh
 5. **Non-False Completion & Safety Tests:**
    - Simulation of AI processing failure confirms radiography session remains intact and is not falsely marked complete.
    - Verification that AI report cannot be submitted to doctor earnings or masquerade as a finalized Doctor report.
-6. **Regression Tests:**
+6. **Actionable Operator Contract Verification:**
+   - Verification that the service contract emits all required status states and safe error codes.
+   - Verification that no credentials, cookies, private storage keys, or raw stack traces leak through the contract.
+7. **Controlled Local Smoke Test (Conditional on Access):**
+   - Controlled execution against AI PACS using synthetic or de-identified test DICOM (from fixture folder).
+   - Verification that no real patient PHI is used.
+   - Confirmation of cleartext HTTP transport limitation in test records.
+8. **Regression Tests:**
    - Existing tests for NPZ upload, normalization, MPIPS client, DICOM viewer, and Operator flows remain green.
-7. **Visual / Structural Inspection:**
+9. **Visual / Structural Inspection:**
    - Verification of derived PDF output against `05_final_indonesia_v10` reference structure.
-8. **Code Quality:**
-   - `git diff --check`
-   - Repository PHPUnit suite execution for Image Gateway.
+10. **Code Quality:**
+    - `git diff --check`
+    - Repository PHPUnit suite execution for Image Gateway.
 
 ### Required evidence
 
@@ -259,18 +289,21 @@ The Executor MUST report:
 - Verification commands executed and observed test suite results.
 - New database tables/migrations created.
 - Stored object keys and provenance records created during tests.
+- Observed results of the controlled synthetic smoke test (or reason if skipped due to access/transport boundaries).
 - Confirmation that no credentials or patient PHI are logged or exposed.
+- If GitHub Secrets were added for a validated workflow: list from `gh secret list --repo Madeena-software/mhcs-core` showing names only.
 - Known limitations, deviations, or residual risks.
 
 ## Stop conditions
 
 The Executor MUST stop implementation and return to planning if:
 1. **Unapproved PHI Transmission:** Execution would require sending real patient PHI over cleartext HTTP without an approved encrypted tunnel or proxy.
-2. **Architecture Mutation:** Implementation requires a new external database, message broker, unauthorized cloud service, or changes to core clinical authority models.
-3. **Pipeline Incompatibility:** Existing NPZ upload, MPIPS conversion, or DICOM viewer flows cannot be preserved without breaking changes.
-4. **Credential Exposure:** An implementation approach requires persisting credentials in code, database records, or version control.
-5. **Operator Branch Contamination:** Execution would require modifying or rebasing onto `task/urgent-operator-field-operations`.
-6. **Release / Deployment Action:** Execution reaches a state attempting PR creation, main branch merging, or production deployment.
+2. **Consequential Package / Infrastructure Addition:** Implementation requires adding a new browser runtime (Playwright), heavy PDF package, external message queue, or storage driver without explicit Planner/Reviewer approval.
+3. **Architecture Mutation:** Implementation requires a new external database, unauthorized cloud service, or changes to core clinical authority models.
+4. **Pipeline Incompatibility:** Existing NPZ upload, MPIPS conversion, or DICOM viewer flows cannot be preserved without breaking changes.
+5. **Credential Exposure:** An implementation approach requires persisting credentials in code, database records, or version control.
+6. **Operator Branch Contamination:** Execution would require modifying or rebasing onto `task/urgent-operator-field-operations`.
+7. **Release / Deployment Action:** Execution reaches a state attempting PR creation, main branch merging, or production deployment.
 
 ## Side-effect authorization
 
@@ -280,13 +313,15 @@ The Executor MUST stop implementation and return to planning if:
 - Automatic push to `origin/task/ai-pacs-integration` (no force push).
 - Execution of local database migrations and tests in isolated test/dev environments.
 - Creation of local mock fixtures and test artifacts.
+- Execution of a controlled local smoke test using synthetic/de-identified DICOM only.
+- Adding only `AI_PACS_USERNAME`, `AI_PACS_PASSWORD`, and `AI_PACS_URL` through `gh` if, and only if, a safe validated GitHub Actions workflow requires them. Values must be sourced locally without printing or logging them. Verification may use only `gh secret list --repo Madeena-software/mhcs-core` reporting names only.
 
 ### Prohibited side effects
 
 - Committing or pushing directly to `main` or any other branch.
 - Creating a pull request, merging, or rebasing.
 - Deploying to staging or production environments.
-- Adding or modifying GitHub repository secrets during this task-authoring phase.
+- Adding any GitHub repository secret other than the three explicitly authorized names, or adding secrets without a validating workflow requirement.
 - Mutating external PACS production data or uploading real patient DICOM files.
 - Modifying files in `Madeena-software/mhcs-business-docs`.
 
@@ -294,11 +329,11 @@ The Executor MUST stop implementation and return to planning if:
 
 ### Review Required
 
-Use when all acceptance criteria are satisfied, automated tests pass, provenance and idempotency are proven, and truthful verification evidence is reported.
+Use when all acceptance criteria are satisfied, automated tests pass, provenance and idempotency are proven, controlled smoke test results (if access permitted) are documented, and truthful verification evidence is reported.
 
 ### Planning Required
 
-Use when a stop condition is triggered (e.g. transport security policy block or external API unavailability).
+Use when a stop condition is triggered (e.g. transport security policy block, external API unavailability, or need for consequential dependency approval).
 
 ## Review and remediation handling
 
