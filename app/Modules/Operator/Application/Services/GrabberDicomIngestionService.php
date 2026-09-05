@@ -66,7 +66,6 @@ final readonly class GrabberDicomIngestionService
         ?string $requestedSiteId = null,
         ?string $requestedShiftId = null,
         ?string $clientChecksum = null,
-        ?string $terminalState = 'awaiting_ai',
         ?string $patientMrn = null,
     ): array {
         $submissionId = trim($submissionId);
@@ -129,8 +128,8 @@ final readonly class GrabberDicomIngestionService
             }
         }
 
-        // 7. Validate terminal state parameter
-        $targetTerminalState = in_array($terminalState, ['completed', 'awaiting_ai'], true) ? $terminalState : 'awaiting_ai';
+        // 7. Server-selected safe queue admission terminal transition
+        $targetTerminalState = 'awaiting_ai';
 
         // 8. Idempotency barrier
         $idempotencyPayload = [

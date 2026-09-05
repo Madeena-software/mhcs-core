@@ -1,10 +1,10 @@
 # DDR Grabber Direct DICOM Ingestion Contract
 
-**Target System:** `mhcs-core` (Madeena Health Care Services Core)  
-**Client:** Madeena DDR Grabber / MPIPS Local Capture Engine  
-**Contract Version:** 1.0  
-**Governing Delivery Document:** `.agents/tasks/urgent-operator-field-operations.md` (Contract A, Execution Slice 3)  
-**Status:** Authoritative Integration Contract  
+**Target System:** `mhcs-core` (Madeena Health Care Services Core)
+**Client:** Madeena DDR Grabber / MPIPS Local Capture Engine
+**Contract Version:** 1.0
+**Governing Delivery Document:** `.agents/tasks/urgent-operator-field-operations.md` (Contract A, Execution Slice 3)
+**Status:** Authoritative Integration Contract
 
 ---
 
@@ -18,7 +18,7 @@ In this operational pattern:
 3. The DDR Grabber resolves demographic metadata via `GET /api/v1/grabber/manifest/{code}` (or `POST /api/v1/grabber/manifest/lookup`).
 4. The DDR Grabber / local capture engine generates a calibrated, enriched Part 10 DICOM file locally.
 5. The Grabber uploads the DICOM file directly to `POST /api/v1/grabber/radiography-sessions/{code}/dicom` (or `POST /api/v1/grabber/dicom/upload`).
-6. `mhcs-core` validates integrity, stores the object privately in `PrivateObjectStore`, binds it to the examination and queue admission, transitions queue state to `awaiting_ai` (or `completed`), invalidates the four-digit locator, and logs immutable audit and outbox events.
+6. `mhcs-core` validates integrity, stores the object privately in `PrivateObjectStore`, binds it to the examination and queue admission, transitions queue state to the server-selected safe state `awaiting_ai`, invalidates the four-digit locator, and logs immutable audit and outbox events.
 
 ---
 
@@ -57,7 +57,6 @@ All requests must be authenticated using the Grabber client credentials establis
 | `locator_code` | URL Path `{code}` OR Header `X-Locator-Code` OR Input `locator_code` | `string` | Exactly 4 digits (`^[0-9]{4}$`) | The active radiography session locator code. |
 | `submission_id` | Header `X-Submission-ID` OR `X-Client-Submission-ID` OR `Idempotency-Key` OR Input `submission_id` | `string` | Non-empty, max 191 chars | Unique client-generated submission ID for idempotency deduplication. |
 | `checksum` | Header `X-Checksum-SHA256` OR `X-SHA256` OR Input `checksum` | `string` | 64 hex characters (case-insensitive) | SHA-256 digest of the binary payload. Verified against computed digest. |
-| `terminal_state` | Header `X-Terminal-State` OR Input `terminal_state` | `string` | Enum `["awaiting_ai", "completed"]` | Defaults to `"awaiting_ai"`. Target queue state after successful ingestion. |
 | `patient_mrn` | Header `X-Patient-MRN` OR Input `medical_record_number` | `string` | Optional | If provided, verified against target session patient MRN. |
 
 ### 4.2 Payload Transfer Formats
@@ -103,7 +102,7 @@ Clients may upload the DICOM payload using either of two standard transfer forma
 Idempotency is enforced using `IdempotencyStore` (`idempotent_consumptions` table) with consumer key `grabber.dicom.upload`:
 
 1. **Initial Submission:**
-   - On successful validation, the file is saved to `PrivateObjectStore`, database records are created, queue admission transitions to `awaiting_ai` (or `completed`), the locator code is marked `completed`, and HTTP `201 Created` is returned with `replayed: false`.
+   - On successful validation, the file is saved to `PrivateObjectStore`, database records are created, queue admission transitions to `awaiting_ai`, the locator code is marked `completed`, and HTTP `201 Created` is returned with `replayed: false`.
 2. **Exact Retry (Same Submission ID & Same Payload):**
    - If the network drops or the Grabber client retries with the same `submission_id` and payload, `mhcs-core` suppresses duplicate execution:
      - No duplicate files are stored in `PrivateObjectStore`.

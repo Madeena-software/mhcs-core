@@ -242,28 +242,38 @@ final class OperatorFieldOperationsSlice3Test extends TestCase
         $this->assertSame($checksum, $data['checksum']);
     }
 
-    public function test_custom_terminal_state_completed_is_supported(): void
+    public function test_client_cannot_control_terminal_state_and_successful_state_remains_awaiting_ai(): void
     {
         $session = $this->createActiveRadiographySessionWithGrabber();
         $code = $session['locator']->locator_code;
         $submissionId = (string) Str::uuid();
-        $dicomPayload = $this->createSyntheticDicom('completed-terminal-state');
+        $dicomPayload = $this->createSyntheticDicom('client-cannot-force-completed');
 
         $file = UploadedFile::fake()->createWithContent('study.dcm', $dicomPayload);
 
+        // Attempt to pass X-Terminal-State header and terminal_state body input to force completed
         $response = $this->withHeaders([
             'Authorization' => 'Bearer '.$session['rawToken'],
             'X-Submission-ID' => $submissionId,
             'X-Terminal-State' => 'completed',
         ])->post("/api/v1/grabber/radiography-sessions/{$code}/dicom", [
             'file' => $file,
+            'terminal_state' => 'completed',
         ]);
 
         $response->assertStatus(201);
-        $this->assertSame('completed', $response->json('terminal_state'));
+        // Assert client attempt to force completed was ignored and server safe transition awaiting_ai is used
+        $this->assertSame('awaiting_ai', $response->json('terminal_state'));
 
         $admission = DB::table('operator_queue_admissions')->where('id', $session['admissionId'])->first();
-        $this->assertSame('completed', $admission->state);
+        $this->assertSame('awaiting_ai', $admission->state);
+
+        $history = DB::table('operator_queue_admission_history')
+            ->where('operator_queue_admission_id', $session['admissionId'])
+            ->where('event_type', 'dicom_ingested')
+            ->first();
+        $this->assertNotNull($history);
+        $this->assertSame('awaiting_ai', $history->to_state);
     }
 
     // =========================================================================

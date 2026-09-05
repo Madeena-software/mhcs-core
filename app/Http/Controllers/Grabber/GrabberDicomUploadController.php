@@ -103,7 +103,6 @@ final class GrabberDicomUploadController extends Controller
         $siteId = $request->header('X-Site-ID') ?? $request->input('site_id') ?? $request->query('site_id');
         $shiftId = $request->header('X-Shift-ID') ?? $request->input('shift_id') ?? $request->query('shift_id');
         $checksum = $request->header('X-Checksum-SHA256') ?? $request->header('X-SHA256') ?? $request->input('checksum') ?? $request->input('sha256');
-        $terminalState = $request->header('X-Terminal-State') ?? $request->input('terminal_state') ?? 'awaiting_ai';
         $patientMrn = $request->header('X-Patient-MRN') ?? $request->input('medical_record_number') ?? $request->input('patient_id');
 
         // Extract DICOM file bytes
@@ -146,7 +145,6 @@ final class GrabberDicomUploadController extends Controller
                 requestedSiteId: is_string($siteId) ? $siteId : null,
                 requestedShiftId: is_string($shiftId) ? $shiftId : null,
                 clientChecksum: is_string($checksum) ? $checksum : null,
-                terminalState: is_string($terminalState) ? $terminalState : 'awaiting_ai',
                 patientMrn: is_string($patientMrn) ? $patientMrn : null,
             );
 
