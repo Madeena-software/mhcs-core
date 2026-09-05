@@ -1,10 +1,10 @@
 ---
 title: Urgent Operator Field Operations, Four-Digit Radiography-Session Lookup, and Additive DICOM Ingestion
 document_id: MHCS-TASK-OPERATOR-FIELD-OPS-001
-version: 1.0
+version: 1.1
 status: validated-published
 language: en-US
-last_updated: 2026-09-04
+last_updated: 2026-09-05
 scope:
   - Operator field autonomy (shift creation, adding existing members, on-the-spot registration)
   - Per-member basic-examination bypass with audit and zero earning
@@ -116,6 +116,7 @@ Deliver an end-to-end, additive operational capability in `mhcs-core` enabling a
 - `FIELD-OPS-009` → Mandatory preservation of legacy NPZ upload, MPIPS conversion, queue processing (`ProcessCaptureSet`), and result viewing.
 - `FIELD-OPS-010` → Non-destructive schema migrations and backwards-compatible data models.
 - `FIELD-OPS-011` → Dual-path synthetic operational rehearsal (both NPZ and DICOM pathways verified end-to-end).
+- `FIELD-OPS-012` → Bounded queue-ticket thermal-print profile (57×47P roll consumable, ~48mm printable width, dynamic cut-to-content height, privacy preservation, automated contract coverage, and physical printer validation dependency).
 
 ## Scope
 
@@ -147,7 +148,12 @@ The delivery contract is structured as one coherent umbrella task that MAY be im
 - **Private Storage:** Store the DICOM file securely in private object storage (`PrivateObjectStore`) using existing opaque key and encryption conventions.
 - **Terminal State Management:** Update examination and queue admission state to `completed` or `awaiting_ai` upon successful DICOM ingestion. Ensure partial or failed uploads leave the session in a safe, retryable state without false completion.
 
-#### Execution Slice 4: Cross-Path Regression & Synthetic Operational Rehearsal
+#### Execution Slice 4: Cross-Path Regression, Queue-Ticket Thermal Printing & Synthetic Operational Rehearsal
+- **Queue-Ticket Thermal Printing:** Refine the operator queue-ticket print view and layout contract for field operations:
+  - Consumable specification: target thermal paper roll 57×47P (interpreted as 57 mm nominal paper width and 47 mm roll diameter, not a fixed ticket length).
+  - Print profile: 57-mm thermal print layout with dynamic cut-to-content height, approximately 48-mm safe printable content width, and suppression of browser/A4 headers, footers, and margins (`@page { margin: 0; }`).
+  - Privacy preservation: include only operationally necessary ticket data (site name, schedule/shift window, prominent queue ticket number, and issue timestamp); strictly exclude NIK, phone number, consent details, or clinical information.
+  - Driver & protocol neutrality: do not prescribe proprietary or unsupported printer drivers/protocols; support standard browser/web printing dialog while recording specific printer-model/driver uncertainty as an explicit validation dependency.
 - **Legacy NPZ Regression:** Run full existing test suites verifying that NPZ upload via `ImageGatewayCaptureService`, `ProcessCaptureSet`, MPIPS conversion, and DICOM study results remain fully functional.
 - **Dual-Path Rehearsal:** Execute synthetic end-to-end tests exercising both paths:
   - Path A: Prebooked Member → Attendance → Basic Examination → NPZ Upload → MPIPS → Study Result.
@@ -182,6 +188,7 @@ The delivery contract is structured as one coherent umbrella task that MAY be im
 - MySQL / SQLite portable migration and index standards.
 - `PrivateObjectStore`, `AuditStore`, and `IdempotencyStore` infrastructure.
 - Authoritative manifest example in `docs/mpips/examples/mhcs-dicom-manifest.minimal.example.json`.
+- Physical operational thermal printer hardware and driver validation dependency: target consumable is 57×47P thermal paper roll (57 mm nominal paper width, 47 mm roll diameter). Specific field thermal printer model and driver environment are unprescribed; physical hardware validation with the actual operational printer is required before staging/production deployment.
 
 ### Approved assumptions
 
@@ -222,6 +229,13 @@ The delivery contract is structured as one coherent umbrella task that MAY be im
 - **Earning Exclusion:** Basic Examination operator earning triggers must only fire upon genuine, completed vital signs and questionnaire capture. Bypassed admissions must yield zero Basic Examination earnings.
 - **Consent Enforcement:** A procedure cannot proceed if the member has no valid master consent, or if existing consent has been withdrawn.
 
+### Queue-Ticket Thermal Print & Privacy Boundaries
+- **57-mm Thermal Print Profile:** Printable ticket layout must be tailored to standard 57-mm thermal paper rolls (roll specification 57×47P: 57 mm nominal width, 47 mm roll diameter, continuous cut-to-content feed). Width constraint must adhere to ~48 mm safe printable area without horizontal clipping or unreadable line wraps.
+- **Dynamic Content Height:** The ticket layout must not impose a fixed page height; vertical size must be dynamic, cutting/stopping based on content length.
+- **Header/Footer Suppression:** Standard browser headers and footers (URL, page numbers, date/time timestamps) must be suppressed in print stylesheets (`@page { margin: 0; }`).
+- **Ticket Privacy Minimization:** Thermal queue slips must expose only operational queuing essentials (site name, schedule/shift window, prominent queue ticket number, and issue timestamp). Slips MUST NOT contain member NIK, telephone/contact number, consent records, date of birth, MRN, or clinical details.
+- **Driver Independence:** Do not assume or hardcode vendor-specific ESC/POS, CUPS, or proprietary printer drivers into Core; maintain standard web print dialog compatibility while documenting printer driver validation as an external hardware dependency.
+
 ## Acceptance criteria
 
 - [ ] An authorized Operator can create an operational shift for a site within the Operator's permitted operational scope.
@@ -244,6 +258,8 @@ The delivery contract is structured as one coherent umbrella task that MAY be im
 - [ ] The uploaded DICOM is bound to the target examination and transitions the admission state appropriately.
 - [ ] Invalid, mismatched, duplicate, unauthorized, expired, or cross-shift DICOM upload attempts fail safely without falsely completing the session.
 - [ ] Legacy NPZ upload, `ProcessCaptureSet` queue processing, MPIPS conversion, and DICOM study viewing remain fully operational and pass regression tests.
+- [ ] Operator queue-ticket print view conforms to 57-mm thermal paper profile (target consumable 57×47P: 57 mm nominal width, 47 mm roll diameter) with dynamic cut-to-content height, ~48 mm safe printable width, and suppression of browser headers/footers.
+- [ ] Operator queue-ticket print view preserves strict privacy by displaying only operational queuing essentials (site, schedule window, prominent ticket number, timestamp) and strictly excluding NIK, phone number, consent details, MRN, and clinical information.
 - [ ] Database migrations are non-destructive and compatible with both fresh schemas and existing schema upgrades.
 - [ ] Synthetic end-to-end operational rehearsal successfully verifies both the legacy NPZ pathway and the new DICOM-source pathway.
 
@@ -262,6 +278,7 @@ The delivery contract is structured as one coherent umbrella task that MAY be im
    - Grabber manifest resolution with authentication, authorization, and rate limiting.
    - Grabber DICOM upload validation, idempotency, checksum matching, and private storage binding.
    - Concurrent code resolution and anti-enumeration defenses.
+   - Queue-ticket thermal print automated layout/print-contract tests: verify 57-mm thermal styling profile (~48 mm printable safe width, dynamic content height, browser header/footer suppression `@page { margin: 0; }`), correct operational fields (site, schedule window, prominent ticket number, timestamp), and complete exclusion of sensitive data (NIK, phone number, consent details, MRN, clinical info).
 3. **Preservation & Legacy Regression Tests:**
    - Complete execution of existing Image Gateway tests (`tests/ImageGateway/Wp02ImageGatewayTest.php`, `tests/Feature/Operator/Mvp14ImageGatewayIntegrationTest.php`, etc.).
    - Full regression of prebooked member booking, arrival, verification, consent, and sequential examination flow.
@@ -271,18 +288,20 @@ The delivery contract is structured as one coherent umbrella task that MAY be im
 5. **Code Quality & Static Analysis:**
    - Route inspection (`php artisan route:list`) ensuring all new endpoints are registered and protected.
    - Formatting and code style compliance (`./vendor/bin/pint --test` or equivalent).
-6. **Synthetic Operational Rehearsal:**
+6. **Synthetic Operational Rehearsal & Physical Printer Validation:**
    - End-to-end rehearsal executing dual pathways with synthetic data:
      - Scenario 1: Standard prebooked Member → Basic Examination → NPZ Upload → MPIPS Conversion → DICOM Result.
      - Scenario 2: Operator-Created Shift → On-The-Spot Registration → Reusable Consent → Bypass Basic Examination → 4-Digit Code → Grabber Manifest Lookup → DDR DICOM Upload → DICOM Result.
+   - Documented physical-printer validation protocol: verification procedure using the actual operational thermal printer (57×47P roll consumable) prior to production deployment to confirm readable physical printout, absence of horizontal clipping, correct roll feed/cut, and proper dynamic height.
 
 ### Required evidence
 
 The Executor MUST report:
 - Exact implementation commit SHA and working-tree status.
-- Specific test suites executed and exact observed test pass counts.
+- Specific test suites executed and exact observed test pass counts (including thermal print contract tests).
 - Confirmation of non-destructive migration execution.
 - Verification output demonstrating legacy NPZ upload path preservation.
+- Confirmation of documented physical-printer validation procedure and unprescribed driver dependency status.
 - Confirmation that no real patient identity or external network calls were used.
 - Known limitations or non-blocking observations for Reviewer consideration.
 
