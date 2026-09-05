@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Operator;
 
+use App\Models\User;
 use App\Modules\Operator\Application\Services\OperatorArrivalService;
 use App\Modules\Operator\Application\Services\OperatorFieldOperationsService;
 use App\Modules\Operator\Application\Services\OperatorIdentityVerificationService;
@@ -242,17 +243,24 @@ final class OperatorFieldOperationsSlice1Test extends TestCase
         $fixture = $this->operatorFixture();
         $this->startOperatorSession($fixture);
 
+        // Pre-populate existing member with established contact and affiliation data
+        DB::table('members')->where('id', $fixture['memberId'])->update([
+            'phone' => '081111111111',
+            'affiliation' => 'Original Corp',
+            'office_location' => 'Building A Floor 1',
+        ]);
+
         $existingMemberBeforeCount = DB::table('members')->count();
 
-        // Attempt to register with the existing fixture member's NIK ('900000000001')
+        // Attempt to register with the existing fixture member's NIK ('900000000001') but different fields
         $response = $this->post(route('operator.shifts.members.register.store', $fixture['scheduleId']), [
-            'name' => 'Updated Name If Any',
+            'name' => 'Attempted Overwrite Name',
             'administrative_gender' => 'female',
             'nik' => '900000000001',
-            'birth_date' => '1988-01-10',
+            'birth_date' => '1999-12-31',
             'phone' => '089999999999',
-            'affiliation' => 'Org X',
-            'office_location' => 'Office Y',
+            'affiliation' => 'Overwritten Org',
+            'office_location' => 'Overwritten Loc',
         ]);
 
         $response->assertRedirect();
@@ -266,9 +274,9 @@ final class OperatorFieldOperationsSlice1Test extends TestCase
         $this->assertSame('Synthetic Arrival Member', $existing->name);
         $this->assertSame('unspecified', $existing->administrative_gender);
         $this->assertSame('1988-01-10', $existing->birth_date);
-        $this->assertNull($existing->phone);
-        $this->assertNull($existing->affiliation);
-        $this->assertNull($existing->office_location);
+        $this->assertSame('081111111111', $existing->phone);
+        $this->assertSame('Original Corp', $existing->affiliation);
+        $this->assertSame('Building A Floor 1', $existing->office_location);
         $this->assertSame('MRN-'.substr($fixture['memberId'], 0, 8), $existing->medical_record_number);
     }
 
@@ -616,7 +624,33 @@ final class OperatorFieldOperationsSlice1Test extends TestCase
         $nonexistentResponse->assertRedirect();
         $nonexistentResponse->assertSessionHasErrors(['consent']);
 
-        // 3. Authorized withdrawal succeeds
+        // 3. Cross-site withdrawal attempt: operator on site 2 attempting to withdraw site 1's case
+        $this->startOperatorSession($fixture2);
+        $crossSiteResponse = $this->post(route('operator.paper-consent.withdraw', $fixture1['caseId']), [
+            'operation_id' => (string) Str::uuid(),
+            'master_consent_id' => $master1->id,
+            'reason' => 'Cross-site withdrawal attempt',
+        ]);
+        $crossSiteResponse->assertRedirect();
+        $crossSiteResponse->assertSessionHasErrors(['consent']);
+        $this->assertSame('active', DB::table('member_master_consents')->where('id', $master1->id)->value('status'));
+
+        // 4. Unassigned shift withdrawal attempt: operator not assigned to fixture 1's shift schedule
+        $unassignedFixture = $this->operatorFixture(false, '900000000003');
+        $this->grantIdentityPermission($unassignedFixture);
+        $this->startSession();
+        $this->actingAs($unassignedFixture['operator']);
+        $this->withSession(['operator.active_site_id' => $fixture1['siteLocalId']]);
+        $unassignedResponse = $this->post(route('operator.paper-consent.withdraw', $fixture1['caseId']), [
+            'operation_id' => (string) Str::uuid(),
+            'master_consent_id' => $master1->id,
+            'reason' => 'Unassigned operator withdrawal attempt',
+        ]);
+        $unassignedResponse->assertRedirect();
+        $unassignedResponse->assertSessionHasErrors(['consent']);
+        $this->assertSame('active', DB::table('member_master_consents')->where('id', $master1->id)->value('status'));
+
+        // 5. Authorized withdrawal succeeds
         $this->startOperatorSession($fixture1);
         $opId = (string) Str::uuid();
         $authResponse = $this->post(route('operator.paper-consent.withdraw', $fixture1['caseId']), [
@@ -792,8 +826,8 @@ final class OperatorFieldOperationsSlice1Test extends TestCase
         $initialMasterCount = DB::table('member_master_consents')->count();
         $initialExamCount = DB::table('examination_consents')->count();
 
-        // Reject invalid form name
-        $response = $this->post(route('operator.paper-consent.store', $fixture['caseId']), [
+        // 1. Reject invalid form name
+        $responseName = $this->post(route('operator.paper-consent.store', $fixture['caseId']), [
             'form_name' => 'Invalid Clinical Form',
             'form_version' => 'V1',
             'signer_type' => 'member',
@@ -802,8 +836,21 @@ final class OperatorFieldOperationsSlice1Test extends TestCase
             'operation_id' => (string) Str::uuid(),
             'scan' => UploadedFile::fake()->createWithContent('signed.pdf', "%PDF-1.7\n%%EOF"),
         ]);
-        $response->assertRedirect();
-        $response->assertSessionHasErrors(['form_name']);
+        $responseName->assertRedirect();
+        $responseName->assertSessionHasErrors(['form_name']);
+
+        // 2. Reject invalid form version
+        $responseVersion = $this->post(route('operator.paper-consent.store', $fixture['caseId']), [
+            'form_name' => 'Informed Consent',
+            'form_version' => 'V99',
+            'signer_type' => 'member',
+            'signature_confirmed' => '1',
+            'signed_at' => '2040-01-10',
+            'operation_id' => (string) Str::uuid(),
+            'scan' => UploadedFile::fake()->createWithContent('signed.pdf', "%PDF-1.7\n%%EOF"),
+        ]);
+        $responseVersion->assertRedirect();
+        $responseVersion->assertSessionHasErrors(['consent']);
 
         // Zero side effects
         $this->assertSame($initialMasterCount, DB::table('member_master_consents')->count());
@@ -838,7 +885,7 @@ final class OperatorFieldOperationsSlice1Test extends TestCase
         $this->assertSame($initialMasterCount, DB::table('member_master_consents')->count());
     }
 
-    public function test_repeated_consent_operation_idempotency(): void
+    public function test_repeated_and_concurrent_consent_operation_idempotency(): void
     {
         $fixture = $this->matchedFixture();
         $this->startOperatorSession($fixture);
@@ -846,7 +893,7 @@ final class OperatorFieldOperationsSlice1Test extends TestCase
         $operationId = (string) Str::uuid();
         $plainPdf = "%PDF-1.7\nsynthetic\n%%EOF";
 
-        // First attempt
+        // First attempt: master consent creation
         $res1 = $this->post(route('operator.paper-consent.store', $fixture['caseId']), [
             'form_name' => 'Informed Consent',
             'form_version' => 'V1',
@@ -880,6 +927,22 @@ final class OperatorFieldOperationsSlice1Test extends TestCase
         // Idempotency ensures no duplicate master consent is created
         $masterCount2 = DB::table('member_master_consents')->where('member_id', $fixture['memberId'])->count();
         $this->assertSame(1, $masterCount2);
+
+        // Visit confirmation idempotency
+        $confirmOpId = (string) Str::uuid();
+        $resConfirm1 = $this->post(route('operator.paper-consent.visit-confirm', $fixture['caseId']), [
+            'operation_id' => $confirmOpId,
+        ]);
+        $resConfirm1->assertRedirect();
+        $confirmCount1 = DB::table('consent_visit_confirmations')->where('booking_id', $fixture['bookingId'])->count();
+        $this->assertSame(1, $confirmCount1);
+
+        $resConfirm2 = $this->post(route('operator.paper-consent.visit-confirm', $fixture['caseId']), [
+            'operation_id' => $confirmOpId,
+        ]);
+        $resConfirm2->assertRedirect();
+        $confirmCount2 = DB::table('consent_visit_confirmations')->where('booking_id', $fixture['bookingId'])->count();
+        $this->assertSame(1, $confirmCount2);
     }
 
     public function test_new_consent_version_during_same_booking_updates_visit_confirmation(): void
@@ -957,7 +1020,7 @@ final class OperatorFieldOperationsSlice1Test extends TestCase
         $fixture = $this->operatorFixture();
         $this->startOperatorSession($fixture);
 
-        // Post invalid data missing required fields
+        // 1. Post invalid data missing required fields
         $response = $this->post(route('operator.shifts.members.register.store', $fixture['scheduleId']), [
             'name' => 'Test',
             'administrative_gender' => 'invalid_gender',
@@ -968,6 +1031,55 @@ final class OperatorFieldOperationsSlice1Test extends TestCase
 
         // Ensure no raw SQL or DB exception is in session
         $this->assertNull(session('error'));
+
+        // 2. Unexpected exception during registration returns sanitized error message without leaking sensitive details
+        $injected = false;
+        DB::listen(function ($query) use (&$injected): void {
+            if (! $injected && str_contains(strtolower($query->sql), 'insert into "users"') || str_contains(strtolower($query->sql), 'insert into `users`')) {
+                $injected = true;
+                throw new \RuntimeException('Sensitive internal error with raw query SELECT * FROM users');
+            }
+        });
+
+        $resFail = $this->post(route('operator.shifts.members.register.store', $fixture['scheduleId']), [
+            'name' => 'Valid Name',
+            'administrative_gender' => 'female',
+            'nik' => '900000000099',
+            'birth_date' => '1990-01-01',
+            'phone' => '081234567890',
+            'affiliation' => 'Valid Org',
+            'office_location' => 'Valid Loc',
+        ]);
+
+        $resFail->assertRedirect();
+        $resFail->assertSessionHasErrors(['registration' => __('The member registration could not be completed.')]);
+        $this->assertStringNotContainsString('Sensitive internal error', (string) session('errors')->first('registration'));
+        $this->assertNull(session('error'));
+    }
+
+    public function test_operator_field_operations_routes_require_authentication_and_authorization(): void
+    {
+        $scheduleId = (string) Str::uuid();
+        $caseId = (string) Str::uuid();
+
+        // 1. Unauthenticated guest attempts are redirected to login
+        $this->get(route('operator.shifts.create'))->assertRedirect(route('login'));
+        $this->post(route('operator.shifts.store'))->assertRedirect(route('login'));
+        $this->get(route('operator.shifts.members.add', $scheduleId))->assertRedirect(route('login'));
+        $this->get(route('operator.shifts.members.search', $scheduleId))->assertRedirect(route('login'));
+        $this->post(route('operator.shifts.members.add-existing', $scheduleId))->assertRedirect(route('login'));
+        $this->get(route('operator.shifts.members.register', $scheduleId))->assertRedirect(route('login'));
+        $this->post(route('operator.shifts.members.register.store', $scheduleId))->assertRedirect(route('login'));
+        $this->post(route('operator.paper-consent.visit-confirm', $caseId))->assertRedirect(route('login'));
+        $this->post(route('operator.paper-consent.withdraw', $caseId))->assertRedirect(route('login'));
+        $this->post(route('operator.basic-examination-worklist.bypass', $caseId))->assertRedirect(route('login'));
+
+        // 2. Authenticated user without operator portal access receives 403
+        $memberUser = User::factory()->create();
+        $this->actingAs($memberUser);
+        $this->get(route('operator.shifts.create'))->assertForbidden();
+        $this->get(route('operator.shifts.members.add', $scheduleId))->assertForbidden();
+        $this->get(route('operator.shifts.members.register', $scheduleId))->assertForbidden();
     }
 
     /** @return array<string, mixed> */
