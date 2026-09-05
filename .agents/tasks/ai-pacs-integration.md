@@ -42,7 +42,7 @@ Execution and review lifecycle states remain separate from this immutable task r
 AI PACS Integration and Indonesian Localization Work Package (Image Gateway Domain)
 
 **Owner / designated planning authority:**
-Product Authority (`Madeena-software/mhcs-business-docs` @ 645058e…) and Human Direction
+Product Authority (`Madeena-software/mhcs-business-docs` @ 645058e431f59c4450a136e72f140e6819b79f32) and Human Direction
 
 ## Delivery context
 
@@ -74,9 +74,11 @@ Authorizes a later implementation workstream to integrate external AI PACS (Yizh
 
 ## Remediation
 
-**Review basis:** `bc0cc60a968b3fad1841fa7a89da6b1687eacc86`
+**Review basis:** `7809f3fe32469fd9be384226c266f45d195132d5` (prior candidate: `bc0cc60a968b3fad1841fa7a89da6b1687eacc86`)
 
 ### Required corrections
+
+- **Product Authority Canonicalization:** Correct all Product Authority references to use repository and immutable revision `Madeena-software/mhcs-business-docs` @ `645058e431f59c4450a136e72f140e6819b79f32` and existing authoritative paths `docs/business/01-business-overview.md`, `docs/business/02-user-stories.md`, and `docs/business/03-system-responsibilities.md`, removing all references to nonexistent `docs/business/02-system-responsibilities.md`.
 
 - **GitHub Repository Secrets Authorization:** Clarify that adding only `AI_PACS_USERNAME`, `AI_PACS_PASSWORD`, and `AI_PACS_URL` via `gh` is authorized if, and only if, a safe validated GitHub Actions workflow requires them. Values must be sourced locally without logging or printing. Verification is restricted to `gh secret list --repo Madeena-software/mhcs-core` reporting names only. No other secret, deployment dispatch, production mutation, or credential disclosure is authorized.
 - **Controlled Smoke Test Requirement:** Mandate a controlled local smoke test using synthetic or de-identified DICOM when AI PACS access is available and the transport/permission boundary permits it. Real patient PHI is strictly prohibited over cleartext HTTP. The smoke test must not be represented as production validation.
@@ -88,10 +90,10 @@ Authorizes a later implementation workstream to integrate external AI PACS (Yizh
 
 ### Governing authority
 
-- `Madeena-software/mhcs-business-docs` @ 645058e…:
+- `Madeena-software/mhcs-business-docs` @ 645058e431f59c4450a136e72f140e6819b79f32:
   - `docs/business/01-business-overview.md` — End-to-end screening pathways, role boundaries, and actor responsibilities.
-  - `docs/business/02-system-responsibilities.md` — Image Gateway ownership of private durable image storage, atomic acceptance, queued processing, AI and doctor routing, publication, and audit; Doctor Core ownership of final clinical reports and doctor earnings; strict separation of AI screening output from doctor-finalized diagnostic reports.
-  - `docs/business/03-system-responsibilities.md#business-to-technical-traceability` — Mapping of system responsibilities and implementation boundaries.
+  - `docs/business/02-user-stories.md` — User story catalogue with acceptance criteria and interaction surfaces.
+  - `docs/business/03-system-responsibilities.md` — System responsibilities, ownership boundaries, access controls, payment/earning triggers, interoperability boundaries (including Image Gateway ownership of private durable image storage, atomic acceptance, queued processing, AI and doctor routing, publication, and audit; Doctor Core ownership of final clinical reports and doctor earnings; strict separation of AI screening output from doctor-finalized diagnostic reports), and business-to-technical traceability.
 - `.agents/context/project.md` — MHCS Core Product Context, authority map, and repository conventions.
 - `.agents/AGENTS.md` and `.agents/software-workflow.md` — Repository AI Delivery Contract and Software Delivery Protocol.
 - Human Request directives governing task authoring, remediation, secret scoping, and boundary constraints.
