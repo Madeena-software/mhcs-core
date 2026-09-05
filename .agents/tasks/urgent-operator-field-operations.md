@@ -1,7 +1,7 @@
 ---
 title: Urgent Operator Field Operations, Four-Digit Radiography-Session Lookup, and Additive DICOM Ingestion
 document_id: MHCS-TASK-OPERATOR-FIELD-OPS-001
-version: 1.1
+version: 1.2
 status: validated-published
 language: en-US
 last_updated: 2026-09-05
@@ -146,12 +146,13 @@ The delivery contract is structured as one coherent umbrella task that MAY be im
 - **Validation & Integrity:** Validate MIME type / DICOM magic bytes, file size, SHA-256 checksum, and session state.
 - **Idempotency & Binding:** Ensure idempotent submissions using client submission IDs / SHA-256 digests. Bind the uploaded DICOM directly to the target examination and queue admission.
 - **Private Storage:** Store the DICOM file securely in private object storage (`PrivateObjectStore`) using existing opaque key and encryption conventions.
-- **Terminal State Management:** Update examination and queue admission state to `completed` or `awaiting_ai` upon successful DICOM ingestion. Ensure partial or failed uploads leave the session in a safe, retryable state without false completion.
+- **Terminal State Management:** Successful direct DICOM ingestion transitions the target examination and queue admission state to the server-selected safe state `awaiting_ai`. A transition to `completed` requires a future, explicitly authorized server-side workflow decision and MUST NOT be selected by Grabber input. Ensure partial or failed uploads leave the session in a safe, retryable state without false completion.
 
 #### Execution Slice 4: Cross-Path Regression, Queue-Ticket Thermal Printing & Synthetic Operational Rehearsal
 - **Queue-Ticket Thermal Printing:** Refine the operator queue-ticket print view and layout contract for field operations:
   - Consumable specification: target thermal paper roll 57×47P (interpreted as 57 mm nominal paper width and 47 mm roll diameter, not a fixed ticket length).
   - Print profile: 57-mm thermal print layout with dynamic cut-to-content height, approximately 48-mm safe printable content width, and suppression of browser/A4 headers, footers, and margins (`@page { margin: 0; }`).
+  - Cutter & tearing capability: do not assume a hardware paper cutter exists; support automatic cut only when supported by the actual printer hardware/driver, otherwise provide a clear manual-tear/visual separator outcome without clipping printed content.
   - Privacy preservation: include only operationally necessary ticket data (site name, schedule/shift window, prominent queue ticket number, and issue timestamp); strictly exclude NIK, phone number, consent details, or clinical information.
   - Driver & protocol neutrality: do not prescribe proprietary or unsupported printer drivers/protocols; support standard browser/web printing dialog while recording specific printer-model/driver uncertainty as an explicit validation dependency.
 - **Legacy NPZ Regression:** Run full existing test suites verifying that NPZ upload via `ImageGatewayCaptureService`, `ProcessCaptureSet`, MPIPS conversion, and DICOM study results remain fully functional.
@@ -232,6 +233,7 @@ The delivery contract is structured as one coherent umbrella task that MAY be im
 ### Queue-Ticket Thermal Print & Privacy Boundaries
 - **57-mm Thermal Print Profile:** Printable ticket layout must be tailored to standard 57-mm thermal paper rolls (roll specification 57×47P: 57 mm nominal width, 47 mm roll diameter, continuous cut-to-content feed). Width constraint must adhere to ~48 mm safe printable area without horizontal clipping or unreadable line wraps.
 - **Dynamic Content Height:** The ticket layout must not impose a fixed page height; vertical size must be dynamic, cutting/stopping based on content length.
+- **Cutter & Tearing Assumptions:** Do not assume a hardware paper cutter exists. Automatic cut must only be expected when supported by the actual operational printer hardware/driver; otherwise, the layout must provide a clear manual-tear margin and visual separator outcome without clipping printed content.
 - **Header/Footer Suppression:** Standard browser headers and footers (URL, page numbers, date/time timestamps) must be suppressed in print stylesheets (`@page { margin: 0; }`).
 - **Ticket Privacy Minimization:** Thermal queue slips must expose only operational queuing essentials (site name, schedule/shift window, prominent queue ticket number, and issue timestamp). Slips MUST NOT contain member NIK, telephone/contact number, consent records, date of birth, MRN, or clinical details.
 - **Driver Independence:** Do not assume or hardcode vendor-specific ESC/POS, CUPS, or proprietary printer drivers into Core; maintain standard web print dialog compatibility while documenting printer driver validation as an external hardware dependency.
@@ -255,10 +257,10 @@ The delivery contract is structured as one coherent umbrella task that MAY be im
 - [ ] Grabber manifest lookup returns only the minimum fields specified in `docs/mpips/examples/mhcs-dicom-manifest.minimal.example.json` using internal MRN, strictly excluding NIK, phone number, and affiliation.
 - [ ] Locator resolve attempts are rate-limited, audited, and return uniform error responses that resist enumeration.
 - [ ] Authenticated Grabber DICOM upload boundary accepts valid DDR DICOM files, verifies checksum and idempotency, and stores the file in private object storage.
-- [ ] The uploaded DICOM is bound to the target examination and transitions the admission state appropriately.
+- [ ] The uploaded DICOM is bound to the target examination and transitions the admission state to the server-selected safe state `awaiting_ai`; `completed` is not selectable via Grabber input and requires an explicitly authorized server-side workflow decision.
 - [ ] Invalid, mismatched, duplicate, unauthorized, expired, or cross-shift DICOM upload attempts fail safely without falsely completing the session.
 - [ ] Legacy NPZ upload, `ProcessCaptureSet` queue processing, MPIPS conversion, and DICOM study viewing remain fully operational and pass regression tests.
-- [ ] Operator queue-ticket print view conforms to 57-mm thermal paper profile (target consumable 57×47P: 57 mm nominal width, 47 mm roll diameter) with dynamic cut-to-content height, ~48 mm safe printable width, and suppression of browser headers/footers.
+- [ ] Operator queue-ticket print view conforms to 57-mm thermal paper profile (target consumable 57×47P: 57 mm nominal width, 47 mm roll diameter) with dynamic cut-to-content height, ~48 mm safe printable width, suppression of browser headers/footers, automatic cut when supported by hardware/driver, and a clear manual-tear separator margin without clipping printed content.
 - [ ] Operator queue-ticket print view preserves strict privacy by displaying only operational queuing essentials (site, schedule window, prominent ticket number, timestamp) and strictly excluding NIK, phone number, consent details, MRN, and clinical information.
 - [ ] Database migrations are non-destructive and compatible with both fresh schemas and existing schema upgrades.
 - [ ] Synthetic end-to-end operational rehearsal successfully verifies both the legacy NPZ pathway and the new DICOM-source pathway.
@@ -292,7 +294,7 @@ The delivery contract is structured as one coherent umbrella task that MAY be im
    - End-to-end rehearsal executing dual pathways with synthetic data:
      - Scenario 1: Standard prebooked Member → Basic Examination → NPZ Upload → MPIPS Conversion → DICOM Result.
      - Scenario 2: Operator-Created Shift → On-The-Spot Registration → Reusable Consent → Bypass Basic Examination → 4-Digit Code → Grabber Manifest Lookup → DDR DICOM Upload → DICOM Result.
-   - Documented physical-printer validation protocol: verification procedure using the actual operational thermal printer (57×47P roll consumable) prior to production deployment to confirm readable physical printout, absence of horizontal clipping, correct roll feed/cut, and proper dynamic height.
+   - Documented physical-printer validation protocol: verification procedure using the actual operational thermal printer (57×47P roll consumable) prior to production deployment to identify the actual printer's feed and cut/tear capability, confirming readable physical printout, absence of horizontal clipping, proper dynamic height, and the appropriate cut or tear result (verifying automatic cut if supported by the hardware, or verified manual-tear separator alignment without clipping text if unequipped with a cutter).
 
 ### Required evidence
 
