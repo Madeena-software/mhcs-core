@@ -48,6 +48,8 @@
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="MHCS_PRIVATE_OBJECT_DISK" value="local"/>
         <env name="SESSION_DRIVER" value="array"/>
+        <env name="APP_LOCALE" value="id"/>
+        <env name="APP_FALLBACK_LOCALE" value="id"/>
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>
