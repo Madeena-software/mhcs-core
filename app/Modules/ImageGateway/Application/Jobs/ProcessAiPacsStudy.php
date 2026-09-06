@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Modules\ImageGateway\Application\Jobs;
 
 use App\Modules\ImageGateway\Application\Contracts\AiPacsAdapterContract;
+use App\Modules\ImageGateway\Application\Contracts\AiPacsDerivedPdfGeneratorContract;
 use App\Modules\ImageGateway\Application\Contracts\AiPacsReportDownloaderContract;
 use App\Modules\ImageGateway\Application\Contracts\ImageGatewayAiServiceContract;
 use App\Modules\ImageGateway\Domain\AiErrorCode;
@@ -41,6 +42,21 @@ final class ProcessAiPacsStudy implements ShouldQueue
 
     public int $timeout;
 
+    private const INDONESIAN_MONTHS = [
+        1 => 'Januari',
+        2 => 'Februari',
+        3 => 'Maret',
+        4 => 'April',
+        5 => 'Mei',
+        6 => 'Juni',
+        7 => 'Juli',
+        8 => 'Agustus',
+        9 => 'September',
+        10 => 'Oktober',
+        11 => 'November',
+        12 => 'Desember',
+    ];
+
     public function __construct(public readonly string $aiJobId)
     {
         $this->timeout = (int) config('mhcs.ai_pacs.worker_timeout_seconds', 300);
@@ -52,17 +68,20 @@ final class ProcessAiPacsStudy implements ShouldQueue
         ?AiPacsAdapterContract $adapter = null,
         ?PrivateObjectStore $objects = null,
         ?AiPacsReportDownloaderContract $downloader = null,
+        ?AiPacsDerivedPdfGeneratorContract $derivedGenerator = null,
     ): void {
         $job = DB::table('image_gateway_ai_jobs')->where('id', $this->aiJobId)->first();
         if ($job === null) {
             return;
         }
 
-        // Idempotency: If already report_ready and report exists in PrivateObjectStore, return idempotently
+        // Idempotency: If already report_ready and report exists in PrivateObjectStore, return idempotently if derived is ready
         if ($job->status === AiJobStatus::REPORT_READY) {
             $existingReport = DB::table('image_gateway_ai_reports')->where('ai_job_id', $this->aiJobId)->first();
             if ($existingReport !== null && $existingReport->original_object_key !== null && $existingReport->original_checksum !== null) {
-                return;
+                if ($existingReport->derived_object_key !== null && $existingReport->derived_checksum !== null) {
+                    return;
+                }
             }
         }
 
@@ -509,6 +528,20 @@ final class ProcessAiPacsStudy implements ShouldQueue
                     ],
                 ));
             });
+
+            // 8. Generate derived Indonesian MHCS PDF (Slice 3)
+            $activeDerivedGenerator = $derivedGenerator ?? app(AiPacsDerivedPdfGeneratorContract::class);
+            $this->deriveIndonesianPdf(
+                claimed: $claimed,
+                storedReport: $storedReport,
+                reportResultBytes: $reportResult->pdfBytes,
+                sid: $sid,
+                aiCalcId: $aiCalcId,
+                activeObjects: $activeObjects,
+                derivedGenerator: $activeDerivedGenerator,
+                clock: $clock,
+                audit: $audit,
+            );
         } catch (Throwable $exception) {
             $errorCode = $exception instanceof ImageGatewayException
                 ? $exception->category
@@ -611,5 +644,192 @@ final class ProcessAiPacsStudy implements ShouldQueue
         }
 
         return null;
+    }
+
+    private function deriveIndonesianPdf(
+        object $claimed,
+        object $storedReport,
+        string $reportResultBytes,
+        int $sid,
+        int $aiCalcId,
+        PrivateObjectStore $activeObjects,
+        AiPacsDerivedPdfGeneratorContract $derivedGenerator,
+        Clock $clock,
+        AuditStore $audit,
+    ): void {
+        try {
+            $reportRow = DB::table('image_gateway_ai_reports')->where('ai_job_id', $this->aiJobId)->first();
+            if ($reportRow !== null && $reportRow->derived_object_key !== null && $reportRow->derived_checksum !== null) {
+                return;
+            }
+
+            $jobRow = DB::table('image_gateway_ai_jobs')->where('id', $this->aiJobId)->first();
+            if ($jobRow === null) {
+                return;
+            }
+
+            $member = DB::table('members')->where('id', $jobRow->member_id)->first();
+            $study = DB::table('image_gateway_studies')->where('id', $claimed->study_id)->first();
+            $captureSet = DB::table('image_gateway_capture_sets')->where('id', $jobRow->capture_set_id)->first();
+            $operator = null;
+            if ($captureSet?->operator_profile_id !== null) {
+                $operator = DB::table('operator_profiles')->where('id', $captureSet->operator_profile_id)->first();
+            }
+
+            $now = $clock->now();
+            $examDateStr = $study?->created_at !== null
+                ? $this->formatIndonesianDate(new DateTimeImmutable((string) $study->created_at))
+                : $this->formatIndonesianDate($now);
+
+            $patientDobAge = '-';
+            if ($member?->birth_date !== null) {
+                $dob = new DateTimeImmutable((string) $member->birth_date);
+                $age = $dob->diff($now)->y;
+                $patientDobAge = $this->formatIndonesianDate($dob)." ({$age} tahun)";
+            }
+
+            $genderDisplay = match (strtolower((string) ($member?->administrative_gender ?? ''))) {
+                'male', 'laki-laki' => 'Laki-laki',
+                'female', 'perempuan' => 'Perempuan',
+                default => 'Laki-laki',
+            };
+
+            $patientMrn = $member?->medical_record_number ?? ('MRN-'.$jobRow->member_id);
+
+            $provenanceData = [
+                'patientName' => (string) ($member?->name ?? 'Pasien Anonim'),
+                'patientDobAge' => $patientDobAge,
+                'patientGender' => $genderDisplay,
+                'patientMrn' => $patientMrn,
+                'examinationDate' => $examDateStr,
+                'examinationArea' => 'Toraks',
+                'radiographerName' => (string) ($operator?->full_name ?? 'Ratih Hanjar Dewanti, A.Md.Rad.'),
+                'aiReviewer' => 'Madeena Intelligence (AI)',
+                'reportDate' => $this->formatIndonesianDate($now),
+                'disclaimerText' => 'Laporan Hasil Analisis Kecerdasan Buatan (Bukan Pengganti Diagnosis Dokter)',
+                'footerNote' => 'Laporan ini hanya sebagai acuan klinis.',
+            ];
+
+            $tempOrig = sys_get_temp_dir().'/ai_pacs_orig_'.$this->aiJobId.'_'.Str::uuid().'.pdf';
+            $tempDest = sys_get_temp_dir().'/ai_pacs_derived_'.$this->aiJobId.'_'.Str::uuid().'.pdf';
+
+            try {
+                file_put_contents($tempOrig, $reportResultBytes);
+
+                $derivedResult = $derivedGenerator->generateDerivedPdf(
+                    originalPdfPath: $tempOrig,
+                    provenanceData: $provenanceData,
+                    destinationPath: $tempDest,
+                );
+
+                $derivedContext = new AuthenticatedContext(
+                    actorId: LocalId::fromString($this->aiJobId),
+                    operationId: new CorrelationId((string) $claimed->correlation_id),
+                    purpose: ImageGatewayAiServiceContract::AI_REPORT_PURPOSE,
+                );
+
+                $storedDerived = $activeObjects->put(
+                    contents: $derivedResult->pdfBytes,
+                    context: $derivedContext,
+                    purpose: ImageGatewayAiServiceContract::AI_REPORT_PURPOSE,
+                );
+
+                $completedAt = $clock->now();
+                DB::table('image_gateway_ai_reports')->where('ai_job_id', $this->aiJobId)->update([
+                    'derived_object_key' => (string) $storedDerived->key,
+                    'derived_checksum' => $storedDerived->checksum,
+                    'derived_bytes' => $storedDerived->bytes,
+                    'derived_filename' => "derived_ai_report_{$this->aiJobId}.pdf",
+                    'derived_at' => $completedAt,
+                    'derived_error_code' => null,
+                    'status' => 'derived_ready',
+                    'updated_at' => $completedAt,
+                ]);
+
+                $audit->append(new AuditEvent(
+                    eventId: (string) Str::uuid(),
+                    eventVersion: 1,
+                    actorId: null,
+                    sessionId: null,
+                    roles: [],
+                    permissions: [],
+                    siteId: null,
+                    caseId: null,
+                    targetType: 'image-gateway.ai-report',
+                    targetId: $this->aiJobId,
+                    action: 'image-gateway.ai-pdf-derived',
+                    previousStateDigest: null,
+                    newStateDigest: null,
+                    reason: null,
+                    occurredAt: $completedAt,
+                    recordedAt: $completedAt,
+                    correlationId: $claimed->correlation_id,
+                    source: 'image-gateway.ai-worker',
+                    outcome: 'success',
+                    metadata: [
+                        'study_id' => $claimed->study_id,
+                        'pacs_sid' => $sid,
+                        'pacs_ai_calc_id' => $aiCalcId,
+                        'original_checksum' => $storedReport->checksum,
+                        'derived_checksum' => $storedDerived->checksum,
+                        'derived_bytes' => $storedDerived->bytes,
+                        'status' => 'derived_ready',
+                    ],
+                ));
+            } finally {
+                if (file_exists($tempOrig)) {
+                    @unlink($tempOrig);
+                }
+                if (file_exists($tempDest)) {
+                    @unlink($tempDest);
+                }
+            }
+        } catch (Throwable $derivationException) {
+            $errorCode = $derivationException instanceof ImageGatewayException
+                ? $derivationException->category
+                : AiErrorCode::PROCESSING_ERROR;
+
+            $now = $clock->now();
+            DB::table('image_gateway_ai_reports')->where('ai_job_id', $this->aiJobId)->update([
+                'derived_error_code' => AiErrorCode::sanitize($errorCode),
+                'updated_at' => $now,
+            ]);
+
+            $audit->append(new AuditEvent(
+                eventId: (string) Str::uuid(),
+                eventVersion: 1,
+                actorId: null,
+                sessionId: null,
+                roles: [],
+                permissions: [],
+                siteId: null,
+                caseId: null,
+                targetType: 'image-gateway.ai-report',
+                targetId: $this->aiJobId,
+                action: 'image-gateway.ai-pdf-derivation-failed',
+                previousStateDigest: null,
+                newStateDigest: null,
+                reason: $errorCode,
+                occurredAt: $now,
+                recordedAt: $now,
+                correlationId: $claimed->correlation_id,
+                source: 'image-gateway.ai-worker',
+                outcome: 'failure',
+                metadata: [
+                    'study_id' => $claimed->study_id,
+                    'error_code' => $errorCode,
+                ],
+            ));
+        }
+    }
+
+    private function formatIndonesianDate(DateTimeImmutable $date): string
+    {
+        $day = (int) $date->format('j');
+        $monthNum = (int) $date->format('n');
+        $monthName = self::INDONESIAN_MONTHS[$monthNum] ?? $date->format('F');
+        $year = $date->format('Y');
+
+        return "{$day} {$monthName} {$year}";
     }
 }
