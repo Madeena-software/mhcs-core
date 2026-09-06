@@ -22,7 +22,11 @@ final class ProvisionMpipsGrabberRehearsalContext extends Command
                             {--site-name=Klinik Pratama Rehearsal : Display name for the site}
                             {--grabber-id=GRABBER-REHEARSAL-01 : Unique Grabber client identifier}
                             {--patient-name=Siti Walkin Rehearsal : Synthetic patient display name}
-                            {--patient-nik=900000000088 : Synthetic de-identified patient NIK}';
+                            {--patient-nik=900000000088 : Synthetic de-identified patient NIK}
+                            {--base-url=http://127.0.0.1:8023 : Base URL for MHCS Grabber API}
+                            {--env-out= : Path to write local gitignored MPIPS environment variables with 0600 permissions}
+                            {--token-file= : Path to write raw token with 0600 permissions}
+                            {--no-env-file : Do not write to default gitignored environment file}';
 
     protected $description = 'Provision repeatable local context for MPIPS Grabber rehearsal (site, shift, admission, 4-digit locator, and Grabber client credentials).';
 
@@ -37,6 +41,10 @@ final class ProvisionMpipsGrabberRehearsalContext extends Command
         $grabberId = (string) $this->option('grabber-id');
         $patientName = (string) $this->option('patient-name');
         $patientNik = (string) $this->option('patient-nik');
+        $baseUrl = rtrim((string) $this->option('base-url'), '/');
+        $envOut = (string) $this->option('env-out');
+        $tokenFile = (string) $this->option('token-file');
+        $noEnvFile = (bool) $this->option('no-env-file');
 
         $now = now();
         $tz = new DateTimeZone('Asia/Jakarta');
@@ -185,49 +193,78 @@ final class ProvisionMpipsGrabberRehearsalContext extends Command
         }
 
         // 3. Shift Schedule & Eligible Shift
-        $scheduleId = (string) Str::uuid();
-        $scheduleDisplayReference = 'SHIFT-'.strtoupper(substr($scheduleId, 0, 8));
-        DB::table('shift_schedules')->insert([
-            'id' => $scheduleId,
-            'display_reference' => $scheduleDisplayReference,
-            'examination_site_id' => $siteReferenceId,
-            'service_offering_id' => $serviceId,
-            'starts_at' => $shiftStart,
-            'ends_at' => $shiftEnd,
-            'quota' => 100,
-            'status' => 'open',
-            'eligible_at' => $now,
-            'created_at' => $now,
-            'updated_at' => $now,
-        ]);
+        $existingShift = DB::table('shift_schedules')
+            ->where('examination_site_id', $siteReferenceId)
+            ->whereIn('status', ['open', 'in_progress'])
+            ->orderBy('created_at', 'desc')
+            ->first();
 
-        $eligibleId = (string) Str::uuid();
-        DB::table('operator_eligible_shifts')->insert([
-            'id' => $eligibleId,
-            'member_schedule_id' => $scheduleId,
-            'operator_site_id' => $siteCode,
-            'schedule_starts_at' => $shiftStart,
-            'schedule_ends_at' => $shiftEnd,
-            'confirmed_count_at_eligibility' => 1,
-            'quota' => 100,
-            'event_version' => 1,
-            'source_event_id' => 'rehearsal:shift-eligible:'.$scheduleId,
-            'eligible_at' => $now,
-            'sync_status' => 'eligible',
-            'created_at' => $now,
-            'updated_at' => $now,
-        ]);
+        if ($existingShift !== null) {
+            $scheduleId = (string) $existingShift->id;
+            $scheduleDisplayReference = (string) $existingShift->display_reference;
+        } else {
+            $scheduleId = (string) Str::uuid();
+            $scheduleDisplayReference = 'JAD-'.strtoupper(substr($scheduleId, 0, 8));
+            DB::table('shift_schedules')->insert([
+                'id' => $scheduleId,
+                'display_reference' => $scheduleDisplayReference,
+                'examination_site_id' => $siteReferenceId,
+                'service_offering_id' => $serviceId,
+                'starts_at' => $shiftStart,
+                'ends_at' => $shiftEnd,
+                'quota' => 100,
+                'status' => 'open',
+                'eligible_at' => $now,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+        }
 
-        DB::table('operator_shift_assignments')->insert([
-            'id' => (string) Str::uuid(),
-            'operator_eligible_shift_id' => $eligibleId,
-            'operator_profile_id' => $profileId,
-            'assigned_by_user_id' => $operatorUser->id,
-            'status' => 'active',
-            'assigned_at' => $now,
-            'created_at' => $now,
-            'updated_at' => $now,
-        ]);
+        // Close any older open shifts for this site to ensure unambiguous auto-resolution
+        DB::table('shift_schedules')
+            ->where('examination_site_id', $siteReferenceId)
+            ->where('id', '!=', $scheduleId)
+            ->whereIn('status', ['open', 'in_progress'])
+            ->update(['status' => 'closed', 'updated_at' => $now]);
+
+        $eligibleShift = DB::table('operator_eligible_shifts')->where('member_schedule_id', $scheduleId)->first();
+        if ($eligibleShift === null) {
+            $eligibleId = (string) Str::uuid();
+            DB::table('operator_eligible_shifts')->insert([
+                'id' => $eligibleId,
+                'member_schedule_id' => $scheduleId,
+                'operator_site_id' => $siteCode,
+                'schedule_starts_at' => $shiftStart,
+                'schedule_ends_at' => $shiftEnd,
+                'confirmed_count_at_eligibility' => 1,
+                'quota' => 100,
+                'event_version' => 1,
+                'source_event_id' => 'rehearsal:shift-eligible:'.$scheduleId,
+                'eligible_at' => $now,
+                'sync_status' => 'eligible',
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+        } else {
+            $eligibleId = (string) $eligibleShift->id;
+        }
+
+        $shiftAssignment = DB::table('operator_shift_assignments')
+            ->where('operator_eligible_shift_id', $eligibleId)
+            ->where('operator_profile_id', $profileId)
+            ->first();
+        if ($shiftAssignment === null) {
+            DB::table('operator_shift_assignments')->insert([
+                'id' => (string) Str::uuid(),
+                'operator_eligible_shift_id' => $eligibleId,
+                'operator_profile_id' => $profileId,
+                'assigned_by_user_id' => $operatorUser->id,
+                'status' => 'active',
+                'assigned_at' => $now,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+        }
 
         // 4. De-identified Member & Booking
         $protected = $protectedIdentifierService->protect($patientNik);
@@ -331,7 +368,7 @@ final class ProvisionMpipsGrabberRehearsalContext extends Command
             'queue_class' => 'advance',
             'stage' => 'xray',
             'state' => 'waiting',
-            'operator_profile_id' => $profileId,
+            'operator_profile_id' => null,
             'ready_at' => $now,
             'claimed_at' => null,
             'created_at' => $now,
@@ -358,6 +395,41 @@ final class ProvisionMpipsGrabberRehearsalContext extends Command
             $siteLocalId
         );
         $rawToken = $createdGrabber['raw_token'];
+
+        $writtenEnvFile = null;
+        if ($envOut !== '' || ! $noEnvFile) {
+            $targetEnvOut = $envOut !== '' ? $envOut : base_path('mpips-grabber.env');
+            $envDir = dirname($targetEnvOut);
+            if (! is_dir($envDir)) {
+                mkdir($envDir, 0700, true);
+            }
+            $envLines = [
+                '# MPIPS Grabber Local Rehearsal Credentials (mode 0600)',
+                '# Generated: '.now()->toIso8601String(),
+                "MHCS_GRABBER_BASE_URL={$baseUrl}",
+                "MHCS_GRABBER_TOKEN={$rawToken}",
+                "MHCS_GRABBER_ID={$grabberId}",
+                "MHCS_GRABBER_REHEARSAL_LOCATOR={$locatorCode}",
+            ];
+            $oldUmask = umask(0077);
+            file_put_contents($targetEnvOut, implode("\n", $envLines)."\n", LOCK_EX);
+            chmod($targetEnvOut, 0600);
+            umask($oldUmask);
+            $writtenEnvFile = $targetEnvOut;
+        }
+
+        $writtenTokenFile = null;
+        if ($tokenFile !== '') {
+            $tokenDir = dirname($tokenFile);
+            if (! is_dir($tokenDir)) {
+                mkdir($tokenDir, 0700, true);
+            }
+            $oldUmask = umask(0077);
+            file_put_contents($tokenFile, $rawToken."\n", LOCK_EX);
+            chmod($tokenFile, 0600);
+            umask($oldUmask);
+            $writtenTokenFile = $tokenFile;
+        }
 
         $result = [
             'status' => 'ready',
@@ -393,7 +465,10 @@ final class ProvisionMpipsGrabberRehearsalContext extends Command
             'grabber' => [
                 'grabber_id' => $grabberId,
                 'site_id' => $siteLocalId,
-                'token' => $rawToken,
+                'token' => '[REDACTED]',
+                'token_present' => true,
+                'env_file' => $writtenEnvFile,
+                'token_file' => $writtenTokenFile,
             ],
             'endpoints' => [
                 'manifest_url' => "/api/v1/grabber/radiography-sessions/{$locatorCode}/manifest",
@@ -416,7 +491,13 @@ final class ProvisionMpipsGrabberRehearsalContext extends Command
         $this->line("Admission ID     : {$admissionId}");
         $this->line("Locator Code     : {$locatorCode}");
         $this->line("Grabber ID       : {$grabberId}");
-        $this->line("Grabber Token    : {$rawToken}");
+        $this->line('Grabber Token    : [REDACTED]');
+        if ($writtenEnvFile !== null) {
+            $this->line("MPIPS Env File   : {$writtenEnvFile}");
+        }
+        if ($writtenTokenFile !== null) {
+            $this->line("Token File       : {$writtenTokenFile}");
+        }
         $this->line('');
         $this->comment('API Endpoints:');
         $this->line("Manifest GET     : /api/v1/grabber/radiography-sessions/{$locatorCode}/manifest");

@@ -18,57 +18,93 @@ mkdir -p "${SCRATCH_DIR}"
 rm -f "${DB_PATH}" "${PID_FILE}"
 touch "${DB_PATH}"
 
-echo "=== 1. Preparing Disposable Database & Migrations ==="
-export APP_ENV=local
-export APP_DEBUG=true
-export APP_KEY="base64:YXV0aGVudGljYXRlZGRpY29taW5nZXN0aW9ua2V5MTI="
-export MHCS_IDENTIFIER_KEY="12345678901234567890123456789012"
-export MHCS_ACCESS_GRANT_KEY="12345678901234567890123456789012"
-export MHCS_MANIFEST_KEY="12345678901234567890123456789012"
-export MHCS_MANIFEST_KEY_ID="rehearsal-manifest-key"
-export MHCS_PRIVATE_OBJECT_DISK="local"
-export DB_CONNECTION="sqlite"
-export DB_DATABASE="${DB_PATH}"
-export CACHE_STORE="array"
-export SESSION_DRIVER="array"
-export QUEUE_CONNECTION="sync"
+PERSISTENT=false
+for arg in "$@"; do
+    case "${arg}" in
+        --persistent|--no-stop) PERSISTENT=true ;;
+    esac
+done
 
-php /var/www/mhcs-core/artisan migrate --force > /dev/null
+TOKEN_FILE="${SCRATCH_DIR}/grabber.token"
+ENV_OUT="${SCRATCH_DIR}/mpips-grabber.env"
+
+echo "=== 1. Preparing Database & Migrations ==="
+# Check if persistent server is already running
+if curl -s -o /dev/null -w "%{http_code}" "${BASE_URL}/api/v1/grabber/manifest/0000" 2>/dev/null | grep -qE "401|404"; then
+    echo "Persistent local server already running on ${BASE_URL}."
+    ALREADY_RUNNING=true
+else
+    ALREADY_RUNNING=false
+    export APP_ENV=local
+    export APP_DEBUG=true
+    export APP_KEY="base64:YXV0aGVudGljYXRlZGRpY29taW5nZXN0aW9ua2V5MTI="
+    export MHCS_IDENTIFIER_KEY="12345678901234567890123456789012"
+    export MHCS_ACCESS_GRANT_KEY="12345678901234567890123456789012"
+    export MHCS_MANIFEST_KEY="12345678901234567890123456789012"
+    export MHCS_MANIFEST_KEY_ID="rehearsal-manifest-key"
+    export MHCS_PRIVATE_OBJECT_DISK="local"
+    export DB_CONNECTION="sqlite"
+    export DB_DATABASE="${DB_PATH}"
+    export CACHE_STORE="array"
+    export SESSION_DRIVER="array"
+    export QUEUE_CONNECTION="sync"
+
+    php /var/www/mhcs-core/artisan migrate --force > /dev/null
+fi
 
 echo "=== 2. Provisioning Rehearsal Context ==="
-PROVISION_JSON=$(php /var/www/mhcs-core/artisan mhcs:provision-grabber-rehearsal --json)
+PROVISION_JSON=$(php /var/www/mhcs-core/artisan mhcs:provision-grabber-rehearsal \
+    --json \
+    --base-url="${BASE_URL}" \
+    --env-out="${ENV_OUT}" \
+    --token-file="${TOKEN_FILE}")
 
 LOCATOR_CODE=$(echo "${PROVISION_JSON}" | grep -o '"locator_code": "[^"]*' | cut -d'"' -f4)
-GRABBER_TOKEN=$(echo "${PROVISION_JSON}" | grep -o '"token": "[^"]*' | cut -d'"' -f4)
 GRABBER_ID=$(echo "${PROVISION_JSON}" | grep -o '"grabber_id": "[^"]*' | cut -d'"' -f4)
 PATIENT_MRN=$(echo "${PROVISION_JSON}" | grep -o '"mrn": "[^"]*' | cut -d'"' -f4)
+
+set +x
+GRABBER_TOKEN="$(< "${TOKEN_FILE}")"
 
 echo "Provisioned Session:"
 echo "  Locator Code : ${LOCATOR_CODE}"
 echo "  Grabber ID   : ${GRABBER_ID}"
 echo "  Patient MRN  : ${PATIENT_MRN}"
+echo "  Grabber Token: [REDACTED]"
 
-echo "=== 3. Starting Local Development Server on Loopback (${BASE_URL}) ==="
-php /var/www/mhcs-core/artisan serve --host="${REHEARSAL_HOST}" --port="${REHEARSAL_PORT}" > "${SCRATCH_DIR}/serve.log" 2>&1 &
-SERVER_PID=$!
-echo "${SERVER_PID}" > "${PID_FILE}"
+if [ "${ALREADY_RUNNING}" = "false" ]; then
+    echo "=== 3. Starting Local Development Server on Loopback (${BASE_URL}) ==="
+    php /var/www/mhcs-core/artisan serve --host="${REHEARSAL_HOST}" --port="${REHEARSAL_PORT}" > "${SCRATCH_DIR}/serve.log" 2>&1 &
+    SERVER_PID=$!
+    echo "${SERVER_PID}" > "${PID_FILE}"
 
-cleanup() {
-    echo "Shutting down local development server (PID: ${SERVER_PID})..."
-    kill "${SERVER_PID}" 2>/dev/null || true
-    wait "${SERVER_PID}" 2>/dev/null || true
-    rm -rf "${SCRATCH_DIR}"
-}
-trap cleanup EXIT
+    cleanup() {
+        if [ "${PERSISTENT}" != "true" ]; then
+            echo "Shutting down local development server (PID: ${SERVER_PID})..."
+            kill "${SERVER_PID}" 2>/dev/null || true
+            wait "${SERVER_PID}" 2>/dev/null || true
+        else
+            echo "Leaving local development server running (PID: ${SERVER_PID})."
+        fi
+        rm -f "${TOKEN_FILE}"
+    }
+    trap cleanup EXIT
 
-# Wait for server to become responsive
-for i in $(seq 1 30); do
-    if curl -s "${BASE_URL}" > /dev/null 2>&1 || curl -s -o /dev/null -w "%{http_code}" "${BASE_URL}/api/v1/grabber/manifest/0000" | grep -qE "401|404"; then
-        echo "Local server is up and responsive."
-        break
-    fi
-    sleep 0.2
-done
+    # Wait for server to become responsive
+    for i in $(seq 1 30); do
+        if curl -s "${BASE_URL}" > /dev/null 2>&1 || curl -s -o /dev/null -w "%{http_code}" "${BASE_URL}/api/v1/grabber/manifest/0000" | grep -qE "401|404"; then
+            echo "Local server is up and responsive."
+            break
+        fi
+        sleep 0.2
+    done
+else
+    cleanup() {
+        echo "Rehearsal complete. Persistent server remains active."
+        rm -f "${TOKEN_FILE}"
+    }
+    trap cleanup EXIT
+fi
 
 echo "=== 4. Rehearsal Verification Step A: Manifest Lookup ==="
 # A1. Authenticated Manifest Lookup

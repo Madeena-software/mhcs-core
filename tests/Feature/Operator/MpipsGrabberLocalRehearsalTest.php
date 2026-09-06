@@ -4,13 +4,15 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Operator;
 
-use App\Models\User;
 use App\Modules\ImageGateway\Application\Jobs\ProcessCaptureSet;
 use App\Modules\Operator\Application\Services\GrabberClientService;
+use App\Modules\Operator\Application\Services\OperatorCheckInTicketService;
+use App\Modules\Operator\Application\Services\OperatorFieldOperationsService;
+use App\Modules\Operator\Application\Services\OperatorReusableConsentService;
 use App\Modules\Operator\Application\Services\RadiographySessionLocatorService;
-use App\Shared\Security\ProtectedIdentifierService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\RateLimiter;
@@ -24,7 +26,7 @@ final class MpipsGrabberLocalRehearsalTest extends TestCase
     use Mvp04Fixtures;
     use RefreshDatabase;
 
-    private const string SYNTHETIC_DICOM_PREAMBLE = "DICM-SYNTHETIC-PART-10-HEADER-BYTES-LOCAL-REHEARSAL";
+    private const string SYNTHETIC_DICOM_PREAMBLE = 'DICM-SYNTHETIC-PART-10-HEADER-BYTES-LOCAL-REHEARSAL';
 
     protected function setUp(): void
     {
@@ -78,13 +80,13 @@ final class MpipsGrabberLocalRehearsalTest extends TestCase
             'office_location' => 'Building B Floor 2',
         ];
 
-        $regResult = app(\App\Modules\Operator\Application\Services\OperatorFieldOperationsService::class)->registerAndAdmitMember(
+        $regResult = app(OperatorFieldOperationsService::class)->registerAndAdmitMember(
             $memberRegPayload,
             $fixture['scheduleId'],
             (string) Str::uuid()
         );
 
-        $consentService = app(\App\Modules\Operator\Application\Services\OperatorReusableConsentService::class);
+        $consentService = app(OperatorReusableConsentService::class);
         $consentService->recordMasterConsent(
             $regResult['case_id'],
             'member',
@@ -92,7 +94,7 @@ final class MpipsGrabberLocalRehearsalTest extends TestCase
             (string) Str::uuid()
         );
 
-        $checkInService = app(\App\Modules\Operator\Application\Services\OperatorCheckInTicketService::class);
+        $checkInService = app(OperatorCheckInTicketService::class);
         $ticketResult = $checkInService->issue(
             $regResult['case_id'],
             'R-'.Str::upper(Str::random(4)),
@@ -525,5 +527,68 @@ final class MpipsGrabberLocalRehearsalTest extends TestCase
             null,
             true,
         );
+    }
+
+    // =========================================================================
+    // 11. PROVISION COMMAND REDACTS TOKEN AND WRITES PROTECTED CREDENTIALS FILE
+    // =========================================================================
+
+    public function test_provision_command_redacts_token_in_console_and_json_and_writes_protected_credentials_file(): void
+    {
+        $tempDir = storage_path('framework/testing/rehearsal_test_'.Str::random(8));
+        mkdir($tempDir, 0700, true);
+        $envFile = $tempDir.'/mpips.env';
+        $tokenFile = $tempDir.'/grabber.token';
+
+        try {
+            // 1. Text console output test
+            $this->artisan('mhcs:provision-grabber-rehearsal', [
+                '--env-out' => $envFile,
+                '--token-file' => $tokenFile,
+            ])
+                ->expectsOutputToContain('Grabber Token    : [REDACTED]')
+                ->doesntExpectOutputToContain('raw_token')
+                ->assertSuccessful();
+
+            $this->assertFileExists($envFile);
+            $this->assertFileExists($tokenFile);
+
+            // Assert restrictive 0600 file permissions
+            $envPerms = substr(sprintf('%o', fileperms($envFile)), -4);
+            $tokenPerms = substr(sprintf('%o', fileperms($tokenFile)), -4);
+            $this->assertSame('0600', $envPerms);
+            $this->assertSame('0600', $tokenPerms);
+
+            // Read token from protected token file
+            $rawToken = trim((string) file_get_contents($tokenFile));
+            $this->assertNotEmpty($rawToken);
+            $this->assertNotSame('[REDACTED]', $rawToken);
+
+            $envContent = (string) file_get_contents($envFile);
+            $this->assertStringContainsString('MHCS_GRABBER_BASE_URL=', $envContent);
+            $this->assertStringContainsString("MHCS_GRABBER_TOKEN={$rawToken}", $envContent);
+
+            // Verify the token works to authenticate
+            $client = DB::table('grabber_clients')->where('token_hash', hash('sha256', $rawToken))->first();
+            $this->assertNotNull($client);
+
+            // 2. JSON output test
+            Artisan::call('mhcs:provision-grabber-rehearsal', [
+                '--json' => true,
+                '--env-out' => $envFile,
+                '--token-file' => $tokenFile,
+            ]);
+
+            $output = Artisan::output();
+            $json = json_decode($output, true);
+            $this->assertIsArray($json);
+            $this->assertSame('[REDACTED]', $json['grabber']['token']);
+            $this->assertTrue($json['grabber']['token_present']);
+            $this->assertStringNotContainsString($rawToken, $output);
+        } finally {
+            @unlink($envFile);
+            @unlink($tokenFile);
+            @rmdir($tempDir);
+        }
     }
 }
