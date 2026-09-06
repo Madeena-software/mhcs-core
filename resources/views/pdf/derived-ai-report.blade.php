@@ -94,25 +94,31 @@
             color: #31566e;
             letter-spacing: 0.2px;
         }
-        .radiograph-container {
-            text-align: center;
+        .radiograph-table-wrapper {
+            width: 100%;
             margin: 4px 0;
+            border-collapse: collapse;
         }
-        .radiograph-frame {
-            display: inline-block;
+        .radiograph-frame-table {
+            width: 68mm;
+            height: 86mm;
             border: 1px solid #b8c8d1;
+            background-color: #000000;
+            border-collapse: collapse;
+            margin: 0 auto;
+        }
+        .radiograph-frame-cell {
             width: 68mm;
             height: 86mm;
             text-align: center;
             vertical-align: middle;
-            line-height: 86mm;
-            overflow: hidden;
-            background-color: #000000;
+            padding: 0;
         }
         .radiograph-img {
             max-width: 66mm;
             max-height: 84mm;
-            vertical-align: middle;
+            display: block;
+            margin: 0 auto;
         }
         .findings-text {
             font-size: 8.5pt;
@@ -229,11 +235,19 @@
     </div>
 
     @if (!empty($radiographImagePath))
-    <div class="radiograph-container">
-        <div class="radiograph-frame">
-            <img src="{{ $radiographImagePath }}" class="radiograph-img">
-        </div>
-    </div>
+    <table class="radiograph-table-wrapper">
+        <tr>
+            <td align="center" style="text-align: center; vertical-align: middle; padding: 0;">
+                <table class="radiograph-frame-table">
+                    <tr>
+                        <td align="center" valign="middle" class="radiograph-frame-cell">
+                            <img src="{{ $radiographImagePath }}" class="radiograph-img">
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
     @endif
 
     <div class="findings-text">
