@@ -132,7 +132,7 @@ final class OperatorFieldOperationsSlice1Test extends TestCase
 
         // Add to active shift (create a new schedule to admit the existing member into)
         $newScheduleId = (string) Str::uuid();
-        $newDisplayRef = 'JAD-NEW-'.Str::upper(Str::random(6));
+        $newDisplayRef = 'JAD-NEW-'.Str::upper(Str::random(4));
         DB::table('shift_schedules')->insert([
             'id' => $newScheduleId,
             'display_reference' => $newDisplayRef,
