@@ -167,16 +167,39 @@ final class AiPacsLaravelDerivedPdfGenerator implements AiPacsDerivedPdfGenerato
             $filename = basename($destinationPath);
 
             $discrepancies = (array) ($provenanceData['discrepancies'] ?? []);
+            $sexMismatch = null;
             if (isset($provenanceData['dicomPatientSex'])) {
                 $dSex = strtoupper(trim((string) $provenanceData['dicomPatientSex']));
                 if ($dSex === '' || in_array($dSex, ['O', 'OTHER', 'UNKNOWN', 'U'], true)) {
-                    if (! empty($provenanceData['patientGender']) && ! in_array('patient_sex_missing_in_dicom_vendor_value_present', $discrepancies, true)) {
-                        $discrepancies[] = 'patient_sex_missing_in_dicom_vendor_value_present';
+                    $vendorApiSex = isset($provenanceData['vendorApiPatientSex'])
+                        ? strtoupper(trim((string) $provenanceData['vendorApiPatientSex']))
+                        : $dSex;
+
+                    $vendorReportSex = (string) ($provenanceData['vendorReportPatientSex'] ?? null);
+                    if ($vendorReportSex === null && trim($vendorText) !== '') {
+                        if (preg_match('/(?:gender|jenis kelamin|sex)[\s:]+([^\r\n]+)/i', $vendorText, $vGenderMatch)) {
+                            $vendorReportSex = trim($vGenderMatch[1]);
+                        }
                     }
+                    if ($vendorReportSex === null || $vendorReportSex === '') {
+                        $vendorReportSex = (string) ($provenanceData['patientGender'] ?? 'Female');
+                    }
+
+                    $sexMismatch = [
+                        'type' => 'patient_sex_mismatch',
+                        'dicom_value' => $dSex,
+                        'vendor_api_value' => $vendorApiSex,
+                        'vendor_report_value' => $vendorReportSex,
+                        'displayed_value_source' => 'vendor_report',
+                        'clinically_verified' => false,
+                        'cause' => 'unknown_vendor_presentation_mismatch',
+                    ];
+                    $discrepancies['patient_sex_mismatch'] = $sexMismatch;
                 }
             }
 
-            $genderSource = (string) ($provenanceData['genderSource'] ?? (in_array('patient_sex_missing_in_dicom_vendor_value_present', $discrepancies, true) ? 'vendor_report' : 'mhcs_record'));
+            $hasSexMismatch = $sexMismatch !== null || isset($discrepancies['patient_sex_mismatch']);
+            $genderSource = (string) ($provenanceData['genderSource'] ?? ($hasSexMismatch ? 'vendor_report' : 'mhcs_record'));
 
             return new AiPacsDerivedPdfResult(
                 pdfBytes: $pdfBytes,
@@ -189,6 +212,7 @@ final class AiPacsLaravelDerivedPdfGenerator implements AiPacsDerivedPdfGenerato
                     'sha256' => $checksum,
                     'byteSize' => strlen($pdfBytes),
                     'discrepancies' => $discrepancies,
+                    'patient_sex_mismatch' => $sexMismatch,
                     'genderSource' => $genderSource,
                 ],
             );

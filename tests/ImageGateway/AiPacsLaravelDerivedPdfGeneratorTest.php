@@ -251,7 +251,7 @@ final class AiPacsLaravelDerivedPdfGeneratorTest extends TestCase
         }
     }
 
-    public function test_generator_records_discrepancy_when_dicom_patient_sex_missing_and_vendor_present(): void
+    public function test_generator_records_structured_patient_sex_mismatch_discrepancy(): void
     {
         $generator = new AiPacsLaravelDerivedPdfGenerator(logoPath: resource_path('images/branding/rumah-skrining-logo.png'));
         $dest = $this->tempDir.'/discrepancy_test.pdf';
@@ -270,12 +270,40 @@ final class AiPacsLaravelDerivedPdfGeneratorTest extends TestCase
             'reportDate' => '1 September 2026',
             'radiographImagePath' => $this->syntheticRadiographPath,
             'dicomPatientSex' => 'O',
+            'vendorApiPatientSex' => 'O',
+            'vendorReportPatientSex' => 'Female',
         ];
 
         $result = $generator->generateDerivedPdf($this->validOriginalPdf, $provenance, $dest);
 
         $this->assertFileExists($dest);
-        $this->assertContains('patient_sex_missing_in_dicom_vendor_value_present', $result->metadata['discrepancies']);
+
+        // 1. Must NOT record old string key
+        $this->assertNotContains('patient_sex_missing_in_dicom_vendor_value_present', $result->metadata['discrepancies']);
+
+        // 2. Must record structured patient_sex_mismatch
+        $this->assertArrayHasKey('patient_sex_mismatch', $result->metadata['discrepancies']);
+        $mismatch = $result->metadata['discrepancies']['patient_sex_mismatch'];
+
+        $this->assertSame('patient_sex_mismatch', $mismatch['type']);
+        $this->assertSame('O', $mismatch['dicom_value']);
+        $this->assertSame('O', $mismatch['vendor_api_value']);
+        $this->assertSame('Female', $mismatch['vendor_report_value']);
+        $this->assertSame('vendor_report', $mismatch['displayed_value_source']);
+        $this->assertFalse($mismatch['clinically_verified']);
+        $this->assertSame('unknown_vendor_presentation_mismatch', $mismatch['cause']);
+
+        // 3. Source attribution and clinical privacy
         $this->assertSame('vendor_report', $result->metadata['genderSource']);
+        $this->assertNotSame('dicom', $result->metadata['genderSource']);
+
+        // 4. Derived PDF preserves Female verbatim without exposing discrepancy as clinical conclusion
+        $parser = new Parser();
+        $pdf = $parser->parseFile($dest);
+        $text = $pdf->getText();
+
+        $this->assertStringContainsString('Female', $text);
+        $this->assertStringNotContainsString('patient_sex_mismatch', $text);
+        $this->assertStringNotContainsString('unknown_vendor_presentation_mismatch', $text);
     }
 }

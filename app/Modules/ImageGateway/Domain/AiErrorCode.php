@@ -53,6 +53,8 @@ final readonly class AiErrorCode
             return null;
         }
 
+        $code = strtolower(trim($code));
+
         return self::isSafeCode($code) ? $code : self::PROCESSING_ERROR;
     }
 }

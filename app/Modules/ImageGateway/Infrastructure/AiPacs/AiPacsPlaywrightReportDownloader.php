@@ -123,6 +123,13 @@ final class AiPacsPlaywrightReportDownloader implements AiPacsReportDownloaderCo
             );
         }
 
+        if (($resultData['radiographVerified'] ?? false) !== true) {
+            throw new ImageGatewayException(
+                AiErrorCode::AI_PACS_REPORT_DOWNLOAD_FAILED,
+                'Playwright worker did not verify nonblank radiograph in Image Report.',
+            );
+        }
+
         if (! file_exists($destinationPath) || ! is_readable($destinationPath)) {
             throw new ImageGatewayException(
                 AiErrorCode::AI_PACS_REPORT_DOWNLOAD_FAILED,

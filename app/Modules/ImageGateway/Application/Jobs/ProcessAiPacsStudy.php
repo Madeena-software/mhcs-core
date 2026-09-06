@@ -776,6 +776,7 @@ final class ProcessAiPacsStudy implements ShouldQueue
                 'footerNote' => 'Laporan ini hanya sebagai acuan klinis.',
                 'radiographImagePath' => $radiographPathForProvenance,
                 'dicomPatientSex' => $study?->patient_sex ?? null,
+                'vendorApiPatientSex' => $study?->patient_sex ?? 'O',
             ];
 
             $tempOrig = sys_get_temp_dir().'/ai_pacs_orig_'.$this->aiJobId.'_'.Str::uuid().'.pdf';

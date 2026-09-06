@@ -9,6 +9,7 @@ use App\Modules\ImageGateway\Application\Contracts\ImageGatewayAiServiceContract
 use App\Modules\ImageGateway\Application\Jobs\ProcessAiPacsStudy;
 use App\Modules\ImageGateway\Domain\AiErrorCode;
 use App\Modules\ImageGateway\Domain\AiJobStatus;
+use App\Modules\ImageGateway\Domain\ImageGatewayException;
 use App\Shared\Audit\AuditStore;
 use App\Shared\Context\AuthenticatedContext;
 use App\Shared\Context\CorrelationId;
@@ -306,6 +307,102 @@ final class ProcessAiPacsStudyIntegrationTest extends TestCase
         $this->assertSame('original_ready', $report->status);
         $this->assertSame(9121, (int) $report->pacs_sid);
         $this->assertSame(9124, (int) $report->pacs_ai_calc_id);
+    }
+
+    public function test_process_study_downloader_blank_canvas_failure_is_retryable_and_does_not_duplicate_upload(): void
+    {
+        $validPdf = "%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\nxref\n0 1\n0000000000 65535 f\ntrailer<</Size 1>>\nstartxref\n50\n%%EOF";
+        $validPdf = str_pad($validPdf, 256, "\n")."%%EOF";
+
+        Http::fake([
+            "{$this->baseUrl}/api/v1/login" => Http::response([
+                'code' => 0,
+                'data' => ['token' => 'test-token-jwt-123'],
+            ], 200),
+            "{$this->baseUrl}/api/v1/study/upload" => Http::response([
+                'code' => 0,
+                'data' => ['failNum' => 0, 'successNum' => 1, 'sid' => 9121, 'aiCalcId' => 9124],
+            ], 200),
+            "{$this->baseUrl}/api/v1/studies*" => Http::response([
+                'code' => 0,
+                'data' => ['list' => []],
+            ], 200),
+            "{$this->baseUrl}/api/v1/study/ai/calc*" => Http::response([
+                'code' => 0,
+                'data' => ['status' => 'success', 'progress' => 100, 'aiCalcId' => 9124],
+            ], 200),
+        ]);
+
+        $fixture = $this->createStudyFixture();
+        $studyId = $fixture['studyId'];
+        $context = $this->createContext();
+
+        \Illuminate\Support\Facades\Queue::fake();
+        $dispatch = $this->aiService->dispatchStudy($studyId, $context);
+        $aiJobId = $dispatch['ai_job_id'];
+
+        $failingDownloader = new class implements \App\Modules\ImageGateway\Application\Contracts\AiPacsReportDownloaderContract {
+            public int $attempts = 0;
+            public function downloadImageReport(
+                string|int $studyIdentifier,
+                int $aiCalcId,
+                string $destinationPath,
+                ?string $correlationId = null,
+                string $viewerType = 'CR',
+                string $pacs = 'fei',
+            ): \App\Modules\ImageGateway\Infrastructure\AiPacs\AiPacsReportResult {
+                $this->attempts++;
+                throw new ImageGatewayException(
+                    AiErrorCode::AI_PACS_REPORT_DOWNLOAD_FAILED,
+                    'Report radiograph canvas is blank or unrendered after 20s timeout.',
+                );
+            }
+        };
+
+        // Attempt 1: fails on blank canvas
+        $worker1 = new ProcessAiPacsStudy($aiJobId);
+        $worker1->handle($this->clock, $this->audit, $this->adapter, $this->objects, $failingDownloader);
+
+        $jobAfterAttempt1 = DB::table('image_gateway_ai_jobs')->where('id', $aiJobId)->first();
+        $this->assertSame(AiJobStatus::RETRYABLE_FAILURE, $jobAfterAttempt1->status);
+        $this->assertSame(AiErrorCode::AI_PACS_REPORT_DOWNLOAD_FAILED, $jobAfterAttempt1->last_error_code);
+        $this->assertSame(9121, (int) $jobAfterAttempt1->pacs_sid);
+        $this->assertSame(9124, (int) $jobAfterAttempt1->pacs_ai_calc_id);
+
+        // Attempt 2 (retry): canvas succeeds
+        $succeedingDownloader = new class($validPdf) implements \App\Modules\ImageGateway\Application\Contracts\AiPacsReportDownloaderContract {
+            public function __construct(private string $pdf) {}
+            public function downloadImageReport(
+                string|int $studyIdentifier,
+                int $aiCalcId,
+                string $destinationPath,
+                ?string $correlationId = null,
+                string $viewerType = 'CR',
+                string $pacs = 'fei',
+            ): \App\Modules\ImageGateway\Infrastructure\AiPacs\AiPacsReportResult {
+                return new \App\Modules\ImageGateway\Infrastructure\AiPacs\AiPacsReportResult(
+                    pdfBytes: $this->pdf,
+                    filename: 'mocked_image_report.pdf',
+                    metadata: [
+                        'aiReportSelected' => true,
+                        'imageReportSelected' => true,
+                        'customReportInactive' => true,
+                        'radiographVerified' => true,
+                    ],
+                );
+            }
+        };
+
+        $worker2 = new ProcessAiPacsStudy($aiJobId);
+        $worker2->handle($this->clock, $this->audit, $this->adapter, $this->objects, $succeedingDownloader);
+
+        $jobAfterAttempt2 = DB::table('image_gateway_ai_jobs')->where('id', $aiJobId)->first();
+        $this->assertSame(AiJobStatus::REPORT_READY, $jobAfterAttempt2->status);
+
+        // Verify upload was called exactly ONCE across both attempts (no duplicate upload on retry)
+        Http::assertSent(function ($request) {
+            return $request->url() === "{$this->baseUrl}/api/v1/study/upload";
+        });
     }
 
     public function test_process_study_reconciles_study_after_ambiguous_upload_timeout(): void
