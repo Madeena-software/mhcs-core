@@ -114,6 +114,9 @@ jobs:
           MHCS_ACCESS_GRANT_KEY: ${{ secrets.MHCS_ACCESS_GRANT_KEY }}
           MHCS_MANIFEST_KEY: ${{ secrets.MHCS_MANIFEST_KEY }}
           MHCS_MANIFEST_KEY_ID: ${{ secrets.MHCS_MANIFEST_KEY_ID }}
+          AI_PACS_USERNAME: ${{ secrets.AI_PACS_USERNAME }}
+          AI_PACS_PASSWORD: ${{ secrets.AI_PACS_PASSWORD }}
+          AI_PACS_URL: ${{ secrets.AI_PACS_URL }}
           APP_VERSION: ${{ needs.build.outputs.app_version }}
         run: |
           set -euo pipefail
@@ -127,7 +130,7 @@ jobs:
             fi
           }
 
-          for var in APP_KEY APP_DOMAIN REMOTE_PATH DB_HOST DB_DATABASE DB_USERNAME DB_PASSWORD DB_ROOT_PASSWORD AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_BUCKET AWS_ENDPOINT; do
+          for var in APP_KEY APP_DOMAIN REMOTE_PATH DB_HOST DB_DATABASE DB_USERNAME DB_PASSWORD DB_ROOT_PASSWORD AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_BUCKET AWS_ENDPOINT AI_PACS_USERNAME AI_PACS_PASSWORD AI_PACS_URL; do
             require_env "$var"
           done
 
@@ -294,6 +297,9 @@ jobs:
             printf 'MHCS_ACCESS_GRANT_KEY=%s\n' "${MHCS_ACCESS_GRANT_KEY:-}"
             printf 'MHCS_MANIFEST_KEY=%s\n' "${MHCS_MANIFEST_KEY:-}"
             printf 'MHCS_MANIFEST_KEY_ID=%s\n' "${MHCS_MANIFEST_KEY_ID:-}"
+            printf 'AI_PACS_URL=%s\n' "$AI_PACS_URL"
+            printf 'AI_PACS_USERNAME=%s\n' "$AI_PACS_USERNAME"
+            printf 'AI_PACS_PASSWORD=%s\n' "$AI_PACS_PASSWORD"
             printf 'MHCS_IMAGE=%s\n' "$MHCS_IMAGE"
             printf 'MHCS_APPLICATION_NETWORK_NAME=%s\n' "$MHCS_APPLICATION_NETWORK_NAME"
             printf 'MPIPS_NETWORK_NAME=%s\n' "$MPIPS_NETWORK_NAME"
@@ -654,9 +660,12 @@ jobs:
             assert(config("mhcs.private_object_disk") === "s3", "Private object disk must be s3");
             assert(config("queue.default") === "database", "Queue connection must be database");
             assert(config("mhcs.mpips.worker_timeout_seconds") < (int) env("DB_QUEUE_RETRY_AFTER", 420), "Queue retry-after must exceed worker timeout");
+            assert(filled(config("services.ai_pacs.base_url")), "AI_PACS_URL must be configured");
+            assert(filled(config("services.ai_pacs.username")), "AI_PACS_USERNAME must be configured");
+            assert(filled(config("services.ai_pacs.password")), "AI_PACS_PASSWORD must be configured");
             echo "RUNTIME_ASSERTIONS_PASS\n";
           ' >/dev/null
-          _pass "Application production runtime assertions passed"
+          _pass "Application production runtime assertions passed (including AI PACS configuration)"
 
           echo "7/9 Effective upload-limit configuration"
           nginx_container="$(docker ps -q -f name=mhcs_core_nginx -f status=running | head -n 1)"
