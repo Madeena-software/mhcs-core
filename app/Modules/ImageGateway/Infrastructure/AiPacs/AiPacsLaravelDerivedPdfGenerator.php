@@ -166,6 +166,18 @@ final class AiPacsLaravelDerivedPdfGenerator implements AiPacsDerivedPdfGenerato
             $checksum = hash('sha256', $pdfBytes);
             $filename = basename($destinationPath);
 
+            $discrepancies = (array) ($provenanceData['discrepancies'] ?? []);
+            if (isset($provenanceData['dicomPatientSex'])) {
+                $dSex = strtoupper(trim((string) $provenanceData['dicomPatientSex']));
+                if ($dSex === '' || in_array($dSex, ['O', 'OTHER', 'UNKNOWN', 'U'], true)) {
+                    if (! empty($provenanceData['patientGender']) && ! in_array('patient_sex_missing_in_dicom_vendor_value_present', $discrepancies, true)) {
+                        $discrepancies[] = 'patient_sex_missing_in_dicom_vendor_value_present';
+                    }
+                }
+            }
+
+            $genderSource = (string) ($provenanceData['genderSource'] ?? (in_array('patient_sex_missing_in_dicom_vendor_value_present', $discrepancies, true) ? 'vendor_report' : 'mhcs_record'));
+
             return new AiPacsDerivedPdfResult(
                 pdfBytes: $pdfBytes,
                 checksum: $checksum,
@@ -176,6 +188,8 @@ final class AiPacsLaravelDerivedPdfGenerator implements AiPacsDerivedPdfGenerato
                     'engine' => 'mpdf',
                     'sha256' => $checksum,
                     'byteSize' => strlen($pdfBytes),
+                    'discrepancies' => $discrepancies,
+                    'genderSource' => $genderSource,
                 ],
             );
         } catch (ImageGatewayException $ige) {

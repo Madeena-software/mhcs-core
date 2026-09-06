@@ -775,6 +775,7 @@ final class ProcessAiPacsStudy implements ShouldQueue
                 'disclaimerText' => 'Laporan Hasil Analisis Kecerdasan Buatan (Bukan Pengganti Diagnosis Dokter)',
                 'footerNote' => 'Laporan ini hanya sebagai acuan klinis.',
                 'radiographImagePath' => $radiographPathForProvenance,
+                'dicomPatientSex' => $study?->patient_sex ?? null,
             ];
 
             $tempOrig = sys_get_temp_dir().'/ai_pacs_orig_'.$this->aiJobId.'_'.Str::uuid().'.pdf';
@@ -841,6 +842,8 @@ final class ProcessAiPacsStudy implements ShouldQueue
                         'derived_checksum' => $storedDerived->checksum,
                         'derived_bytes' => $storedDerived->bytes,
                         'status' => 'derived_ready',
+                        'discrepancies' => $derivedResult->metadata['discrepancies'] ?? [],
+                        'gender_source' => $derivedResult->metadata['genderSource'] ?? 'mhcs_record',
                     ],
                 ));
             } finally {

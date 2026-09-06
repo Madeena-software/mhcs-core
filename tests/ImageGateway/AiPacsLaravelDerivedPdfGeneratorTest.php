@@ -250,4 +250,32 @@ final class AiPacsLaravelDerivedPdfGeneratorTest extends TestCase
             throw $e;
         }
     }
+
+    public function test_generator_records_discrepancy_when_dicom_patient_sex_missing_and_vendor_present(): void
+    {
+        $generator = new AiPacsLaravelDerivedPdfGenerator(logoPath: resource_path('images/branding/rumah-skrining-logo.png'));
+        $dest = $this->tempDir.'/discrepancy_test.pdf';
+
+        $provenance = [
+            'patientName' => 'Purnomo',
+            'patientDobAge' => '15 Januari 1981 (45 tahun)',
+            'patientGender' => 'Female',
+            'patientMrn' => 'MRN-1787808860329',
+            'examinationDate' => '27 Agustus 2026',
+            'examinationArea' => 'Toraks',
+            'findings' => 'Toraks simetris.',
+            'impression' => 'Normal.',
+            'radiographerName' => 'Ratih Hanjar Dewanti, A.Md.Rad.',
+            'aiReviewer' => 'Madeena Intelligence (AI)',
+            'reportDate' => '1 September 2026',
+            'radiographImagePath' => $this->syntheticRadiographPath,
+            'dicomPatientSex' => 'O',
+        ];
+
+        $result = $generator->generateDerivedPdf($this->validOriginalPdf, $provenance, $dest);
+
+        $this->assertFileExists($dest);
+        $this->assertContains('patient_sex_missing_in_dicom_vendor_value_present', $result->metadata['discrepancies']);
+        $this->assertSame('vendor_report', $result->metadata['genderSource']);
+    }
 }
