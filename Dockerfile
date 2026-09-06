@@ -7,9 +7,13 @@
 FROM php:8.4-cli AS composer-deps
 
 RUN apt-get update -qq \
-    && apt-get install -yqq --no-install-recommends unzip git libzip-dev libicu-dev libonig-dev ca-certificates \
+    && apt-get install -yqq --no-install-recommends \
+        unzip git ca-certificates \
+        libzip-dev libicu-dev libonig-dev \
+        libpng-dev libjpeg-dev libfreetype6-dev \
     && rm -rf /var/lib/apt/lists/* \
-    && docker-php-ext-install intl mbstring zip
+    && docker-php-ext-configure gd --with-freetype --with-jpeg \
+    && docker-php-ext-install intl mbstring zip gd
 
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 WORKDIR /app
@@ -48,6 +52,7 @@ RUN apt-get update -qq \
     && apt-get install -yqq --no-install-recommends \
         python3 python3-pip python3-venv \
         libzip-dev libicu-dev libonig-dev \
+        libpng-dev libjpeg-dev libfreetype6-dev \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements-pacs.txt /tmp/requirements-pacs.txt
@@ -67,7 +72,8 @@ RUN /opt/pacs-venv/bin/playwright install chromium --with-deps \
     && chmod -R o+rX /ms-playwright
 
 # ── PHP extensions ────────────────────────────────────────────────────────────
-RUN docker-php-ext-install bcmath intl mbstring opcache pcntl pdo pdo_mysql zip
+RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
+    && docker-php-ext-install bcmath intl mbstring opcache pcntl pdo pdo_mysql zip gd
 
 WORKDIR /var/www/html
 COPY --chown=www-data:www-data . .
