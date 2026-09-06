@@ -5,21 +5,26 @@ declare(strict_types=1);
 namespace Tests\ImageGateway;
 
 use App\Modules\ImageGateway\Application\Contracts\AiPacsAdapterContract;
+use App\Modules\ImageGateway\Application\Contracts\AiPacsReportDownloaderContract;
 use App\Modules\ImageGateway\Application\Contracts\ImageGatewayAiServiceContract;
 use App\Modules\ImageGateway\Application\Jobs\ProcessAiPacsStudy;
 use App\Modules\ImageGateway\Domain\AiErrorCode;
 use App\Modules\ImageGateway\Domain\AiJobStatus;
 use App\Modules\ImageGateway\Domain\ImageGatewayException;
+use App\Modules\ImageGateway\Infrastructure\AiPacs\AiPacsReportResult;
 use App\Shared\Audit\AuditStore;
 use App\Shared\Context\AuthenticatedContext;
 use App\Shared\Context\CorrelationId;
 use App\Shared\Identity\LocalId;
+use App\Shared\Storage\OpaqueObjectKey;
+use App\Shared\Storage\PrivateObject;
 use App\Shared\Storage\PrivateObjectStore;
 use App\Shared\Time\Clock;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 use Tests\Operator\Mvp04Fixtures;
 use Tests\TestCase;
@@ -64,7 +69,7 @@ final class ProcessAiPacsStudyIntegrationTest extends TestCase
     public function test_process_study_full_flow_success(): void
     {
         $validPdf = "%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\nxref\n0 1\n0000000000 65535 f\ntrailer<</Size 1>>\nstartxref\n50\n%%EOF";
-        $validPdf = str_pad($validPdf, 256, "\n")."%%EOF";
+        $validPdf = str_pad($validPdf, 256, "\n").'%%EOF';
 
         Http::fake([
             "{$this->baseUrl}/api/v1/login" => Http::response([
@@ -129,8 +134,8 @@ final class ProcessAiPacsStudyIntegrationTest extends TestCase
         $this->assertSame('image_report', $summary['report_type']);
 
         // Verify original PDF exists in PrivateObjectStore
-        $pdfObject = new \App\Shared\Storage\PrivateObject(
-            \App\Shared\Storage\OpaqueObjectKey::fromString((string) $report->original_object_key),
+        $pdfObject = new PrivateObject(
+            OpaqueObjectKey::fromString((string) $report->original_object_key),
             $report->original_checksum,
             (int) $report->original_bytes,
             new \DateTimeImmutable((string) $report->created_at),
@@ -182,7 +187,7 @@ final class ProcessAiPacsStudyIntegrationTest extends TestCase
     public function test_process_study_resumes_from_upload_if_already_uploaded(): void
     {
         $validPdf = "%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\nxref\n0 1\n0000000000 65535 f\ntrailer<</Size 1>>\nstartxref\n50\n%%EOF";
-        $validPdf = str_pad($validPdf, 256, "\n")."%%EOF";
+        $validPdf = str_pad($validPdf, 256, "\n").'%%EOF';
 
         Http::fake([
             "{$this->baseUrl}/api/v1/login" => Http::response([
@@ -205,7 +210,7 @@ final class ProcessAiPacsStudyIntegrationTest extends TestCase
         $studyId = $fixture['studyId'];
         $context = $this->createContext();
 
-        \Illuminate\Support\Facades\Queue::fake();
+        Queue::fake();
         $dispatch = $this->aiService->dispatchStudy($studyId, $context);
         $aiJobId = $dispatch['ai_job_id'];
 
@@ -231,7 +236,7 @@ final class ProcessAiPacsStudyIntegrationTest extends TestCase
     public function test_process_study_with_playwright_downloader_contract(): void
     {
         $validPdf = "%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\nxref\n0 1\n0000000000 65535 f\ntrailer<</Size 1>>\nstartxref\n50\n%%EOF";
-        $validPdf = str_pad($validPdf, 256, "\n")."%%EOF";
+        $validPdf = str_pad($validPdf, 256, "\n").'%%EOF';
 
         Http::fake([
             "{$this->baseUrl}/api/v1/login" => Http::response([
@@ -256,13 +261,16 @@ final class ProcessAiPacsStudyIntegrationTest extends TestCase
         $studyId = $fixture['studyId'];
         $context = $this->createContext();
 
-        \Illuminate\Support\Facades\Queue::fake();
+        Queue::fake();
         $dispatch = $this->aiService->dispatchStudy($studyId, $context);
         $aiJobId = $dispatch['ai_job_id'];
 
-        $mockDownloader = new class($validPdf) implements \App\Modules\ImageGateway\Application\Contracts\AiPacsReportDownloaderContract {
+        $mockDownloader = new class($validPdf) implements AiPacsReportDownloaderContract
+        {
             public bool $wasCalled = false;
+
             public ?int $recordedSid = null;
+
             public ?int $recordedAiCalcId = null;
 
             public function __construct(private string $pdf) {}
@@ -274,12 +282,12 @@ final class ProcessAiPacsStudyIntegrationTest extends TestCase
                 ?string $correlationId = null,
                 string $viewerType = 'CR',
                 string $pacs = 'fei',
-            ): \App\Modules\ImageGateway\Infrastructure\AiPacs\AiPacsReportResult {
+            ): AiPacsReportResult {
                 $this->wasCalled = true;
                 $this->recordedSid = (int) $studyIdentifier;
                 $this->recordedAiCalcId = $aiCalcId;
 
-                return new \App\Modules\ImageGateway\Infrastructure\AiPacs\AiPacsReportResult(
+                return new AiPacsReportResult(
                     pdfBytes: $this->pdf,
                     filename: 'mocked_image_report.pdf',
                     metadata: [
@@ -312,7 +320,7 @@ final class ProcessAiPacsStudyIntegrationTest extends TestCase
     public function test_process_study_downloader_blank_canvas_failure_is_retryable_and_does_not_duplicate_upload(): void
     {
         $validPdf = "%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\nxref\n0 1\n0000000000 65535 f\ntrailer<</Size 1>>\nstartxref\n50\n%%EOF";
-        $validPdf = str_pad($validPdf, 256, "\n")."%%EOF";
+        $validPdf = str_pad($validPdf, 256, "\n").'%%EOF';
 
         Http::fake([
             "{$this->baseUrl}/api/v1/login" => Http::response([
@@ -337,12 +345,14 @@ final class ProcessAiPacsStudyIntegrationTest extends TestCase
         $studyId = $fixture['studyId'];
         $context = $this->createContext();
 
-        \Illuminate\Support\Facades\Queue::fake();
+        Queue::fake();
         $dispatch = $this->aiService->dispatchStudy($studyId, $context);
         $aiJobId = $dispatch['ai_job_id'];
 
-        $failingDownloader = new class implements \App\Modules\ImageGateway\Application\Contracts\AiPacsReportDownloaderContract {
+        $failingDownloader = new class implements AiPacsReportDownloaderContract
+        {
             public int $attempts = 0;
+
             public function downloadImageReport(
                 string|int $studyIdentifier,
                 int $aiCalcId,
@@ -350,7 +360,7 @@ final class ProcessAiPacsStudyIntegrationTest extends TestCase
                 ?string $correlationId = null,
                 string $viewerType = 'CR',
                 string $pacs = 'fei',
-            ): \App\Modules\ImageGateway\Infrastructure\AiPacs\AiPacsReportResult {
+            ): AiPacsReportResult {
                 $this->attempts++;
                 throw new ImageGatewayException(
                     AiErrorCode::AI_PACS_REPORT_DOWNLOAD_FAILED,
@@ -370,8 +380,10 @@ final class ProcessAiPacsStudyIntegrationTest extends TestCase
         $this->assertSame(9124, (int) $jobAfterAttempt1->pacs_ai_calc_id);
 
         // Attempt 2 (retry): canvas succeeds
-        $succeedingDownloader = new class($validPdf) implements \App\Modules\ImageGateway\Application\Contracts\AiPacsReportDownloaderContract {
+        $succeedingDownloader = new class($validPdf) implements AiPacsReportDownloaderContract
+        {
             public function __construct(private string $pdf) {}
+
             public function downloadImageReport(
                 string|int $studyIdentifier,
                 int $aiCalcId,
@@ -379,8 +391,8 @@ final class ProcessAiPacsStudyIntegrationTest extends TestCase
                 ?string $correlationId = null,
                 string $viewerType = 'CR',
                 string $pacs = 'fei',
-            ): \App\Modules\ImageGateway\Infrastructure\AiPacs\AiPacsReportResult {
-                return new \App\Modules\ImageGateway\Infrastructure\AiPacs\AiPacsReportResult(
+            ): AiPacsReportResult {
+                return new AiPacsReportResult(
                     pdfBytes: $this->pdf,
                     filename: 'mocked_image_report.pdf',
                     metadata: [
@@ -408,7 +420,7 @@ final class ProcessAiPacsStudyIntegrationTest extends TestCase
     public function test_process_study_reconciles_study_after_ambiguous_upload_timeout(): void
     {
         $validPdf = "%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\nxref\n0 1\n0000000000 65535 f\ntrailer<</Size 1>>\nstartxref\n50\n%%EOF";
-        $validPdf = str_pad($validPdf, 256, "\n")."%%EOF";
+        $validPdf = str_pad($validPdf, 256, "\n").'%%EOF';
 
         $fixture = $this->createStudyFixture();
         $studyId = $fixture['studyId'];
@@ -616,8 +628,8 @@ final class ProcessAiPacsStudyIntegrationTest extends TestCase
 
         // Verify DICOM study payload is synthetic and contains no patient PHI
         $context = $this->createContext();
-        $dicomObject = new \App\Shared\Storage\PrivateObject(
-            \App\Shared\Storage\OpaqueObjectKey::fromString((string) $study->object_key),
+        $dicomObject = new PrivateObject(
+            OpaqueObjectKey::fromString((string) $study->object_key),
             (string) $study->checksum,
             (int) $study->bytes,
             new \DateTimeImmutable((string) $study->created_at),

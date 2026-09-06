@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Modules\Operator\Application\Services;
 
+use App\Modules\ImageGateway\Application\Contracts\ImageGatewayAiServiceContract;
 use App\Modules\Operator\Domain\Models\GrabberClient;
 use App\Modules\Operator\Domain\Models\RadiographySessionLocator;
 use App\Modules\Operator\Domain\OperatorException;
@@ -41,6 +42,7 @@ final readonly class GrabberDicomIngestionService
         private OutboxStore $outbox,
         private Clock $clock,
         private RadiographySessionLocatorService $locators,
+        private ?ImageGatewayAiServiceContract $aiService = null,
     ) {}
 
     /**
@@ -396,6 +398,24 @@ final readonly class GrabberDicomIngestionService
 
         $result = $outcome->result;
         $result['replayed'] = $outcome->status === 'replayed';
+
+        try {
+            $aiService = $this->aiService ?? (app()->bound(ImageGatewayAiServiceContract::class) ? app(ImageGatewayAiServiceContract::class) : null);
+            if ($aiService !== null) {
+                $aiContext = new AuthenticatedContext(
+                    actorId: LocalId::fromString((string) $client->id),
+                    operationId: new CorrelationId($submissionId),
+                    roles: ['grabber'],
+                    permissions: ['image-gateway.ai.dispatch'],
+                    siteId: LocalId::fromString($permittedSiteId),
+                    purpose: ImageGatewayAiServiceContract::AI_DISPATCH_PURPOSE,
+                );
+
+                $aiService->dispatchStudy((string) $result['study_id'], $aiContext);
+            }
+        } catch (Throwable) {
+            // Failure containment: AI dispatch failure must not fail or roll back DICOM ingestion
+        }
 
         return $result;
     }

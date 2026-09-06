@@ -7,6 +7,8 @@ namespace Tests\ImageGateway;
 use App\Modules\ImageGateway\Domain\AiErrorCode;
 use App\Modules\ImageGateway\Domain\ImageGatewayException;
 use App\Modules\ImageGateway\Infrastructure\AiPacs\AiPacsLaravelDerivedPdfGenerator;
+use Mpdf\Mpdf;
+use Mpdf\Output\Destination;
 use ReflectionClass;
 use Smalot\PdfParser\Parser;
 use Tests\TestCase;
@@ -27,9 +29,9 @@ final class AiPacsLaravelDerivedPdfGeneratorTest extends TestCase
 
         // Generate a valid fixture PDF using pure PHP Mpdf
         $this->validOriginalPdf = $this->tempDir.'/valid_original.pdf';
-        $mpdf = new \Mpdf\Mpdf(['format' => 'A4']);
+        $mpdf = new Mpdf(['format' => 'A4']);
         $mpdf->WriteHTML('<p>Patient Name: Purnomo</p><p>MRN: MRN-1787808860329</p>');
-        $mpdf->Output($this->validOriginalPdf, \Mpdf\Output\Destination::FILE);
+        $mpdf->Output($this->validOriginalPdf, Destination::FILE);
 
         // Create a synthetic radiograph test image
         $this->syntheticRadiographPath = $this->tempDir.'/synthetic_radiograph.png';
@@ -84,7 +86,7 @@ final class AiPacsLaravelDerivedPdfGeneratorTest extends TestCase
         $this->assertStringContainsString('%%EOF', substr($result->pdfBytes, -4096));
 
         // Verify text extraction via pure PHP parser
-        $parser = new Parser();
+        $parser = new Parser;
         $pdf = $parser->parseFile($dest);
         $extractedText = $pdf->getText();
 
@@ -112,7 +114,7 @@ final class AiPacsLaravelDerivedPdfGeneratorTest extends TestCase
 
     public function test_generator_fails_safely_when_required_metadata_is_absent_without_defaults(): void
     {
-        $generator = new AiPacsLaravelDerivedPdfGenerator();
+        $generator = new AiPacsLaravelDerivedPdfGenerator;
         $dest = $this->tempDir.'/fail_output.pdf';
 
         $baseProvenance = [
@@ -168,11 +170,11 @@ final class AiPacsLaravelDerivedPdfGeneratorTest extends TestCase
     {
         // Create vendor PDF that has text mentioning "Patient Name: Budi"
         $mismatchPdfPath = $this->tempDir.'/mismatch_vendor.pdf';
-        $mpdf = new \Mpdf\Mpdf(['format' => 'A4']);
+        $mpdf = new Mpdf(['format' => 'A4']);
         $mpdf->WriteHTML('<p>Patient Name: Budi</p><p>MRN: MRN-1787808860329</p>');
-        $mpdf->Output($mismatchPdfPath, \Mpdf\Output\Destination::FILE);
+        $mpdf->Output($mismatchPdfPath, Destination::FILE);
 
-        $generator = new AiPacsLaravelDerivedPdfGenerator();
+        $generator = new AiPacsLaravelDerivedPdfGenerator;
         $dest = $this->tempDir.'/fail_output.pdf';
 
         $provenance = [
@@ -191,14 +193,14 @@ final class AiPacsLaravelDerivedPdfGeneratorTest extends TestCase
         ];
 
         $this->expectException(ImageGatewayException::class);
-        $this->expectExceptionMessage("Patient name mismatch");
+        $this->expectExceptionMessage('Patient name mismatch');
 
         $generator->generateDerivedPdf($mismatchPdfPath, $provenance, $dest);
     }
 
     public function test_generator_fails_safely_when_source_radiograph_cannot_be_proven(): void
     {
-        $generator = new AiPacsLaravelDerivedPdfGenerator();
+        $generator = new AiPacsLaravelDerivedPdfGenerator;
         $dest = $this->tempDir.'/fail_output.pdf';
 
         $provenance = [
@@ -224,7 +226,7 @@ final class AiPacsLaravelDerivedPdfGeneratorTest extends TestCase
 
     public function test_generator_rejects_missing_original_pdf(): void
     {
-        $generator = new AiPacsLaravelDerivedPdfGenerator();
+        $generator = new AiPacsLaravelDerivedPdfGenerator;
         $dest = $this->tempDir.'/fail_output.pdf';
 
         $this->expectException(ImageGatewayException::class);
@@ -238,7 +240,7 @@ final class AiPacsLaravelDerivedPdfGeneratorTest extends TestCase
         $corruptFile = $this->tempDir.'/corrupt.pdf';
         file_put_contents($corruptFile, 'NOT_A_VALID_PDF_FILE');
 
-        $generator = new AiPacsLaravelDerivedPdfGenerator();
+        $generator = new AiPacsLaravelDerivedPdfGenerator;
         $dest = $this->tempDir.'/fail_output.pdf';
 
         $this->expectException(ImageGatewayException::class);
@@ -298,7 +300,7 @@ final class AiPacsLaravelDerivedPdfGeneratorTest extends TestCase
         $this->assertNotSame('dicom', $result->metadata['genderSource']);
 
         // 4. Derived PDF preserves Female verbatim without exposing discrepancy as clinical conclusion
-        $parser = new Parser();
+        $parser = new Parser;
         $pdf = $parser->parseFile($dest);
         $text = $pdf->getText();
 

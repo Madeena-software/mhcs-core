@@ -11,7 +11,6 @@ use App\Modules\ImageGateway\Application\Jobs\ProcessAiPacsStudy;
 use App\Modules\ImageGateway\Domain\AiErrorCode;
 use App\Modules\ImageGateway\Domain\AiJobStatus;
 use App\Modules\ImageGateway\Domain\AiPacsDerivedPdfResult;
-
 use App\Modules\ImageGateway\Domain\ImageGatewayException;
 use App\Shared\Audit\AuditStore;
 use App\Shared\Context\AuthenticatedContext;
@@ -25,6 +24,8 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
+use Mpdf\Mpdf;
+use Mpdf\Output\Destination;
 use Tests\Operator\Mvp04Fixtures;
 use Tests\TestCase;
 
@@ -66,9 +67,9 @@ final class AiPacsDerivedPdfIntegrationTest extends TestCase
         $this->objects = app(PrivateObjectStore::class);
         $this->adapter = app(AiPacsAdapterContract::class);
 
-        $mpdf = new \Mpdf\Mpdf(['format' => 'A4']);
+        $mpdf = new Mpdf(['format' => 'A4']);
         $mpdf->WriteHTML('<p>Patient Name: Purnomo</p><p>MRN: MRN-TEST</p><p>Temuan Radiologis: Toraks simetris</p><p>Kesan: Normal</p>');
-        $this->validOriginalPdfContent = $mpdf->Output('', \Mpdf\Output\Destination::STRING_RETURN);
+        $this->validOriginalPdfContent = $mpdf->Output('', Destination::STRING_RETURN);
     }
 
     public function test_process_study_generates_derived_indonesian_pdf_with_full_provenance(): void
@@ -235,7 +236,8 @@ final class AiPacsDerivedPdfIntegrationTest extends TestCase
         $aiJobId = $dispatch['ai_job_id'];
 
         // Mock a failing derived generator
-        $failingGenerator = new class implements AiPacsDerivedPdfGeneratorContract {
+        $failingGenerator = new class implements AiPacsDerivedPdfGeneratorContract
+        {
             public function generateDerivedPdf(string $originalPdfPath, array $provenanceData, string $destinationPath): AiPacsDerivedPdfResult
             {
                 throw new ImageGatewayException(AiErrorCode::AI_PACS_INVALID_REPORT, 'Simulated derivation layout failure.');

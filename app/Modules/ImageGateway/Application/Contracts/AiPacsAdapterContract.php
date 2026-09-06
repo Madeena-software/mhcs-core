@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Modules\ImageGateway\Application\Contracts;
 
+use App\Modules\ImageGateway\Domain\ImageGatewayException;
 use App\Modules\ImageGateway\Infrastructure\AiPacs\AiPacsCalculationStatus;
 use App\Modules\ImageGateway\Infrastructure\AiPacs\AiPacsReportResult;
 use App\Modules\ImageGateway\Infrastructure\AiPacs\AiPacsSession;
@@ -14,15 +15,16 @@ interface AiPacsAdapterContract
     /**
      * Authenticate against AI PACS and establish a session.
      *
-     * @throws \App\Modules\ImageGateway\Domain\ImageGatewayException
+     * @throws ImageGatewayException
      */
     public function authenticate(): AiPacsSession;
 
     /**
      * Upload an authorized DICOM file/stream to AI PACS for analysis.
      *
-     * @param string|resource $dicomPayload
-     * @throws \App\Modules\ImageGateway\Domain\ImageGatewayException
+     * @param  string|resource  $dicomPayload
+     *
+     * @throws ImageGatewayException
      */
     public function uploadStudy(
         mixed $dicomPayload,
@@ -34,7 +36,7 @@ interface AiPacsAdapterContract
     /**
      * Find an existing study on AI PACS by accession number for reconciliation.
      *
-     * @throws \App\Modules\ImageGateway\Domain\ImageGatewayException
+     * @throws ImageGatewayException
      */
     public function findStudyByAccession(
         string $accessionNumber,
@@ -44,14 +46,14 @@ interface AiPacsAdapterContract
     /**
      * Poll calculation status for an uploaded study.
      *
-     * @throws \App\Modules\ImageGateway\Domain\ImageGatewayException
+     * @throws ImageGatewayException
      */
     public function pollCalculationStatus(string|int $studyIdentifier, ?AiPacsSession $session = null): AiPacsCalculationStatus;
 
     /**
      * Retrieve the original AI Image Report PDF bytes.
      *
-     * @throws \App\Modules\ImageGateway\Domain\ImageGatewayException
+     * @throws ImageGatewayException
      */
     public function retrieveOriginalReport(
         string|int $studyIdentifier,

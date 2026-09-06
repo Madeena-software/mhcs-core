@@ -5,6 +5,7 @@ use App\Http\Controllers\Member\DashboardController;
 use App\Http\Controllers\Member\Mvp03BookingController;
 use App\Http\Controllers\Member\ProfileController;
 use App\Http\Controllers\Operator\ImageGatewayController;
+use App\Http\Controllers\Operator\OperatorAiReportController;
 use App\Http\Controllers\Operator\PortalController as OperatorPortalController;
 use App\Http\Controllers\PublicQueueDisplayController;
 use App\Http\Middleware\EnsureMemberPortalAccess;
@@ -69,6 +70,8 @@ Route::middleware(['auth', EnsureOperatorPortalAccess::class])->group(function (
     Route::get('/operator/studies/{study}/dicom', [ImageGatewayController::class, 'dicom'])->name('operator.study.dicom');
     Route::get('/operator/studies/{study}/download', [ImageGatewayController::class, 'download'])->name('operator.study.download');
     Route::post('/operator/studies/batch-download', [ImageGatewayController::class, 'batchDownload'])->name('operator.study.batch-download');
+    Route::get('/operator/studies/{study}/ai-report', [OperatorAiReportController::class, 'download'])->name('operator.study.ai-report.download');
+    Route::post('/operator/studies/{study}/ai-report/retry', [OperatorAiReportController::class, 'retry'])->name('operator.study.ai-report.retry');
     Route::post('/operator/xray-readiness-worklist/{admission}/claim', [OperatorPortalController::class, 'claimXray'])->name('operator.xray-readiness-worklist.claim');
     Route::post('/operator/xray-readiness-worklist/{admission}/call', [OperatorPortalController::class, 'callXray'])->name('operator.xray-readiness-worklist.call');
     Route::post('/operator/xray-readiness-worklist/{admission}/cancel', [OperatorPortalController::class, 'cancelXray'])->name('operator.xray-readiness-worklist.cancel');

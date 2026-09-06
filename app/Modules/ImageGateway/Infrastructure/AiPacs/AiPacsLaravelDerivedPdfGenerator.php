@@ -35,7 +35,7 @@ final class AiPacsLaravelDerivedPdfGenerator implements AiPacsDerivedPdfGenerato
     ) {}
 
     /**
-     * @param array<string, mixed> $provenanceData
+     * @param  array<string, mixed>  $provenanceData
      */
     public function generateDerivedPdf(
         string $originalPdfPath,
@@ -45,7 +45,7 @@ final class AiPacsLaravelDerivedPdfGenerator implements AiPacsDerivedPdfGenerato
         $this->validateOriginalPdf($originalPdfPath);
 
         // Parse original vendor PDF using pure PHP parser
-        $parser = new Parser();
+        $parser = new Parser;
         try {
             $parsedPdf = $parser->parseFile($originalPdfPath);
             $pages = $parsedPdf->getPages();
@@ -279,7 +279,7 @@ final class AiPacsLaravelDerivedPdfGenerator implements AiPacsDerivedPdfGenerato
     }
 
     /**
-     * @param array<string, mixed> $data
+     * @param  array<string, mixed>  $data
      */
     private function verifyMetadataAndEquality(array $data, string $vendorText): void
     {
@@ -323,7 +323,7 @@ final class AiPacsLaravelDerivedPdfGenerator implements AiPacsDerivedPdfGenerato
     }
 
     /**
-     * @param array<string, mixed> $provenanceData
+     * @param  array<string, mixed>  $provenanceData
      */
     private function resolveProvenRadiograph(array $provenanceData, object $page, ?string &$tempRadiographPath): ?string
     {
@@ -412,16 +412,19 @@ final class AiPacsLaravelDerivedPdfGenerator implements AiPacsDerivedPdfGenerato
             if (str_contains($lower, 'temuan radiologis') || str_contains($lower, 'findings')) {
                 $inFindings = true;
                 $inImpression = false;
+
                 continue;
             }
             if (str_contains($lower, 'kesan') || str_contains($lower, 'impression') || str_contains($lower, 'conclusion')) {
                 $inFindings = false;
                 $inImpression = true;
+
                 continue;
             }
             if (str_contains($lower, 'radiografer') || str_contains($lower, 'penelaah') || str_contains($lower, 'laporan ini')) {
                 $inFindings = false;
                 $inImpression = false;
+
                 continue;
             }
 

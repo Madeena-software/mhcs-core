@@ -7,6 +7,7 @@ namespace Tests\ImageGateway;
 use App\Modules\ImageGateway\Domain\AiErrorCode;
 use App\Modules\ImageGateway\Domain\ImageGatewayException;
 use App\Modules\ImageGateway\Infrastructure\AiPacs\AiPacsPlaywrightReportDownloader;
+use Symfony\Component\Process\Process;
 use Tests\TestCase;
 
 final class AiPacsPlaywrightReportDownloaderTest extends TestCase
@@ -255,7 +256,7 @@ assert el3.name == 'css:.gen-btn'
 print("OK")
 PY;
 
-        $process = new \Symfony\Component\Process\Process(['python3', '-c', $pythonCode]);
+        $process = new Process(['python3', '-c', $pythonCode]);
         $process->run();
 
         $this->assertTrue($process->isSuccessful(), $process->getErrorOutput());
@@ -336,7 +337,7 @@ except RuntimeError as e:
 print("CANVAS_OK")
 PY;
 
-        $process = new \Symfony\Component\Process\Process(['python3', '-c', $pythonCode]);
+        $process = new Process(['python3', '-c', $pythonCode]);
         $process->run();
 
         $this->assertTrue($process->isSuccessful(), $process->getErrorOutput());
@@ -377,7 +378,7 @@ assert metrics['radiographStdDev'] > 15.0
 print("PDF_VERIFY_OK")
 PY;
 
-        $process = new \Symfony\Component\Process\Process(['python3', '-c', $pythonCode]);
+        $process = new Process(['python3', '-c', $pythonCode]);
         $process->run();
 
         $this->assertTrue($process->isSuccessful(), $process->getErrorOutput());
@@ -413,7 +414,7 @@ assert not download_triggered, "Download must never be triggered when canvas is 
 print("GATE_OK")
 PY;
 
-        $process = new \Symfony\Component\Process\Process(['python3', '-c', $pythonCode]);
+        $process = new Process(['python3', '-c', $pythonCode]);
         $process->run();
 
         $this->assertTrue($process->isSuccessful(), $process->getErrorOutput());
@@ -421,12 +422,12 @@ PY;
     }
 
     /**
-     * @param array<string, mixed> $output
+     * @param  array<string, mixed>  $output
      */
     private function createMockWorkerScript(array $output): string
     {
         $validPdf = "%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\nxref\n0 1\n0000000000 65535 f\ntrailer<</Size 1>>\nstartxref\n50\n%%EOF";
-        $validPdf = str_pad($validPdf, 256, "\n")."%%EOF";
+        $validPdf = str_pad($validPdf, 256, "\n").'%%EOF';
 
         $scriptFile = $this->tempDir.'/mock_worker_'.bin2hex(random_bytes(4)).'.py';
         $jsonOut = json_encode($output);

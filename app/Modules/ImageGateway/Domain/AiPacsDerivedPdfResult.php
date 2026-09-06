@@ -7,7 +7,7 @@ namespace App\Modules\ImageGateway\Domain;
 final readonly class AiPacsDerivedPdfResult
 {
     /**
-     * @param array<string, mixed> $metadata
+     * @param  array<string, mixed>  $metadata
      */
     public function __construct(
         public string $pdfBytes,

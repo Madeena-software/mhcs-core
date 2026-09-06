@@ -7,7 +7,7 @@ namespace App\Modules\ImageGateway\Infrastructure\AiPacs;
 final readonly class AiPacsUploadResult
 {
     /**
-     * @param array<string, mixed> $metadata
+     * @param  array<string, mixed>  $metadata
      */
     public function __construct(
         public string|int $studyIdentifier,

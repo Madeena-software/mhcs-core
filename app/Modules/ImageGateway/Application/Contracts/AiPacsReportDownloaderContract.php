@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Modules\ImageGateway\Application\Contracts;
 
+use App\Modules\ImageGateway\Domain\ImageGatewayException;
 use App\Modules\ImageGateway\Infrastructure\AiPacs\AiPacsReportResult;
 
 interface AiPacsReportDownloaderContract
@@ -11,7 +12,7 @@ interface AiPacsReportDownloaderContract
     /**
      * Download the authentic Image Report PDF using Playwright browser automation.
      *
-     * @throws \App\Modules\ImageGateway\Domain\ImageGatewayException
+     * @throws ImageGatewayException
      */
     public function downloadImageReport(
         string|int $studyIdentifier,

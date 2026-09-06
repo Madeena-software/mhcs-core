@@ -131,6 +131,7 @@ final class AiPacsClientTest extends TestCase
 
         Http::assertSent(function ($request) {
             $authHeader = $request->header('Authorization')[0] ?? '';
+
             return $authHeader === 'raw-secret-jwt-token-999'
                 && ! str_starts_with($authHeader, 'Bearer ');
         });
@@ -171,6 +172,7 @@ final class AiPacsClientTest extends TestCase
 
         Http::assertSent(function ($request) {
             $body = (string) $request->body();
+
             return str_contains($body, 'name="files"')
                 && str_contains($body, 'filename="bypass.dcm"')
                 && str_contains($body, 'Content-Type: application/dicom')
@@ -194,6 +196,7 @@ final class AiPacsClientTest extends TestCase
             $hasLength = $request->hasHeader('Content-Length');
             $length = (int) ($request->header('Content-Length')[0] ?? 0);
             $hasChunked = in_array('chunked', $request->header('Transfer-Encoding') ?? [], true);
+
             return $hasLength && $length > 0 && ! $hasChunked;
         });
     }
@@ -407,7 +410,7 @@ final class AiPacsClientTest extends TestCase
         $validPdf = "%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\nxref\n0 1\n0000000000 65535 f\ntrailer<</Size 1>>\nstartxref\n50\n%%EOF";
         // Pad to > 100 bytes
         $validPdf = str_pad($validPdf, 256, "\n");
-        $validPdf .= "%%EOF";
+        $validPdf .= '%%EOF';
 
         Http::fake([
             "{$this->baseUrl}/api/v1/view-report/download*" => Http::response($validPdf, 200, ['Content-Type' => 'application/pdf']),

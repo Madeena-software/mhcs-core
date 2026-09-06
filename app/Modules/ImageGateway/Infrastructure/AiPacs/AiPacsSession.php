@@ -10,8 +10,8 @@ use JsonSerializable;
 final readonly class AiPacsSession implements JsonSerializable
 {
     /**
-     * @param array<string, string> $cookies
-     * @param array<string, mixed> $attributes
+     * @param  array<string, string>  $cookies
+     * @param  array<string, mixed>  $attributes
      */
     public function __construct(
         public ?string $token = null,

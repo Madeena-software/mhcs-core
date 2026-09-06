@@ -27,7 +27,6 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Throwable;
 
@@ -639,6 +638,7 @@ final class ProcessAiPacsStudy implements ShouldQueue
             $len = unpack('v', substr($dicomBytes, $pos + 6, 2))[1] ?? 0;
             if ($len > 0 && $pos + 8 + $len <= strlen($dicomBytes)) {
                 $val = trim(substr($dicomBytes, $pos + 8, $len), " \0");
+
                 return $val !== '' ? $val : null;
             }
         }

@@ -11,10 +11,9 @@ interface AiPacsDerivedPdfGeneratorContract
     /**
      * Deterministically generate derived Indonesian MHCS PDF from original vendor PDF and provenance metadata.
      *
-     * @param string $originalPdfPath Path to the verified original vendor PDF in local temporary storage
-     * @param array<string, mixed> $provenanceData Clinical, demographic, and session provenance metadata
-     * @param string $destinationPath Path where the derived PDF must be saved
-     * @return AiPacsDerivedPdfResult
+     * @param  string  $originalPdfPath  Path to the verified original vendor PDF in local temporary storage
+     * @param  array<string, mixed>  $provenanceData  Clinical, demographic, and session provenance metadata
+     * @param  string  $destinationPath  Path where the derived PDF must be saved
      */
     public function generateDerivedPdf(
         string $originalPdfPath,
