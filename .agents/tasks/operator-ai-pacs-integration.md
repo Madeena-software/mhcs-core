@@ -1,20 +1,23 @@
 ---
 title: MHCS Core Operator–AI PACS Integration
 document_id: MHCS-TASK-OPERATOR-AI-PACS-INTEGRATION-001
-version: 1.0
+version: 1.1
 status: validated-published
 language: en-US
 last_updated: 2026-09-06
 scope:
   - Ancestry-preserving merge of completed AI PACS candidate into urgent Operator field-operations workstream
-  - Dual-source AI job triggering (legacy NPZ -> ProcessCaptureSet and additive DDR Grabber DICOM ingestion)
+  - Dual-source AI job triggering (legacy NPZ -> ProcessCaptureSet and existing MHCS Core direct-DICOM GrabberDicomIngestionService)
   - Strict preservation of non-blocking asynchronous radiography capture progression
   - Operator results worklist UI integration with state-aware AI status and medical disclaimer
   - Authorized private-storage streaming for derived Indonesian/MHCS PDF (Unduh Laporan AI)
+  - Denial of unauthenticated access via established repository web-auth behavior and HTTP 403 for cross-site access
   - Immutability and provenance tracking for original and derived report artifacts
   - Operator-authorized retry mechanics without duplicate dispatch or state corruption
+  - Explicit authorization for non-force fast-forward pushes only to task/operator-ai-pacs-integration
+  - Strict prohibition of source branch mutations, force-pushes, PRs, main merges, secret changes, and deployments
   - Comprehensive regression verification across all Operator field operations and legacy imaging pipelines
-authority_note: This task authorizes bounded repository integration of the completed AI PACS candidate into the urgent Operator workstream without rebasing, squashing, or rewriting published history. AI outputs are screening aids only and must never be represented as doctor-finalized or clinically verified medical reports.
+authority_note: This task authorizes bounded repository integration of the completed AI PACS candidate into the urgent Operator workstream without rebasing, squashing, or rewriting published history. Supporting direct DICOM ingestion leverages the existing MHCS Core direct-DICOM pathway and does not reopen the deferred MPIPS Grabber round-trip workstream. AI outputs are screening aids only and must never be represented as doctor-finalized or clinically verified medical reports.
 ---
 
 # Executable Task
@@ -55,19 +58,21 @@ When remediation materially changes this executable contract, edit the same stab
 Two critical workstreams in `mhcs-core` have achieved independent candidate completion from the common `main` lineage (`cb61e62aaf2ad4bd59b142633d8d53c482dabcba`):
 
 1. **Urgent Operator Field Operations (`task/urgent-operator-field-operations` @ `5a3626b1d5e2624ec7818ca88545e36d320f0294`):**
-   Completed Slices 1–4, establishing operator shift autonomy, walk-in member registration with civil NIK deduplication, informed consent reuse, basic examination bypass, 4-digit radiography session locators, additive Grabber DICOM ingestion, 57-mm thermal ticket printing, and full legacy NPZ pipeline preservation.
+   Completed Slices 1–4, establishing operator shift autonomy, walk-in member registration with civil NIK deduplication, informed consent reuse, basic examination bypass, 4-digit radiography session locators, additive Grabber direct DICOM ingestion, 57-mm thermal ticket printing, and full legacy NPZ pipeline preservation.
 2. **AI PACS Integration (`task/ai-pacs-integration` @ `4e716a34505fac810f47b5b24b4bbcb348105b8f`):**
    Completed Slices 1–3, establishing external Yizhun AI PACS client integration, authenticated browser report downloading via Playwright, derived Indonesian/MHCS PDF report generation (`05_final_indonesia_v10` standard via mPDF), private storage persistence, immutable provenance tracking, and asynchronous queue worker dispatch.
 
 The urgent field-operations mission now requires connecting the completed AI PACS candidate into the Operator workstream so that screening field units can access state-aware AI analysis status and download derived Indonesian/MHCS screening report PDFs directly from their operational results interface.
 
-This integration must unify both lineages while strictly honoring core clinical and technical boundaries:
+This integration must unify both lineages while strictly honoring core clinical, architectural, and operational boundaries:
 - **Ancestry Preservation:** Both published branches have diverged from `main`; the integration must use a normal merge commit without rebasing, squashing, or rewriting published history.
-- **Dual DICOM Source Support:** Radiography studies originating from either legacy NPZ processing (`ProcessCaptureSet`) or additive Grabber DICOM ingestion (`GrabberDicomIngestionService`) must seamlessly trigger asynchronous AI evaluation.
+- **Dual DICOM Source Support:** Radiography studies originating from either legacy NPZ processing (`ProcessCaptureSet`) or additive Grabber DICOM ingestion (`GrabberDicomIngestionService`) must seamlessly trigger asynchronous AI evaluation. Supporting `GrabberDicomIngestionService` strictly means supporting the existing MHCS Core direct-DICOM ingestion boundary established in `task/urgent-operator-field-operations` and does NOT reopen the deferred MPIPS Grabber round-trip workstream.
 - **Asynchronous Isolation:** Capture completion, DICOM availability, and operator examination flow must never be blocked or delayed by AI PACS latency, network timeouts, or processing errors.
 - **In-Place Operator UI:** AI status and report actions must be embedded directly in the existing Operator DICOM results interface (adjacent to `[Lihat DICOM]`), not in a separate dashboard.
 - **Clinical Safety Disclaimer:** AI outputs are screening aids only. Every user-facing AI action must display the prominent disclaimer: `Keluaran AI — belum diverifikasi tenaga medis.` AI outputs must never be presented as doctor-verified or final clinical diagnostic reports.
-- **Secure Authorized Streaming:** Derived PDFs stored in private object storage must be streamed through an authorized, site-scoped Operator endpoint without ever exposing public URLs or raw object keys.
+- **Secure Authorized Streaming:** Derived PDFs stored in private object storage must be streamed through an authorized, site-scoped Operator endpoint without ever exposing public URLs, raw object keys, or storage paths.
+- **Web-Authentication & Authorization Alignment:** Unauthenticated requests must be denied using established repository web-auth behavior (such as a login redirect or HTTP 401), ensuring zero leakage of PDF bytes, object keys, storage paths, or sensitive metadata. Authenticated cross-site operators attempting access outside their permitted site/shift scope must strictly receive HTTP 403 Forbidden.
+- **Push Boundary Definition:** Non-force, fast-forward git pushes are authorized exclusively to branch `task/operator-ai-pacs-integration` on remote `origin`. Writes to source branches, force-pushes, PRs, merges to `main`, secret mutations, and deployments remain strictly prohibited.
 
 ## Baseline and task revision
 
@@ -81,15 +86,32 @@ This integration must unify both lineages while strictly honoring core clinical 
 `cb61e62aaf2ad4bd59b142633d8d53c482dabcba` (`origin/main`)
 
 **Task revision:**
-The full SHA of the commit containing this exact task content on the dedicated integration task branch.
+The full SHA of the commit containing this exact task content on branch `task/operator-ai-pacs-integration`.
 
 The implementation baseline is the verified repository revision from which execution begins. The task revision is the exact immutable content identity governing execution and must be resolvable before execution handoff.
 
 The implementation baseline and governing task revision are separate references. Do not change the implementation baseline silently during execution.
 
+## Remediation
+
+**Review basis:** `13e69428af56eb9e57c7095822fbf8fbaa3e8b12` (v1.0 task publication)
+
+### Required corrections
+
+1. **Push Authorization Boundary:** Authorize non-force, fast-forward git pushes strictly and exclusively to `task/operator-ai-pacs-integration`. Explicitly continue prohibiting writes or pushes to either source branch (`task/urgent-operator-field-operations` or `task/ai-pacs-integration`), force-pushing or history rewriting on any branch, pull-request creation, merging into `main`, GitHub secret mutation, and staging or production deployment.
+2. **Web-Authentication Denial Flexibility:** Replace the overly strict unauthenticated HTTP 401 requirement with the requirement that unauthenticated requests must be denied using established repository web-auth behavior, such as a login redirect or HTTP 401, and must never receive PDF bytes, object keys, storage paths, or sensitive metadata.
+3. **Cross-Site Authorization Enforcement:** Preserve strict HTTP 403 Forbidden for authenticated cross-site operators attempting to access studies outside their permitted site/shift scope.
+4. **Grabber Scope Boundary Clarification:** Clarify that supporting `GrabberDicomIngestionService` strictly means supporting the existing MHCS Core direct-DICOM pathway and does not reopen the deferred MPIPS Grabber round-trip workstream.
+
+### Additional verification
+
+- Automated tests proving unauthenticated requests are denied via repository web-auth conventions (redirect or 401) without exposing PDF payload bytes or storage keys.
+- Automated tests proving authenticated cross-site operators receive HTTP 403 Forbidden.
+- Audit of git push commands ensuring only non-force fast-forward pushes to `task/operator-ai-pacs-integration` are utilized.
+
 ## Objective
 
-Authorizes a later Executor to integrate the completed AI PACS candidate history (`4e716a34505fac810f47b5b24b4bbcb348105b8f`) into the urgent Operator baseline (`5a3626b1d5e2624ec7818ca88545e36d320f0294`) via an ancestry-preserving merge; resolve architecture and test conflicts; connect asynchronous AI PACS processing to DICOM studies produced by both legacy NPZ conversion and direct Grabber ingestion; integrate state-aware AI status presentation and authorized Indonesian derived PDF downloading (`Unduh Laporan AI`) with mandatory medical disclaimers into the existing Operator results UI; enforce private-storage streaming authorization and audit logging; maintain immutability and provenance; provide an operator-authorized retry mechanism without duplicating jobs; and verify zero regression across all urgent Operator capabilities and legacy imaging pipelines.
+Authorizes a later Executor to integrate the completed AI PACS candidate history (`4e716a34505fac810f47b5b24b4bbcb348105b8f`) into the urgent Operator baseline (`5a3626b1d5e2624ec7818ca88545e36d320f0294`) via an ancestry-preserving merge; resolve architecture and test conflicts; connect asynchronous AI PACS processing to DICOM studies produced by both legacy NPZ conversion and the existing direct Grabber DICOM pathway without reopening the deferred MPIPS Grabber round-trip workstream; integrate state-aware AI status presentation and authorized Indonesian derived PDF downloading (`Unduh Laporan AI`) with mandatory medical disclaimers into the existing Operator results UI; enforce private-storage streaming authorization (denying unauthenticated requests via repository web-auth conventions and cross-site requests via HTTP 403) and audit logging; maintain immutability and provenance; provide an operator-authorized retry mechanism without duplicating jobs; authorize non-force fast-forward pushes exclusively to `task/operator-ai-pacs-integration`; and verify zero regression across all urgent Operator capabilities and legacy imaging pipelines.
 
 ## Authoritative inputs
 
@@ -116,14 +138,15 @@ Authorizes a later Executor to integrate the completed AI PACS candidate history
 ### Requirement traceability
 
 - `INT-MERGE-001` → Ancestry-Preserving Merge: Integrate `4e716a34505fac810f47b5b24b4bbcb348105b8f` into `5a3626b1d5e2624ec7818ca88545e36d320f0294` with a standard merge commit without rewriting history.
-- `INT-DUAL-001` → Dual-Path AI Dispatch: Connect asynchronous AI evaluation to studies from both legacy NPZ (`ProcessCaptureSet`) and direct Grabber DICOM (`GrabberDicomIngestionService`).
+- `INT-DUAL-001` → Dual-Path AI Dispatch: Connect asynchronous AI evaluation to studies from both legacy NPZ (`ProcessCaptureSet`) and direct Grabber DICOM (`GrabberDicomIngestionService`), strictly utilizing the existing direct-DICOM pathway without reopening the deferred MPIPS round-trip workstream.
 - `INT-ASYNC-001` → Non-Blocking Asynchronous Processing: Radiography capture completion and operator workflow progression must never wait for AI PACS processing or fail on AI timeout.
 - `INT-UI-001` → Integrated Operator Results Worklist: Embed AI status and report access into the existing Operator DICOM-results UI adjacent to `[Lihat DICOM]`.
 - `INT-UI-002` → State-Aware Presentation: Display granular, non-misleading status (`AI not queued`, `queued`, `processing`, `report ready`, `failed`, `unavailable`) rather than misleading buttons.
 - `INT-DISC-001` → Mandatory Medical Disclaimer: Display `Keluaran AI — belum diverifikasi tenaga medis.` prominently adjacent to AI actions; never present AI output as a verified clinical report.
-- `INT-AUTH-001` → Authorized Private PDF Streaming: Stream derived PDFs through an authenticated, site-authorized Operator action; forbid public URLs; audit downloads without logging PHI.
+- `INT-AUTH-001` → Authorized Private PDF Streaming: Stream derived PDFs through an authenticated, site-authorized Operator action; deny unauthenticated requests via repository web-auth behavior (redirect or 401) and cross-site requests via HTTP 403; forbid public URLs; audit downloads without logging PHI.
 - `INT-PROV-001` → Provenance & Immutability: Store original AI PACS PDF and derived Indonesian/MHCS PDF immutably in `PrivateObjectStore` with verifiable provenance.
 - `INT-FAIL-001` → Safe Failure & Idempotent Retry: Ensure AI failure does not delete DICOM or alter radiography completion; provide operator-authorized retry without duplicate jobs.
+- `INT-PUSH-001` → Bounded Push Authorization: Authorize non-force fast-forward git pushes only to `task/operator-ai-pacs-integration`; strictly forbid source branch mutation, force-pushes, PRs, merges to `main`, secret mutations, and deployments.
 - `INT-PRESERVE-001` → Complete Capability Preservation: All urgent Operator capabilities (Slices 1–4), legacy NPZ processing, DICOM viewer, and clinical boundaries remain fully operational.
 
 ## Scope
@@ -140,7 +163,7 @@ The task scope defines the coherent integration delivery objective and acceptanc
 2. **Dual-Source Asynchronous AI Dispatch:**
    - Connect `ImageGatewayAiServiceContract` / `ProcessAiPacsStudy` triggering to DICOM studies produced by:
      - **Path A (Legacy NPZ):** `ProcessCaptureSet` completion where a valid DICOM study is registered.
-     - **Path B (Additive DDR DICOM):** `GrabberDicomIngestionService` upon successful DICOM study validation and storage.
+     - **Path B (Additive DDR DICOM):** `GrabberDicomIngestionService` upon successful DICOM study validation and storage. Supporting this service means supporting the existing MHCS Core direct-DICOM ingestion pathway and does NOT reopen the deferred MPIPS Grabber round-trip workstream.
    - Guarantee asynchronous dispatch: DICOM ingestion and radiography capture set completion return immediately without waiting for AI PACS HTTP communication or report generation.
 3. **Operator Results Worklist UI Integration:**
    - Enhance the existing Operator radiography/DICOM results interface (e.g., `resources/views/operator/xray-capture.blade.php`, `xray-readiness-worklist.blade.php`, and associated portal views).
@@ -158,7 +181,9 @@ The task scope defines the coherent integration delivery objective and acceptanc
    - Ensure the UI explicitly communicates that AI outputs are screening aids and not doctor-verified diagnostic reports.
 5. **Authorized Private-Storage PDF Streaming Action:**
    - Implement an authorized controller action (e.g. `OperatorAiReportController@downloadDerivedReport`) accessible strictly to authenticated Operators.
-   - Enforce object-level authorization: Operator must be assigned to the operational site and shift governing the admission and study.
+   - Enforce site and shift authorization: Operator must be assigned to the operational site and shift governing the admission and study.
+   - Deny unauthenticated requests using established repository web-auth behavior (such as a login redirect or HTTP 401), ensuring zero exposure of PDF bytes, object keys, storage paths, or sensitive metadata.
+   - Strictly deny authenticated operators from other sites/shifts with HTTP 403 Forbidden.
    - Stream the derived Indonesian/MHCS PDF from `PrivateObjectStore` via binary response with appropriate MIME type (`application/pdf`) and filename header.
    - Never generate or expose public URLs, pre-signed URLs, or raw storage paths.
    - Audit every download event in `AuditStore` (recording operator ID, study ID, timestamp, and IP address) without logging PDF payload bytes or patient PHI.
@@ -178,7 +203,9 @@ The task scope defines the coherent integration delivery objective and acceptanc
 
 ### Out of scope
 
-- Rebasing, squashing, or rewriting published commit history on either source branch.
+- Rebasing, squashing, or rewriting published commit history on either source branch or the integration branch.
+- Writing or pushing to either source branch (`task/urgent-operator-field-operations` or `task/ai-pacs-integration`).
+- Reopening or expanding the deferred MPIPS Grabber round-trip workstream.
 - Creating a separate standalone AI PACS dashboard or admin portal (all operator interactions belong in the existing Operator results interface).
 - Modifying Doctor Core clinical workflows, doctor worklists, doctor reporting interfaces, or doctor earning triggers.
 - Treating AI outputs as final clinical diagnostic reports or doctor-verified documents.
@@ -217,6 +244,7 @@ The task scope defines the coherent integration delivery objective and acceptanc
 - The Operator results interface has access to study-level or admission-level models that can query or join the latest AI job status.
 - External network calls to Yizhun AI PACS are mocked in automated tests using `Http::fake()` and synthetic DICOM fixtures.
 - The 3 environment variable names `AI_PACS_USERNAME`, `AI_PACS_PASSWORD`, and `AI_PACS_URL` are sufficient for AI PACS authentication; their values are configured locally and never committed.
+- Non-force fast-forward pushing to `task/operator-ai-pacs-integration` is necessary and authorized to publish and back up verified integration work.
 
 ### Remaining approval requirements
 
@@ -228,7 +256,7 @@ The task scope defines the coherent integration delivery objective and acceptanc
 
 - Repository read and write.
 - Local command and test execution (`php artisan`, `./vendor/bin/pest`, `composer`).
-- Local Git branch manipulation and commit authoring.
+- Local Git branch manipulation, commit authoring, and non-force push execution to `task/operator-ai-pacs-integration`.
 - Database migration execution against local test databases.
 - Codebase Memory MCP and Graphify analysis where applicable.
 
@@ -240,8 +268,10 @@ The task scope defines the coherent integration delivery objective and acceptanc
 - Reuse the existing mPDF-based `AiPacsLaravelDerivedPdfGenerator` implementation established in `task/ai-pacs-integration`.
 
 ### Security, Privacy & Access Control Boundaries
-- **Private Storage Streaming:** Derived report PDFs must be streamed directly through an authenticated controller action reading from `PrivateObjectStore`. Never expose direct filesystem paths or public URLs.
-- **Strict Authorization:** The streaming endpoint must verify that the requesting user has an active Operator profile assigned to the site and shift governing the requested study. Requests from unauthenticated users or out-of-scope operators must return `401 Unauthorized` or `403 Forbidden`.
+- **Private Storage Streaming:** Derived report PDFs must be streamed directly through an authenticated controller action reading from `PrivateObjectStore`. Never expose direct filesystem paths, object keys, or public URLs.
+- **Strict Web-Auth & Authorization Enforcement:**
+  - Unauthenticated requests must be denied using established repository web-auth behavior (e.g. login redirect or HTTP 401) and must never receive PDF bytes, object keys, storage paths, or sensitive metadata.
+  - Authenticated requests from operators outside the study's permitted site and shift scope must strictly receive HTTP 403 Forbidden.
 - **Audit Trail:** All PDF download actions must be logged in `AuditStore` recording operator ID, study ID, timestamp, and client IP without recording PDF byte payloads or patient PHI.
 - **Credential Hygiene:** Never print, log, return, or commit AI PACS credentials. Reference only the environment variable names: `AI_PACS_USERNAME`, `AI_PACS_PASSWORD`, `AI_PACS_URL`.
 
@@ -265,7 +295,7 @@ To maintain rigorous traceability and coherent delivery, implementation must pro
 ### Slice 2: Dual-Source Asynchronous AI Dispatch
 - Integrate `ImageGatewayAiServiceContract` triggering into:
   - `ProcessCaptureSet` (triggering upon successful NPZ -> DICOM study registration).
-  - `GrabberDicomIngestionService` (triggering upon successful direct DDR DICOM upload).
+  - `GrabberDicomIngestionService` (triggering upon successful direct DDR DICOM upload). Explicitly preserve direct-DICOM pathway scope without reopening the deferred MPIPS round-trip workstream.
 - Guarantee asynchronous behavior: DICOM ingestion and radiography capture completion must never wait for AI PACS or fail when AI dispatch fails.
 - Verify that AI dispatch failure or queuing failure does not impede radiography completion.
 
@@ -285,7 +315,7 @@ To maintain rigorous traceability and coherent delivery, implementation must pro
 - Enforce site and shift authorization: only authenticated operators assigned to the study's site can download the derived PDF.
 - Stream derived Indonesian/MHCS PDF from `PrivateObjectStore` without exposing storage keys or public URLs.
 - Audit all download attempts in `AuditStore` without logging PDF payloads or PHI.
-- Verify HTTP 401 for unauthenticated and HTTP 403 for unauthorized/cross-site operators.
+- Verify unauthenticated denial via established repository web-auth behavior (login redirect or HTTP 401) without data exposure, and HTTP 403 Forbidden for cross-site operators.
 
 ### Slice 5: Operator Retry Action & Failure Containment
 - Implement operator retry endpoint/action for failed AI jobs.
@@ -320,7 +350,7 @@ To maintain rigorous traceability and coherent delivery, implementation must pro
 
 ### Dual-Source AI Triggering Acceptance
 - [ ] DICOM studies created via legacy NPZ processing (`ProcessCaptureSet`) asynchronously dispatch an AI evaluation job.
-- [ ] DICOM studies created via additive Grabber DICOM ingestion (`GrabberDicomIngestionService`) asynchronously dispatch an AI evaluation job.
+- [ ] DICOM studies created via additive Grabber DICOM ingestion (`GrabberDicomIngestionService`) asynchronously dispatch an AI evaluation job without reopening the deferred MPIPS round-trip workstream.
 - [ ] Capture set completion and Grabber DICOM ingestion return successfully regardless of AI PACS queue latency, offline vendor status, or dispatch errors.
 
 ### Operator UI & Disclaimer Acceptance
@@ -332,8 +362,8 @@ To maintain rigorous traceability and coherent delivery, implementation must pro
 
 ### Authorized Download & Security Acceptance
 - [ ] An authenticated Operator assigned to the relevant site can successfully download the derived Indonesian/MHCS PDF.
-- [ ] An unauthenticated user attempting to download the PDF receives HTTP 401.
-- [ ] An authenticated Operator assigned to a different site/context receives HTTP 403.
+- [ ] Unauthenticated requests attempting to download the PDF are denied using established repository web-auth behavior (such as a login redirect or HTTP 401) and never receive PDF bytes, object keys, storage paths, or sensitive metadata.
+- [ ] An authenticated Operator assigned to a different site/context receives HTTP 403 Forbidden.
 - [ ] The derived PDF is streamed directly from private storage; no permanent or public storage URL is generated or exposed.
 - [ ] Every download attempt is recorded in `AuditStore` without logging PDF binary payloads or patient PHI.
 
@@ -364,8 +394,8 @@ To maintain rigorous traceability and coherent delivery, implementation must pro
    - Operator results UI rendering tests verifying column placement, state-aware badges, button labels, and disclaimer text.
    - Authorized PDF download tests:
      - Authorized operator success (HTTP 200, valid PDF stream).
-     - Unauthenticated denial (HTTP 401).
-     - Unauthorized cross-site denial (HTTP 403).
+     - Unauthenticated denial (login redirect or HTTP 401, verifying zero PDF bytes, object keys, storage paths, or sensitive metadata).
+     - Unauthorized cross-site denial (HTTP 403 Forbidden).
      - Audit log generation in `AuditStore`.
    - Failure containment tests (simulated AI PACS timeout/error preserving DICOM study and admission state).
    - Operator retry endpoint tests (idempotency, single active job, state transition).
@@ -398,8 +428,8 @@ The Executor MUST report:
 - Verification that commit history contains both parent branches without rewriting history.
 - Specific test suites executed and exact observed test pass counts.
 - Database migration execution and rollback evidence.
-- Confirmation of authorized PDF streaming security tests (401 and 403 enforcement).
-- Confirmation of non-blocking asynchronous dispatch for both NPZ and Grabber paths.
+- Confirmation of authorized PDF streaming security tests (unauthenticated denial via login redirect or 401, and cross-site 403 enforcement).
+- Confirmation of non-blocking asynchronous dispatch for both NPZ and Grabber paths without reopening the deferred MPIPS round trip.
 - Confirmation that no live production AI PACS calls or real patient data were used.
 - Pint formatting and `git diff --check` clean status.
 
@@ -411,7 +441,7 @@ The Executor MUST stop implementation and return the issue to planning when:
 - Asynchronous AI dispatch cannot be decoupled from radiography capture completion without major architectural restructuring.
 - Private storage streaming requires exposing public URLs or bypassing authentication/authorization.
 - Any requirement arises to sync `Madeena-software/mhcs-business-docs` or access external production endpoints.
-- Execution requires an unauthorized side effect (e.g. git push, PR creation, merge to `main`, production deployment, modifying GitHub secrets).
+- Execution requires an unauthorized side effect (e.g. force-push, pushing to source branches, PR creation, merge to `main`, production deployment, modifying GitHub secrets).
 
 ## Side-effect authorization
 
@@ -420,18 +450,22 @@ The Executor MUST stop implementation and return the issue to planning when:
 - Local git merge commit uniting `5a3626b1d5e2624ec7818ca88545e36d320f0294` and `4e716a34505fac810f47b5b24b4bbcb348105b8f`.
 - Local modifications to repository code, views, routes, controllers, services, migrations, and tests within `Madeena-software/mhcs-core`.
 - Local execution of test runners (`php artisan test`, `pest`), migrations, and code formatting tools (`pint`).
-- Local git commits on the integration branch necessary to record verified implementation progress.
+- Local git commits on branch `task/operator-ai-pacs-integration` necessary to record verified implementation progress.
+- Non-force, fast-forward git pushes strictly and exclusively to branch `task/operator-ai-pacs-integration` on remote `origin`.
 
 ### Explicitly NOT authorized
 
+- Writing, committing, or pushing to either source branch (`task/urgent-operator-field-operations` or `task/ai-pacs-integration`).
+- Force-pushing (`git push --force` or `--force-with-lease`) or history rewriting on any branch, including `task/operator-ai-pacs-integration`.
+- Git pushes to any branch other than `task/operator-ai-pacs-integration`.
 - Rebasing, squashing, or rewriting published commits from either source branch.
-- Git push to remote repository.
 - Creation or modification of GitHub secrets.
 - Creation of pull requests or issues.
 - Merging into `main`.
-- Deployment or redeployment to staging or production.
+- Deployment or redeployment to staging or production environments.
 - Contacting production AI PACS or transferring real patient data.
 - Modifying `Madeena-software/mhcs-business-docs`.
+- Reopening the deferred MPIPS Grabber round-trip workstream.
 
 ## Expected terminal outcome
 
