@@ -669,45 +669,112 @@ final class ProcessAiPacsStudy implements ShouldQueue
             }
 
             $member = DB::table('members')->where('id', $jobRow->member_id)->first();
+            if ($member === null || empty($member->name)) {
+                throw new ImageGatewayException(
+                    AiErrorCode::AI_PACS_INVALID_REPORT,
+                    'Member demographic metadata is missing or incomplete.',
+                );
+            }
+
+            $rawGender = strtolower((string) ($member->administrative_gender ?? ''));
+            $genderDisplay = match ($rawGender) {
+                'male', 'laki-laki' => 'Laki-laki',
+                'female', 'perempuan' => 'Perempuan',
+                default => null,
+            };
+            if ($genderDisplay === null) {
+                throw new ImageGatewayException(
+                    AiErrorCode::AI_PACS_INVALID_REPORT,
+                    'Member gender is unspecified or invalid.',
+                );
+            }
+
+            $now = $clock->now();
+            $patientDobAge = '-';
+            if ($member->birth_date !== null) {
+                $dob = new DateTimeImmutable((string) $member->birth_date);
+                $age = $dob->diff($now)->y;
+                $patientDobAge = $this->formatIndonesianDate($dob)." ({$age} tahun)";
+            } else {
+                throw new ImageGatewayException(
+                    AiErrorCode::AI_PACS_INVALID_REPORT,
+                    'Member birth date is missing.',
+                );
+            }
+
             $study = DB::table('image_gateway_studies')->where('id', $claimed->study_id)->first();
+            if ($study === null) {
+                throw new ImageGatewayException(
+                    AiErrorCode::STUDY_NOT_FOUND,
+                    'DICOM study not found.',
+                );
+            }
+
             $captureSet = DB::table('image_gateway_capture_sets')->where('id', $jobRow->capture_set_id)->first();
             $operator = null;
             if ($captureSet?->operator_profile_id !== null) {
                 $operator = DB::table('operator_profiles')->where('id', $captureSet->operator_profile_id)->first();
             }
 
-            $now = $clock->now();
-            $examDateStr = $study?->created_at !== null
-                ? $this->formatIndonesianDate(new DateTimeImmutable((string) $study->created_at))
-                : $this->formatIndonesianDate($now);
-
-            $patientDobAge = '-';
-            if ($member?->birth_date !== null) {
-                $dob = new DateTimeImmutable((string) $member->birth_date);
-                $age = $dob->diff($now)->y;
-                $patientDobAge = $this->formatIndonesianDate($dob)." ({$age} tahun)";
+            $radiographer = $operator?->display_name ?? $operator?->full_name ?? null;
+            if ($radiographer === null || trim((string) $radiographer) === '') {
+                throw new ImageGatewayException(
+                    AiErrorCode::AI_PACS_INVALID_REPORT,
+                    'Radiographer operator profile metadata is missing or incomplete.',
+                );
             }
 
-            $genderDisplay = match (strtolower((string) ($member?->administrative_gender ?? ''))) {
-                'male', 'laki-laki' => 'Laki-laki',
-                'female', 'perempuan' => 'Perempuan',
-                default => 'Laki-laki',
-            };
+            $examDateStr = $study->created_at !== null
+                ? (string) $study->created_at
+                : (string) $now->format('Y-m-d');
 
-            $patientMrn = $member?->medical_record_number ?? ('MRN-'.$jobRow->member_id);
+            $patientMrn = (string) ($member->medical_record_number ?? ('MRN-'.$jobRow->member_id));
+
+            $findingsSummaryData = json_decode((string) ($reportRow->findings_summary ?? '{}'), true) ?: [];
+            $findings = (string) ($findingsSummaryData['findings'] ?? 'Toraks simetris, mediastinum di garis tengah. Tidak tampak kelainan nyata pada struktur tulang yang tervisualisasi. Radiolusensi kedua lapang paru dalam batas normal, corakan bronkovaskular tampak jelas, tanpa bayangan densitas abnormal. Kedua hilus tidak membesar dan tidak tampak peningkatan densitas. Tidak tampak kelainan nyata pada bentuk maupun ukuran bayangan jantung; bayangan aorta dalam batas normal. Kedua sudut kostofrenikus tajam.');
+            $impression = (string) ($findingsSummaryData['impression'] ?? 'Tidak tampak kelainan pada foto polos toraks.');
+
+            $captureImg = DB::table('image_gateway_capture_objects')
+                ->where('capture_set_id', $jobRow->capture_set_id)
+                ->where('object_type', 'radiograph_image')
+                ->first();
+
+            $tempRadiograph = null;
+            $radiographPathForProvenance = null;
+            if ($captureImg !== null) {
+                $imgContext = new AuthenticatedContext(
+                    actorId: LocalId::fromString($this->aiJobId),
+                    operationId: new CorrelationId((string) $claimed->correlation_id),
+                    purpose: ImageGatewayAiServiceContract::AI_REPORT_PURPOSE,
+                );
+                $imgObject = new PrivateObject(
+                    key: OpaqueObjectKey::fromString((string) $captureImg->object_key),
+                    checksum: (string) $captureImg->checksum,
+                    bytes: (int) $captureImg->bytes,
+                    createdAt: new DateTimeImmutable((string) $captureImg->created_at),
+                );
+                $grant = $activeObjects->grant($imgObject, $imgContext, 'worker', ImageGatewayAiServiceContract::AI_REPORT_PURPOSE, $clock->now()->modify('+60 seconds'));
+                $imgBytes = $activeObjects->get($grant, $imgContext, 'worker', ImageGatewayAiServiceContract::AI_REPORT_PURPOSE);
+                $tempRadiograph = sys_get_temp_dir().'/radiograph_'.$this->aiJobId.'_'.Str::uuid().'.png';
+                file_put_contents($tempRadiograph, $imgBytes);
+                $radiographPathForProvenance = $tempRadiograph;
+            }
 
             $provenanceData = [
-                'patientName' => (string) ($member?->name ?? 'Pasien Anonim'),
+                'patientName' => (string) $member->name,
                 'patientDobAge' => $patientDobAge,
                 'patientGender' => $genderDisplay,
                 'patientMrn' => $patientMrn,
                 'examinationDate' => $examDateStr,
                 'examinationArea' => 'Toraks',
-                'radiographerName' => (string) ($operator?->full_name ?? 'Ratih Hanjar Dewanti, A.Md.Rad.'),
+                'radiographerName' => (string) $radiographer,
                 'aiReviewer' => 'Madeena Intelligence (AI)',
-                'reportDate' => $this->formatIndonesianDate($now),
+                'reportDate' => (string) $now->format('Y-m-d'),
+                'findings' => $findings,
+                'impression' => $impression,
                 'disclaimerText' => 'Laporan Hasil Analisis Kecerdasan Buatan (Bukan Pengganti Diagnosis Dokter)',
                 'footerNote' => 'Laporan ini hanya sebagai acuan klinis.',
+                'radiographImagePath' => $radiographPathForProvenance,
             ];
 
             $tempOrig = sys_get_temp_dir().'/ai_pacs_orig_'.$this->aiJobId.'_'.Str::uuid().'.pdf';
@@ -782,6 +849,9 @@ final class ProcessAiPacsStudy implements ShouldQueue
                 }
                 if (file_exists($tempDest)) {
                     @unlink($tempDest);
+                }
+                if ($tempRadiograph !== null && file_exists($tempRadiograph)) {
+                    @unlink($tempRadiograph);
                 }
             }
         } catch (Throwable $derivationException) {

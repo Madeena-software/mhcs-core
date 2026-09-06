@@ -25,7 +25,7 @@ final class ImageGatewayServiceProvider extends ServiceProvider
         $this->app->scoped(ImageGatewayAiServiceContract::class, ImageGatewayAiService::class);
         $this->app->scoped(AiPacsAdapterContract::class, AiPacsClient::class);
         $this->app->scoped(\App\Modules\ImageGateway\Application\Contracts\AiPacsReportDownloaderContract::class, \App\Modules\ImageGateway\Infrastructure\AiPacs\AiPacsPlaywrightReportDownloader::class);
-        $this->app->scoped(\App\Modules\ImageGateway\Application\Contracts\AiPacsDerivedPdfGeneratorContract::class, \App\Modules\ImageGateway\Infrastructure\AiPacs\AiPacsReportLabDerivedPdfGenerator::class);
+        $this->app->scoped(\App\Modules\ImageGateway\Application\Contracts\AiPacsDerivedPdfGeneratorContract::class, \App\Modules\ImageGateway\Infrastructure\AiPacs\AiPacsLaravelDerivedPdfGenerator::class);
         $this->app->singleton(UntrustedImagePolicy::class, fn (): UntrustedImagePolicy => UntrustedImagePolicy::fromConfig(config('mhcs.image_policy')),
         );
         $this->app->singleton(ManifestSigner::class, function (): ManifestSigner {

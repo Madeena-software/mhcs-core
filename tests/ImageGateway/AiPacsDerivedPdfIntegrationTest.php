@@ -11,8 +11,8 @@ use App\Modules\ImageGateway\Application\Jobs\ProcessAiPacsStudy;
 use App\Modules\ImageGateway\Domain\AiErrorCode;
 use App\Modules\ImageGateway\Domain\AiJobStatus;
 use App\Modules\ImageGateway\Domain\AiPacsDerivedPdfResult;
+
 use App\Modules\ImageGateway\Domain\ImageGatewayException;
-use App\Modules\ImageGateway\Infrastructure\AiPacs\AiPacsReportLabDerivedPdfGenerator;
 use App\Shared\Audit\AuditStore;
 use App\Shared\Context\AuthenticatedContext;
 use App\Shared\Context\CorrelationId;
@@ -66,7 +66,9 @@ final class AiPacsDerivedPdfIntegrationTest extends TestCase
         $this->objects = app(PrivateObjectStore::class);
         $this->adapter = app(AiPacsAdapterContract::class);
 
-        $this->validOriginalPdfContent = "%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n3 0 obj<</Type/Page/MediaBox[0 0 595 842]/Parent 2 0 R>>endobj\nxref\n0 4\n0000000000 65535 f\n0000000009 00000 n\n0000000056 00000 n\n0000000111 00000 n\ntrailer<</Size 4/Root 1 0 R>>\nstartxref\n180\n%%EOF";
+        $mpdf = new \Mpdf\Mpdf(['format' => 'A4']);
+        $mpdf->WriteHTML('<p>Patient Name: Purnomo</p><p>MRN: MRN-TEST</p><p>Temuan Radiologis: Toraks simetris</p><p>Kesan: Normal</p>');
+        $this->validOriginalPdfContent = $mpdf->Output('', \Mpdf\Output\Destination::STRING_RETURN);
     }
 
     public function test_process_study_generates_derived_indonesian_pdf_with_full_provenance(): void
@@ -314,6 +316,12 @@ final class AiPacsDerivedPdfIntegrationTest extends TestCase
         $captureSetId = (string) Str::uuid();
         $studyId = (string) Str::uuid();
 
+        DB::table('members')->where('id', $fixture['memberId'])->update([
+            'name' => 'Purnomo',
+            'administrative_gender' => 'laki-laki',
+            'medical_record_number' => 'MRN-TEST',
+        ]);
+
         DB::table('operator_paper_tickets')->insert([
             'id' => $ticketId,
             'booking_id' => $bookingId,
@@ -354,6 +362,37 @@ final class AiPacsDerivedPdfIntegrationTest extends TestCase
             'dicom_status' => 'success',
             'mpips_status' => 'success',
             'attempts' => 1,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        $im = imagecreatetruecolor(100, 120);
+        $bg = imagecolorallocate($im, 20, 20, 20);
+        imagefilledrectangle($im, 0, 0, 99, 119, (int) $bg);
+        ob_start();
+        imagepng($im);
+        $syntheticImgBytes = (string) ob_get_clean();
+        imagedestroy($im);
+
+        $storedImg = $this->objects->put(
+            $syntheticImgBytes,
+            new AuthenticatedContext(
+                actorId: LocalId::fromString($captureSetId),
+                operationId: new CorrelationId($captureSetId),
+                purpose: ImageGatewayAiServiceContract::AI_REPORT_PURPOSE,
+            ),
+            ImageGatewayAiServiceContract::AI_REPORT_PURPOSE,
+        );
+
+        DB::table('image_gateway_capture_objects')->insert([
+            'id' => (string) Str::uuid(),
+            'capture_set_id' => $captureSetId,
+            'object_type' => 'radiograph_image',
+            'object_index' => 0,
+            'object_key' => (string) $storedImg->key,
+            'checksum' => $storedImg->checksum,
+            'bytes' => $storedImg->bytes,
+            'format' => 'image/png',
             'created_at' => $now,
             'updated_at' => $now,
         ]);
