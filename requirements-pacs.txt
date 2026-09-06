@@ -1,0 +1,12 @@
+# AI PACS Python Adapter Dependencies
+# Pinned for reproducible container and CI runtime.
+# Verified against installed system state (2026-09-07).
+#
+# playwright: Chromium browser automation for Yizhun PACS report retrieval.
+# pypdf: PDF inspection and embedded-image extraction for blank-radiograph rejection.
+# pillow: Image decoding and pixel-level analysis in the PDF radiograph verifier.
+# numpy: Statistical analysis (stddev, pixel counts) for radiograph quality gate.
+playwright==1.62.0
+pypdf==6.17.0
+pillow==12.3.0
+numpy==2.5.2

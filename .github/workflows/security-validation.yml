@@ -41,6 +41,9 @@ jobs:
       - name: Check PHP formatting
         run: vendor/bin/pint --test
 
+      - name: Install AI PACS Python adapter dependencies
+        run: pip install --break-system-packages -r requirements-pacs.txt
+
       - name: Run complete PHP verification
         run: php artisan test
 

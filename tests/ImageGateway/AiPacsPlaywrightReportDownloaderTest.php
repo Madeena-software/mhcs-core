@@ -346,12 +346,6 @@ PY;
 
     public function test_python_verify_downloaded_pdf_radiograph_rejects_blank_and_accepts_nonblank(): void
     {
-        $check = new Process(['python3', '-c', 'import numpy, PIL, pypdf']);
-        $check->run();
-        if (! $check->isSuccessful()) {
-            $this->markTestSkipped('Python dependencies (numpy, PIL, pypdf) are not available in this environment.');
-        }
-
         $pythonCode = <<<PY
 import sys, io, numpy as np
 from PIL import Image

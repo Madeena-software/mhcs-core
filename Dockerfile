@@ -34,10 +34,40 @@ RUN --mount=type=cache,target=/root/.npm \
 
 FROM php:8.4-fpm AS app
 
+# ── Python / AI PACS adapter runtime ────────────────────────────────────────
+# Install Python 3 and the pinned AI PACS adapter dependencies at image-build
+# time so nothing is downloaded when a queue job executes. A virtualenv under
+# /opt/pacs-venv is used to avoid system-package conflicts on Debian Bookworm.
+# Playwright's Chromium browser is installed into /ms-playwright (world-readable)
+# so the non-root www-data queue-worker user can access it at runtime.
+# PLAYWRIGHT_BROWSERS_PATH is exported as an image-level ENV so the Python
+# process launched by Laravel inherits it without additional configuration.
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+
 RUN apt-get update -qq \
-    && apt-get install -yqq --no-install-recommends libzip-dev libicu-dev libonig-dev \
-    && rm -rf /var/lib/apt/lists/* \
-    && docker-php-ext-install bcmath intl mbstring opcache pcntl pdo pdo_mysql zip
+    && apt-get install -yqq --no-install-recommends \
+        python3 python3-pip python3-venv \
+        libzip-dev libicu-dev libonig-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements-pacs.txt /tmp/requirements-pacs.txt
+RUN python3 -m venv /opt/pacs-venv \
+    && /opt/pacs-venv/bin/pip install --no-cache-dir -r /tmp/requirements-pacs.txt \
+    && rm /tmp/requirements-pacs.txt
+
+# Prepend the virtualenv bin so `python3` resolves to the venv Python for all
+# processes in the container, including queue workers launched by Laravel.
+ENV PATH="/opt/pacs-venv/bin:$PATH"
+
+# Install Playwright Chromium browser and its OS-level library dependencies.
+# --with-deps installs required apt packages (libnss3, libatk1.0-0, etc.).
+# chmod makes the browser directory readable and executable by all users (o+rX)
+# so www-data can locate and launch the binary at queue-job runtime.
+RUN /opt/pacs-venv/bin/playwright install chromium --with-deps \
+    && chmod -R o+rX /ms-playwright
+
+# ── PHP extensions ────────────────────────────────────────────────────────────
+RUN docker-php-ext-install bcmath intl mbstring opcache pcntl pdo pdo_mysql zip
 
 WORKDIR /var/www/html
 COPY --chown=www-data:www-data . .
