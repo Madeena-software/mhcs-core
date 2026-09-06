@@ -10,16 +10,22 @@ use App\Modules\Operator\Application\Services\OperatorArrivalService;
 use App\Modules\Operator\Application\Services\OperatorAttendanceService;
 use App\Modules\Operator\Application\Services\OperatorAuthorization;
 use App\Modules\Operator\Application\Services\OperatorCheckInTicketService;
+use App\Modules\Operator\Application\Services\OperatorFieldOperationsService;
 use App\Modules\Operator\Application\Services\OperatorIdentityVerificationService;
 use App\Modules\Operator\Application\Services\OperatorPaperConsentConfirmationService;
+use App\Modules\Operator\Application\Services\OperatorReusableConsentService;
 use App\Modules\Operator\Application\Services\OperatorShiftAssignmentService;
 use App\Modules\Operator\Application\Services\OperatorWorklistService;
 use App\Modules\Operator\Domain\OperatorException;
+use App\Shared\Storage\OpaqueObjectKey;
+use App\Shared\Storage\PrivateObject;
+use App\Shared\Storage\PrivateObjectStore;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Str;
 use Illuminate\View\View;
 use Throwable;
 
@@ -303,6 +309,38 @@ final class PortalController extends Controller
             abort(403);
         } catch (Throwable) {
             return back()->withErrors(['queue' => __('The X-ray admission could not be called.')]);
+        }
+    }
+
+    public function cancelXray(Request $request, string $admission, OperatorWorklistService $worklist): RedirectResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'operation_id' => ['required', 'uuid'],
+            'reason' => ['nullable', 'string', 'max:255'],
+        ]);
+        if ($validator->fails()) {
+            return back()->withErrors($validator);
+        }
+
+        try {
+            $worklist->cancelXray(
+                $admission,
+                (string) $validator->validated()['operation_id'],
+                (string) ($validator->validated()['reason'] ?? 'session_cancelled'),
+            );
+
+            return redirect()->route('operator.xray-readiness-worklist')->with('status', __('X-ray admission cancelled.'));
+        } catch (OperatorException $exception) {
+            if ($exception->category === 'xray_cancel_conflict') {
+                abort(409);
+            }
+            if ($exception->category === 'xray_cancel_failure') {
+                return back()->withErrors(['queue' => __('The X-ray admission could not be cancelled.')]);
+            }
+
+            abort(403);
+        } catch (Throwable) {
+            return back()->withErrors(['queue' => __('The X-ray admission could not be cancelled.')]);
         }
     }
 
@@ -659,46 +697,156 @@ final class PortalController extends Controller
         }
     }
 
-    public function paperConsent(string $case, OperatorPaperConsentConfirmationService $consent): View|RedirectResponse
+    public function paperConsent(string $case, OperatorPaperConsentConfirmationService $consent, OperatorReusableConsentService $reusableConsent): View|RedirectResponse
     {
         try {
-            return view('operator.paper-consent', $consent->view($case));
+            $viewData = $consent->view($case);
+            $consentState = $reusableConsent->viewConsentState($case);
+            $viewData['reusableConsent'] = $consentState;
+
+            return view('operator.paper-consent', $viewData);
         } catch (Throwable $exception) {
             return redirect()->route('operator.verification-worklist')->withErrors(['consent' => $exception instanceof OperatorException ? __($exception->getMessage()) : __('The paper-consent case is unavailable.')]);
         }
     }
 
-    public function recordPaperConsent(Request $request, string $case, OperatorPaperConsentConfirmationService $consent): RedirectResponse
+    public function recordPaperConsent(Request $request, string $case, OperatorPaperConsentConfirmationService $consent, OperatorReusableConsentService $reusableConsent): RedirectResponse
     {
         $validator = Validator::make($request->all(), [
-            'form_name' => ['required', 'string', 'max:64'],
+            'form_name' => ['required', 'string', 'max:64', 'in:Informed Consent,Master Screening Consent'],
             'form_version' => ['required', 'string', 'max:32'],
             'signer_type' => ['required', 'string', 'max:32'],
             'signature_confirmed' => ['accepted'],
             'signed_at' => ['required', 'date_format:Y-m-d'],
             'operation_id' => ['required', 'uuid'],
             'scan' => ['required', 'file', 'max:'.(int) config('mhcs.upload.max_file_mb') * 1024],
+            'consent_scope' => ['nullable', 'string', 'max:64'],
         ]);
         if ($validator->fails()) {
             return back()->withErrors($validator)->withInput();
         }
 
         $input = $validator->validated();
+
+        $trackedScanKey = null;
+
         try {
-            $consent->confirm(
-                $case,
-                (string) $input['form_name'],
-                (string) $input['form_version'],
-                (string) $input['signer_type'],
-                true,
-                (string) $input['signed_at'],
-                (string) $input['operation_id'],
-                $input['scan'] ?? null,
-            );
+            // Confirm legacy paper consent and record reusable master consent atomically.
+            // A failure in either rolls back the entire state to prevent partial/inconsistent outcomes.
+            DB::transaction(function () use ($consent, $reusableConsent, $case, $input, $request, &$trackedScanKey): void {
+                $verificationCase = DB::table('operator_identity_verifications')->where('id', $case)->first();
+                $existingLegacy = $verificationCase !== null
+                    ? DB::table('examination_consents')->where('booking_id', $verificationCase->booking_id)->first()
+                    : null;
+
+                $legacyConsentId = $existingLegacy !== null ? (string) $existingLegacy->id : null;
+                if ($existingLegacy === null) {
+                    $legacyFormName = (string) $input['form_name'] === 'Master Screening Consent'
+                        ? 'Informed Consent'
+                        : (string) $input['form_name'];
+
+                    $legacyResult = $consent->confirm(
+                        $case,
+                        $legacyFormName,
+                        (string) $input['form_version'],
+                        (string) $input['signer_type'],
+                        (bool) $input['signature_confirmed'],
+                        (string) $input['signed_at'],
+                        (string) $input['operation_id'],
+                        $request->file('scan'),
+                    );
+                    $legacyConsentId = isset($legacyResult['consent_id']) ? (string) $legacyResult['consent_id'] : null;
+                    if ($legacyConsentId !== null) {
+                        $legacyConsentRow = DB::table('examination_consents')->where('id', $legacyConsentId)->first();
+                        if ($legacyConsentRow !== null && $legacyConsentRow->private_scan_object_key !== null) {
+                            $trackedScanKey = (string) $legacyConsentRow->private_scan_object_key;
+                        }
+                    }
+                }
+
+                $reusableResult = $reusableConsent->recordMasterConsent(
+                    caseId: $case,
+                    signerType: (string) $input['signer_type'],
+                    signedAt: (string) $input['signed_at'],
+                    operationId: (string) $input['operation_id'],
+                    scan: $request->file('scan'),
+                    screeningScope: (string) ($input['consent_scope'] ?? OperatorReusableConsentService::DEFAULT_SCOPE),
+                    formName: (string) $input['form_name'],
+                    formVersion: (string) $input['form_version'],
+                    legacyConsentId: $legacyConsentId,
+                );
+
+                if ($trackedScanKey === null && isset($reusableResult['private_scan_object_key']) && is_string($reusableResult['private_scan_object_key'])) {
+                    $trackedScanKey = $reusableResult['private_scan_object_key'];
+                }
+            });
 
             return redirect()->route('operator.paper-consent.show', $case)->with('status', __('Paper consent confirmed.'));
         } catch (Throwable $exception) {
+            // Coordinate rollback cleanup: If DB transaction rolled back, delete newly uploaded object if not referenced by any committed consent
+            if ($trackedScanKey !== null) {
+                $referencedInLegacy = DB::table('examination_consents')->where('private_scan_object_key', $trackedScanKey)->exists();
+                $referencedInMaster = DB::table('member_master_consents')->where('private_scan_object_key', $trackedScanKey)->exists();
+                if (! $referencedInLegacy && ! $referencedInMaster) {
+                    try {
+                        $store = app(PrivateObjectStore::class);
+                        $store->delete(new PrivateObject(OpaqueObjectKey::fromString($trackedScanKey), '', 0, new \DateTimeImmutable));
+                    } catch (Throwable) {
+                    }
+                }
+            }
+
             return back()->withErrors(['consent' => $exception instanceof OperatorException ? __($exception->getMessage()) : __('The paper consent could not be confirmed.')])->withInput();
+        }
+
+    }
+
+    public function confirmConsentVisit(Request $request, string $case, OperatorReusableConsentService $reusableConsent): RedirectResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'operation_id' => ['required', 'uuid'],
+            'consent_scope' => ['nullable', 'string', 'max:64'],
+        ]);
+        if ($validator->fails()) {
+            return back()->withErrors($validator);
+        }
+
+        try {
+            $reusableConsent->confirmVisit(
+                $case,
+                (string) $validator->validated()['operation_id'],
+                $request->input('consent_scope'),
+            );
+
+            return redirect()->route('operator.paper-consent.show', $case)->with('status', __('Visit confirmed using reusable informed consent.'));
+        } catch (Throwable $exception) {
+            return back()->withErrors(['consent' => $exception instanceof OperatorException ? __($exception->getMessage()) : __('Visit confirmation failed.')]);
+        }
+    }
+
+    public function withdrawConsent(Request $request, string $case, OperatorReusableConsentService $reusableConsent): RedirectResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'master_consent_id' => ['required', 'uuid'],
+            'reason' => ['required', 'string', 'max:500'],
+            'operation_id' => ['required', 'uuid'],
+        ]);
+        if ($validator->fails()) {
+            return back()->withErrors($validator);
+        }
+
+        $input = $validator->validated();
+        try {
+            $reusableConsent->withdrawConsent(
+                $case,
+                (string) $input['master_consent_id'],
+                (string) $input['reason'],
+                (string) $input['operation_id'],
+            );
+
+            return redirect()->route('operator.paper-consent.show', $case)->with('status', __('Informed consent has been withdrawn.'));
+        } catch (Throwable $exception) {
+            return back()->withErrors(['consent' => $exception instanceof OperatorException ? __($exception->getMessage()) : __('Consent withdrawal failed.')]);
         }
     }
 
@@ -716,6 +864,70 @@ final class PortalController extends Controller
         $validator = Validator::make($request->all(), [
             'ticket_number' => ['nullable', 'string', 'max:64'],
             'operation_id' => ['required', 'uuid'],
+            'bypass_basic_examination' => ['nullable'],
+        ]);
+        if ($validator->fails()) {
+            return back()->withErrors($validator)->withInput();
+        }
+
+        $input = $validator->validated();
+        $bypass = filter_var($request->input('bypass_basic_examination', false), FILTER_VALIDATE_BOOLEAN);
+
+        try {
+            $result = $tickets->issue(
+                $case,
+                (string) ($input['ticket_number'] ?? ''),
+                (string) $input['operation_id'],
+                $bypass,
+            );
+
+            return redirect()->route('operator.paper-ticket.show', $result['ticket_id']);
+        } catch (Throwable $exception) {
+            return back()->withErrors(['ticket' => $exception instanceof OperatorException ? __($exception->getMessage()) : __('The paper ticket could not be issued.')])->withInput();
+        }
+    }
+
+    public function bypassBasicExamination(Request $request, string $admission, OperatorWorklistService $worklist): RedirectResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'operation_id' => ['required', 'uuid'],
+        ]);
+        if ($validator->fails()) {
+            return back()->withErrors($validator);
+        }
+
+        try {
+            $worklist->bypassBasicExamination($admission, (string) $validator->validated()['operation_id']);
+
+            return redirect()->route('operator.xray-readiness-worklist')->with('status', __('Basic examination bypassed. Radiography queue ready.'));
+        } catch (Throwable $exception) {
+            return back()->withErrors(['worklist' => $exception instanceof OperatorException ? __($exception->getMessage()) : __('Basic examination bypass failed.')]);
+        }
+    }
+
+    public function createShift(OperatorAuthorization $authorization, OperatorActiveSiteService $sites): View|RedirectResponse
+    {
+        try {
+            $portal = $authorization->portal();
+            $activeSite = rescue(fn () => $authorization->portalSite($portal), null, false);
+            $assignedSites = $sites->assignedSites();
+
+            return view('operator.shifts-create', [
+                'activeSite' => $activeSite,
+                'assignedSites' => $assignedSites,
+            ]);
+        } catch (Throwable $exception) {
+            return redirect()->route('operator.eligible-shifts')->withErrors(['shift' => $exception instanceof OperatorException ? __($exception->getMessage()) : __('Could not load shift creation.')]);
+        }
+    }
+
+    public function storeShift(Request $request, OperatorFieldOperationsService $fieldOps): RedirectResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'operator_site_id' => ['required', 'string'],
+            'starts_at' => ['required', 'date'],
+            'ends_at' => ['required', 'date'],
+            'quota' => ['nullable', 'integer', 'min:1', 'max:1000'],
         ]);
         if ($validator->fails()) {
             return back()->withErrors($validator)->withInput();
@@ -723,11 +935,193 @@ final class PortalController extends Controller
 
         $input = $validator->validated();
         try {
-            $result = $tickets->issue($case, (string) ($input['ticket_number'] ?? ''), (string) $input['operation_id']);
+            $shift = $fieldOps->createShift(
+                (string) $input['operator_site_id'],
+                (string) $input['starts_at'],
+                (string) $input['ends_at'],
+                isset($input['quota']) ? (int) $input['quota'] : 100,
+            );
 
-            return redirect()->route('operator.paper-ticket.show', $result['ticket_id']);
+            return redirect()->route('operator.eligible-shifts')->with('status', __('Field operational shift :ref created successfully.', ['ref' => $shift['display_reference']]));
         } catch (Throwable $exception) {
-            return back()->withErrors(['ticket' => $exception instanceof OperatorException ? __($exception->getMessage()) : __('The paper ticket could not be issued.')])->withInput();
+            return back()->withErrors(['shift' => $exception instanceof OperatorException ? __($exception->getMessage()) : __('The shift could not be created.')])->withInput();
+        }
+    }
+
+    public function searchAndAddMemberView(string $schedule, OperatorAuthorization $authorization, OperatorShiftAssignmentService $assignments): View|RedirectResponse
+    {
+        try {
+            $portal = $authorization->portal();
+            $activeSite = $authorization->portalSite($portal);
+            $profileId = (string) $portal['profile']->getKey();
+
+            if (! $assignments->isAssigned($profileId, $schedule, $activeSite->operator_site_id)) {
+                return redirect()->route('operator.eligible-shifts')->withErrors(['shift' => __('The Operator is not assigned to this shift.')]);
+            }
+
+            $shiftSchedule = DB::table('shift_schedules')
+                ->join('examination_site_refs', 'examination_site_refs.id', '=', 'shift_schedules.examination_site_id')
+                ->where('shift_schedules.id', $schedule)
+                ->where('examination_site_refs.operator_site_id', $activeSite->operator_site_id)
+                ->where('examination_site_refs.active', true)
+                ->select('shift_schedules.*')
+                ->first();
+
+            if ($shiftSchedule === null) {
+                return redirect()->route('operator.eligible-shifts')->withErrors(['shift' => __('Shift not found.')]);
+            }
+
+            return view('operator.members-add', [
+                'schedule' => $shiftSchedule,
+                'activeSite' => $activeSite,
+            ]);
+        } catch (Throwable $exception) {
+            return redirect()->route('operator.eligible-shifts')->withErrors(['shift' => $exception instanceof OperatorException ? __($exception->getMessage()) : __('Member search unavailable.')]);
+        }
+    }
+
+    public function searchMembers(Request $request, string $schedule, OperatorFieldOperationsService $fieldOps)
+    {
+        $query = (string) $request->input('query', $request->input('q', ''));
+        try {
+            $results = $fieldOps->searchMembers($schedule, $query);
+        } catch (OperatorException $exception) {
+            if ($request->wantsJson() || $request->ajax()) {
+                abort(403, __($exception->getMessage()));
+            }
+
+            return redirect()->route('operator.eligible-shifts')->withErrors(['shift' => __($exception->getMessage())]);
+        } catch (Throwable) {
+            if ($request->wantsJson() || $request->ajax()) {
+                abort(403);
+            }
+
+            return redirect()->route('operator.eligible-shifts')->withErrors(['shift' => __('Member search unavailable.')]);
+        }
+
+        if ($request->wantsJson() || $request->ajax()) {
+            return response()->json($results);
+        }
+
+        $shiftSchedule = DB::table('shift_schedules')->where('id', $schedule)->first();
+
+        return view('operator.members-add', [
+            'schedule' => $shiftSchedule,
+            'activeSite' => null,
+            'results' => $results,
+            'query' => $query,
+        ]);
+    }
+
+    public function addExistingMemberToShift(Request $request, string $schedule, OperatorFieldOperationsService $fieldOps): RedirectResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'member_id' => ['required', 'uuid'],
+            'operation_id' => ['nullable', 'uuid'],
+        ]);
+        if ($validator->fails()) {
+            return back()->withErrors($validator);
+        }
+
+        $input = $validator->validated();
+        $operationId = isset($input['operation_id']) ? (string) $input['operation_id'] : (string) Str::uuid();
+        try {
+            $result = $fieldOps->addExistingMemberToShift(
+                (string) $input['member_id'],
+                $schedule,
+                $operationId,
+            );
+
+            return redirect()->route('operator.paper-consent.show', $result['case_id'])->with('status', __('Member added to active shift.'));
+        } catch (Throwable $exception) {
+            return back()->withErrors(['member' => $exception instanceof OperatorException ? __($exception->getMessage()) : __('Could not add member to shift.')]);
+        }
+    }
+
+    public function registerMemberView(string $schedule, OperatorAuthorization $authorization, OperatorShiftAssignmentService $assignments): View|RedirectResponse
+    {
+        try {
+            $portal = $authorization->portal();
+            $activeSite = $authorization->portalSite($portal);
+            $profileId = (string) $portal['profile']->getKey();
+
+            if (! $assignments->isAssigned($profileId, $schedule, $activeSite->operator_site_id)) {
+                return redirect()->route('operator.eligible-shifts')->withErrors(['shift' => __('The Operator is not assigned to this shift.')]);
+            }
+
+            $shiftSchedule = DB::table('shift_schedules')
+                ->join('examination_site_refs', 'examination_site_refs.id', '=', 'shift_schedules.examination_site_id')
+                ->where('shift_schedules.id', $schedule)
+                ->where('examination_site_refs.operator_site_id', $activeSite->operator_site_id)
+                ->where('examination_site_refs.active', true)
+                ->select('shift_schedules.*')
+                ->first();
+
+            if ($shiftSchedule === null) {
+                return redirect()->route('operator.eligible-shifts')->withErrors(['shift' => __('Shift not found.')]);
+            }
+
+            return view('operator.members-register', [
+                'schedule' => $shiftSchedule,
+                'activeSite' => $activeSite,
+            ]);
+        } catch (Throwable $exception) {
+            return redirect()->route('operator.eligible-shifts')->withErrors(['shift' => $exception instanceof OperatorException ? __($exception->getMessage()) : __('Registration form unavailable.')]);
+        }
+    }
+
+    public function registerAndAdmitMember(Request $request, string $schedule, OperatorFieldOperationsService $fieldOps): RedirectResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'name' => ['required', 'string', 'max:255'],
+            'administrative_gender' => ['required', 'string', 'in:male,female,other,administrative_male,administrative_female'],
+            'nik' => ['required', 'string', 'min:8', 'max:20'],
+            'birth_date' => ['required', 'date_format:Y-m-d'],
+            'phone' => ['required', 'string', 'max:32'],
+            'affiliation' => ['required', 'string', 'max:255'],
+            'office_location' => ['required', 'string', 'max:255'],
+            'operation_id' => ['nullable', 'uuid'],
+        ]);
+        if ($validator->fails()) {
+            return back()->withErrors($validator)->withInput();
+        }
+
+        $input = $validator->validated();
+        $operationId = isset($input['operation_id']) ? (string) $input['operation_id'] : (string) Str::uuid();
+        try {
+            $result = $fieldOps->registerAndAdmitMember(
+                [
+                    'name' => (string) $input['name'],
+                    'administrative_gender' => (string) $input['administrative_gender'],
+                    'nik' => (string) $input['nik'],
+                    'birth_date' => (string) $input['birth_date'],
+                    'phone' => (string) $input['phone'],
+                    'affiliation' => (string) $input['affiliation'],
+                    'office_location' => (string) $input['office_location'],
+                ],
+                $schedule,
+                $operationId,
+            );
+
+            $statusMessage = ($result['reused_existing_member'] ?? false)
+                ? __('Existing member identity resolved and admitted to shift.')
+                : __('Member registered and admitted to shift.');
+
+            return redirect()->route('operator.paper-consent.show', $result['case_id'])->with('status', $statusMessage);
+        } catch (OperatorException $exception) {
+            logger()->warning('Member field registration rejected', [
+                'category' => $exception->category,
+                'schedule_id' => $schedule,
+            ]);
+
+            return back()->withErrors(['registration' => __($exception->getMessage())])->withInput();
+        } catch (Throwable $exception) {
+            logger()->error('Member field registration failed unexpectedly', [
+                'error_type' => get_class($exception),
+                'schedule_id' => $schedule,
+            ]);
+
+            return back()->withErrors(['registration' => __('The member registration could not be completed.')])->withInput();
         }
     }
 

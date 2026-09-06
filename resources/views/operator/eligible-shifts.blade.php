@@ -6,6 +6,9 @@
 <section aria-labelledby="eligible-title">
     <h1 id="eligible-title">{{ __('Assigned shifts') }}</h1>
     <p class="muted">{{ $activeSite->display_name }} · {{ __('eligible schedules assigned to your Operator profile.') }}</p>
+    <div style="margin: 16px 0">
+        <a href="{{ route('operator.shifts.create') }}" class="btn">{{ __('+ Create Field Operational Shift') }}</a>
+    </div>
     <section class="card">
         <div class="table-wrap">
             <table>

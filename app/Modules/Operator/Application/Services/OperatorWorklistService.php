@@ -15,6 +15,7 @@ use App\Shared\Identity\LocalId;
 use App\Shared\Infrastructure\Idempotency\IdempotencyConflict;
 use App\Shared\Infrastructure\Idempotency\IdempotencyStore;
 use App\Shared\Infrastructure\Outbox\OutboxStore;
+use App\Shared\Security\SensitiveDataSanitizer;
 use App\Shared\Time\Clock;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\UploadedFile;
@@ -30,6 +31,8 @@ final readonly class OperatorWorklistService
 
     public const XRAY_CALL_PURPOSE = 'operator.xray.call';
 
+    public const XRAY_CANCEL_PURPOSE = 'operator.xray.cancel';
+
     public const CALL_PURPOSE = 'operator.basic-examination.call';
 
     public const START_PURPOSE = 'operator.basic-examination.start';
@@ -39,6 +42,8 @@ final readonly class OperatorWorklistService
     public const QUESTIONNAIRE_PURPOSE = OperatorPaperQuestionnaireContract::PURPOSE;
 
     public const COMPLETE_PURPOSE = 'operator.basic-examination.complete';
+
+    public const BYPASS_PURPOSE = 'operator.basic-examination.bypass';
 
     public function __construct(
         private OperatorAuthorization $authorization,
@@ -50,6 +55,7 @@ final readonly class OperatorWorklistService
         private AuditStore $audit,
         private OutboxStore $outbox,
         private Clock $clock,
+        private ?RadiographySessionLocatorService $locators = null,
     ) {}
 
     /** @return list<array<string, mixed>> */
@@ -235,6 +241,7 @@ final readonly class OperatorWorklistService
             ->select([
                 'admissions.id as admission_id',
                 'admissions.operator_profile_id as claim_operator_profile_id',
+                'admissions.locator_code',
                 'tickets.ticket_number',
                 'members.name as member_name',
                 'members.medical_record_number as medical_record_number',
@@ -253,6 +260,7 @@ final readonly class OperatorWorklistService
             ->map(static fn (object $row): array => [
                 'admission_id' => (string) $row->admission_id,
                 'ticket_number' => (string) $row->ticket_number,
+                'locator_code' => (string) ($row->locator_code ?? ''),
                 'member_name' => (string) $row->member_name,
                 'medical_record_number' => (string) $row->medical_record_number,
                 'schedule_display_reference' => (string) $row->schedule_display_reference,
@@ -613,6 +621,12 @@ final readonly class OperatorWorklistService
                         'created_at' => $now,
                         'updated_at' => $now,
                     ]);
+
+                    ($this->locators ?? app(RadiographySessionLocatorService::class))->allocate(
+                        $xrayAdmissionId,
+                        (string) $admission->operator_site_id,
+                        (string) $admission->member_schedule_id,
+                    );
                     DB::table('operator_queue_admission_history')->insert([
                         'id' => (string) Str::uuid(),
                         'operator_queue_admission_id' => $xrayAdmissionId,
@@ -736,6 +750,8 @@ final readonly class OperatorWorklistService
                     if (! $this->assignments->isAssigned($profileId, (string) $admission->member_schedule_id, $site->operator_site_id)) {
                         throw new OperatorException('queue_claim_forbidden', 'The queue admission is unavailable.');
                     }
+                    $bookingId = (string) DB::table('operator_paper_tickets')->where('id', $admission->operator_paper_ticket_id)->value('booking_id');
+                    $this->assertConsentNotWithdrawn($bookingId);
                     if (DB::table('operator_queue_admissions')
                         ->where('operator_profile_id', $profileId)
                         ->where('stage', 'basic_examination')
@@ -868,6 +884,8 @@ final readonly class OperatorWorklistService
                     if (! $this->assignments->isAssigned($profileId, (string) $admission->member_schedule_id, $site->operator_site_id)) {
                         throw new OperatorException('xray_claim_forbidden', 'The X-ray admission is unavailable.');
                     }
+                    $bookingId = (string) DB::table('operator_paper_tickets')->where('id', $admission->operator_paper_ticket_id)->value('booking_id');
+                    $this->assertConsentNotWithdrawn($bookingId);
                     if (DB::table('operator_queue_admissions')
                         ->where('operator_profile_id', $profileId)
                         ->whereIn('stage', ['basic_examination', 'xray'])
@@ -1060,6 +1078,145 @@ final readonly class OperatorWorklistService
             throw new OperatorException('xray_call_conflict', 'The X-ray admission could not be called.', $exception);
         } catch (Throwable $exception) {
             throw new OperatorException('xray_call_failure', 'The X-ray admission could not be called.', $exception);
+        }
+    }
+
+    /** @return array{admission_id: string, stage: string, state: string, cancelled_at: string} */
+    public function cancelXray(string $admissionId, string $operationId, string $reason = 'session_cancelled'): array
+    {
+        $admissionId = trim($admissionId);
+        $operationId = trim($operationId);
+        $reason = trim($reason) !== '' ? trim($reason) : 'session_cancelled';
+        if (! Str::isUuid($admissionId) || ! Str::isUuid($operationId)) {
+            throw new OperatorException('xray_cancel_forbidden', 'The X-ray admission is unavailable.');
+        }
+
+        $portal = $this->authorization->portal();
+        $site = $this->authorization->portalSite($portal);
+        $profileId = (string) $portal['profile']->getKey();
+        $payload = [
+            'admission_id' => $admissionId,
+            'operator_profile_id' => $profileId,
+            'operator_site_id' => (string) $site->operator_site_id,
+            'reason' => $reason,
+        ];
+        $context = $this->authorization->current(self::XRAY_CANCEL_PURPOSE);
+
+        try {
+            return $this->idempotency->run(
+                $operationId,
+                self::XRAY_CANCEL_PURPOSE,
+                $payload,
+                function () use ($admissionId, $profileId, $site, $context, $operationId, $reason): array {
+                    $transactionPortal = $this->authorization->portal();
+                    $transactionSite = $this->authorization->portalSite($transactionPortal);
+                    if ((string) $transactionPortal['profile']->getKey() !== $profileId || (string) $transactionSite->getKey() !== (string) $site->getKey()) {
+                        throw new OperatorException('xray_cancel_forbidden', 'The X-ray admission is unavailable.');
+                    }
+
+                    $admission = DB::table('operator_queue_admissions as admissions')
+                        ->join('shift_schedules as schedules', 'schedules.id', '=', 'admissions.member_schedule_id')
+                        ->join('examination_site_refs as member_sites', 'member_sites.id', '=', 'schedules.examination_site_id')
+                        ->where('admissions.id', $admissionId)
+                        ->where('admissions.operator_site_id', $site->getKey())
+                        ->where('member_sites.operator_site_id', $site->operator_site_id)
+                        ->select('admissions.*')
+                        ->lockForUpdate()
+                        ->first();
+                    if ($admission === null) {
+                        throw new OperatorException('xray_cancel_forbidden', 'The X-ray admission is unavailable.');
+                    }
+                    if (! in_array($admission->queue_class, ['advance', 'standard'], true) || $admission->stage !== 'xray') {
+                        throw new OperatorException('xray_cancel_conflict', 'The X-ray admission could not be cancelled.');
+                    }
+                    if (! $this->assignments->isAssigned($profileId, (string) $admission->member_schedule_id, $site->operator_site_id)) {
+                        throw new OperatorException('xray_cancel_forbidden', 'The X-ray admission is unavailable.');
+                    }
+                    if ($admission->operator_profile_id !== null && (string) $admission->operator_profile_id !== $profileId) {
+                        throw new OperatorException('xray_cancel_forbidden', 'The X-ray admission is unavailable.');
+                    }
+                    if (! in_array($admission->state, ['waiting', 'called', 'in_service'], true)) {
+                        throw new OperatorException('xray_cancel_conflict', 'The X-ray admission could not be cancelled.');
+                    }
+
+                    $now = $this->clock->now();
+                    $fromState = (string) $admission->state;
+                    DB::table('operator_queue_admissions')
+                        ->where('id', $admissionId)
+                        ->update([
+                            'state' => 'cancelled',
+                            'updated_at' => $now,
+                        ]);
+                    DB::table('operator_queue_admission_history')->insert([
+                        'id' => (string) Str::uuid(),
+                        'operator_queue_admission_id' => $admissionId,
+                        'operator_profile_id' => $profileId,
+                        'event_type' => 'cancelled',
+                        'from_state' => $fromState,
+                        'to_state' => 'cancelled',
+                        'operation_id' => $operationId,
+                        'occurred_at' => $now,
+                        'created_at' => $now,
+                        'updated_at' => $now,
+                    ]);
+
+                    ($this->locators ?? app(RadiographySessionLocatorService::class))->markCancelled(
+                        $admissionId,
+                        $reason,
+                    );
+
+                    $metadata = [
+                        'admission_id' => $admissionId,
+                        'operator_profile_id' => $profileId,
+                        'queue_class' => (string) $admission->queue_class,
+                        'previous_state' => $fromState,
+                        'state' => 'cancelled',
+                        'cancelled_at_utc' => $now->format(DATE_ATOM),
+                    ];
+                    $safeReason = 'session_cancelled';
+                    try {
+                        SensitiveDataSanitizer::assertSafeString($reason);
+                        $safeReason = $reason;
+                    } catch (Throwable) {
+                        $safeReason = 'session_cancelled';
+                    }
+                    $this->audit->append(AuditEvent::fromContext(
+                        $context,
+                        'operator.xray.cancelled',
+                        'operator',
+                        'success',
+                        $now,
+                        'queue-admission',
+                        $admissionId,
+                        reason: $safeReason,
+                        metadata: $metadata,
+                    ));
+                    $this->outbox->record(new VersionedDomainEvent(
+                        LocalId::fromString((string) Str::uuid()),
+                        'operator.xray-cancelled',
+                        1,
+                        $now,
+                        $metadata,
+                        LocalId::fromString($admissionId),
+                        $context->operationId,
+                    ));
+
+                    return [
+                        'admission_id' => $admissionId,
+                        'stage' => 'xray',
+                        'state' => 'cancelled',
+                        'cancelled_at' => $now->format(DATE_ATOM),
+                    ];
+                },
+            )->result;
+        } catch (IdempotencyConflict $exception) {
+            throw new OperatorException('xray_cancel_conflict', 'The X-ray admission could not be cancelled.', $exception);
+        } catch (OperatorException $exception) {
+            throw $exception;
+        } catch (QueryException $exception) {
+            throw new OperatorException('xray_cancel_conflict', 'The X-ray admission could not be cancelled.', $exception);
+        } catch (Throwable $exception) {
+            throw new OperatorException('xray_cancel_failure', 'The X-ray admission could not be cancelled.', $exception);
         }
     }
 
@@ -1333,6 +1490,188 @@ final readonly class OperatorWorklistService
         }
         if ($admission->booking_status !== 'checked_in' || ! $this->assignments->isAssigned($profileId, (string) $admission->member_schedule_id, $site->operator_site_id)) {
             throw new OperatorException('vital_signs_forbidden', 'The vital-signs record is unavailable.');
+        }
+    }
+
+    /** @return array{admission_id: string, xray_admission_id: string, stage: string, state: string} */
+    public function bypassBasicExamination(string $admissionId, string $operationId): array
+    {
+        $admissionId = trim($admissionId);
+        $operationId = trim($operationId);
+        if (! Str::isUuid($admissionId) || ! Str::isUuid($operationId)) {
+            throw new OperatorException('basic_examination_forbidden', 'The queue admission is unavailable.');
+        }
+
+        $portal = $this->authorization->portal();
+        $site = $this->authorization->portalSite($portal);
+        $profileId = (string) $portal['profile']->getKey();
+        $context = $this->authorization->current(self::BYPASS_PURPOSE);
+
+        return DB::transaction(function () use ($admissionId, $operationId, $profileId, $site, $context): array {
+            $admission = DB::table('operator_queue_admissions as admissions')
+                ->join('operator_paper_tickets as tickets', 'tickets.id', '=', 'admissions.operator_paper_ticket_id')
+                ->join('shift_schedules as schedules', 'schedules.id', '=', 'admissions.member_schedule_id')
+                ->join('examination_site_refs as member_sites', 'member_sites.id', '=', 'schedules.examination_site_id')
+                ->where('admissions.id', $admissionId)
+                ->where('admissions.operator_site_id', $site->getKey())
+                ->where('member_sites.operator_site_id', $site->operator_site_id)
+                ->select(['admissions.*', 'tickets.booking_id'])
+                ->lockForUpdate()
+                ->first();
+
+            if ($admission === null) {
+                throw new OperatorException('basic_examination_forbidden', 'The queue admission is unavailable.');
+            }
+
+            if ($admission->operator_profile_id !== null && (string) $admission->operator_profile_id !== $profileId && $admission->state !== 'waiting') {
+                throw new OperatorException('basic_examination_forbidden', 'The queue admission is claimed by another operator.');
+            }
+
+            if ($admission->stage !== 'basic_examination' || ! in_array($admission->state, ['waiting', 'called', 'in_service'], true)) {
+                throw new OperatorException('basic_examination_conflict', 'The basic examination admission is not in an eligible state to bypass.');
+            }
+
+            if (! $this->assignments->isAssigned($profileId, (string) $admission->member_schedule_id, $site->operator_site_id)) {
+                throw new OperatorException('basic_examination_forbidden', 'The Operator is not assigned to this shift.');
+            }
+
+            $this->assertConsentNotWithdrawn((string) $admission->booking_id);
+
+            $now = $this->clock->now();
+            $previousState = $admission->state;
+
+            // Transition basic_examination admission to skipped
+            DB::table('operator_queue_admissions')
+                ->where('id', $admissionId)
+                ->update([
+                    'state' => 'skipped',
+                    'updated_at' => $now,
+                ]);
+
+            DB::table('operator_queue_admission_history')->insert([
+                'id' => (string) Str::uuid(),
+                'operator_queue_admission_id' => $admissionId,
+                'operator_profile_id' => $profileId,
+                'event_type' => 'skipped',
+                'from_state' => $previousState,
+                'to_state' => 'skipped',
+                'operation_id' => $operationId,
+                'occurred_at' => $now,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+
+            // Check if xray admission already exists for this ticket
+            $existingXray = DB::table('operator_queue_admissions')
+                ->where('operator_paper_ticket_id', $admission->operator_paper_ticket_id)
+                ->where('stage', 'xray')
+                ->first();
+
+            $xrayAdmissionId = $existingXray !== null ? (string) $existingXray->id : (string) Str::uuid();
+            if ($existingXray === null) {
+                DB::table('operator_queue_admissions')->insert([
+                    'id' => $xrayAdmissionId,
+                    'operator_paper_ticket_id' => (string) $admission->operator_paper_ticket_id,
+                    'operator_site_id' => (string) $admission->operator_site_id,
+                    'member_schedule_id' => (string) $admission->member_schedule_id,
+                    'queue_class' => 'advance',
+                    'stage' => 'xray',
+                    'state' => 'waiting',
+                    'ready_at' => $now,
+                    'operator_profile_id' => null,
+                    'claimed_at' => null,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ]);
+
+                DB::table('operator_queue_admission_history')->insert([
+                    'id' => (string) Str::uuid(),
+                    'operator_queue_admission_id' => $xrayAdmissionId,
+                    'operator_profile_id' => $profileId,
+                    'event_type' => 'admitted',
+                    'from_state' => null,
+                    'to_state' => 'waiting',
+                    'operation_id' => (string) Str::uuid(),
+                    'occurred_at' => $now,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ]);
+
+                ($this->locators ?? app(RadiographySessionLocatorService::class))->allocate(
+                    $xrayAdmissionId,
+                    (string) $admission->operator_site_id,
+                    (string) $admission->member_schedule_id,
+                );
+            }
+
+            $this->audit->append(AuditEvent::fromContext(
+                $context,
+                'operator.basic-examination.skipped',
+                'operator',
+                'success',
+                $now,
+                'queue-admission',
+                $admissionId,
+                metadata: [
+                    'admission_id' => $admissionId,
+                    'xray_admission_id' => $xrayAdmissionId,
+                    'operator_profile_id' => $profileId,
+                    'operator_site_id' => (string) $site->getKey(),
+                    'previous_state' => $previousState,
+                    'state' => 'skipped',
+                ],
+            ));
+
+            $this->outbox->record(new VersionedDomainEvent(
+                LocalId::fromString((string) Str::uuid()),
+                'operator.basic-examination-skipped',
+                1,
+                $now,
+                [
+                    'admission_id' => $admissionId,
+                    'xray_admission_id' => $xrayAdmissionId,
+                    'operator_profile_id' => $profileId,
+                    'state' => 'skipped',
+                ],
+                LocalId::fromString($admissionId),
+                $context->operationId,
+            ));
+
+            return [
+                'admission_id' => $admissionId,
+                'xray_admission_id' => $xrayAdmissionId,
+                'stage' => 'basic_examination',
+                'state' => 'skipped',
+            ];
+        });
+    }
+
+    public function assertConsentNotWithdrawn(string $bookingId): void
+    {
+        $consent = DB::table('examination_consents')
+            ->where('booking_id', $bookingId)
+            ->first();
+        if ($consent !== null && $consent->status === 'withdrawn') {
+            throw new OperatorException('consent_withdrawn', 'Informed consent has been withdrawn. Procedure progression is blocked.');
+        }
+
+        $memberId = DB::table('bookings')->where('id', $bookingId)->value('member_id');
+        if (is_string($memberId)) {
+            $withdrawnMaster = DB::table('member_master_consents')
+                ->where('member_id', $memberId)
+                ->where('status', 'withdrawn')
+                ->orderByDesc('consent_version')
+                ->first();
+            if ($withdrawnMaster !== null) {
+                $hasNewerActive = DB::table('member_master_consents')
+                    ->where('member_id', $memberId)
+                    ->where('status', 'active')
+                    ->where('consent_version', '>', $withdrawnMaster->consent_version)
+                    ->exists();
+                if (! $hasNewerActive) {
+                    throw new OperatorException('consent_withdrawn', 'Informed consent has been withdrawn. Procedure progression is blocked.');
+                }
+            }
         }
     }
 }

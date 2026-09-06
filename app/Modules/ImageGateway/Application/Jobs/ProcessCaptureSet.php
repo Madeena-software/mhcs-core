@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Modules\ImageGateway\Application\Jobs;
 
+use App\Modules\ImageGateway\Application\Contracts\ImageGatewayAiServiceContract;
 use App\Modules\ImageGateway\Application\Services\ImageGatewayCaptureService;
 use App\Modules\ImageGateway\Domain\Security\ManifestSigner;
 use App\Modules\ImageGateway\Domain\Security\PermanentAcceptanceGate;
@@ -53,6 +54,7 @@ final class ProcessCaptureSet implements ShouldQueue
         PrivateObjectStore $objects,
         ManifestSigner $signer,
         Clock $clock,
+        ?ImageGatewayAiServiceContract $aiService = null,
     ): void {
         ImageWorkerBoundary::assertCaller(ImageWorkerBoundary::CALLER);
         $capture = DB::table('image_gateway_capture_sets')->where('id', $this->captureSetId)->first();
@@ -164,6 +166,7 @@ final class ProcessCaptureSet implements ShouldQueue
             );
 
             $this->storeStudy($capture, $result, $identifiers, $claimId, $objects, $workerContext, $clock);
+            $this->dispatchAiEvaluation($workerContext, $aiService);
         } catch (ConnectionException $exception) {
             $this->retryOrFail($capture, $attempt, $claimId, null, 'transport_failure', $clock);
         } catch (Throwable $exception) {
@@ -432,5 +435,29 @@ final class ProcessCaptureSet implements ShouldQueue
             str_contains($exception->getMessage(), 'capture_object') => 'object_integrity_failure',
             default => 'processing_failure',
         };
+    }
+
+    private function dispatchAiEvaluation(AuthenticatedContext $workerContext, ?ImageGatewayAiServiceContract $aiService = null): void
+    {
+        try {
+            $study = DB::table('image_gateway_studies')->where('capture_set_id', $this->captureSetId)->first();
+            if ($study === null) {
+                return;
+            }
+
+            $aiContext = new AuthenticatedContext(
+                actorId: $workerContext->actorId,
+                operationId: $workerContext->operationId,
+                roles: ['image-worker'],
+                permissions: ['image-gateway.ai.dispatch'],
+                siteId: $workerContext->siteId,
+                purpose: ImageGatewayAiServiceContract::AI_DISPATCH_PURPOSE,
+            );
+
+            $service = $aiService ?? (app()->bound(ImageGatewayAiServiceContract::class) ? app(ImageGatewayAiServiceContract::class) : null);
+            $service?->dispatchStudy((string) $study->id, $aiContext);
+        } catch (Throwable) {
+            // Failure containment: AI dispatch failure must not fail or roll back capture set completion
+        }
     }
 }

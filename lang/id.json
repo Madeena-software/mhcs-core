@@ -610,7 +610,16 @@
     "xray": "Sesi foto radiografi",
     "scheduled": "Terjadwal",
     "Visit complete": "Kunjungan selesai",
-    "Review booking status": "Tinjau status booking",
     "mismatch_reported": "Ketidaksesuaian dilaporkan",
-    "insufficient_evidence": "Bukti tidak memadai"
+    "insufficient_evidence": "Bukti tidak memadai",
+    "Laporan AI": "Laporan AI",
+    "Unduh Laporan AI": "Unduh Laporan AI",
+    "Keluaran AI — belum diverifikasi tenaga medis.": "Keluaran AI — belum diverifikasi tenaga medis.",
+    "Menunggu antrean": "Menunggu antrean",
+    "Sedang dianalisis": "Sedang dianalisis",
+    "Gagal dan dapat dicoba ulang": "Gagal dan dapat dicoba ulang",
+    "AI belum diantrikan": "AI belum diantrikan",
+    "Coba Lagi": "Coba Lagi",
+    "Catatan:": "Catatan:",
+    "Permintaan analisis AI telah diantrikan ulang.": "Permintaan analisis AI telah diantrikan ulang."
 }

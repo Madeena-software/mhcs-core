@@ -26,6 +26,7 @@
                     <th>{{ __('Format') }}</th>
                     <th>{{ __('Accepted') }}</th>
                     <th>{{ __('Action') }}</th>
+                    <th>{{ __('Laporan AI') }}</th>
                 </tr>
                 </thead>
                 <tbody>
@@ -40,9 +41,41 @@
                         <td>{{ $study['format'] }}</td>
                         <td><time datetime="{{ $study['accepted_at'] }}">{{ $study['accepted_at'] }}</time></td>
                         <td><a href="{{ route('operator.study.show', $study['study_id']) }}">{{ __('Open DICOM study') }}</a></td>
+                        <td>
+                            @if (($study['ai_state'] ?? null) === 'report_ready')
+                                <div class="ai-report-action">
+                                    <a href="{{ route('operator.study.ai-report.download', $study['study_id']) }}" class="primary-action" style="padding: 6px 12px; font-size: 13px;">{{ __('Unduh Laporan AI') }}</a>
+                                    <p class="muted" style="margin: 4px 0 0; font-size: 11px;">{{ __('Keluaran AI — belum diverifikasi tenaga medis.') }}</p>
+                                </div>
+                            @elseif (($study['ai_state'] ?? null) === 'queued')
+                                <span class="status muted">{{ __('Menunggu antrean') }}</span>
+                                <p class="muted" style="margin: 4px 0 0; font-size: 11px;">{{ __('Keluaran AI — belum diverifikasi tenaga medis.') }}</p>
+                            @elseif (($study['ai_state'] ?? null) === 'processing')
+                                <span class="status muted">{{ __('Sedang dianalisis') }}</span>
+                                <p class="muted" style="margin: 4px 0 0; font-size: 11px;">{{ __('Keluaran AI — belum diverifikasi tenaga medis.') }}</p>
+                            @elseif (($study['ai_state'] ?? null) === 'retryable_failure')
+                                <div class="ai-retry-action">
+                                    <span class="error" style="display: block; font-size: 13px;">{{ __('Gagal dan dapat dicoba ulang') }}</span>
+                                    @if ($study['ai_can_retry'] ?? true)
+                                        <form method="POST" action="{{ route('operator.study.ai-report.retry', $study['study_id']) }}" style="margin-top: 4px;">
+                                            @csrf
+                                            <button type="submit" class="secondary" style="padding: 4px 10px; font-size: 12px;">{{ __('Coba Lagi') }}</button>
+                                        </form>
+                                    @endif
+                                    <p class="muted" style="margin: 4px 0 0; font-size: 11px;">{{ __('Keluaran AI — belum diverifikasi tenaga medis.') }}</p>
+                                </div>
+                            @elseif (($study['ai_state'] ?? null) === 'terminal_failure')
+                                <span class="error">{{ __('Gagal') }}</span>
+                                <p class="muted" style="margin: 4px 0 0; font-size: 11px;">{{ __('Keluaran AI — belum diverifikasi tenaga medis.') }}</p>
+                            @elseif (($study['ai_state'] ?? null) === 'not_queued')
+                                <span class="muted">{{ __('AI belum diantrikan') }}</span>
+                            @else
+                                <span class="muted">{{ __('Tidak tersedia') }}</span>
+                            @endif
+                        </td>
                     </tr>
                 @empty
-                    <tr><td colspan="9" class="muted">{{ __('No accepted DICOM studies are available for this site and shift.') }}</td></tr>
+                    <tr><td colspan="10" class="muted">{{ __('No accepted DICOM studies are available for this site and shift.') }}</td></tr>
                 @endforelse
                 </tbody>
             </table>

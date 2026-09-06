@@ -13,6 +13,7 @@
                 <thead>
                 <tr>
                     <th>{{ __('Paper ticket') }}</th>
+                    <th>{{ __('Session code') }}</th>
                     <th>{{ __('Name') }}</th>
                     <th>{{ __('Medical record') }}</th>
                     <th>{{ __('Site') }}</th>
@@ -27,6 +28,7 @@
                 @forelse ($entries as $entry)
                     <tr>
                         <td>{{ $entry['ticket_number'] }}</td>
+                        <td><code>{{ $entry['locator_code'] ?: '—' }}</code></td>
                         <td>{{ $entry['member_name'] }}</td>
                         <td>{{ $entry['medical_record_number'] }}</td>
                         <td>{{ $entry['site_name'] }}</td>
@@ -58,7 +60,7 @@
                         </td>
                     </tr>
                 @empty
-                    <tr><td colspan="9" class="muted">{{ __('No radiography session tickets are ready.') }}</td></tr>
+                    <tr><td colspan="10" class="muted">{{ __('No radiography session tickets are ready.') }}</td></tr>
                 @endforelse
                 </tbody>
             </table>

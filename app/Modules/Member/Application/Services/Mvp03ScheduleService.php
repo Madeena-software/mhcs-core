@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Modules\Member\Application\Services;
 
+use App\Modules\Member\Application\Contracts\ShiftScheduleClosureHandler;
 use App\Modules\Member\Domain\Models\ExaminationSiteReference;
 use App\Modules\Member\Domain\Models\ServiceOffering;
 use App\Modules\Member\Domain\Models\ShiftSchedule;
@@ -24,6 +25,7 @@ final readonly class Mvp03ScheduleService
         private MemberAuthorization $authorization,
         private AuditStore $audit,
         private Clock $clock,
+        private ?ShiftScheduleClosureHandler $closureHandler = null,
     ) {}
 
     /** @param array<string, mixed> $attributes */
@@ -131,6 +133,11 @@ final readonly class Mvp03ScheduleService
                 'quota' => $quota,
                 'status' => $status,
             ])->save();
+
+            if ($status === 'closed') {
+                $this->closureHandler?->onShiftClosed((string) $record->getKey());
+            }
+
             $this->audit($context, 'member.schedule.update', (string) $record->getKey(), ['site_id' => $siteId, 'quota' => $quota, 'status' => $status]);
 
             return $record->refresh();

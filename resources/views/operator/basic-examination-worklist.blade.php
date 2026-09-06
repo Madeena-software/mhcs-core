@@ -81,6 +81,11 @@
                                     <button type="submit">{{ __('Claim') }}</button>
                                 </form>
                             @endif
+                            <form method="POST" action="{{ route('operator.basic-examination-worklist.bypass', $entry['admission_id']) }}" style="margin-top: 4px;">
+                                @csrf
+                                <input type="hidden" name="operation_id" value="{{ (string) \Illuminate\Support\Str::uuid() }}">
+                                <button type="submit" class="secondary">{{ __('Bypass to X-ray') }}</button>
+                            </form>
                         </td>
                     </tr>
                 @empty

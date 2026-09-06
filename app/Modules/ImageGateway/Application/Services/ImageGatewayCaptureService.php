@@ -6,6 +6,7 @@ namespace App\Modules\ImageGateway\Application\Services;
 
 use App\Modules\ImageGateway\Application\Contracts\OperatorStudyQuery;
 use App\Modules\ImageGateway\Application\Jobs\ProcessCaptureSet;
+use App\Modules\ImageGateway\Domain\AiJobStatus;
 use App\Modules\ImageGateway\Domain\ImageGatewayException;
 use App\Modules\ImageGateway\Domain\Security\ConversionManifest;
 use App\Modules\ImageGateway\Domain\Security\ManifestSigner;
@@ -85,6 +86,7 @@ final readonly class ImageGatewayCaptureService implements OperatorStudyQuery
             'status' => (string) ($capture->status ?? 'capturing'),
             'can_retry' => $this->canRetryProcessing($capture, $missing),
             'ticket_number' => (string) $admission->ticket_number,
+            'locator_code' => (string) ($admission->locator_code ?? ''),
             'metadata' => $metadata,
             'metadata_editable' => $capture === null,
         ];
@@ -239,26 +241,69 @@ final readonly class ImageGatewayCaptureService implements OperatorStudyQuery
         ];
     }
 
-    /** @return list<array{study_id: string, display_reference: string, booking_id: string, ticket_number: string, member_name: string, medical_record_number: string, schedule_display_reference: string, format: string, rows: ?int, columns: ?int, accepted_at: string}> */
+    /** @return list<array{study_id: string, display_reference: string, booking_id: string, ticket_number: string, member_name: string, medical_record_number: string, schedule_display_reference: string, format: string, rows: ?int, columns: ?int, accepted_at: string, ai_state: string, ai_can_retry: bool, ai_job_id: ?string}> */
     public function studies(AuthenticatedContext $context, string $profileId, string $siteId, string $operatorSiteId): array
     {
         $this->assertContext($context, self::STUDY_PURPOSE);
 
-        return $this->authorizedStudiesQuery($profileId, $siteId, $operatorSiteId)
+        $studies = $this->authorizedStudiesQuery($profileId, $siteId, $operatorSiteId)
             ->select(['studies.id', 'studies.display_reference', 'captures.booking_id', 'tickets.ticket_number', 'members.name as member_name', 'members.medical_record_number as medical_record_number', 'schedules.display_reference as schedule_display_reference', 'studies.format', 'captures.accepted_at'])
             ->orderByDesc('captures.accepted_at')
+            ->get();
+
+        $studyIds = $studies->pluck('id')->all();
+        $aiJobs = DB::table('image_gateway_ai_jobs')
+            ->whereIn('study_id', $studyIds)
             ->get()
-            ->map(static fn (object $study): array => [
-                'study_id' => (string) $study->id,
-                'display_reference' => (string) $study->display_reference,
-                'booking_id' => (string) $study->booking_id,
-                'ticket_number' => (string) $study->ticket_number,
-                'member_name' => (string) $study->member_name,
-                'medical_record_number' => (string) $study->medical_record_number,
-                'schedule_display_reference' => (string) $study->schedule_display_reference,
-                'format' => (string) $study->format,
-                'accepted_at' => (string) $study->accepted_at,
-            ])
+            ->keyBy('study_id');
+
+        $reports = DB::table('image_gateway_ai_reports')
+            ->whereIn('study_id', $studyIds)
+            ->whereNotNull('derived_object_key')
+            ->get()
+            ->keyBy('study_id');
+
+        return $studies
+            ->map(function (object $study) use ($aiJobs, $reports): array {
+                $aiJob = $aiJobs->get((string) $study->id);
+                $report = $reports->get((string) $study->id);
+
+                $aiState = 'not_queued';
+                $canRetry = false;
+
+                if ($aiJob !== null) {
+                    $status = (string) $aiJob->status;
+                    if ($status === AiJobStatus::REPORT_READY && $report !== null) {
+                        $aiState = 'report_ready';
+                    } elseif ($status === AiJobStatus::QUEUED) {
+                        $aiState = 'queued';
+                    } elseif ($status === AiJobStatus::PROCESSING) {
+                        $aiState = 'processing';
+                    } elseif ($status === AiJobStatus::RETRYABLE_FAILURE) {
+                        $aiState = 'retryable_failure';
+                        $canRetry = (int) $aiJob->attempts < (int) $aiJob->max_attempts;
+                    } elseif ($status === AiJobStatus::TERMINAL_FAILURE) {
+                        $aiState = 'terminal_failure';
+                    } else {
+                        $aiState = 'unavailable';
+                    }
+                }
+
+                return [
+                    'study_id' => (string) $study->id,
+                    'display_reference' => (string) $study->display_reference,
+                    'booking_id' => (string) $study->booking_id,
+                    'ticket_number' => (string) $study->ticket_number,
+                    'member_name' => (string) $study->member_name,
+                    'medical_record_number' => (string) $study->medical_record_number,
+                    'schedule_display_reference' => (string) $study->schedule_display_reference,
+                    'format' => (string) $study->format,
+                    'accepted_at' => (string) $study->accepted_at,
+                    'ai_state' => $aiState,
+                    'ai_can_retry' => $canRetry,
+                    'ai_job_id' => $aiJob ? (string) $aiJob->id : null,
+                ];
+            })
             ->all();
     }
 
@@ -544,6 +589,13 @@ final readonly class ImageGatewayCaptureService implements OperatorStudyQuery
             $now = $this->clock->now();
             DB::table('image_gateway_capture_sets')->where('id', $row->id)->update(['status' => 'accepted', 'accepted_at' => $now, 'updated_at' => $now]);
             DB::table('operator_queue_admissions')->where('id', $row->admission_id)->update(['state' => 'awaiting_ai', 'operator_profile_id' => null, 'claimed_at' => null, 'updated_at' => $now]);
+            DB::table('radiography_session_locators')->where('operator_queue_admission_id', $row->admission_id)->where('status', 'active')->update([
+                'status' => 'completed',
+                'active_key' => null,
+                'invalidated_at' => $now,
+                'invalidation_reason' => 'capture_accepted',
+                'updated_at' => $now,
+            ]);
             DB::table('operator_queue_admission_history')->insert([
                 'id' => (string) Str::uuid(), 'operator_queue_admission_id' => $row->admission_id, 'operator_profile_id' => $profileId,
                 'event_type' => 'capture_accepted', 'from_state' => (string) $admissionRow->state, 'to_state' => 'awaiting_ai', 'operation_id' => $submissionId,

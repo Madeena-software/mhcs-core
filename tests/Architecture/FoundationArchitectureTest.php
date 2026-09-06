@@ -84,6 +84,7 @@ final class FoundationArchitectureTest extends TestCase
             app_path('Modules/ImageGateway/Application/Services/ImageGatewayCaptureService.php'),
             app_path('Modules/ImageGateway/Application/Jobs/ProcessCaptureSet.php'),
             app_path('Modules/ImageGateway/Infrastructure/MpipsClient.php'),
+            app_path('Modules/ImageGateway/Infrastructure/AiPacsClient.php'),
         ];
 
         foreach ($this->phpFiles(app_path('Modules')) as $file) {
@@ -149,6 +150,13 @@ final class FoundationArchitectureTest extends TestCase
             '2026_08_13_000003_add_operator_display_references.php',
             '2026_08_26_000001_allow_nonclinical_validation_member_identity.php',
             '2026_08_26_000002_make_validation_shift_assignment_provenance_nullable.php',
+            '2026_09_04_000001_add_field_operations_columns_to_members_table.php',
+            '2026_09_04_000002_create_reusable_informed_consent_tables.php',
+            '2026_09_05_000001_add_evidence_and_binding_to_member_master_consents_table.php',
+            '2026_09_05_000001_create_image_gateway_ai_tables.php',
+            '2026_09_05_000002_create_radiography_session_locators_and_grabber_clients.php',
+            '2026_09_06_000001_add_pacs_identifiers_to_image_gateway_ai_tables.php',
+            '2026_09_06_000002_add_derived_metadata_to_image_gateway_ai_tables.php',
         ];
 
         $this->assertSame([], array_values(array_diff($migrations, $allowed)));
