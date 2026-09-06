@@ -48,7 +48,7 @@ final class AiPacsClient implements AiPacsAdapterContract
         $this->password = (string) ($password ?? config('services.ai_pacs.password', ''));
         $this->timeout = (int) ($timeout ?? config('services.ai_pacs.timeout_seconds', 30));
         $this->connectTimeout = (int) ($connectTimeout ?? config('services.ai_pacs.connect_timeout_seconds', 10));
-        $this->uploadTimeout = (int) ($uploadTimeout ?? config('services.ai_pacs.upload_timeout_seconds', 600));
+        $this->uploadTimeout = (int) ($uploadTimeout ?? config('services.ai_pacs.upload_timeout_seconds', 1800));
         $this->pollTimeout = (int) ($pollTimeout ?? config('services.ai_pacs.poll_timeout_seconds', 30));
     }
 
@@ -143,9 +143,10 @@ final class AiPacsClient implements AiPacsAdapterContract
             $request = $this->authorizedRequest($activeSession, $this->uploadTimeout)
                 ->connectTimeout($this->connectTimeout)
                 ->withBody($multipart, 'multipart/form-data; boundary='.$multipart->getBoundary())
-                ->withHeaders(array_filter([
-                    'Content-Length' => $contentLength !== null ? (string) $contentLength : null,
-                ]));
+                ->withHeaders(array_merge(
+                    array_filter(['Content-Length' => $contentLength !== null ? (string) $contentLength : null]),
+                    ['Expect' => ''],
+                ));
 
             $response = $request->post("{$this->baseUrl}/api/v1/study/upload");
         } catch (ConnectionException $exception) {

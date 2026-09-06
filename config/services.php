@@ -41,6 +41,7 @@ return [
         'password' => env('AI_PACS_PASSWORD'),
         'driver' => env('AI_PACS_DRIVER', 'http'),
         'timeout_seconds' => (int) env('AI_PACS_TIMEOUT_SECONDS', 30),
+        'upload_timeout_seconds' => (int) env('AI_PACS_UPLOAD_TIMEOUT_SECONDS', 1800),
         'polling_interval_seconds' => (int) env('AI_PACS_POLLING_INTERVAL_SECONDS', 2),
         'max_polling_attempts' => (int) env('AI_PACS_MAX_POLLING_ATTEMPTS', 10),
     ],
