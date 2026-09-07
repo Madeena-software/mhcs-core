@@ -169,6 +169,74 @@ final class RemediatedPhpFpmStartupCacheLifecycleTest extends TestCase
         $this->assertNotFalse($cachePos);
         $this->assertNotFalse($fpmPos);
         $this->assertLessThan($fpmPos, $cachePos, 'Cache preparation must strictly precede exec php-fpm');
+
+        // Verify production Compose configuration does NOT mount any persistent volume or bind at bootstrap/cache
+        $composeContent = (string) file_get_contents(base_path('docker-compose.prod.yml'));
+        $this->assertStringNotContainsString('bootstrap/cache', $composeContent, 'Production Compose must not mount any volume at bootstrap/cache');
+        $this->assertStringNotContainsString('app_cache', $composeContent, 'Obsolete app_cache volume declaration must be removed');
+
+        // Verify parsed / rendered compose output for app service volume mount targets
+        $renderedCompose = (string) shell_exec(
+            'touch /tmp/mhcs-validate.env && ' .
+            'MHCS_IMAGE=mhcs_core:test ' .
+            'MHCS_APPLICATION_NETWORK_NAME=mhcs-core-application-network ' .
+            'MPIPS_NETWORK_NAME=mhcs-mpips-integration-v1 ' .
+            'APP_VERSION=test ' .
+            'APP_PORT=8013 ' .
+            'MHCS_ENV_FILE=/tmp/mhcs-validate.env ' .
+            'APP_STORAGE_HOST_PATH=/tmp/storage ' .
+            'APP_LOGS_HOST_PATH=/tmp/logs ' .
+            'MYSQL_DATA_HOST_PATH=/tmp/mysql ' .
+            'DB_ROOT_PASSWORD=dummy ' .
+            'DB_DATABASE=mhcs_core ' .
+            'DB_USERNAME=dummy ' .
+            'DB_PASSWORD=dummy ' .
+            'docker compose -f ' . escapeshellarg(base_path('docker-compose.prod.yml')) . ' config 2>/dev/null; ' .
+            'rm -f /tmp/mhcs-validate.env'
+        );
+        $this->assertNotEmpty($renderedCompose, 'Rendered docker-compose.prod.yml output must not be empty');
+        $this->assertStringNotContainsString('bootstrap/cache', $renderedCompose, 'Rendered Compose must not declare any volume or bind target at bootstrap/cache');
+        $this->assertStringNotContainsString('app_cache', $renderedCompose, 'Rendered Compose must not declare app_cache');
+    }
+
+    /**
+     * Proves deterministically that two separate app container instances running the
+     * production image have independent, isolated /var/www/html/bootstrap/cache directories.
+     * Writing a sentinel file in Container A never appears in Container B.
+     */
+    public function test_separate_app_containers_have_isolated_bootstrap_cache(): void
+    {
+        $containerA = 'mhcs-iso-test-a-' . uniqid();
+        $containerB = 'mhcs-iso-test-b-' . uniqid();
+        $sentinel = 'isolation-sentinel-' . uniqid() . '.tmp';
+
+        try {
+            // Start Container A and Container B with default container-local filesystem
+            $runA = shell_exec(sprintf('docker run -d --name %s mhcs-core:remediated sleep 60 2>&1', $containerA));
+            $runB = shell_exec(sprintf('docker run -d --name %s mhcs-core:remediated sleep 60 2>&1', $containerB));
+            $this->assertNotEmpty(trim((string) $runA));
+            $this->assertNotEmpty(trim((string) $runB));
+
+            // Write sentinel in Container A's bootstrap/cache
+            shell_exec(sprintf('docker exec %s touch /var/www/html/bootstrap/cache/%s', $containerA, $sentinel));
+
+            // Assert sentinel exists in Container A
+            $checkA = trim((string) shell_exec(sprintf('docker exec %s test -f /var/www/html/bootstrap/cache/%s && echo "EXISTS"', $containerA, $sentinel)));
+            $this->assertSame('EXISTS', $checkA, 'Sentinel must exist in Container A');
+
+            // Assert sentinel DOES NOT exist in Container B (proves separate, non-shared filesystem layer)
+            $checkB = trim((string) shell_exec(sprintf('docker exec %s test -f /var/www/html/bootstrap/cache/%s && echo "EXISTS" || echo "ABSENT"', $containerB, $sentinel)));
+            $this->assertSame('ABSENT', $checkB, 'Sentinel must NOT exist in Container B (cross-release cache isolation)');
+
+            // Inspect mounts on both containers to confirm no external mount at bootstrap/cache
+            $inspectMountsA = (string) shell_exec(sprintf('docker inspect %s --format "{{json .Mounts}}"', $containerA));
+            $this->assertStringNotContainsString('bootstrap/cache', $inspectMountsA, 'Container A must not mount bootstrap/cache externally');
+
+            $inspectMountsB = (string) shell_exec(sprintf('docker inspect %s --format "{{json .Mounts}}"', $containerB));
+            $this->assertStringNotContainsString('bootstrap/cache', $inspectMountsB, 'Container B must not mount bootstrap/cache externally');
+        } finally {
+            shell_exec(sprintf('docker rm -f %s %s 2>/dev/null', $containerA, $containerB));
+        }
     }
 
     /**

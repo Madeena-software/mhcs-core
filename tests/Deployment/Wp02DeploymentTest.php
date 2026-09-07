@@ -30,7 +30,8 @@ final class Wp02DeploymentTest extends TestCase
         $this->assertStringContainsString('MPIPS_NETWORK_NAME', $compose);
         $this->assertStringContainsString('MHCS_ENV_FILE', $compose);
         $this->assertStringContainsString('app_public:/var/www/public-files', $compose);
-        $this->assertStringContainsString('app_cache:/var/www/html/bootstrap/cache', $compose);
+        $this->assertStringNotContainsString('bootstrap/cache', $compose);
+        $this->assertStringNotContainsString('app_cache', $compose);
         $this->assertStringContainsString('MHCS_IMAGE_WORKER_CPU_LIMIT', $compose);
         $this->assertStringContainsString('MHCS_IMAGE_WORKER_MEMORY_LIMIT', $compose);
         $this->assertStringContainsString('MHCS_IMAGE_WORKER_PIDS_LIMIT', $compose);

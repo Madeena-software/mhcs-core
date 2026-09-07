@@ -80,7 +80,6 @@ services:
     volumes:
       - ${APP_STORAGE_HOST_PATH:-app_storage}/app:/var/www/html/storage/app
       - ${APP_LOGS_HOST_PATH:-app_storage/logs}:/var/www/html/storage/logs
-      - app_cache:/var/www/html/bootstrap/cache
       - app_public:/var/www/public-files
       - ./VERSION-CURRENT:/var/www/html/VERSION-CURRENT:ro
     env_file: ${MHCS_ENV_FILE:-.env}
@@ -314,7 +313,6 @@ volumes:
       o: bind
       device: ${MYSQL_DATA_HOST_PATH:-/var/lib/mhcs_core/mysql}
   app_storage:
-  app_cache:
   app_public:
 
 networks:
