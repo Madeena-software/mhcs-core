@@ -519,10 +519,9 @@ jobs:
             echo "Non-destructive verification: Database contains existing records; bootstrap preserved without data mutation."
           fi
 
-          echo "===> Warming application caches..."
-          docker exec "$APP_CONTAINER" php artisan config:cache
-          docker exec "$APP_CONTAINER" php artisan route:cache
-          docker exec "$APP_CONTAINER" php artisan view:cache
+          # Application runtime caches (config, route, view) are finalized in the container
+          # entrypoint before PHP-FPM starts, guaranteeing FPM never starts with missing or stale
+          # OPcache bytecode and eliminating post-startup cache mutation behind running workers.
 
       - name: Post-deploy verification
         run: |

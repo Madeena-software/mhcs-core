@@ -80,7 +80,7 @@ final class PhpFpmOpcacheRouteCacheLifecycleReproductionTest extends TestCase
         // Start long-running PHP-FPM with production-equivalent OPcache
         $base = escapeshellarg(base_path());
         $fpmCmd = sprintf(
-            'docker run -d --name %s --network mhcs-core_default --network-alias app -e DB_HOST=db -v %s:/var/www/html -v %s:%s -w /var/www/html mhcs-core:test php-fpm --nodaemonize',
+            'docker run -d --name %s --network mhcs-core_default --network-alias app -e DB_HOST=db -e SKIP_ENTRYPOINT_CACHE_WARM=1 -v %s:/var/www/html -v %s:%s -w /var/www/html mhcs-core:test php-fpm --nodaemonize',
             self::FPM_CONTAINER,
             $base,
             $base,
