@@ -131,11 +131,19 @@ final class PhpFpmOpcacheRouteCacheLifecycleReproductionTest extends TestCase
             ));
         }
 
-        // Verify effective OPcache settings in FPM
-        $fpmOpcache = (string) shell_exec(sprintf('docker exec %s php -i | grep -iE "opcache\.(enable|validate_timestamps)"', self::FPM_CONTAINER));
-        $this->assertMatchesRegularExpression('/opcache\.enable\s*=>\s*On/i', $fpmOpcache, 'FPM must have opcache.enable=On');
-        $this->assertMatchesRegularExpression('/opcache\.enable_cli\s*=>\s*Off/i', $fpmOpcache, 'FPM must have opcache.enable_cli=Off');
-        $this->assertMatchesRegularExpression('/opcache\.validate_timestamps\s*=>\s*Off/i', $fpmOpcache, 'FPM must have opcache.validate_timestamps=Off (0)');
+        // 1. Establish PHP-FPM SAPI and runtime OPcache configuration (php-fpm -i)
+        $fpmVersion = (string) shell_exec(sprintf('docker exec %s php-fpm -v', self::FPM_CONTAINER));
+        $this->assertStringContainsString('PHP 8.4.25 (fpm-fcgi)', $fpmVersion, 'FPM must report PHP 8.4.25 (fpm-fcgi)');
+
+        $fpmConfig = (string) shell_exec(sprintf('docker exec %s php-fpm -i', self::FPM_CONTAINER));
+        $this->assertMatchesRegularExpression('/Server API\s*=>\s*FPM\/FastCGI/i', $fpmConfig, 'FPM inspection must establish Server API => FPM/FastCGI');
+        $this->assertMatchesRegularExpression('/opcache\.enable\s*=>\s*On/i', $fpmConfig, 'FPM must have opcache.enable=On');
+        $this->assertMatchesRegularExpression('/opcache\.validate_timestamps\s*=>\s*Off/i', $fpmConfig, 'FPM must have opcache.validate_timestamps=Off (0)');
+
+        // 2. Establish separate CLI SAPI configuration (php -i)
+        $cliConfig = (string) shell_exec(sprintf('docker exec %s php -i', self::FPM_CONTAINER));
+        $this->assertMatchesRegularExpression('/Server API\s*=>\s*Command Line Interface/i', $cliConfig, 'CLI inspection must establish Server API => Command Line Interface');
+        $this->assertMatchesRegularExpression('/opcache\.enable_cli\s*=>\s*Off/i', $cliConfig, 'CLI must have opcache.enable_cli=Off');
 
         // Authenticate synthetic Operator via HTTP
         $this->authenticateOperator($seedData['email'], $seedData['password'], $seedData['site_id']);

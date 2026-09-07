@@ -2,26 +2,48 @@
 
 declare(strict_types=1);
 
-// Ensure seed script always targets local MySQL 8.4 database, even when called from PHPUnit
-putenv('DB_CONNECTION=mysql');
-putenv('DB_HOST=127.0.0.1');
-putenv('DB_PORT=3306');
-putenv('DB_DATABASE=mhcs_core');
-putenv('DB_USERNAME=mhcs_local');
-putenv('DB_PASSWORD=093ab1c0671706b8b22d36c44fdf2c66');
-
 require __DIR__ . '/../../vendor/autoload.php';
 $app = require __DIR__ . '/../../bootstrap/app.php';
 $kernel = $app->make(Illuminate\Contracts\Console\Kernel::class);
 $kernel->bootstrap();
 
+// When invoked under PHPUnit/testing environment, the process environment may have DB_CONNECTION=sqlite.
+// In that case, or when connection is not mysql, load connection parameters from the local .env file.
+$envFile = __DIR__ . '/../../.env';
+$localEnv = [];
+if (file_exists($envFile)) {
+    $lines = file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [];
+    foreach ($lines as $line) {
+        $trimmed = trim($line);
+        if ($trimmed === '' || str_starts_with($trimmed, '#')) {
+            continue;
+        }
+        if (str_contains($trimmed, '=')) {
+            [$k, $v] = explode('=', $trimmed, 2);
+            $localEnv[trim($k)] = trim($v);
+        }
+    }
+}
+
+$dbConnection = getenv('REPRO_DB_CONNECTION') ?: ($localEnv['DB_CONNECTION'] ?? 'mysql');
+$dbHost = getenv('REPRO_DB_HOST') ?: ($localEnv['DB_HOST'] ?? '127.0.0.1');
+$dbPort = (int) (getenv('REPRO_DB_PORT') ?: ($localEnv['DB_PORT'] ?? 3306));
+$dbDatabase = getenv('REPRO_DB_DATABASE') ?: ($localEnv['DB_DATABASE'] ?? 'mhcs_core');
+$dbUsername = getenv('REPRO_DB_USERNAME') ?: ($localEnv['DB_USERNAME'] ?? null);
+$dbPassword = getenv('REPRO_DB_PASSWORD') ?: ($localEnv['DB_PASSWORD'] ?? null);
+
+if (empty($dbUsername)) {
+    fwrite(STDERR, "Error: Local database username not found in environment or .env file.\n");
+    exit(1);
+}
+
 config([
-    'database.default' => 'mysql',
-    'database.connections.mysql.host' => '127.0.0.1',
-    'database.connections.mysql.port' => 3306,
-    'database.connections.mysql.database' => 'mhcs_core',
-    'database.connections.mysql.username' => 'mhcs_local',
-    'database.connections.mysql.password' => '093ab1c0671706b8b22d36c44fdf2c66',
+    'database.default' => $dbConnection,
+    "database.connections.{$dbConnection}.host" => $dbHost,
+    "database.connections.{$dbConnection}.port" => $dbPort,
+    "database.connections.{$dbConnection}.database" => $dbDatabase,
+    "database.connections.{$dbConnection}.username" => $dbUsername,
+    "database.connections.{$dbConnection}.password" => $dbPassword,
 ]);
 
 use App\Models\User;
