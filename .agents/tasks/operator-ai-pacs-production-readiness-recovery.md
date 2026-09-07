@@ -1,7 +1,7 @@
 ---
 title: Operator and AI PACS Production Readiness Recovery
 document_id: AGENT-TASK-OPERATOR-AI-PACS-RECOVERY-001
-version: 1.0
+version: 1.1
 status: Validated/Published
 language: en-US
 last_updated: 2026-09-07
@@ -63,22 +63,21 @@ The observed production evidence distinguishes four explicit states:
 1. **Confirmed Immediate Production Failure:**
    - `GET /operator/eligible-shifts` returns HTTP 500.
    - The production web runtime's active route collection lacks the named route `operator.shifts.create`.
-   - This causes an `Illuminate\Routing\Exceptions\RouteNotFoundException: Route [operator.shifts.create] not defined.` exception, wrapped by `Illuminate\View\ViewException` during the rendering of `resources/views/operator/eligible-shifts.blade.php`.
+   - Wrapping exception: `Illuminate\View\ViewException`.
+   - Underlying routing exception: `Symfony\Component\Routing\Exception\RouteNotFoundException`.
+   - Message: `Route [operator.shifts.create] not defined. (View: .../resources/views/operator/eligible-shifts.blade.php)`.
    - Production web request trace confirmed the failure occurs when evaluating `route('operator.shifts.create')` in the shift selection view.
 
 2. **Related Evidence:**
    - In addition to `operator.shifts.create`, the named route `operator.basic-examination-worklist.bypass` was also observed to be missing from the active production web runtime route collection. Both routes were introduced in the urgent Operator field-operations workstream.
 
 3. **Verified Exclusions and Structural Evidence:**
-   - **Application Container Revision:** Confirmed deployed image digest aligns across web app, queue, scheduler, and image-worker containers (`sha256:d8c6b90757271c667468132924faef860b0ecbe2a4db335c029fb3e89bc56187`), corresponding to repository commit `b4701589ca46c0de9c337d6b584335498b4848d2`.
-   - **Database Migrations:** All migrations are recorded as executed in production, specifically including:
-     - `2026_09_05_000001_add_on_the_spot_and_bypass_fields_to_core_tables.php`
-     - `2026_09_05_000002_create_radiography_session_codes_table.php`
-     - `2026_09_06_000001_create_ai_pacs_jobs_table.php`
-   - **Database Schema Alignment:** Detailed schema inspection of 10/10 relevant tables (`operators`, `sites`, `shifts`, `operator_site`, `members`, `member_registrations`, `radiography_sessions`, `radiography_session_codes`, `dicom_studies`, `ai_pacs_jobs`) confirmed exact structural alignment with the local MySQL 8.4 schema baseline. Column counts, types, nullability, defaults, indexes, and foreign keys match 100%. Zero database schema drift exists.
-   - **Data and Identity Invariants:** Inspected Operator records in production confirmed no null or orphan anomalies. Operator record `id=2` exists with valid user `id=2` and an active site assignment.
-   - **Source Code Verification:** In the repository source at baseline `b470158...`, `routes/web.php` explicitly defines both `operator.shifts.create` (line 197) and `operator.basic-examination-worklist.bypass` (line 240).
-   - **CLI vs Web Runtime Asymmetry:** When running in a fresh CLI container process, `php artisan route:list` cleanly lists both routes. Direct CLI rendering of `resources/views/operator/eligible-shifts.blade.php` succeeds without error. The failure is isolated strictly to the long-running web runtime environment.
+   - **Application Container Revision:** The accepted diagnostic evidence establishes that web app, queue, scheduler, and image-worker runtime image identities corresponded to revision/tag `b4701589ca46c0de9c337d6b584335498b4848d2`.
+   - **Database Migrations:** The authorized diagnostic showed all migrations recorded as `Ran` through the current production baseline, including the latest migration `2026_09_07_000002_make_operator_claim_and_idempotency_instants_mysql_portable`.
+   - **Database Schema Alignment:** Detailed schema inspection of the 10 relevant tables in the failing route path (`users`, `operator_profiles`, `operator_sites`, `operator_site_assignments`, `operator_eligible_shifts`, `operator_shift_assignments`, `shift_schedules`, `bookings`, `authorization_role_assignments`, `authorization_permission_assignments`) confirmed exact structural alignment with the local MySQL 8.4 schema baseline. Column counts, types, nullability, defaults, indexes, and foreign keys showed zero inspected schema drift in that route path.
+   - **Data and Identity Invariants:** Inspected Operator records in production confirmed no relevant null or orphan anomalies. The diagnostic evaluated 5 active Operator profiles; all inspected active profiles had valid active site assignments, each inspected profile had three active shift assignments, and no inspected relevant orphan relationships were present.
+   - **Source Code Verification:** In the repository source at baseline `b470158...`, `routes/web.php` explicitly defines both named routes (`operator.shifts.create` at line 197 and `operator.basic-examination-worklist.bypass` at line 240).
+   - **CLI vs Web Runtime Asymmetry:** Fresh CLI/bootstrap/controller execution saw the current application state: direct controller invocation and Blade rendering of `resources/views/operator/eligible-shifts.blade.php` succeeded for all five anonymized Operator profiles without error. The failure is isolated strictly to the long-running web runtime environment.
 
 4. **Strongly Supported (Not Yet Reviewer-Closed) Mechanism:**
    - The primary supported failure mechanism is a stale in-memory PHP-FPM OPcache holding an older copy of the persisted Laravel route cache file (`bootstrap/cache/routes-v7.php`).
@@ -110,6 +109,29 @@ The observed production evidence distinguishes four explicit states:
 The implementation baseline is the verified repository revision from which execution begins. The task revision is the exact immutable content identity governing execution and must be resolvable before execution handoff.
 
 The implementation baseline and governing task revision are separate references. Do not change the implementation baseline silently during execution.
+
+## Remediation
+
+**Review basis:** `4a3d466dac855eab85326e4d266abe971d5f32b0` (v1.0 task publication candidate)
+
+### Required corrections
+
+1. **Exception Identity:** Corrected underlying routing exception to `Symfony\Component\Routing\Exception\RouteNotFoundException` (wrapped by `Illuminate\View\ViewException`) with message `Route [operator.shifts.create] not defined. (View: .../resources/views/operator/eligible-shifts.blade.php)`. Removed incorrect `Illuminate\Routing\Exceptions\RouteNotFoundException`.
+2. **Inspected Schema Alignment:** Replaced the unverified list of 10 general domain tables with the exact 10 tables inspected by the authorized read-only diagnostic for the failing route (`users`, `operator_profiles`, `operator_sites`, `operator_site_assignments`, `operator_eligible_shifts`, `operator_shift_assignments`, `shift_schedules`, `bookings`, `authorization_role_assignments`, `authorization_permission_assignments`). Stated zero inspected schema drift in that route path.
+3. **Production Data Anonymization:** Removed concrete person and account identifiers (such as specific record and user IDs). Expressed data invariants in anonymized aggregate terms: 5 active Operator profiles, all with valid active site assignments, each with 3 active shift assignments, and zero inspected orphan relationships.
+4. **Runtime Image Identification:** Stated conservatively that web app, queue, scheduler, and image-worker container images corresponded to revision/tag `b4701589ca46c0de9c337d6b584335498b4848d2`, removing unverified specific image digest claims.
+5. **CLI/Web Asymmetry Evidence:** Distinguished observed evidence from inference. Stated that source code defines missing named routes, and fresh CLI/bootstrap/controller execution saw the current application state (direct controller invocation and Blade rendering succeeded for all 5 Operator profiles). Removed the unverified claim that production `php artisan route:list` proved both named routes.
+6. **Repository Paths:** Corrected configuration and deployment file paths to `Dockerfile`, `docker/php.ini`, `docker/entrypoint.sh`, `docker-compose.prod.yml`, and `.github/workflows/deploy-swarm.yml`. Removed nonexistent `docker/web/Dockerfile` and `.github/workflows/deploy.yml`.
+7. **Runtime Version Alignment:** Updated required execution environment from PHP 8.2 to production-equivalent PHP 8.4 (matching observed production PHP 8.4.25) and PHP-FPM, utilizing the repository's own Docker/configuration surfaces where practicable. Retained production-equivalent MySQL 8.4.
+8. **Migration Evidence:** Stated conservatively that the authorized diagnostic showed all migrations recorded as `Ran` through the current production baseline, including the latest `2026_09_07_000002_make_operator_claim_and_idempotency_instants_mysql_portable`.
+9. **Reproduction Test Reference:** Corrected the committed reproduction test reference to `tests/Feature/Operator/OperatorEligibleShiftsStaleRouteCacheReproductionTest.php` and reaffirmed the Reviewer boundary: the existing test reproduces the missing-route HTTP 500 symptom, but does not yet prove the persistent-cache + PHP-FPM OPcache lifecycle mechanism.
+10. **Evidence Audit:** Audited all claims across the task to ensure every confirmed statement is directly traceable to the repository state at `b470158...` or authorized diagnostic run `34075264515`.
+
+### Additional verification
+
+- Automated formatting and whitespace check (`git diff --check`).
+- Git tree status verification (`git status --short`).
+- Task structural compliance check with `.agents/tasks/_template.md` and repository delivery contract.
 
 ## Objective
 
@@ -146,7 +168,7 @@ Diagnosis, reproduction, remediation, verification, and release acceptance belon
 4. **Empirical Production Evidence:**
    - GitHub Actions deployment run `34068701723`.
    - GitHub Actions diagnostic run `34075264515`.
-   - Diagnostic reproduction baseline on branch `diagnostic/operator-eligible-shifts-500` (`tests/Feature/OperatorEligibleShiftsProductionDiagnosticTest.php`).
+   - Committed reproduction test on branch `diagnostic/operator-eligible-shifts-500`: `tests/Feature/Operator/OperatorEligibleShiftsStaleRouteCacheReproductionTest.php` (which reproduces the missing-route HTTP 500 failure condition, with the explicit Reviewer boundary that it does not yet prove the persistent-cache + PHP-FPM OPcache lifecycle mechanism).
 
 ### Requirement traceability
 
@@ -226,8 +248,8 @@ Diagnosis, reproduction, remediation, verification, and release acceptance belon
 
 - **Implementation Baseline:** Repository revision `b4701589ca46c0de9c337d6b584335498b4848d2`.
 - **Diagnostic Evidence:** Branch `diagnostic/operator-eligible-shifts-500` @ `ad4b9044b1251626c8a1884db952a2dd11388180`.
-- **Production Deployment Configuration:** `docker/web/Dockerfile`, `docker-compose.prod.yml`, and `.github/workflows/deploy.yml`.
-- **Local Isolated Execution Environment:** Docker and PHP-FPM runtime with configurable OPcache directives for empirical reproduction.
+- **Production Deployment Configuration:** `Dockerfile`, `docker/php.ini`, `docker/entrypoint.sh`, `docker-compose.prod.yml`, and `.github/workflows/deploy-swarm.yml`.
+- **Local Isolated Execution Environment:** Production-equivalent PHP 8.4 / PHP-FPM runtime (matching observed production PHP 8.4.25) and MySQL 8.4 with configurable OPcache directives for empirical reproduction.
 
 ### Approved assumptions
 
@@ -246,8 +268,8 @@ Diagnosis, reproduction, remediation, verification, and release acceptance belon
 
 - Repository read and write.
 - Local shell and command execution.
-- Isolated local Docker / PHP-FPM execution for OPcache reproduction.
-- Local PHP 8.2 and Laravel test execution suite.
+- Isolated local Docker / PHP-FPM execution for OPcache reproduction using production-equivalent PHP 8.4 and PHP-FPM environment.
+- Production-equivalent PHP 8.4 and MySQL 8.4 test execution suite.
 - GitHub Actions workflow inspection (read-only) and authorized deployment dispatch.
 
 ## Execution constraints
@@ -278,7 +300,7 @@ Diagnosis, reproduction, remediation, verification, and release acceptance belon
   - An older/stale route-cache artifact lacking `operator.shifts.create` is loaded by PHP-FPM running with production-equivalent OPcache settings (`opcache.enable=1`, `opcache.validate_timestamps=0`).
   - The updated route cache is written to disk via CLI (`php artisan route:cache`) without reloading FPM.
   - The cached file on disk contains `operator.shifts.create`.
-  - The running PHP-FPM request path continues to return HTTP 500 (`RouteNotFoundException`).
+  - The running PHP-FPM request path continues to return HTTP 500 (`Symfony\Component\Routing\Exception\RouteNotFoundException` wrapped by `Illuminate\View\ViewException`).
   - A local-only graceful PHP-FPM reload/restart immediately resolves the error, allowing `GET /operator/eligible-shifts` to return HTTP 200.
 
 ### Remediation Gate
@@ -319,7 +341,7 @@ Diagnosis, reproduction, remediation, verification, and release acceptance belon
 - [ ] Local verification and regression testing complete with 100% passing tests.
 - [ ] Reviewer acceptance of reproduction evidence and remediation implementation is formally recorded.
 - [ ] Explicit Human approval is obtained prior to production deployment.
-- [ ] Production deployment is executed exclusively via the authorized GitHub Actions workflow.
+- [ ] Production deployment is executed exclusively via the authorized GitHub Actions workflow (`.github/workflows/deploy-swarm.yml`).
 - [ ] Post-deployment functional smoke validation verifies authenticated Operator login, eligible shifts rendering, and controlled AI PACS journeys.
 - [ ] The exact deployed Git commit SHA is recorded in the release record.
 
@@ -327,7 +349,7 @@ Diagnosis, reproduction, remediation, verification, and release acceptance belon
 
 ### Required checks
 
-1. **Local OPcache Mechanism Reproduction Test:** Run isolated test confirming the stale route cache under `opcache.validate_timestamps=0` and recovery upon reload.
+1. **Local OPcache Mechanism Reproduction Test:** Run isolated test confirming the stale route cache under `opcache.validate_timestamps=0` and recovery upon reload, building upon the baseline established in `tests/Feature/Operator/OperatorEligibleShiftsStaleRouteCacheReproductionTest.php`.
 2. **Operator Field Operations Test Suite:** Execute all feature tests for Operator field operations (`tests/Feature/Operator*`).
 3. **AI PACS Integration Test Suite:** Execute all feature tests for AI PACS integration (`tests/Feature/AiPacs*`).
 4. **Imaging Gateway & Legacy NPZ Test Suite:** Execute tests verifying legacy NPZ upload and conversion (`tests/Feature/ImageGateway*`, `tests/Feature/Radiography*`).
@@ -362,7 +384,7 @@ Implementation authorization is strictly bounded to the tasks defined in this do
 - Non-force push of this task publication commit to `origin diagnostic/operator-eligible-shifts-500`.
 - Local execution of Docker containers and test scripts for isolated OPcache mechanism reproduction using synthetic data.
 - Local execution of PHPUnit feature and unit tests.
-- Implementation of deployment and cache lifecycle fixes in repository deployment workflows and container definitions.
+- Implementation of deployment and cache lifecycle fixes in repository deployment workflows and container definitions (`Dockerfile`, `docker/php.ini`, `docker/entrypoint.sh`, `docker-compose.prod.yml`, `.github/workflows/deploy-swarm.yml`).
 - Dispatch of authorized read-only diagnostic or test workflows in GitHub Actions.
 
 ### Explicitly prohibited side effects
