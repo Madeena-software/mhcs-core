@@ -1,0 +1,443 @@
+name: Diagnose operator eligible shifts 500
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_revision:
+        description: 'Expected deployed revision SHA'
+        required: false
+        default: 'b4701589ca46c0de9c337d6b584335498b4848d2'
+        type: string
+
+concurrency:
+  group: production-deployment-mhcs_core
+  cancel-in-progress: false
+
+jobs:
+  diagnose:
+    name: Read-only operator eligible-shifts diagnostic
+    runs-on: self-hosted
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Run safe read-only diagnostics
+        shell: bash
+        env:
+          INPUT_EXPECTED_REVISION: ${{ inputs.expected_revision }}
+        run: |
+          set -euo pipefail
+
+          EXPECTED_REVISION="${INPUT_EXPECTED_REVISION:-b4701589ca46c0de9c337d6b584335498b4848d2}"
+          echo "=== 1. PRODUCTION REVISION AND SERVICE VERIFICATION ==="
+          echo "EXPECTED_REVISION=$EXPECTED_REVISION"
+
+          APP_SERVICE="mhcs_core_app"
+          QUEUE_SERVICE="mhcs_core_queue"
+          SCHEDULER_SERVICE="mhcs_core_scheduler"
+          IMAGE_WORKER_SERVICE="mhcs_core_image-worker"
+          NGINX_SERVICE="mhcs_core_nginx"
+          DB_SERVICE="mhcs_core_db"
+
+          container_for_service() {
+            docker ps \
+              -q \
+              --filter "label=com.docker.swarm.service.name=$1" \
+              --filter status=running \
+              | head -n 1
+          }
+
+          image_revision() {
+            local image="${1-}"
+            local without_digest=""
+            local revision=""
+            if [ -z "$image" ]; then return 0; fi
+            without_digest="${image%%@*}"
+            revision="${without_digest##*:}"
+            if [[ "$revision" =~ ^[0-9a-f]{40}$ ]]; then printf '%s' "$revision"; fi
+            return 0
+          }
+
+          APP_CONTAINER="$(container_for_service "$APP_SERVICE")"
+          QUEUE_CONTAINER="$(container_for_service "$QUEUE_SERVICE")"
+          SCHEDULER_CONTAINER="$(container_for_service "$SCHEDULER_SERVICE")"
+          IMAGE_WORKER_CONTAINER="$(container_for_service "$IMAGE_WORKER_SERVICE")"
+
+          if [ -z "$APP_CONTAINER" ]; then
+            echo "ERROR: APP_CONTAINER not found or not running"
+            exit 1
+          fi
+
+          APP_SERVICE_IMAGE="$(docker service inspect "$APP_SERVICE" --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 2>/dev/null || true)"
+          APP_CONTAINER_IMAGE="$(docker inspect "$APP_CONTAINER" --format '{{.Config.Image}}' 2>/dev/null || true)"
+          QUEUE_SERVICE_IMAGE="$(docker service inspect "$QUEUE_SERVICE" --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 2>/dev/null || true)"
+          QUEUE_CONTAINER_IMAGE="$(docker inspect "$QUEUE_CONTAINER" --format '{{.Config.Image}}' 2>/dev/null || true)"
+          SCHEDULER_SERVICE_IMAGE="$(docker service inspect "$SCHEDULER_SERVICE" --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 2>/dev/null || true)"
+          SCHEDULER_CONTAINER_IMAGE="$(docker inspect "$SCHEDULER_CONTAINER" --format '{{.Config.Image}}' 2>/dev/null || true)"
+          WORKER_SERVICE_IMAGE="$(docker service inspect "$IMAGE_WORKER_SERVICE" --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 2>/dev/null || true)"
+          WORKER_CONTAINER_IMAGE="$(docker inspect "$IMAGE_WORKER_CONTAINER" --format '{{.Config.Image}}' 2>/dev/null || true)"
+
+          VERSION_CURRENT="$(docker exec "$APP_CONTAINER" cat /var/www/html/VERSION-CURRENT 2>/dev/null || true)"
+
+          echo "app_service_image=$APP_SERVICE_IMAGE"
+          echo "app_container_image=$APP_CONTAINER_IMAGE"
+          echo "queue_service_image=$QUEUE_SERVICE_IMAGE"
+          echo "queue_container_image=$QUEUE_CONTAINER_IMAGE"
+          echo "scheduler_service_image=$SCHEDULER_SERVICE_IMAGE"
+          echo "scheduler_container_image=$SCHEDULER_CONTAINER_IMAGE"
+          echo "image_worker_service_image=$WORKER_SERVICE_IMAGE"
+          echo "image_worker_container_image=$WORKER_CONTAINER_IMAGE"
+          echo "version_current=$VERSION_CURRENT"
+
+          APP_REVISION="$(image_revision "$APP_CONTAINER_IMAGE")"
+          QUEUE_REVISION="$(image_revision "$QUEUE_CONTAINER_IMAGE")"
+          SCHEDULER_REVISION="$(image_revision "$SCHEDULER_CONTAINER_IMAGE")"
+          WORKER_REVISION="$(image_revision "$WORKER_CONTAINER_IMAGE")"
+
+          echo "app_revision=$APP_REVISION"
+          echo "queue_revision=$QUEUE_REVISION"
+          echo "scheduler_revision=$SCHEDULER_REVISION"
+          echo "worker_revision=$WORKER_REVISION"
+
+          RELEASES_ALIGNED=false
+          if [ "$APP_REVISION" = "$EXPECTED_REVISION" ] && \
+             [ "$QUEUE_REVISION" = "$EXPECTED_REVISION" ] && \
+             [ "$SCHEDULER_REVISION" = "$EXPECTED_REVISION" ] && \
+             [ "$WORKER_REVISION" = "$EXPECTED_REVISION" ] && \
+             [ "$VERSION_CURRENT" = "$EXPECTED_REVISION" ]; then
+            RELEASES_ALIGNED=true
+          fi
+          echo "releases_aligned=$RELEASES_ALIGNED"
+
+          if [ "$RELEASES_ALIGNED" != "true" ]; then
+            echo "ERROR: Deployed revision does not match expected revision: $EXPECTED_REVISION"
+            exit 1
+          fi
+
+          echo "=== 2. PRODUCTION RUNTIME, ENVIRONMENT & CACHE OBSERVABILITY ==="
+          docker exec -i "$APP_CONTAINER" php <<'PHP'
+          <?php
+          declare(strict_types=1);
+
+          require 'vendor/autoload.php';
+          $app = require 'bootstrap/app.php';
+          $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+
+          echo "laravel_environment=" . $app->environment() . "\n";
+          echo "php_version=" . PHP_VERSION . "\n";
+          echo "laravel_framework_version=" . $app->version() . "\n";
+          try {
+              $mysqlVer = Illuminate\Support\Facades\DB::select("SELECT VERSION() as v")[0]->v ?? 'unknown';
+              echo "mysql_server_version=" . $mysqlVer . "\n";
+          } catch (Throwable $e) {
+              echo "mysql_server_version_error=" . get_class($e) . "\n";
+          }
+
+          echo "config_cached=" . (file_exists(base_path('bootstrap/cache/config.php')) ? 'true' : 'false') . "\n";
+          echo "routes_cached=" . (file_exists(base_path('bootstrap/cache/routes-v7.php')) ? 'true' : 'false') . "\n";
+          echo "events_cached=" . (file_exists(base_path('bootstrap/cache/events.php')) ? 'true' : 'false') . "\n";
+          $compiledViews = glob(storage_path('framework/views/*.php')) ?: [];
+          echo "views_cached_count=" . count($compiledViews) . "\n";
+
+          echo "--- Environment Variable Names (Presence Only, Values Suppressed) ---\n";
+          $envKeys = array_unique(array_merge(array_keys($_ENV), array_keys($_SERVER)));
+          sort($envKeys);
+          foreach ($envKeys as $key) {
+              if (str_starts_with($key, 'PHP_') || str_starts_with($key, 'APP_') || str_starts_with($key, 'DB_') || str_starts_with($key, 'MHCS_') || str_starts_with($key, 'AI_PACS_') || str_starts_with($key, 'QUEUE_') || str_starts_with($key, 'CACHE_') || str_starts_with($key, 'SESSION_')) {
+                  echo "ENV_NAME_PRESENT: " . $key . "\n";
+              }
+          }
+          PHP
+
+          echo "=== 3. PRODUCTION MIGRATION STATUS ==="
+          docker exec "$APP_CONTAINER" php artisan migrate:status
+
+          echo "=== 4. RECENT PRODUCTION LOG ENTRIES FOR OPERATOR ELIGIBLE SHIFTS ==="
+          docker exec -i "$APP_CONTAINER" php <<'PHP'
+          <?php
+          declare(strict_types=1);
+
+          $logPath = storage_path('logs/laravel.log');
+          if (!file_exists($logPath)) {
+              echo "laravel.log does not exist\n";
+              exit(0);
+          }
+
+          $lines = file($logPath);
+          $totalLines = count($lines);
+          echo "Total log lines: " . $totalLines . "\n";
+
+          // Search backwards for the last 10 error blocks
+          $errorBlocks = [];
+          $currentBlock = [];
+          for ($i = $totalLines - 1; $i >= 0 && count($errorBlocks) < 10; $i--) {
+              $line = $lines[$i];
+              if (preg_match('/^\[\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}/', $line)) {
+                  $currentBlock[] = $line;
+                  $blockText = implode('', array_reverse($currentBlock));
+                  if (str_contains($blockText, 'ERROR') || str_contains($blockText, 'Exception') || str_contains($blockText, 'eligible-shifts') || str_contains($blockText, 'PortalController')) {
+                      $errorBlocks[] = $blockText;
+                  }
+                  $currentBlock = [];
+              } else {
+                  $currentBlock[] = $line;
+              }
+          }
+
+          echo "Found " . count($errorBlocks) . " recent relevant error blocks.\n";
+          foreach ($errorBlocks as $idx => $block) {
+              echo "\n--- Error Block #" . ($idx + 1) . " ---\n";
+              // Sanitize sensitive info: emails, IPs, tokens
+              $sanitized = preg_replace('/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/', '[REDACTED_EMAIL]', $block);
+              $sanitized = preg_replace('/Bearer\s+[A-Za-z0-9._~+\/-]+=*/i', 'Bearer [REDACTED]', $sanitized);
+              $sanitized = preg_replace('/(password|token|key|secret)=([^\s&]+)/i', '$1=[REDACTED]', $sanitized);
+              // Print first 35 lines of the block
+              $blockLines = explode("\n", $sanitized);
+              echo implode("\n", array_slice($blockLines, 0, 35)) . "\n";
+          }
+          PHP
+
+          echo "=== 5. SIMULATED PRODUCTION OPERATOR ELIGIBLE SHIFTS EXECUTION ==="
+          docker exec -i "$APP_CONTAINER" php <<'PHP'
+          <?php
+          declare(strict_types=1);
+
+          use App\Http\Controllers\Operator\PortalController;
+          use App\Models\User;
+          use App\Modules\Operator\Application\Services\OperatorAuthorization;
+          use App\Modules\Operator\Application\Services\OperatorShiftAssignmentService;
+          use App\Modules\Operator\Domain\Models\OperatorProfile;
+          use App\Modules\Operator\Domain\Models\OperatorSite;
+          use App\Shared\Authorization\AuthorizationClaimResolver;
+          use Illuminate\Contracts\Console\Kernel;
+          use Illuminate\Support\Facades\Auth;
+          use Illuminate\Support\Facades\DB;
+          use Illuminate\Support\Facades\View;
+          use Illuminate\Support\ViewErrorBag;
+
+          require 'vendor/autoload.php';
+          $app = require 'bootstrap/app.php';
+          $app->make(Kernel::class)->bootstrap();
+
+          $profiles = OperatorProfile::where('active', true)->get();
+          echo "Active Operator Profiles in Production: " . $profiles->count() . "\n";
+
+          $claimResolver = $app->make(AuthorizationClaimResolver::class);
+          $controller = $app->make(PortalController::class);
+          $auth = $app->make(OperatorAuthorization::class);
+          $assign = $app->make(OperatorShiftAssignmentService::class);
+
+          $counter = 0;
+          foreach ($profiles as $profile) {
+              $counter++;
+              echo "\n--- Anonymized Operator Profile #{$counter} ---\n";
+              $user = User::find($profile->user_id);
+              if (!$user) {
+                  echo "user_exists=false\n";
+                  continue;
+              }
+              echo "user_can_authenticate=" . ($user->canAuthenticate() ? 'true' : 'false') . "\n";
+              echo "user_account_status=" . $user->account_status . "\n";
+              echo "user_login_enabled=" . ($user->login_enabled ? 'true' : 'false') . "\n";
+
+              $roles = $claimResolver->roles($user);
+              $perms = $claimResolver->permissions($user);
+              echo "has_role_operator=" . (in_array(OperatorAuthorization::ROLE, $roles, true) ? 'true' : 'false') . "\n";
+              echo "has_perm_portal_access=" . (in_array(OperatorAuthorization::PORTAL_ACCESS, $perms, true) ? 'true' : 'false') . "\n";
+
+              $siteAssignments = DB::table('operator_site_assignments')
+                  ->where('operator_profile_id', $profile->id)
+                  ->where('active', true)
+                  ->get();
+              echo "active_site_assignments_count=" . $siteAssignments->count() . "\n";
+
+              $activeShifts = DB::table('operator_shift_assignments')
+                  ->where('operator_profile_id', $profile->id)
+                  ->where('status', 'active')
+                  ->count();
+              echo "active_shift_assignments_count=" . $activeShifts . "\n";
+
+              foreach ($siteAssignments as $sa) {
+                  $site = OperatorSite::find($sa->operator_site_id);
+                  if (!$site) {
+                      echo "assigned_site_exists=false\n";
+                      continue;
+                  }
+                  echo "site_active=" . ($site->active ? 'true' : 'false') . "\n";
+
+                  Auth::login($user);
+                  session()->put('operator.active_site_id', (string)$site->getKey());
+                  session()->save();
+                  View::share('errors', new ViewErrorBag);
+
+                  echo "Invoking PortalController::eligible()...\n";
+                  try {
+                      $resp = $controller->eligible($auth, $assign);
+                      if ($resp instanceof \Illuminate\View\View) {
+                          echo "eligible_action_result=ViewReturned\n";
+                          echo "View name: " . $resp->name() . "\n";
+                          echo "Shifts count in view data: " . count($resp->getData()['shifts'] ?? []) . "\n";
+                          
+                          // Now render the view
+                          echo "Rendering Blade template resources/views/operator/eligible-shifts.blade.php...\n";
+                          $html = $resp->render();
+                          echo "render_result=SUCCESS (length: " . strlen($html) . " bytes)\n";
+                      } elseif ($resp instanceof \Illuminate\Http\RedirectResponse) {
+                          echo "eligible_action_result=RedirectResponse to " . $resp->getTargetUrl() . "\n";
+                      } else {
+                          echo "eligible_action_result=" . get_class($resp) . "\n";
+                      }
+                  } catch (Throwable $e) {
+                      echo "EXECUTION_EXCEPTION=" . get_class($e) . "\n";
+                      echo "EXCEPTION_CODE=" . $e->getCode() . "\n";
+                      if ($e instanceof \PDOException || $e instanceof \Illuminate\Database\QueryException) {
+                          echo "SQLSTATE=" . ($e->errorInfo[0] ?? 'unknown') . "\n";
+                          echo "DB_ERROR_CODE=" . ($e->errorInfo[1] ?? 'unknown') . "\n";
+                      }
+                      // Sanitize message
+                      $sanitizedMsg = preg_replace('/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/', '[EMAIL]', $e->getMessage());
+                      echo "EXCEPTION_MESSAGE=" . $sanitizedMsg . "\n";
+                      echo "EXCEPTION_FILE=" . $e->getFile() . ":" . $e->getLine() . "\n";
+                      echo "STACK_TRACE:\n";
+                      $traceLines = explode("\n", $e->getTraceAsString());
+                      foreach (array_slice($traceLines, 0, 15) as $tl) {
+                          echo "  " . $tl . "\n";
+                      }
+                  }
+              }
+          }
+          PHP
+
+          echo "=== 6. PRODUCTION SCHEMA METADATA (ELIGIBLE-SHIFTS TABLES) ==="
+          docker exec -i "$APP_CONTAINER" php <<'PHP'
+          <?php
+          declare(strict_types=1);
+
+          require 'vendor/autoload.php';
+          $app = require 'bootstrap/app.php';
+          $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+
+          $tables = [
+              'users', 'operator_profiles', 'operator_sites', 'operator_site_assignments',
+              'operator_eligible_shifts', 'operator_shift_assignments', 'shift_schedules',
+              'bookings', 'authorization_role_assignments', 'authorization_permission_assignments'
+          ];
+
+          foreach ($tables as $table) {
+              if (!Illuminate\Support\Facades\Schema::hasTable($table)) {
+                  echo "TABLE $table: MISSING\n";
+                  continue;
+              }
+              $columns = Illuminate\Support\Facades\DB::select("SHOW FULL COLUMNS FROM `$table`");
+              echo "TABLE $table (" . count($columns) . " columns):\n";
+              foreach ($columns as $c) {
+                  echo "  col: {$c->Field} | type: {$c->Type} | null: {$c->Null} | key: {$c->Key} | default: " . ($c->Default === null ? 'NULL' : $c->Default) . " | extra: {$c->Extra}\n";
+              }
+              $indexes = Illuminate\Support\Facades\DB::select("SHOW INDEX FROM `$table`");
+              echo "  indexes:\n";
+              foreach ($indexes as $idx) {
+                  echo "    {$idx->Key_name} (unique: " . ($idx->Non_unique == 0 ? 'yes' : 'no') . ", col: {$idx->Column_name})\n";
+              }
+          }
+          PHP
+
+          echo "=== 7. SAFE PRODUCTION DATA-SHAPE FINDINGS ==="
+          docker exec -i "$APP_CONTAINER" php <<'PHP'
+          <?php
+          declare(strict_types=1);
+
+          require 'vendor/autoload.php';
+          $app = require 'bootstrap/app.php';
+          $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+
+          $db = Illuminate\Support\Facades\DB::class;
+
+          echo "-- Row counts --\n";
+          foreach ([
+              'users', 'operator_profiles', 'operator_sites', 'operator_site_assignments',
+              'operator_eligible_shifts', 'operator_shift_assignments', 'shift_schedules',
+              'bookings', 'authorization_role_assignments', 'authorization_permission_assignments'
+          ] as $t) {
+              echo "$t: " . $db::table($t)->count() . "\n";
+          }
+
+          echo "\n-- Operator eligible shifts status distribution --\n";
+          $syncStatuses = $db::table('operator_eligible_shifts')->select('sync_status', $db::raw('count(*) as c'))->groupBy('sync_status')->get();
+          foreach ($syncStatuses as $s) {
+              echo "sync_status={$s->sync_status}: {$s->c}\n";
+          }
+
+          echo "\n-- Shift schedules status distribution --\n";
+          $schedStatuses = $db::table('shift_schedules')->select('status', $db::raw('count(*) as c'))->groupBy('status')->get();
+          foreach ($schedStatuses as $s) {
+              echo "schedule_status={$s->status}: {$s->c}\n";
+          }
+
+          echo "\n-- Operator shift assignments status distribution --\n";
+          $assignStatuses = $db::table('operator_shift_assignments')->select('status', $db::raw('count(*) as c'))->groupBy('status')->get();
+          foreach ($assignStatuses as $s) {
+              echo "assignment_status={$s->status}: {$s->c}\n";
+          }
+
+          echo "\n-- Null checks on key columns --\n";
+          echo "operator_eligible_shifts.schedule_starts_at IS NULL: " . $db::table('operator_eligible_shifts')->whereNull('schedule_starts_at')->count() . "\n";
+          echo "operator_eligible_shifts.schedule_ends_at IS NULL: " . $db::table('operator_eligible_shifts')->whereNull('schedule_ends_at')->count() . "\n";
+          echo "operator_eligible_shifts.member_schedule_id IS NULL: " . $db::table('operator_eligible_shifts')->whereNull('member_schedule_id')->count() . "\n";
+          echo "shift_schedules.starts_at IS NULL: " . $db::table('shift_schedules')->whereNull('starts_at')->count() . "\n";
+          echo "shift_schedules.ends_at IS NULL: " . $db::table('shift_schedules')->whereNull('ends_at')->count() . "\n";
+          echo "shift_schedules.display_reference IS NULL: " . $db::table('shift_schedules')->whereNull('display_reference')->count() . "\n";
+          echo "shift_schedules.quota IS NULL: " . $db::table('shift_schedules')->whereNull('quota')->count() . "\n";
+
+          echo "\n-- Timestamps range --\n";
+          $minStartsAt = $db::table('operator_eligible_shifts')->min('schedule_starts_at');
+          $maxStartsAt = $db::table('operator_eligible_shifts')->max('schedule_starts_at');
+          echo "operator_eligible_shifts.schedule_starts_at min: " . ($minStartsAt ?? 'none') . " | max: " . ($maxStartsAt ?? 'none') . "\n";
+
+          echo "\n-- Orphaned references --\n";
+          $orphanedAssignments = $db::table('operator_shift_assignments')
+              ->leftJoin('operator_eligible_shifts', 'operator_eligible_shifts.id', '=', 'operator_shift_assignments.operator_eligible_shift_id')
+              ->whereNull('operator_eligible_shifts.id')
+              ->count();
+          echo "orphaned_shift_assignments_missing_eligible_shift=" . $orphanedAssignments . "\n";
+
+          $orphanedAssignmentsProfile = $db::table('operator_shift_assignments')
+              ->leftJoin('operator_profiles', 'operator_profiles.id', '=', 'operator_shift_assignments.operator_profile_id')
+              ->whereNull('operator_profiles.id')
+              ->count();
+          echo "orphaned_shift_assignments_missing_profile=" . $orphanedAssignmentsProfile . "\n";
+
+          $orphanedEligibleSchedule = $db::table('operator_eligible_shifts')
+              ->leftJoin('shift_schedules', 'shift_schedules.id', '=', 'operator_eligible_shifts.member_schedule_id')
+              ->whereNull('shift_schedules.id')
+              ->count();
+          echo "orphaned_eligible_shifts_missing_schedule=" . $orphanedEligibleSchedule . "\n";
+
+          $orphanedEligibleSite = $db::table('operator_eligible_shifts')
+              ->leftJoin('operator_sites', 'operator_sites.operator_site_id', '=', 'operator_eligible_shifts.operator_site_id')
+              ->whereNull('operator_sites.id')
+              ->count();
+          echo "orphaned_eligible_shifts_missing_site=" . $orphanedEligibleSite . "\n";
+
+          echo "\n-- Test Query directly from OperatorShiftAssignmentService::assignedToCurrentOperator --\n";
+          $participatingStatuses = ['pending', 'confirmed', 'attended', 'completed'];
+          $queryRows = $db::table('operator_eligible_shifts')
+              ->join('operator_shift_assignments', 'operator_shift_assignments.operator_eligible_shift_id', '=', 'operator_eligible_shifts.id')
+              ->join('shift_schedules', 'shift_schedules.id', '=', 'operator_eligible_shifts.member_schedule_id')
+              ->select('operator_eligible_shifts.*')
+              ->addSelect('shift_schedules.display_reference as schedule_display_reference')
+              ->addSelect('shift_schedules.quota as schedule_quota')
+              ->addSelect(['current_confirmed_count' => $db::table('bookings')
+                  ->selectRaw('count(*)')
+                  ->whereColumn('bookings.shift_schedule_id', 'operator_eligible_shifts.member_schedule_id')
+                  ->whereIn('bookings.status', $participatingStatuses)])
+              ->get();
+
+          echo "Direct join query matched rows count: " . $queryRows->count() . "\n";
+          $rIdx = 0;
+          foreach ($queryRows as $row) {
+              $rIdx++;
+              echo "  Row #$rIdx: sync_status={$row->sync_status} | display_reference={$row->schedule_display_reference} | quota={$row->schedule_quota} | current_confirmed={$row->current_confirmed_count} | starts_at={$row->schedule_starts_at} (type: " . gettype($row->schedule_starts_at) . ")\n";
+          }
+          PHP
+
+          echo "=== DIAGNOSTIC RUN COMPLETED SAFELY ==="
