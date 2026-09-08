@@ -76,6 +76,18 @@ jobs:
             emit PUBLIC_HTTPS_RESULT SKIPPED_UNRESOLVABLE
           fi
 
+          dns_wan_match="UNPROVEN"
+          resolved_ip="$(getent ahostsv4 fams.mhcsgo.cloud 2>/dev/null | awk '{print $1; exit}' || true)"
+          outbound_wan_ip="$(curl --silent --show-error --max-time 5 https://api.ipify.org 2>/dev/null || curl --silent --show-error --max-time 5 https://ifconfig.me/ip 2>/dev/null || true)"
+          if [ -n "$resolved_ip" ] && [ -n "$outbound_wan_ip" ]; then
+            if [ "$resolved_ip" = "$outbound_wan_ip" ]; then
+              dns_wan_match="true"
+            else
+              dns_wan_match="false"
+            fi
+          fi
+          emit DNS_MATCHES_CURRENT_WAN_IP "$dns_wan_match"
+
           nstat_after="$(nstat_snapshot)"
           echo "NSTAT_AFTER=$(echo "$nstat_after" | tr '\n' ';')"
           nstat_delta="$(awk -F= 'NR==FNR {before[$1]=$2; next} {delta=$2-(before[$1]+0); if (delta != 0) print $1 "=" delta}' <(printf '%s\n' "$nstat_before") <(printf '%s\n' "$nstat_after") )"
@@ -151,7 +163,7 @@ jobs:
           if [ -n "$APP_CONTAINER" ]; then
             # Output contract: pm, pm.max_children, pm.start_servers,
             # pm.min_spare_servers, pm.max_spare_servers.
-            safe docker exec "$APP_CONTAINER" sh -c 'php-fpm -tt 2>&1 || php-fpm8.2 -tt 2>&1 || true' | sed -nE 's/.*(pm(\.max_children|\.start_servers|\.min_spare_servers|\.max_spare_servers)?)[[:space:]]*=[[:space:]]*([^ ,;]+).*/\1=\4/p' | sanitize
+            safe docker exec "$APP_CONTAINER" sh -c 'php-fpm -tt 2>&1 || php-fpm8.2 -tt 2>&1 || true' | sed -nE 's/^[[:space:]]*(pm(\.[a-z_]+)?)[[:space:]]*=[[:space:]]*([^ ,;]+).*/\1=\3/p' | sanitize
             app_health="$(safe docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$APP_CONTAINER")"
           fi
           php9000="UNKNOWN"
@@ -224,3 +236,131 @@ jobs:
             classification=INDETERMINATE
           fi
           emit CLASSIFICATION "$classification"
+
+  external_ingress_probe:
+    name: External Internet Vantage Probe
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 5
+    steps:
+      - name: Run unauthenticated external network diagnostic
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          emit() { printf '%s=%s\n' "$1" "${2:-UNKNOWN}"; }
+
+          echo "=== 1. External DNS Probes ==="
+          mhcs_sys_ip="$(getent ahostsv4 mhcsgo.cloud 2>/dev/null | awk '{print $1; exit}' || true)"
+          fams_sys_ip="$(getent ahostsv4 fams.mhcsgo.cloud 2>/dev/null | awk '{print $1; exit}' || true)"
+
+          emit MHCS_SYSTEM_DNS_RESOLVED "$( [ -n "$mhcs_sys_ip" ] && echo true || echo false )"
+          emit FAMS_SYSTEM_DNS_RESOLVED "$( [ -n "$fams_sys_ip" ] && echo true || echo false )"
+
+          mhcs_ip_count="$(getent ahostsv4 mhcsgo.cloud 2>/dev/null | awk '{print $1}' | sort -u | grep -c . || true)"
+          fams_ip_count="$(getent ahostsv4 fams.mhcsgo.cloud 2>/dev/null | awk '{print $1}' | sort -u | grep -c . || true)"
+
+          emit MHCS_DNS_IP_COUNT "$mhcs_ip_count"
+          emit FAMS_DNS_IP_COUNT "$fams_ip_count"
+
+          resolvers_agree="NOT_TESTED"
+          if command -v dig >/dev/null 2>&1; then
+            c1_mhcs="$(dig +short @1.1.1.1 mhcsgo.cloud A 2>/dev/null | sort || true)"
+            g8_mhcs="$(dig +short @8.8.8.8 mhcsgo.cloud A 2>/dev/null | sort || true)"
+            c1_fams="$(dig +short @1.1.1.1 fams.mhcsgo.cloud A 2>/dev/null | sort || true)"
+            g8_fams="$(dig +short @8.8.8.8 fams.mhcsgo.cloud A 2>/dev/null | sort || true)"
+            if [ -n "$c1_mhcs" ] && [ "$c1_mhcs" = "$g8_mhcs" ] && [ -n "$c1_fams" ] && [ "$c1_fams" = "$g8_fams" ]; then
+              resolvers_agree="true"
+            else
+              resolvers_agree="false"
+            fi
+          fi
+          emit DNS_PUBLIC_RESOLVERS_AGREE "$resolvers_agree"
+
+          echo "=== 2. External TCP Probes ==="
+          tcp_probe() {
+            local host="$1" port="$2"
+            local line connect status
+            line="$(curl --silent --show-error --connect-timeout 8 --max-time 8 -o /dev/null -w '%{http_code} %{time_connect}' "telnet://${host}:${port}" 2>/dev/null || true)"
+            read -r status connect <<<"$line"
+            if [ -n "$connect" ] && [ "$connect" != "-1" ] && awk -v c="$connect" 'BEGIN{exit (c > 0 ? 0 : 1)}'; then
+              echo "true $connect"
+            else
+              echo "false -1"
+            fi
+          }
+
+          read -r m_tcp443 m_tcp443_sec <<<"$(tcp_probe mhcsgo.cloud 443)"
+          emit MHCS_TCP443_CONNECT "$m_tcp443"
+          emit MHCS_TCP443_SECONDS "$m_tcp443_sec"
+
+          read -r f_tcp443 f_tcp443_sec <<<"$(tcp_probe fams.mhcsgo.cloud 443)"
+          emit FAMS_TCP443_CONNECT "$f_tcp443"
+          emit FAMS_TCP443_SECONDS "$f_tcp443_sec"
+
+          read -r m_tcp80 _ <<<"$(tcp_probe mhcsgo.cloud 80)"
+          emit MHCS_TCP80_CONNECT "$m_tcp80"
+
+          read -r f_tcp80 _ <<<"$(tcp_probe fams.mhcsgo.cloud 80)"
+          emit FAMS_TCP80_CONNECT "$f_tcp80"
+
+          echo "=== 3. External HTTPS Probes ==="
+          https_probe() {
+            local url="$1"
+            local line status connect
+            line="$(curl --silent --show-error --connect-timeout 5 --max-time 10 --max-redirs 0 -o /dev/null -w '%{http_code} %{time_connect}' "$url" 2>/dev/null || true)"
+            read -r status connect <<<"$line"
+            echo "${status:-000} ${connect:--1}"
+          }
+
+          read -r mhcs_root_status mhcs_root_sec <<<"$(https_probe https://mhcsgo.cloud/)"
+          emit MHCS_ROOT_HTTP_STATUS "$mhcs_root_status"
+          emit MHCS_ROOT_CONNECT_SECONDS "$mhcs_root_sec"
+
+          read -r fams_up_status fams_up_sec <<<"$(https_probe https://fams.mhcsgo.cloud/up)"
+          emit FAMS_UP_HTTP_STATUS "$fams_up_status"
+          emit FAMS_UP_CONNECT_SECONDS "$fams_up_sec"
+
+          read -r fams_login_status fams_login_sec <<<"$(https_probe https://fams.mhcsgo.cloud/operator/login)"
+          emit FAMS_LOGIN_HTTP_STATUS "$fams_login_status"
+          emit FAMS_LOGIN_CONNECT_SECONDS "$fams_login_sec"
+
+          echo "=== 4. Direct-IP + SNI Differentiation ==="
+          direct_probe() {
+            local host="$1" path="$2" ip="$3"
+            local code="000"
+            if [ -n "$ip" ]; then
+              code="$(curl --silent --show-error --connect-timeout 5 --max-time 10 --resolve "${host}:443:${ip}" -o /dev/null -w '%{http_code}' "https://${host}${path}" 2>/dev/null || true)"
+            fi
+            if [[ "$code" =~ ^[1-5][0-9][0-9]$ ]]; then
+              echo "PASS"
+            else
+              echo "FAIL"
+            fi
+          }
+
+          emit FAMS_DIRECT_IP_SNI_RESULT "$(direct_probe fams.mhcsgo.cloud /up "$fams_sys_ip")"
+          emit MHCS_DIRECT_IP_SNI_RESULT "$(direct_probe mhcsgo.cloud / "$mhcs_sys_ip")"
+
+          echo "=== 5. TLS Handshake ==="
+          tls_handshake() {
+            local host="$1" ip="$2"
+            if ! command -v openssl >/dev/null 2>&1; then
+              echo "NOT_TESTED"
+              return 0
+            fi
+            if [ -z "$ip" ]; then
+              echo "false"
+              return 0
+            fi
+            if echo "" | timeout 5 openssl s_client -servername "$host" -connect "${ip}:443" 2>/dev/null | grep -q "CONNECTED"; then
+              echo "true"
+            else
+              echo "false"
+            fi
+          }
+
+          emit FAMS_TLS_HANDSHAKE "$(tls_handshake fams.mhcsgo.cloud "$fams_sys_ip")"
+          emit MHCS_TLS_HANDSHAKE "$(tls_handshake mhcsgo.cloud "$mhcs_sys_ip")"
+
