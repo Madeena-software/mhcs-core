@@ -796,149 +796,135 @@ jobs:
 
           echo "window_timezone_normalization=$window_tz"
 
-          cat <<'MPIPS_PARSER' > "$workspace/parse_mpips_logs.php"
-          <?php
-          declare(strict_types=1);
+          cat <<'MPIPS_PARSER' > "$workspace/parse_mpips_logs.py"
+          import sys, os, re
 
-          $logFile = $argv[1] ?? '';
-          $captureId = getenv('TARGET_CAPTURE_ID') ?: '5054464a-9fb2-427b-88fa-a0680cc00186';
+          log_file = sys.argv[1] if len(sys.argv) > 1 else ""
+          capture_id = os.environ.get("TARGET_CAPTURE_ID", "5054464a-9fb2-427b-88fa-a0680cc00186")
 
-          if ($logFile === '' || !file_exists($logFile) || filesize($logFile) === 0) {
-              echo "mpips_log_file_present=false\n";
-              echo "mpips_dicom_http_500_count=0\n";
-              echo "safe_error_code=none_found\n";
-              echo "safe_error_code_count=0\n";
-              echo "correlation_confidence=AMBIGUOUS\n";
-              echo "primary_root_cause_classification=H. MPIPS_FAILURE_AMBIGUOUS\n";
-              echo "primary_root_cause_code=none\n";
-              echo "retry_recommendation=HOLD\n";
-              exit(0);
-          }
+          if not log_file or not os.path.isfile(log_file) or os.path.getsize(log_file) == 0:
+              print("mpips_log_file_present=false")
+              print("mpips_dicom_http_500_count=0")
+              print("safe_error_code=none_found")
+              print("safe_error_code_count=0")
+              print("correlation_confidence=AMBIGUOUS")
+              print("primary_root_cause_classification=H. MPIPS_FAILURE_AMBIGUOUS")
+              print("primary_root_cause_code=none")
+              print("retry_recommendation=HOLD")
+              sys.exit(0)
 
-          echo "mpips_log_file_present=true\n";
-          $logContent = (string) file_get_contents($logFile);
+          print("mpips_log_file_present=true")
+          with open(log_file, "r", encoding="utf-8", errors="replace") as f:
+              log_content = f.read()
 
-          $allowlist = [
-              'CONVERSION_WORKER_FAILURE',
-              'TIFF_VALIDATION_ERROR',
-              'NPZ_VALIDATION_ERROR',
-              'MANIFEST_OR_DATA_ERROR',
-              'CONVERSION_TIMEOUT',
-              'CALIBRATION_ARTIFACT_MISSING',
-              'UPLOAD_SIZE_EXCEEDED',
-              'CONCURRENCY_LIMIT_EXCEEDED',
-              'IDEMPOTENCY_IN_PROGRESS',
-              'IDEMPOTENCY_CONFLICT',
-              'LAUNCHER_RUNTIME_FAILURE',
-              'LAUNCHER_ERROR',
-              'LAUNCHER_UNAVAILABLE',
-              'LAUNCHER_COMMUNICATION_FAILURE',
-              'WORKER_IMAGE_NOT_FOUND',
-              'WORKER_SPAWN_FAILED',
-              'CONVERSION_FAILED',
-              'CALIBRATION_ERROR',
-              'CALIBRATION_NOT_FOUND',
-              'DETECTOR_MODE_MISMATCH',
-              'INVALID_API_KEY',
-              'UNAUTHORIZED',
-          ];
+          allowlist = [
+              "CONVERSION_WORKER_FAILURE",
+              "TIFF_VALIDATION_ERROR",
+              "NPZ_VALIDATION_ERROR",
+              "MANIFEST_OR_DATA_ERROR",
+              "CONVERSION_TIMEOUT",
+              "CALIBRATION_ARTIFACT_MISSING",
+              "UPLOAD_SIZE_EXCEEDED",
+              "CONCURRENCY_LIMIT_EXCEEDED",
+              "IDEMPOTENCY_IN_PROGRESS",
+              "IDEMPOTENCY_CONFLICT",
+              "LAUNCHER_RUNTIME_FAILURE",
+              "LAUNCHER_ERROR",
+              "LAUNCHER_UNAVAILABLE",
+              "LAUNCHER_COMMUNICATION_FAILURE",
+              "WORKER_IMAGE_NOT_FOUND",
+              "WORKER_SPAWN_FAILED",
+              "CONVERSION_FAILED",
+              "CALIBRATION_ERROR",
+              "CALIBRATION_NOT_FOUND",
+              "DETECTOR_MODE_MISMATCH",
+              "INVALID_API_KEY",
+              "UNAUTHORIZED",
+          ]
 
-          $matchedCodes = [];
-          foreach ($allowlist as $code) {
-              $pattern = '/\b' . preg_quote($code, '/') . '\b/';
-              $count = preg_match_all($pattern, $logContent);
-              if ($count > 0) {
-                  $matchedCodes[$code] = $count;
-              }
-          }
+          matched_codes = {}
+          for code in allowlist:
+              pattern = r"\b" + re.escape(code) + r"\b"
+              matches = re.findall(pattern, log_content)
+              if matches:
+                  matched_codes[code] = len(matches)
 
-          $dicom500Count = 0;
-          $lines = explode("\n", $logContent);
-          foreach ($lines as $line) {
-              if (stripos($line, '/v1/radiographs/dicom') !== false) {
-                  if (preg_match('/\b500\b/', $line)) {
-                      $dicom500Count++;
-                  }
-              }
-          }
-          echo "mpips_dicom_http_500_count=" . $dicom500Count . "\n";
+          dicom_500_count = 0
+          for line in log_content.splitlines():
+              if "/v1/radiographs/dicom" in line.lower():
+                  if re.search(r"\b500\b", line):
+                      dicom_500_count += 1
 
-          if (empty($matchedCodes)) {
-              echo "safe_error_code=none_found\n";
-              echo "safe_error_code_count=0\n";
-          } else {
-              foreach ($matchedCodes as $code => $count) {
-                  echo "safe_error_code=" . $code . "\n";
-                  echo "safe_error_code_count=" . $count . "\n";
-              }
-          }
+          print(f"mpips_dicom_http_500_count={dicom_500_count}")
 
-          $hasExactIdentifier = false;
-          if ($captureId !== '' && stripos($logContent, $captureId) !== false) {
-              $hasExactIdentifier = true;
-          }
+          if not matched_codes:
+              print("safe_error_code=none_found")
+              print("safe_error_code_count=0")
+          else:
+              for code, count in matched_codes.items():
+                  print(f"safe_error_code={code}")
+                  print(f"safe_error_code_count={count}")
 
-          $uniqueMatchedCodesCount = count($matchedCodes);
-          if ($hasExactIdentifier) {
-              $confidence = 'EXACT';
-          } elseif ($dicom500Count === 1 && $uniqueMatchedCodesCount === 1) {
-              $confidence = 'WINDOW_UNIQUE';
-          } elseif ($dicom500Count === 1) {
-              $confidence = 'WINDOW_UNIQUE';
-          } else {
-              $confidence = 'AMBIGUOUS';
-          }
-          echo "correlation_confidence=" . $confidence . "\n";
+          has_exact_id = bool(capture_id and capture_id.lower() in log_content.lower())
 
-          $primaryClassification = 'H. MPIPS_FAILURE_AMBIGUOUS';
-          $primaryCode = 'none';
+          if has_exact_id:
+              confidence = "EXACT"
+          elif dicom_500_count == 1 and len(matched_codes) == 1:
+              confidence = "WINDOW_UNIQUE"
+          elif dicom_500_count == 1:
+              confidence = "WINDOW_UNIQUE"
+          else:
+              confidence = "AMBIGUOUS"
 
-          if (isset($matchedCodes['CONVERSION_WORKER_FAILURE']) || isset($matchedCodes['CONVERSION_FAILED'])) {
-              $primaryClassification = 'A. MPIPS_CONVERSION_WORKER_FAILURE';
-              $primaryCode = isset($matchedCodes['CONVERSION_WORKER_FAILURE']) ? 'CONVERSION_WORKER_FAILURE' : 'CONVERSION_FAILED';
-          } elseif (isset($matchedCodes['TIFF_VALIDATION_ERROR'])) {
-              $primaryClassification = 'B. MPIPS_TIFF_VALIDATION_FAILURE';
-              $primaryCode = 'TIFF_VALIDATION_ERROR';
-          } elseif (isset($matchedCodes['NPZ_VALIDATION_ERROR']) || isset($matchedCodes['MANIFEST_OR_DATA_ERROR'])) {
-              $primaryClassification = 'C. MPIPS_NPZ_OR_DATA_VALIDATION_FAILURE';
-              $primaryCode = isset($matchedCodes['NPZ_VALIDATION_ERROR']) ? 'NPZ_VALIDATION_ERROR' : 'MANIFEST_OR_DATA_ERROR';
-          } elseif (isset($matchedCodes['CALIBRATION_ARTIFACT_MISSING']) || isset($matchedCodes['CALIBRATION_ERROR']) || isset($matchedCodes['CALIBRATION_NOT_FOUND']) || isset($matchedCodes['DETECTOR_MODE_MISMATCH'])) {
-              $primaryClassification = 'D. MPIPS_CALIBRATION_FAILURE';
-              $primaryCode = isset($matchedCodes['CALIBRATION_ARTIFACT_MISSING']) ? 'CALIBRATION_ARTIFACT_MISSING' : (isset($matchedCodes['DETECTOR_MODE_MISMATCH']) ? 'DETECTOR_MODE_MISMATCH' : 'CALIBRATION_ERROR');
-          } elseif (isset($matchedCodes['LAUNCHER_RUNTIME_FAILURE']) || isset($matchedCodes['LAUNCHER_ERROR']) || isset($matchedCodes['LAUNCHER_UNAVAILABLE']) || isset($matchedCodes['LAUNCHER_COMMUNICATION_FAILURE']) || isset($matchedCodes['WORKER_IMAGE_NOT_FOUND']) || isset($matchedCodes['WORKER_SPAWN_FAILED'])) {
-              $primaryClassification = 'E. MPIPS_LAUNCHER_RUNTIME_FAILURE';
-              $launcherKeys = array_intersect(array_keys($matchedCodes), ['LAUNCHER_RUNTIME_FAILURE', 'LAUNCHER_ERROR', 'LAUNCHER_UNAVAILABLE', 'LAUNCHER_COMMUNICATION_FAILURE', 'WORKER_IMAGE_NOT_FOUND', 'WORKER_SPAWN_FAILED']);
-              $primaryCode = reset($launcherKeys) ?: 'LAUNCHER_ERROR';
-          } elseif (isset($matchedCodes['CONVERSION_TIMEOUT'])) {
-              $primaryClassification = 'F. MPIPS_TIMEOUT';
-              $primaryCode = 'CONVERSION_TIMEOUT';
-          } elseif (!empty($matchedCodes)) {
-              $primaryClassification = 'G. MPIPS_INTERNAL_OTHER';
-              $primaryCode = (string) array_key_first($matchedCodes);
-          }
+          print(f"correlation_confidence={confidence}")
 
-          echo "primary_root_cause_classification=" . $primaryClassification . "\n";
-          echo "primary_root_cause_code=" . $primaryCode . "\n";
+          primary_classification = "H. MPIPS_FAILURE_AMBIGUOUS"
+          primary_code = "none"
 
-          if (in_array($primaryClassification, [
-              'B. MPIPS_TIFF_VALIDATION_FAILURE',
-              'C. MPIPS_NPZ_OR_DATA_VALIDATION_FAILURE',
-              'D. MPIPS_CALIBRATION_FAILURE',
-          ], true)) {
-              $retryRec = 'REQUIRES_CODE_OR_CONFIG_FIX_FIRST';
-          } elseif (in_array($primaryClassification, [
-              'A. MPIPS_CONVERSION_WORKER_FAILURE',
-              'E. MPIPS_LAUNCHER_RUNTIME_FAILURE',
-              'F. MPIPS_TIMEOUT',
-          ], true)) {
-              $retryRec = 'LIKELY_SAFE_AFTER_RUNTIME_RECOVERY';
-          } else {
-              $retryRec = 'HOLD';
-          }
-          echo "retry_recommendation=" . $retryRec . "\n";
+          if "CONVERSION_WORKER_FAILURE" in matched_codes or "CONVERSION_FAILED" in matched_codes:
+              primary_classification = "A. MPIPS_CONVERSION_WORKER_FAILURE"
+              primary_code = "CONVERSION_WORKER_FAILURE" if "CONVERSION_WORKER_FAILURE" in matched_codes else "CONVERSION_FAILED"
+          elif "TIFF_VALIDATION_ERROR" in matched_codes:
+              primary_classification = "B. MPIPS_TIFF_VALIDATION_FAILURE"
+              primary_code = "TIFF_VALIDATION_ERROR"
+          elif "NPZ_VALIDATION_ERROR" in matched_codes or "MANIFEST_OR_DATA_ERROR" in matched_codes:
+              primary_classification = "C. MPIPS_NPZ_OR_DATA_VALIDATION_FAILURE"
+              primary_code = "NPZ_VALIDATION_ERROR" if "NPZ_VALIDATION_ERROR" in matched_codes else "MANIFEST_OR_DATA_ERROR"
+          elif any(k in matched_codes for k in ["CALIBRATION_ARTIFACT_MISSING", "CALIBRATION_ERROR", "CALIBRATION_NOT_FOUND", "DETECTOR_MODE_MISMATCH"]):
+              primary_classification = "D. MPIPS_CALIBRATION_FAILURE"
+              primary_code = next(k for k in ["CALIBRATION_ARTIFACT_MISSING", "DETECTOR_MODE_MISMATCH", "CALIBRATION_ERROR", "CALIBRATION_NOT_FOUND"] if k in matched_codes)
+          elif any(k in matched_codes for k in ["LAUNCHER_RUNTIME_FAILURE", "LAUNCHER_ERROR", "LAUNCHER_UNAVAILABLE", "LAUNCHER_COMMUNICATION_FAILURE", "WORKER_IMAGE_NOT_FOUND", "WORKER_SPAWN_FAILED"]):
+              primary_classification = "E. MPIPS_LAUNCHER_RUNTIME_FAILURE"
+              primary_code = next(k for k in ["LAUNCHER_RUNTIME_FAILURE", "LAUNCHER_ERROR", "LAUNCHER_UNAVAILABLE", "LAUNCHER_COMMUNICATION_FAILURE", "WORKER_IMAGE_NOT_FOUND", "WORKER_SPAWN_FAILED"] if k in matched_codes)
+          elif "CONVERSION_TIMEOUT" in matched_codes:
+              primary_classification = "F. MPIPS_TIMEOUT"
+              primary_code = "CONVERSION_TIMEOUT"
+          elif matched_codes:
+              primary_classification = "G. MPIPS_INTERNAL_OTHER"
+              primary_code = next(iter(matched_codes.keys()))
+
+          print(f"primary_root_cause_classification={primary_classification}")
+          print(f"primary_root_cause_code={primary_code}")
+
+          if primary_classification in [
+              "B. MPIPS_TIFF_VALIDATION_FAILURE",
+              "C. MPIPS_NPZ_OR_DATA_VALIDATION_FAILURE",
+              "D. MPIPS_CALIBRATION_FAILURE",
+          ]:
+              retry_rec = "REQUIRES_CODE_OR_CONFIG_FIX_FIRST"
+          elif primary_classification in [
+              "A. MPIPS_CONVERSION_WORKER_FAILURE",
+              "E. MPIPS_LAUNCHER_RUNTIME_FAILURE",
+              "F. MPIPS_TIMEOUT",
+          ]:
+              retry_rec = "LIKELY_SAFE_AFTER_RUNTIME_RECOVERY"
+          else:
+              retry_rec = "HOLD"
+
+          print(f"retry_recommendation={retry_rec}")
           MPIPS_PARSER
 
-          TARGET_CAPTURE_ID="$CAPTURE_ID" php "$workspace/parse_mpips_logs.php" "$MPIPS_LOG_FILE"
+          TARGET_CAPTURE_ID="$CAPTURE_ID" python3 "$workspace/parse_mpips_logs.py" "$MPIPS_LOG_FILE"
 
           rm -f "$MPIPS_LOG_FILE"
 
