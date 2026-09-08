@@ -1,6 +1,9 @@
 name: Diagnose production capture processing
 
 on:
+  push:
+    branches:
+      - 'diagnostic/capture-processing-failure-5054464a'
   workflow_dispatch:
     inputs:
       expected_application_revision:
@@ -31,11 +34,14 @@ jobs:
     steps:
       - name: Diagnose capture processing state without mutation
         env:
-          EXPECTED_APPLICATION_REVISION: ${{ inputs.expected_application_revision }}
-          CAPTURE_ID: ${{ inputs.capture_id }}
+          INPUT_REVISION: ${{ inputs.expected_application_revision }}
+          INPUT_CAPTURE_ID: ${{ inputs.capture_id }}
         shell: bash
         run: |
           set -euo pipefail
+
+          EXPECTED_APPLICATION_REVISION="${INPUT_REVISION:-d0f99ecd604a2b0aa0f31a62396790b04028c9eb}"
+          CAPTURE_ID="${INPUT_CAPTURE_ID:-5054464a-9fb2-427b-88fa-a0680cc00186}"
 
           echo "=================================================="
           echo "=== 0. INPUT VALIDATION ==="

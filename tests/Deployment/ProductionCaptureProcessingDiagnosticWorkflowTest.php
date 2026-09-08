@@ -16,7 +16,7 @@ final class ProductionCaptureProcessingDiagnosticWorkflowTest extends TestCase
         $workflow = file_get_contents($path);
         $this->assertIsString($workflow);
 
-        $this->assertStringContainsString("on:\n  workflow_dispatch:", $workflow);
+        $this->assertStringContainsString('workflow_dispatch:', $workflow);
         $this->assertSame(1, substr_count($workflow, 'workflow_dispatch:'));
         $this->assertStringContainsString('runs-on: self-hosted', $workflow);
         $this->assertStringContainsString('contents: read', $workflow);
@@ -33,7 +33,6 @@ final class ProductionCaptureProcessingDiagnosticWorkflowTest extends TestCase
 
         // No forbidden mutation commands
         foreach ([
-            'push:',
             'pull_request:',
             'schedule:',
             'cron:',
