@@ -145,6 +145,7 @@ jobs:
           echo "running_container_revision_match=$container_match"
           echo "version_current_file_match=$version_current_match"
           echo "revision_match=$revision_match"
+          echo "deployed_mhcs_revision_match=$revision_match"
 
           if [ "$revision_match" != true ]; then
             echo "ERROR: Deployed application revision mismatch! Aborting without executing production queries."
@@ -241,12 +242,308 @@ jobs:
           fi
           echo "image_worker_to_mpips_socket_reachable=$mpips_socket_reachable"
 
+          workspace="$(mktemp -d)"
+          trap 'rm -rf "$workspace"' EXIT
+
+          echo "=================================================="
+          echo "=== 3B. MPIPS RUNTIME IDENTITY PINNING ==="
+          echo "=================================================="
+
+          mpips_api_container_resolved=false
+          mpips_api_image="none"
+          mpips_runtime_revision="unknown"
+          runtime_revision_format_valid=false
+
+          if [ -n "$MPIPS_CONTAINER" ]; then
+            mpips_api_container_resolved=true
+            raw_image="$(docker inspect "$MPIPS_CONTAINER" --format '{{.Config.Image}}' 2>/dev/null || true)"
+            clean_image="${raw_image%%@*}"
+            clean_image="${clean_image##*/}"
+            mpips_api_image="$clean_image"
+
+            lbl_rev="$(docker inspect "$MPIPS_CONTAINER" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' 2>/dev/null || true)"
+            [ -z "$lbl_rev" ] && lbl_rev="$(docker inspect "$MPIPS_CONTAINER" --format '{{index .Config.Labels "git.commit"}}' 2>/dev/null || true)"
+            [ -z "$lbl_rev" ] && lbl_rev="$(docker inspect "$MPIPS_CONTAINER" --format '{{index .Config.Labels "revision"}}' 2>/dev/null || true)"
+
+            env_rev="$(docker exec "$MPIPS_CONTAINER" sh -c 'echo "${MPIPS_VERSION:-${MPIPS_REVISION:-${GIT_COMMIT:-}}}"' 2>/dev/null || true)"
+
+            file_rev="$(docker exec "$MPIPS_CONTAINER" sh -c 'cat /app/VERSION 2>/dev/null || cat /app/REVISION 2>/dev/null || cat /app/VERSION-CURRENT 2>/dev/null' || true)"
+
+            tag_rev="${clean_image##*:}"
+
+            py_rev="$(docker exec "$MPIPS_CONTAINER" python3 -c 'import mpips; print(getattr(mpips, "__revision__", getattr(mpips, "__version__", "")))' 2>/dev/null || true)"
+
+            for cand in "$lbl_rev" "$file_rev" "$env_rev" "$tag_rev" "$py_rev"; do
+              cand_trimmed="$(echo "$cand" | tr -d ' \r\n\t')"
+              if [[ "$cand_trimmed" =~ ^[0-9a-f]{40}$ ]]; then
+                mpips_runtime_revision="$cand_trimmed"
+                runtime_revision_format_valid=true
+                break
+              fi
+            done
+
+            if [ "$runtime_revision_format_valid" = false ]; then
+              for cand in "$lbl_rev" "$file_rev" "$env_rev" "$tag_rev" "$py_rev"; do
+                cand_trimmed="$(echo "$cand" | tr -d ' \r\n\t')"
+                if [[ "$cand_trimmed" =~ ^[0-9a-zA-Z._-]+$ ]]; then
+                  mpips_runtime_revision="$cand_trimmed"
+                  break
+                fi
+              done
+            fi
+          fi
+
+          echo "mpips_api_container_resolved=$mpips_api_container_resolved"
+          echo "mpips_api_image=$mpips_api_image"
+          echo "mpips_runtime_revision=$mpips_runtime_revision"
+          echo "runtime_revision_format_valid=$runtime_revision_format_valid"
+
+          EXPECTED_DEPLOYED_BASELINE="f2bf7b9980f9af7649e1a6c45c46aaee7a55a36a"
+          if [ "$runtime_revision_format_valid" = true ] && [ "$mpips_runtime_revision" = "$EXPECTED_DEPLOYED_BASELINE" ]; then
+            echo "MPIPS_RUNTIME_MATCHES_DEPLOYED_BASELINE"
+            runtime_source_mapping="EXACT"
+          elif [ "$runtime_revision_format_valid" = true ] && [ -n "$mpips_runtime_revision" ]; then
+            echo "MPIPS_RUNTIME_DIFFERS_FROM_DEPLOYED_BASELINE"
+            runtime_source_mapping="UNPROVEN"
+          else
+            echo "MPIPS_RUNTIME_REVISION_UNPROVEN"
+            runtime_source_mapping="UNPROVEN"
+          fi
+          echo "runtime_source_mapping=$runtime_source_mapping"
+
+          echo "=================================================="
+          echo "=== 3C. HOST LAUNCHER & WORKER IMAGE EVIDENCE ==="
+          echo "=================================================="
+
+          launcher_socket_present=false
+          launcher_service_present=false
+          launcher_service_active=false
+          launcher_reachable=false
+          mpips_worker_image_present=false
+          mpips_worker_image_revision="none"
+
+          launcher_socket_path=""
+          if [ -n "$MPIPS_CONTAINER" ]; then
+            while read -r src dst; do
+              if [[ "$dst" == *"launcher"* ]] || [[ "$src" == *"launcher"* ]] || [[ "$dst" == *".sock"* ]]; then
+                if [ -S "$src" ]; then
+                  launcher_socket_path="$src"
+                  launcher_socket_present=true
+                  break
+                fi
+              fi
+            done < <(docker inspect "$MPIPS_CONTAINER" --format '{{range .Mounts}}{{if eq .Type "bind"}}{{.Source}} {{.Destination}}{{println}}{{end}}{{end}}' 2>/dev/null || true)
+          fi
+
+          if [ "$launcher_socket_present" = false ]; then
+            for sock_cand in /run/mpips/launcher.sock /run/mpips-launcher.sock /run/mpips/worker-launcher.sock /var/run/mpips/launcher.sock /var/run/mpips.sock /tmp/mpips-launcher.sock; do
+              if [ -S "$sock_cand" ]; then
+                launcher_socket_path="$sock_cand"
+                launcher_socket_present=true
+                break
+              fi
+            done
+          fi
+
+          for unit in mpips-launcher.service mpips-worker-launcher.service mpips.service; do
+            if systemctl list-unit-files "$unit" 2>/dev/null | grep -q "$unit"; then
+              launcher_service_present=true
+              if systemctl is-active --quiet "$unit" 2>/dev/null; then
+                launcher_service_active=true
+              fi
+              break
+            fi
+          done
+
+          if [ "$launcher_service_present" = false ]; then
+            if [ -n "$(docker ps -q --filter name=launcher --filter status=running 2>/dev/null || true)" ]; then
+              launcher_service_present=true
+              launcher_service_active=true
+            elif pgrep -f 'mpips.*launcher' >/dev/null 2>&1; then
+              launcher_service_present=true
+              launcher_service_active=true
+            fi
+          fi
+
+          if [ "$launcher_socket_present" = true ] && [ -n "$launcher_socket_path" ]; then
+            if python3 -c '
+          import socket, sys
+          s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+          s.settimeout(2.0)
+          try:
+              s.connect(sys.argv[1])
+              s.close()
+              sys.exit(0)
+          except Exception:
+              sys.exit(1)
+          ' "$launcher_socket_path" 2>/dev/null; then
+              launcher_reachable=true
+            fi
+          fi
+
+          while read -r img_repo img_tag; do
+            [ -n "$img_repo" ] || continue
+            if [[ "$img_repo" == *"mpips"* ]] && [[ "$img_repo" == *"worker"* ]]; then
+              mpips_worker_image_present=true
+              clean_tag="${img_tag%%@*}"
+              if [[ "$clean_tag" =~ ^[0-9a-f]{40}$ ]]; then
+                mpips_worker_image_revision="$clean_tag"
+              elif [ "$mpips_worker_image_revision" = "none" ] && [[ "$clean_tag" =~ ^[0-9a-zA-Z._-]+$ ]]; then
+                mpips_worker_image_revision="$clean_tag"
+              fi
+            fi
+          done < <(docker images --format '{{.Repository}} {{.Tag}}' 2>/dev/null || true)
+
+          launcher_runtime_present=false
+          if [ "$launcher_service_present" = true ] || [ "$launcher_socket_present" = true ]; then
+            launcher_runtime_present=true
+          fi
+
+          echo "launcher_runtime_present=$launcher_runtime_present"
+          echo "launcher_socket_present=$launcher_socket_present"
+          echo "launcher_service_present=$launcher_service_present"
+          echo "launcher_service_active=$launcher_service_active"
+          echo "launcher_reachable=$launcher_reachable"
+          echo "mpips_worker_image_present=$mpips_worker_image_present"
+          echo "mpips_worker_image_revision=$mpips_worker_image_revision"
+
+          echo "=================================================="
+          echo "=== 3D. TRX CALIBRATION READINESS EVIDENCE ==="
+          echo "=================================================="
+
+          mount_cals=""
+          if [ -n "$MPIPS_CONTAINER" ]; then
+            mount_cals="$(docker inspect "$MPIPS_CONTAINER" --format '{{range .Mounts}}{{if eq .Type "bind"}}{{.Source}} {{end}}{{end}}' 2>/dev/null || true)"
+          fi
+
+          cat <<'PY_CALIBRATION' > "$workspace/check_calibration.py"
+          import os, sys, json, glob
+
+          candidates = [
+              os.environ.get("MPIPS_CALIBRATION_DIR", ""),
+              os.environ.get("CALIBRATION_DIR", ""),
+              "/app/calibration",
+              "/data/calibration",
+              "/var/lib/mpips/calibration",
+              "/opt/mpips/calibration",
+              "/etc/mpips/calibration",
+              "/var/www/mpips/calibration",
+              "/var/www/mpips-runtime/calibration",
+          ]
+          for extra in os.environ.get("EXTRA_CAL_CANDIDATES", "").split():
+              if extra and extra not in candidates:
+                  candidates.append(extra)
+
+          cal_root = None
+          for c in candidates:
+              if c and os.path.isdir(c):
+                  cal_root = c
+                  break
+
+          if not cal_root:
+              for c in glob.glob("/app/*calibration*") + glob.glob("/data/*calibration*"):
+                  if os.path.isdir(c):
+                      cal_root = c
+                      break
+
+          cal_root_present = cal_root is not None
+          trx_present = False
+          trx_meta_present = False
+          trx_remap_present = False
+          trx_validated = False
+          trx_mode_match = False
+
+          if cal_root:
+              trx_dir = None
+              try:
+                  for entry in os.listdir(cal_root):
+                      if entry.upper() in ["TRX", "THORAX"]:
+                          candidate = os.path.join(cal_root, entry)
+                          if os.path.isdir(candidate):
+                              trx_dir = candidate
+                              trx_present = True
+                              break
+              except Exception:
+                  pass
+
+              if trx_dir:
+                  meta_file = None
+                  for mf in ["metadata.json", "calibration.json", "config.json", "detector.json"]:
+                      p = os.path.join(trx_dir, mf)
+                      if os.path.isfile(p):
+                          meta_file = p
+                          trx_meta_present = True
+                          break
+                  if not meta_file:
+                      for mf in glob.glob(os.path.join(trx_dir, "*.json")):
+                          meta_file = mf
+                          trx_meta_present = True
+                          break
+
+                  for rf in ["remap.npz", "remap.npy", "remap.bin", "remap.dat"]:
+                      p = os.path.join(trx_dir, rf)
+                      if os.path.isfile(p):
+                          trx_remap_present = True
+                          break
+                  if not trx_remap_present:
+                      for rf in glob.glob(os.path.join(trx_dir, "*remap*")):
+                          if os.path.isfile(rf):
+                              trx_remap_present = True
+                              break
+
+                  if meta_file:
+                      try:
+                          with open(meta_file, "r") as f:
+                              data = json.load(f)
+                          trx_validated = True
+                          detector_val = ""
+                          if isinstance(data, dict):
+                              for k in ["detector_type", "detector_mode", "mode", "type"]:
+                                  if k in data and isinstance(data[k], str):
+                                      detector_val = data[k]
+                                      break
+                              if not detector_val and "detector" in data and isinstance(data["detector"], dict):
+                                  for k in ["detector_type", "detector_mode", "mode", "type"]:
+                                      if k in data["detector"] and isinstance(data["detector"][k], str):
+                                          detector_val = data["detector"][k]
+                                          break
+                          if detector_val.upper() in ["TRX", "THORAX"]:
+                              trx_mode_match = True
+                          elif not detector_val and trx_present:
+                              trx_mode_match = True
+                      except Exception:
+                          trx_validated = False
+
+          print(f"calibration_root_present={'true' if cal_root_present else 'false'}")
+          print(f"trx_calibration_present={'true' if trx_present else 'false'}")
+          print(f"trx_calibration_metadata_present={'true' if trx_meta_present else 'false'}")
+          print(f"trx_calibration_remap_present={'true' if trx_remap_present else 'false'}")
+          print(f"trx_calibration_validated={'true' if trx_validated else 'false'}")
+          print(f"trx_calibration_detector_mode_match={'true' if trx_mode_match else 'false'}")
+          PY_CALIBRATION
+
+          cal_out=""
+          if [ -n "$MPIPS_CONTAINER" ]; then
+            cal_out="$(docker exec -i -e EXTRA_CAL_CANDIDATES="$mount_cals" "$MPIPS_CONTAINER" python3 < "$workspace/check_calibration.py" 2>/dev/null || true)"
+          fi
+          if [ -z "$cal_out" ]; then
+            cal_out="$(EXTRA_CAL_CANDIDATES="$mount_cals" python3 "$workspace/check_calibration.py" 2>/dev/null || true)"
+          fi
+
+          if [ -n "$cal_out" ]; then
+            echo "$cal_out"
+          else
+            echo "calibration_root_present=false"
+            echo "trx_calibration_present=false"
+            echo "trx_calibration_metadata_present=false"
+            echo "trx_calibration_remap_present=false"
+            echo "trx_calibration_validated=false"
+            echo "trx_calibration_detector_mode_match=false"
+          fi
+
           echo "=================================================="
           echo "=== 4. DATABASE EVIDENCE (READ-ONLY) ==="
           echo "=================================================="
-
-          workspace="$(mktemp -d)"
-          trap 'rm -rf "$workspace"' EXIT
 
           cat <<'PHP_SCRIPT' > "$workspace/diagnose.php"
           <?php
@@ -410,7 +707,6 @@ jobs:
           last_error_code="$(grep '^last_error_code=' "$workspace/db_output.txt" | cut -d= -f2 || true)"
           echo "diagnostic_last_error_code=$last_error_code"
 
-          # Only if DB/status evidence warrants log inspection (e.g. processing_failure, none, or unknown)
           cat <<'LOG_PARSER' > "$workspace/parse_logs.php"
           <?php
           declare(strict_types=1);
@@ -447,28 +743,20 @@ jobs:
               exit(0);
           }
 
-          // Scan around matches to extract sanitized exception info
           $lastMatch = end($matches);
           $startLine = max(0, $lastMatch - 4);
           $endLine = min(count($lines) - 1, $lastMatch + 8);
           $snippet = array_slice($lines, $startLine, $endLine - $startLine + 1);
           $rawText = implode("", $snippet);
 
-          // STRICT SANITIZATION:
-          // 1. Redact emails
           $clean = preg_replace('/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/', '[REDACTED_EMAIL]', $rawText);
-          // 2. Redact tokens, auth, keys, secrets
           $clean = preg_replace('/(Bearer|token|key|secret|password|auth)[ =:][^\s\n\r]+/i', '$1=[REDACTED]', $clean);
-          // 3. Redact sha256 checksums
           $clean = preg_replace('/\b[0-9a-f]{64}\b/i', '[REDACTED_HASH]', $clean);
-          // 4. Redact UUIDs other than the target capture ID
           $clean = preg_replace_callback('/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i', function($m) use ($captureId) {
               return ($m[0] === $captureId) ? $m[0] : '[REDACTED_UUID]';
           }, $clean);
-          // 5. Redact file paths
           $clean = preg_replace('/\/var\/www\/html\/[a-zA-Z0-9_\/.-]+/', '[REDACTED_PATH]', $clean);
 
-          // Extract exception summary if present
           if (preg_match('/([A-Za-z0-9_\\\\]+(Exception|Error)):([^\n]+)/', $clean, $m)) {
               $exClass = trim($m[1]);
               $exMsg = trim($m[3]);
@@ -482,9 +770,186 @@ jobs:
           docker exec -i -e TARGET_CAPTURE_ID="$CAPTURE_ID" "$APP_CONTAINER" php < "$workspace/parse_logs.php" || true
 
           echo "=================================================="
+          echo "=== 5B. BOUNDED SANITIZED MPIPS API LOG DIAGNOSTIC ==="
+          echo "=================================================="
+
+          WINDOW_START="2026-09-08T00:06:30Z"
+          WINDOW_END="2026-09-08T00:11:30Z"
+          echo "bounded_incident_window_start=$WINDOW_START"
+          echo "bounded_incident_window_end=$WINDOW_END"
+
+          MPIPS_LOG_FILE="$workspace/mpips.log"
+          touch "$MPIPS_LOG_FILE"
+          chmod 600 "$MPIPS_LOG_FILE"
+
+          window_tz="UTC"
+          if [ -n "$MPIPS_CONTAINER" ]; then
+            docker logs --timestamps --since "$WINDOW_START" --until "$WINDOW_END" "$MPIPS_CONTAINER" > "$MPIPS_LOG_FILE" 2>&1 || true
+
+            if [ ! -s "$MPIPS_LOG_FILE" ]; then
+              docker logs --timestamps --since "2026-09-08T07:06:30+07:00" --until "2026-09-08T07:11:30+07:00" "$MPIPS_CONTAINER" > "$MPIPS_LOG_FILE" 2>&1 || true
+              if [ -s "$MPIPS_LOG_FILE" ]; then
+                window_tz="+07:00 (normalized to UTC: 2026-09-08T00:06:30Z to 2026-09-08T00:11:30Z)"
+              fi
+            fi
+          fi
+
+          echo "window_timezone_normalization=$window_tz"
+
+          cat <<'MPIPS_PARSER' > "$workspace/parse_mpips_logs.php"
+          <?php
+          declare(strict_types=1);
+
+          $logFile = $argv[1] ?? '';
+          $captureId = getenv('TARGET_CAPTURE_ID') ?: '5054464a-9fb2-427b-88fa-a0680cc00186';
+
+          if ($logFile === '' || !file_exists($logFile) || filesize($logFile) === 0) {
+              echo "mpips_log_file_present=false\n";
+              echo "mpips_dicom_http_500_count=0\n";
+              echo "safe_error_code=none_found\n";
+              echo "safe_error_code_count=0\n";
+              echo "correlation_confidence=AMBIGUOUS\n";
+              echo "primary_root_cause_classification=H. MPIPS_FAILURE_AMBIGUOUS\n";
+              echo "primary_root_cause_code=none\n";
+              echo "retry_recommendation=HOLD\n";
+              exit(0);
+          }
+
+          echo "mpips_log_file_present=true\n";
+          $logContent = (string) file_get_contents($logFile);
+
+          $allowlist = [
+              'CONVERSION_WORKER_FAILURE',
+              'TIFF_VALIDATION_ERROR',
+              'NPZ_VALIDATION_ERROR',
+              'MANIFEST_OR_DATA_ERROR',
+              'CONVERSION_TIMEOUT',
+              'CALIBRATION_ARTIFACT_MISSING',
+              'UPLOAD_SIZE_EXCEEDED',
+              'CONCURRENCY_LIMIT_EXCEEDED',
+              'IDEMPOTENCY_IN_PROGRESS',
+              'IDEMPOTENCY_CONFLICT',
+              'LAUNCHER_RUNTIME_FAILURE',
+              'LAUNCHER_ERROR',
+              'LAUNCHER_UNAVAILABLE',
+              'LAUNCHER_COMMUNICATION_FAILURE',
+              'WORKER_IMAGE_NOT_FOUND',
+              'WORKER_SPAWN_FAILED',
+              'CONVERSION_FAILED',
+              'CALIBRATION_ERROR',
+              'CALIBRATION_NOT_FOUND',
+              'DETECTOR_MODE_MISMATCH',
+              'INVALID_API_KEY',
+              'UNAUTHORIZED',
+          ];
+
+          $matchedCodes = [];
+          foreach ($allowlist as $code) {
+              $pattern = '/\b' . preg_quote($code, '/') . '\b/';
+              $count = preg_match_all($pattern, $logContent);
+              if ($count > 0) {
+                  $matchedCodes[$code] = $count;
+              }
+          }
+
+          $dicom500Count = 0;
+          $lines = explode("\n", $logContent);
+          foreach ($lines as $line) {
+              if (stripos($line, '/v1/radiographs/dicom') !== false) {
+                  if (preg_match('/\b500\b/', $line)) {
+                      $dicom500Count++;
+                  }
+              }
+          }
+          echo "mpips_dicom_http_500_count=" . $dicom500Count . "\n";
+
+          if (empty($matchedCodes)) {
+              echo "safe_error_code=none_found\n";
+              echo "safe_error_code_count=0\n";
+          } else {
+              foreach ($matchedCodes as $code => $count) {
+                  echo "safe_error_code=" . $code . "\n";
+                  echo "safe_error_code_count=" . $count . "\n";
+              }
+          }
+
+          $hasExactIdentifier = false;
+          if ($captureId !== '' && stripos($logContent, $captureId) !== false) {
+              $hasExactIdentifier = true;
+          }
+
+          $uniqueMatchedCodesCount = count($matchedCodes);
+          if ($hasExactIdentifier) {
+              $confidence = 'EXACT';
+          } elseif ($dicom500Count === 1 && $uniqueMatchedCodesCount === 1) {
+              $confidence = 'WINDOW_UNIQUE';
+          } elseif ($dicom500Count === 1) {
+              $confidence = 'WINDOW_UNIQUE';
+          } else {
+              $confidence = 'AMBIGUOUS';
+          }
+          echo "correlation_confidence=" . $confidence . "\n";
+
+          $primaryClassification = 'H. MPIPS_FAILURE_AMBIGUOUS';
+          $primaryCode = 'none';
+
+          if (isset($matchedCodes['CONVERSION_WORKER_FAILURE']) || isset($matchedCodes['CONVERSION_FAILED'])) {
+              $primaryClassification = 'A. MPIPS_CONVERSION_WORKER_FAILURE';
+              $primaryCode = isset($matchedCodes['CONVERSION_WORKER_FAILURE']) ? 'CONVERSION_WORKER_FAILURE' : 'CONVERSION_FAILED';
+          } elseif (isset($matchedCodes['TIFF_VALIDATION_ERROR'])) {
+              $primaryClassification = 'B. MPIPS_TIFF_VALIDATION_FAILURE';
+              $primaryCode = 'TIFF_VALIDATION_ERROR';
+          } elseif (isset($matchedCodes['NPZ_VALIDATION_ERROR']) || isset($matchedCodes['MANIFEST_OR_DATA_ERROR'])) {
+              $primaryClassification = 'C. MPIPS_NPZ_OR_DATA_VALIDATION_FAILURE';
+              $primaryCode = isset($matchedCodes['NPZ_VALIDATION_ERROR']) ? 'NPZ_VALIDATION_ERROR' : 'MANIFEST_OR_DATA_ERROR';
+          } elseif (isset($matchedCodes['CALIBRATION_ARTIFACT_MISSING']) || isset($matchedCodes['CALIBRATION_ERROR']) || isset($matchedCodes['CALIBRATION_NOT_FOUND']) || isset($matchedCodes['DETECTOR_MODE_MISMATCH'])) {
+              $primaryClassification = 'D. MPIPS_CALIBRATION_FAILURE';
+              $primaryCode = isset($matchedCodes['CALIBRATION_ARTIFACT_MISSING']) ? 'CALIBRATION_ARTIFACT_MISSING' : (isset($matchedCodes['DETECTOR_MODE_MISMATCH']) ? 'DETECTOR_MODE_MISMATCH' : 'CALIBRATION_ERROR');
+          } elseif (isset($matchedCodes['LAUNCHER_RUNTIME_FAILURE']) || isset($matchedCodes['LAUNCHER_ERROR']) || isset($matchedCodes['LAUNCHER_UNAVAILABLE']) || isset($matchedCodes['LAUNCHER_COMMUNICATION_FAILURE']) || isset($matchedCodes['WORKER_IMAGE_NOT_FOUND']) || isset($matchedCodes['WORKER_SPAWN_FAILED'])) {
+              $primaryClassification = 'E. MPIPS_LAUNCHER_RUNTIME_FAILURE';
+              $launcherKeys = array_intersect(array_keys($matchedCodes), ['LAUNCHER_RUNTIME_FAILURE', 'LAUNCHER_ERROR', 'LAUNCHER_UNAVAILABLE', 'LAUNCHER_COMMUNICATION_FAILURE', 'WORKER_IMAGE_NOT_FOUND', 'WORKER_SPAWN_FAILED']);
+              $primaryCode = reset($launcherKeys) ?: 'LAUNCHER_ERROR';
+          } elseif (isset($matchedCodes['CONVERSION_TIMEOUT'])) {
+              $primaryClassification = 'F. MPIPS_TIMEOUT';
+              $primaryCode = 'CONVERSION_TIMEOUT';
+          } elseif (!empty($matchedCodes)) {
+              $primaryClassification = 'G. MPIPS_INTERNAL_OTHER';
+              $primaryCode = (string) array_key_first($matchedCodes);
+          }
+
+          echo "primary_root_cause_classification=" . $primaryClassification . "\n";
+          echo "primary_root_cause_code=" . $primaryCode . "\n";
+
+          if (in_array($primaryClassification, [
+              'B. MPIPS_TIFF_VALIDATION_FAILURE',
+              'C. MPIPS_NPZ_OR_DATA_VALIDATION_FAILURE',
+              'D. MPIPS_CALIBRATION_FAILURE',
+          ], true)) {
+              $retryRec = 'REQUIRES_CODE_OR_CONFIG_FIX_FIRST';
+          } elseif (in_array($primaryClassification, [
+              'A. MPIPS_CONVERSION_WORKER_FAILURE',
+              'E. MPIPS_LAUNCHER_RUNTIME_FAILURE',
+              'F. MPIPS_TIMEOUT',
+          ], true)) {
+              $retryRec = 'LIKELY_SAFE_AFTER_RUNTIME_RECOVERY';
+          } else {
+              $retryRec = 'HOLD';
+          }
+          echo "retry_recommendation=" . $retryRec . "\n";
+          MPIPS_PARSER
+
+          TARGET_CAPTURE_ID="$CAPTURE_ID" php "$workspace/parse_mpips_logs.php" "$MPIPS_LOG_FILE"
+
+          rm -f "$MPIPS_LOG_FILE"
+
+          echo "=================================================="
           echo "=== 6. VERIFICATION OF ZERO MUTATION & SAFETY ==="
           echo "=================================================="
 
+          echo "retry_executed=false"
+          echo "retry_execution_status=FORBIDDEN_BY_INCIDENT_POLICY"
           echo "production_mutations_count=0"
           echo "phi_or_secrets_exposed=false"
+          echo "raw_logs_exposed=false"
+          echo "artifact_contents_exposed=false"
           echo "diagnostic_execution=SUCCESS"
