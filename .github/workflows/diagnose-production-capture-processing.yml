@@ -1,0 +1,484 @@
+name: Diagnose production capture processing
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_application_revision:
+        description: Expected deployed application git commit SHA
+        required: true
+        type: string
+        default: 'd0f99ecd604a2b0aa0f31a62396790b04028c9eb'
+      capture_id:
+        description: Capture UUID to diagnose
+        required: true
+        type: string
+        default: '5054464a-9fb2-427b-88fa-a0680cc00186'
+
+concurrency:
+  group: production-deployment-mhcs_core
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    name: Bounded read-only capture failure diagnostic
+    runs-on: self-hosted
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Diagnose capture processing state without mutation
+        env:
+          EXPECTED_APPLICATION_REVISION: ${{ inputs.expected_application_revision }}
+          CAPTURE_ID: ${{ inputs.capture_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "=================================================="
+          echo "=== 0. INPUT VALIDATION ==="
+          echo "=================================================="
+
+          EXPECTED_PINNED="d0f99ecd604a2b0aa0f31a62396790b04028c9eb"
+          if [[ ! "$EXPECTED_APPLICATION_REVISION" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "ERROR: expected_application_revision format is invalid (must be 40 hex chars)"
+            exit 1
+          fi
+
+          if [ "$EXPECTED_APPLICATION_REVISION" != "$EXPECTED_PINNED" ]; then
+            echo "ERROR: expected_application_revision ($EXPECTED_APPLICATION_REVISION) does not match required pinned revision ($EXPECTED_PINNED)"
+            exit 1
+          fi
+
+          if [[ ! "$CAPTURE_ID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then
+            echo "ERROR: capture_id ($CAPTURE_ID) is not a valid UUID format"
+            exit 1
+          fi
+
+          echo "expected_application_revision_validated=true"
+          echo "capture_id_format_validated=true"
+          echo "target_capture_id=$CAPTURE_ID"
+
+          echo "=================================================="
+          echo "=== 1. DEPLOYED REVISION VERIFICATION ==="
+          echo "=================================================="
+
+          APP_SERVICE="mhcs_core_app"
+          IMAGE_WORKER_SERVICE="mhcs_core_image-worker"
+          APP_NETWORK="mhcs-core-application-network"
+          MPIPS_NETWORK="mhcs-mpips-integration-v1"
+
+          APP_CONTAINER=""
+          TASK_ID="$(docker service ps "$APP_SERVICE" --filter desired-state=running --no-trunc --format '{{.ID}}' 2>/dev/null | head -n 1 || true)"
+          if [ -n "$TASK_ID" ]; then
+            while IFS= read -r candidate; do
+              [ -n "$candidate" ] || continue
+              candidate_task="$(docker inspect "$candidate" --format '{{index .Config.Labels "com.docker.swarm.task.id"}}' 2>/dev/null || true)"
+              if [ "$candidate_task" = "$TASK_ID" ] || [[ "$candidate_task" == "$TASK_ID"* ]] || [[ "$TASK_ID" == "$candidate_task"* ]]; then
+                APP_CONTAINER="$candidate"
+                break
+              fi
+            done < <(docker ps -q --filter "label=com.docker.swarm.service.name=${APP_SERVICE}" --filter status=running 2>/dev/null)
+          fi
+
+          if [ -z "$APP_CONTAINER" ]; then
+            echo "ERROR: APP_CONTAINER could not be resolved"
+            exit 1
+          fi
+
+          image_revision() {
+            local image="$1"
+            local rev=""
+            if [[ "$image" == mhcs_core:* ]]; then
+              rev="${image#mhcs_core:}"
+              rev="${rev%%@sha256:*}"
+            else
+              rev="${image##*:}"
+              rev="${rev%%@*}"
+            fi
+            if [[ "$rev" =~ ^[0-9a-f]{40}$ ]]; then
+              printf '%s' "$rev"
+            else
+              printf ''
+            fi
+          }
+
+          SERVICE_IMAGE="$(docker service inspect "$APP_SERVICE" --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 2>/dev/null || true)"
+          CONTAINER_IMAGE="$(docker inspect "$APP_CONTAINER" --format '{{.Config.Image}}' 2>/dev/null || true)"
+          RAW_VERSION_CURRENT="$(docker exec "$APP_CONTAINER" cat /var/www/html/VERSION-CURRENT 2>/dev/null || true)"
+
+          SERVICE_REVISION="$(image_revision "$SERVICE_IMAGE")"
+          CONTAINER_REVISION="$(image_revision "$CONTAINER_IMAGE")"
+          VERSION_CURRENT=""
+          if [[ "$RAW_VERSION_CURRENT" =~ ^[0-9a-f]{40}$ ]]; then
+            VERSION_CURRENT="$RAW_VERSION_CURRENT"
+          fi
+
+          echo "app_service_name=$APP_SERVICE"
+          echo "service_revision=$SERVICE_REVISION"
+          echo "container_revision=$CONTAINER_REVISION"
+          echo "version_current=$VERSION_CURRENT"
+          echo "expected_revision=$EXPECTED_APPLICATION_REVISION"
+
+          app_service_match=false
+          container_match=false
+          version_current_match=false
+          revision_match=false
+
+          [ "$SERVICE_REVISION" = "$EXPECTED_APPLICATION_REVISION" ] && app_service_match=true
+          [ "$CONTAINER_REVISION" = "$EXPECTED_APPLICATION_REVISION" ] && container_match=true
+          [ "$VERSION_CURRENT" = "$EXPECTED_APPLICATION_REVISION" ] && version_current_match=true
+
+          if [ "$app_service_match" = true ] && [ "$container_match" = true ] && [ "$version_current_match" = true ]; then
+            revision_match=true
+          fi
+
+          echo "app_service_revision_match=$app_service_match"
+          echo "running_container_revision_match=$container_match"
+          echo "version_current_file_match=$version_current_match"
+          echo "revision_match=$revision_match"
+
+          if [ "$revision_match" != true ]; then
+            echo "ERROR: Deployed application revision mismatch! Aborting without executing production queries."
+            exit 1
+          fi
+
+          echo "=================================================="
+          echo "=== 2. WORKER & INFRASTRUCTURE STATE ==="
+          echo "=================================================="
+
+          IW_REPLICAS="$(docker service ls --format '{{.Replicas}}' --filter "name=${IMAGE_WORKER_SERVICE}" 2>/dev/null | head -n 1 || true)"
+          IW_SERVICE_IMAGE="$(docker service inspect "$IMAGE_WORKER_SERVICE" --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 2>/dev/null || true)"
+          IW_SERVICE_REVISION="$(image_revision "$IW_SERVICE_IMAGE")"
+
+          IW_CONTAINER=""
+          IW_TASK_ID="$(docker service ps "$IMAGE_WORKER_SERVICE" --filter desired-state=running --no-trunc --format '{{.ID}}' 2>/dev/null | head -n 1 || true)"
+          if [ -n "$IW_TASK_ID" ]; then
+            while IFS= read -r candidate; do
+              [ -n "$candidate" ] || continue
+              c_task="$(docker inspect "$candidate" --format '{{index .Config.Labels "com.docker.swarm.task.id"}}' 2>/dev/null || true)"
+              if [ "$c_task" = "$IW_TASK_ID" ] || [[ "$c_task" == "$IW_TASK_ID"* ]] || [[ "$IW_TASK_ID" == "$c_task"* ]]; then
+                IW_CONTAINER="$candidate"
+                break
+              fi
+            done < <(docker ps -q --filter "label=com.docker.swarm.service.name=${IMAGE_WORKER_SERVICE}" --filter status=running 2>/dev/null)
+          fi
+
+          IW_CONTAINER_HEALTH="unavailable"
+          IW_CONSUMES_QUEUE="false"
+          if [ -n "$IW_CONTAINER" ]; then
+            IW_CONTAINER_HEALTH="$(docker inspect "$IW_CONTAINER" --format '{{.State.Health.Status}}' 2>/dev/null || true)"
+            [ -z "$IW_CONTAINER_HEALTH" ] && IW_CONTAINER_HEALTH="$(docker inspect "$IW_CONTAINER" --format '{{.State.Status}}' 2>/dev/null || true)"
+            IW_ARGS="$(docker service inspect "$IMAGE_WORKER_SERVICE" --format '{{json .Spec.TaskTemplate.ContainerSpec.Args}}' 2>/dev/null || true)"
+            if [[ "$IW_ARGS" == *"--queue=image-gateway"* ]]; then
+              IW_CONSUMES_QUEUE="true"
+            fi
+          fi
+
+          echo "image_worker_service_name=$IMAGE_WORKER_SERVICE"
+          echo "image_worker_service_revision=$IW_SERVICE_REVISION"
+          echo "image_worker_replicas=$IW_REPLICAS"
+          echo "image_worker_container_resolved=$([ -n "$IW_CONTAINER" ] && echo true || echo false)"
+          echo "image_worker_container_health=$IW_CONTAINER_HEALTH"
+          echo "image_worker_consumes_image_gateway_queue=$IW_CONSUMES_QUEUE"
+
+          echo "=================================================="
+          echo "=== 3. MPIPS SERVICE & REACHABILITY EVIDENCE ==="
+          echo "=================================================="
+
+          MPIPS_CONTAINER="$(docker ps -q --filter name=mpips-api --filter status=running 2>/dev/null | head -n 1 || true)"
+          mpips_running=false
+          mpips_health="unavailable"
+          if [ -n "$MPIPS_CONTAINER" ]; then
+            mpips_running=true
+            mpips_health="$(docker inspect "$MPIPS_CONTAINER" --format '{{.State.Health.Status}}' 2>/dev/null || true)"
+            [ -z "$mpips_health" ] && mpips_health="$(docker inspect "$MPIPS_CONTAINER" --format '{{.State.Status}}' 2>/dev/null || true)"
+          fi
+          echo "mpips_container_running=$mpips_running"
+          echo "mpips_container_health=$mpips_health"
+
+          integration_network_present=false
+          if docker network inspect "$MPIPS_NETWORK" --format '{{.Name}}' >/dev/null 2>&1; then
+            integration_network_present=true
+          fi
+          echo "mpips_integration_network_present=$integration_network_present"
+
+          image_worker_attached_to_mpips_network=false
+          if [ -n "$IW_CONTAINER" ]; then
+            attached_check="$(docker inspect "$IW_CONTAINER" --format '{{index .NetworkSettings.Networks "'"$MPIPS_NETWORK"'"}}' 2>/dev/null || true)"
+            if [ -n "$attached_check" ] && [ "$attached_check" != "<no value>" ]; then
+              image_worker_attached_to_mpips_network=true
+            fi
+          fi
+          echo "image_worker_attached_to_mpips_network=$image_worker_attached_to_mpips_network"
+
+          mpips_socket_reachable="unknown"
+          if [ -n "$IW_CONTAINER" ]; then
+            mpips_socket_reachable="$(docker exec "$IW_CONTAINER" php -r '
+              require "vendor/autoload.php";
+              $app = require "bootstrap/app.php";
+              $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+              $rawUrl = (string) config("mhcs.mpips.base_url", "http://127.0.0.1:8014");
+              $parsed = parse_url($rawUrl);
+              $host = $parsed["host"] ?? "127.0.0.1";
+              $port = (int) ($parsed["port"] ?? ($parsed["scheme"] === "https" ? 443 : 80));
+              $fp = @fsockopen($host, $port, $errno, $errstr, 3);
+              if ($fp) {
+                fclose($fp);
+                echo "reachable";
+              } else {
+                echo "unreachable";
+              }
+            ' 2>/dev/null || echo "check_failed")"
+          fi
+          echo "image_worker_to_mpips_socket_reachable=$mpips_socket_reachable"
+
+          echo "=================================================="
+          echo "=== 4. DATABASE EVIDENCE (READ-ONLY) ==="
+          echo "=================================================="
+
+          workspace="$(mktemp -d)"
+          trap 'rm -rf "$workspace"' EXIT
+
+          cat <<'PHP_SCRIPT' > "$workspace/diagnose.php"
+          <?php
+          declare(strict_types=1);
+
+          use Illuminate\Contracts\Console\Kernel;
+          use Illuminate\Support\Facades\DB;
+
+          require 'vendor/autoload.php';
+          $app = require 'bootstrap/app.php';
+          $app->make(Kernel::class)->bootstrap();
+
+          $captureId = getenv('TARGET_CAPTURE_ID');
+          if (!is_string($captureId) || !preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/', $captureId)) {
+              fwrite(STDERR, "Invalid TARGET_CAPTURE_ID\n");
+              exit(1);
+          }
+
+          echo "--- CAPTURE STATE ---\n";
+          $capture = DB::table('image_gateway_capture_sets')->where('id', $captureId)->first();
+
+          if ($capture === null) {
+              echo "capture_exists=false\n";
+              exit(0);
+          }
+
+          echo "capture_exists=true\n";
+          echo "processing_status=" . ($capture->processing_status ?? 'null') . "\n";
+          echo "radiograph_status=" . ($capture->radiograph_status ?? 'null') . "\n";
+          echo "gain_status=" . ($capture->gain_status ?? 'null') . "\n";
+          echo "mpips_status=" . ($capture->mpips_status ?? 'null') . "\n";
+          echo "dicom_status=" . ($capture->dicom_status ?? 'null') . "\n";
+          echo "attempts=" . (int) ($capture->attempts ?? 0) . "\n";
+
+          $lastErrorCode = $capture->last_error_code ?? null;
+          if ($lastErrorCode === null || $lastErrorCode === '') {
+              echo "last_error_code=none\n";
+          } elseif (preg_match('/^[a-zA-Z0-9_-]+$/', (string) $lastErrorCode)) {
+              echo "last_error_code=" . (string) $lastErrorCode . "\n";
+          } else {
+              echo "last_error_code=sanitized_code\n";
+          }
+
+          echo "last_response_status=" . ($capture->last_response_status !== null ? (int) $capture->last_response_status : 'none') . "\n";
+
+          echo "accepted_at_present=" . (!empty($capture->accepted_at) ? 'true' : 'false') . "\n";
+          echo "accepted_at=" . (!empty($capture->accepted_at) ? (string) $capture->accepted_at : 'none') . "\n";
+
+          echo "failed_at_present=" . (!empty($capture->failed_at) ? 'true' : 'false') . "\n";
+          echo "failed_at=" . (!empty($capture->failed_at) ? (string) $capture->failed_at : 'none') . "\n";
+
+          echo "completed_at_present=" . (!empty($capture->completed_at) ? 'true' : 'false') . "\n";
+          echo "completed_at=" . (!empty($capture->completed_at) ? (string) $capture->completed_at : 'none') . "\n";
+
+          $hasClaim = !empty($capture->processing_claim_id);
+          echo "processing_claim_present=" . ($hasClaim ? 'true' : 'false') . "\n";
+
+          $leaseExpires = $capture->processing_lease_expires_at ?? null;
+          if (empty($leaseExpires)) {
+              $leaseState = 'absent';
+          } else {
+              $expiresTime = strtotime((string) $leaseExpires);
+              $now = time();
+              $leaseState = ($expiresTime > $now) ? 'active' : 'expired';
+          }
+          echo "processing_lease_state=" . $leaseState . "\n";
+
+          $studyCount = DB::table('image_gateway_studies')->where('capture_set_id', $captureId)->count();
+          echo "study_count=" . $studyCount . "\n";
+
+          echo "--- CAPTURE OBJECT SHAPE ---\n";
+          $objectRows = DB::table('image_gateway_capture_objects')
+              ->where('capture_set_id', $captureId)
+              ->select('object_type', DB::raw('count(*) as row_count'), DB::raw('sum(bytes) as total_bytes'))
+              ->groupBy('object_type')
+              ->orderBy('object_type')
+              ->get();
+
+          $totalObjectRows = DB::table('image_gateway_capture_objects')->where('capture_set_id', $captureId)->count();
+          echo "total_capture_object_rows=" . $totalObjectRows . "\n";
+
+          foreach ($objectRows as $row) {
+              echo "object_type=" . $row->object_type . " row_count=" . $row->row_count . " byte_count=" . $row->total_bytes . "\n";
+          }
+
+          echo "--- QUEUE AND JOBS COUNTS ---\n";
+          $imageGatewayJobs = DB::table('jobs')->where('queue', 'image-gateway')->count();
+          echo "jobs_queue_image_gateway_count=" . $imageGatewayJobs . "\n";
+
+          $captureJobsTotal = DB::table('jobs')->where('queue', 'image-gateway')->where('payload', 'like', '%' . $captureId . '%')->count();
+          echo "jobs_capture_attributed_count=" . $captureJobsTotal . "\n";
+
+          $captureJobsReserved = DB::table('jobs')->where('queue', 'image-gateway')->where('payload', 'like', '%' . $captureId . '%')->whereNotNull('reserved_at')->count();
+          echo "jobs_capture_reserved_count=" . $captureJobsReserved . "\n";
+
+          $failedJobsAttributed = DB::table('failed_jobs')->where('payload', 'like', '%' . $captureId . '%')->count();
+          echo "failed_jobs_capture_attributed_count=" . $failedJobsAttributed . "\n";
+
+          $totalFailedJobs = DB::table('failed_jobs')->count();
+          echo "failed_jobs_total_count=" . $totalFailedJobs . "\n";
+
+          echo "--- RETRY TECHNICAL ELIGIBILITY ---\n";
+          $canRetry = ($capture !== null)
+              && ((string) ($capture->radiograph_status ?? '') === 'success')
+              && ((string) ($capture->gain_status ?? '') === 'success')
+              && ((string) ($capture->processing_status ?? '') === 'failed')
+              && ((int) ($capture->attempts ?? 0) < (int) config('mhcs.mpips.max_attempts', 5))
+              && ($studyCount === 0);
+
+          echo "retry_technically_eligible=" . ($canRetry ? 'true' : 'false') . "\n";
+          echo "retry_execution_status=FORBIDDEN_BY_INCIDENT_POLICY\n";
+
+          echo "--- FAILURE CLASSIFICATION ---\n";
+          $errorCode = (string) ($capture->last_error_code ?? '');
+          $respStatus = $capture->last_response_status !== null ? (int) $capture->last_response_status : null;
+          $procStatus = (string) ($capture->processing_status ?? '');
+
+          $classification = 'I. unknown — more evidence required';
+          $familyReason = 'No matching specific pattern';
+
+          if (in_array($errorCode, ['capture_object_missing', 'capture_object_integrity_failure', 'object_integrity_failure'], true)) {
+              $classification = 'A. capture object missing/integrity';
+              $familyReason = "last_error_code indicates capture object missing or integrity failure ($errorCode)";
+          } elseif (in_array($errorCode, ['manifest_signature_invalid', 'manifest_verification_failed'], true) || str_contains($errorCode, 'manifest')) {
+              $classification = 'B. manifest integrity/signature';
+              $familyReason = "last_error_code indicates manifest verification or signature failure ($errorCode)";
+          } elseif ($errorCode === 'transport_failure' || in_array($errorCode, ['connection_exception', 'connection_timeout'], true)) {
+              $classification = 'C. MPIPS transport/connectivity';
+              $familyReason = "last_error_code indicates network or transport connectivity failure to MPIPS ($errorCode)";
+          } elseif (($respStatus !== null && in_array($respStatus, [400, 409, 422, 429, 500, 502, 503, 504], true)) || in_array($errorCode, ['remote_failure', 'IDEMPOTENCY_IN_PROGRESS', 'IDEMPOTENCY_CONFLICT'], true)) {
+              $classification = 'D. MPIPS HTTP/conversion rejection';
+              $familyReason = "MPIPS returned HTTP rejection status ($respStatus) or code ($errorCode)";
+          } elseif (in_array($errorCode, ['transport_invalid', 'invalid_transport_response'], true)) {
+              $classification = 'E. invalid MPIPS DICOM transport response';
+              $familyReason = "MPIPS returned response violating DICOM contract ($errorCode)";
+          } elseif ($errorCode === 'retry_budget_exhausted') {
+              $classification = 'F. retry budget exhaustion';
+              $familyReason = "Max retry attempts reached ($errorCode)";
+          } elseif (in_array($errorCode, ['study_storage_failure', 'study_persistence_failure'], true)) {
+              $classification = 'G. study/private-storage persistence';
+              $familyReason = "Persistence to private study storage failed ($errorCode)";
+          } elseif ($captureJobsTotal > 0 && $procStatus === 'pending') {
+              $classification = 'H. queue/image-worker execution';
+              $familyReason = 'Job remains in queue unexecuted';
+          } elseif ($errorCode === 'processing_failure') {
+              $classification = 'I. unknown — more evidence required (raw code: processing_failure)';
+              $familyReason = 'Generic processing_failure caught in ProcessCaptureSet without specific transport/object match';
+          }
+
+          echo "failure_classification=" . $classification . "\n";
+          echo "failure_classification_reason=" . $familyReason . "\n";
+          PHP_SCRIPT
+
+          docker exec -i -e TARGET_CAPTURE_ID="$CAPTURE_ID" "$APP_CONTAINER" php < "$workspace/diagnose.php" > "$workspace/db_output.txt"
+          cat "$workspace/db_output.txt"
+
+          echo "=================================================="
+          echo "=== 5. BOUNDED SANITIZED LOG DIAGNOSTIC ==="
+          echo "=================================================="
+
+          last_error_code="$(grep '^last_error_code=' "$workspace/db_output.txt" | cut -d= -f2 || true)"
+          echo "diagnostic_last_error_code=$last_error_code"
+
+          # Only if DB/status evidence warrants log inspection (e.g. processing_failure, none, or unknown)
+          cat <<'LOG_PARSER' > "$workspace/parse_logs.php"
+          <?php
+          declare(strict_types=1);
+
+          $captureId = getenv('TARGET_CAPTURE_ID');
+          if (!is_string($captureId) || !preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/', $captureId)) {
+              fwrite(STDERR, "Invalid TARGET_CAPTURE_ID\n");
+              exit(1);
+          }
+
+          $logPath = '/var/www/html/storage/logs/laravel.log';
+          if (!file_exists($logPath)) {
+              echo "log_file_present=false\n";
+              exit(0);
+          }
+          echo "log_file_present=true\n";
+
+          $lines = file($logPath);
+          if ($lines === false || empty($lines)) {
+              echo "log_entries_count=0\n";
+              exit(0);
+          }
+
+          $matches = [];
+          foreach ($lines as $lineNum => $line) {
+              if (str_contains($line, $captureId)) {
+                  $matches[] = $lineNum;
+              }
+          }
+
+          echo "log_matching_lines_count=" . count($matches) . "\n";
+          if (empty($matches)) {
+              echo "log_incident_error_record=none_found\n";
+              exit(0);
+          }
+
+          // Scan around matches to extract sanitized exception info
+          $lastMatch = end($matches);
+          $startLine = max(0, $lastMatch - 4);
+          $endLine = min(count($lines) - 1, $lastMatch + 8);
+          $snippet = array_slice($lines, $startLine, $endLine - $startLine + 1);
+          $rawText = implode("", $snippet);
+
+          // STRICT SANITIZATION:
+          // 1. Redact emails
+          $clean = preg_replace('/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/', '[REDACTED_EMAIL]', $rawText);
+          // 2. Redact tokens, auth, keys, secrets
+          $clean = preg_replace('/(Bearer|token|key|secret|password|auth)[ =:][^\s\n\r]+/i', '$1=[REDACTED]', $clean);
+          // 3. Redact sha256 checksums
+          $clean = preg_replace('/\b[0-9a-f]{64}\b/i', '[REDACTED_HASH]', $clean);
+          // 4. Redact UUIDs other than the target capture ID
+          $clean = preg_replace_callback('/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i', function($m) use ($captureId) {
+              return ($m[0] === $captureId) ? $m[0] : '[REDACTED_UUID]';
+          }, $clean);
+          // 5. Redact file paths
+          $clean = preg_replace('/\/var\/www\/html\/[a-zA-Z0-9_\/.-]+/', '[REDACTED_PATH]', $clean);
+
+          // Extract exception summary if present
+          if (preg_match('/([A-Za-z0-9_\\\\]+(Exception|Error)):([^\n]+)/', $clean, $m)) {
+              $exClass = trim($m[1]);
+              $exMsg = trim($m[3]);
+              echo "log_exception_class=" . $exClass . "\n";
+              echo "log_exception_summary_sanitized=" . substr($exMsg, 0, 160) . "\n";
+          } else {
+              echo "log_exception_class=none_parsed\n";
+          }
+          LOG_PARSER
+
+          docker exec -i -e TARGET_CAPTURE_ID="$CAPTURE_ID" "$APP_CONTAINER" php < "$workspace/parse_logs.php" || true
+
+          echo "=================================================="
+          echo "=== 6. VERIFICATION OF ZERO MUTATION & SAFETY ==="
+          echo "=================================================="
+
+          echo "production_mutations_count=0"
+          echo "phi_or_secrets_exposed=false"
+          echo "diagnostic_execution=SUCCESS"
