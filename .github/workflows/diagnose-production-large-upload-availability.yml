@@ -78,7 +78,31 @@ jobs:
 
           dns_wan_match="UNPROVEN"
           resolved_ip="$(getent ahostsv4 fams.mhcsgo.cloud 2>/dev/null | awk '{print $1; exit}' || true)"
-          outbound_wan_ip="$(curl --silent --show-error --max-time 5 https://api.ipify.org 2>/dev/null || curl --silent --show-error --max-time 5 https://ifconfig.me/ip 2>/dev/null || true)"
+          ipify_ip="$(curl --silent --show-error --max-time 5 https://api.ipify.org 2>/dev/null || true)"
+          ifconfig_ip="$(curl --silent --show-error --max-time 5 https://ifconfig.me/ip 2>/dev/null || true)"
+          outbound_wan_ip=""
+          sources_agree="false"
+          if [ -n "$ipify_ip" ] && [ -n "$ifconfig_ip" ] && [ "$ipify_ip" = "$ifconfig_ip" ]; then
+            sources_agree="true"
+            outbound_wan_ip="$ipify_ip"
+          elif [ -n "$ipify_ip" ]; then
+            outbound_wan_ip="$ipify_ip"
+          else
+            outbound_wan_ip="$ifconfig_ip"
+          fi
+          emit CURRENT_PUBLIC_IPV4 "$outbound_wan_ip"
+          emit PUBLIC_IP_SOURCES_AGREE "$sources_agree"
+
+          mhcs_a="$(getent ahostsv4 mhcsgo.cloud 2>/dev/null | awk '{print $1; exit}' || true)"
+          fams_a="$(getent ahostsv4 fams.mhcsgo.cloud 2>/dev/null | awk '{print $1; exit}' || true)"
+          emit MHCS_DNS_A "$mhcs_a"
+          emit FAMS_DNS_A "$fams_a"
+          dns_agree="false"
+          if [ -n "$mhcs_a" ] && [ "$mhcs_a" = "$fams_a" ]; then
+            dns_agree="true"
+          fi
+          emit DNS_RECORDS_AGREE "$dns_agree"
+
           if [ -n "$resolved_ip" ] && [ -n "$outbound_wan_ip" ]; then
             if [ "$resolved_ip" = "$outbound_wan_ip" ]; then
               dns_wan_match="true"
