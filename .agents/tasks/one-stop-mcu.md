@@ -1,7 +1,7 @@
 ---
 title: One Stop Service MCU Screening Workflow
 document_id: MHCS-TASK-ONE-STOP-MCU-001
-version: 1.0
+version: 1.1
 status: validated-published
 language: en-US
 last_updated: 2026-09-15
@@ -50,6 +50,7 @@ Enable an appropriately authorized Operator/Site Staff user to verify or registe
 ### Governing authority
 
 - Human Direction in the task-authoring handoff dated 2026-09-15: the additive One Stop MCU flow, required source-form data, PDF outcome, acceptance criteria, exclusions, and implementation/side-effect limits.
+- Human Direction in the task remediation/republication handoff dated 2026-09-15: Microtoise is the instrument/method used to measure body height, not a separate clinical measurement; use one canonical numeric height and preserve the term as method/equipment context.
 - `Madeena-software/mhcs-business-docs` @ `645058e431f59c4450a136e72f140e6819b79f32`:
   - `docs/business/01-business-overview.md` — current examination-service pathway, actor journeys, and requirement that future pathways receive their own validation and authorization.
   - `docs/business/02-user-stories.md` — current Member and Site Staff interaction requirements, including registration, check-in, and basic examination.
@@ -61,7 +62,7 @@ Enable an appropriately authorized Operator/Site Staff user to verify or registe
 ### Requirement traceability
 
 - `MCU-H1` → Human Direction: participant/examination identity, examination date/time, and required measurements and context below.
-- `MCU-H2` → Human Direction: deterministic BMI and highest-valid-PEF calculations; preserve the source-form Microtoise concept without unsupported reinterpretation.
+- `MCU-H2` → Human Direction and task remediation handoff: deterministic BMI and highest-valid-PEF calculations; body height is one canonical measurement in centimetres, and Microtoise is method/equipment context rather than a second clinical measurement.
 - `MCU-H3` → Human Direction: persisted examination-backed PDF, screening disclaimer, print/download flow, and manual signature areas without a digital-signature subsystem.
 - `MCU-H4` → Human Direction plus Product Authority current pathway: additive completion must not alter or falsely complete radiography or downstream clinical stages.
 - `MCU-H5` → Product Authority stories `US-STAFF-REG-001`, `US-STAFF-REG-002`, `US-STAFF-REG-004`, `US-STAFF-REG-006`, `US-STAFF-REG-007`, `US-STAFF-REG-008`, `US-STAFF-EXAM-001`, and existing Operator task: established identity, registration, check-in, consent, examination, site/operator authorization, and least-privilege semantics.
@@ -76,13 +77,13 @@ Enable an appropriately authorized Operator/Site Staff user to verify or registe
 - Required measurements and context:
   - blood pressure systolic and diastolic, mmHg;
   - weight, kg; height, cm; temperature, °C;
-  - BMI/IMT, kg/m², deterministically derived as weight (kg) / height² (m²), with height converted to metres;
-  - Microtoise, retaining the source-form concept and using an existing repository/domain convention if one applies; do not guess its meaning or silently map it to another field;
+  - BMI/IMT, kg/m², deterministically derived as weight (kg) / the single canonical body-height value² (m²), with height recorded in centimetres and converted to metres for calculation;
+  - body height is the only numeric height measurement. Microtoise identifies the height-measurement instrument/method, not another physiological measurement; do not ask the operator to enter a duplicate Microtoise value or persist a second numeric height;
   - GCU glucose, total cholesterol, and uric acid, each mg/dL;
   - fasting/non-fasting context, fasting duration when applicable, and last-meal time when applicable;
   - Peak Flow Meter attempts I–III in L/min and highest valid result, calculated as the maximum valid attempt, never the average;
   - notes/follow-up, examining operator identity, and examiner and participant signature areas.
-- A PDF generated from persisted MCU examination data containing the identity, examination metadata, all captured results and context, notes, and signature areas. Include the disclaimer: `HASIL SKRINING MERUPAKAN PEMERIKSAAN AWAL DAN BUKAN PENETAPAN DIAGNOSIS MEDIS.` The signature areas may be completed manually after printing; no electronic-signature subsystem is authorized.
+- A PDF generated from persisted MCU examination data containing the identity, examination metadata, all captured results and context, notes, and signature areas. Show the single persisted body-height result and preserve `Microtoise` as height-measurement method/equipment context where appropriate; do not show a duplicate numeric height. Include the disclaimer: `HASIL SKRINING MERUPAKAN PEMERIKSAAN AWAL DAN BUKAN PENETAPAN DIAGNOSIS MEDIS.` The signature areas may be completed manually after printing; no electronic-signature subsystem is authorized.
 - A suitable authorized operator print/download flow after save, using existing site/facility branding where available rather than hardcoding one facility.
 - Relevant audit linkage when required by established MHCS patterns.
 - Focused automated tests and implementation documentation needed for traceability.
@@ -130,10 +131,10 @@ Enable an appropriately authorized Operator/Site Staff user to verify or registe
 ## Execution constraints
 
 - Reuse suitable existing Member, Operator, registration, authorization, audit, and PDF patterns. Do not introduce new identity/authentication models or a general workflow framework.
-- Preserve units and source-form labels. Validate inputs at the trust boundary. Derive BMI and highest valid PEF deterministically from persisted inputs/results.
+- Preserve units and source-form labels. Validate inputs at the trust boundary. Derive BMI and highest valid PEF deterministically from persisted inputs/results. Persist one canonical numeric body-height value in centimetres; treat Microtoise only as method/equipment context associated with that height, without a duplicate clinical measurement.
 - Generate the PDF from persisted data, not only unsaved form state. Protect participant/examination access using existing site/operator authorization boundaries.
 - Do not invent a clinical threshold, diagnosis, treatment recommendation, or interpretation for measurements.
-- Do not choose a technical meaning for Microtoise without supporting repository/domain evidence. If no safe representation can be established without a material product decision, stop and return it to planning.
+- Use the approved Microtoise clarification: `Microtoise` means the instrument/method used to measure body height. If execution discovers a genuinely different clinical requirement or authoritative source showing that the supplied form uses `Microtoise` to mean something materially different from the established height-measuring instrument, stop and return to planning.
 - Do not add a PDF library or other consequential dependency unless existing capabilities are inadequate and the required approval is obtained.
 
 ## Acceptance criteria
@@ -142,6 +143,7 @@ Enable an appropriately authorized Operator/Site Staff user to verify or registe
 - [ ] An eligible existing participant can be verified/checked in using established MHCS semantics; applicable walk-in registration reuses canonical participant and registration models and does not duplicate identity.
 - [ ] The operator can enter, validate, save, and retrieve every required MCU identity field, measurement, unit, GCU fasting/last-meal context, PEF attempt, note/follow-up, operator identity, and signature-area requirement listed in scope.
 - [ ] BMI is derived correctly from weight and height in canonical units, with invalid or unusable height handled safely.
+- [ ] The operator records one canonical body-height value in cm; BMI uses that persisted value; the UI/PDF may identify Microtoise only as height-measurement method/equipment context; no duplicate or conflicting numeric height is persisted or presented.
 - [ ] Highest valid PEF equals the maximum valid attempt among I–III; invalid/missing attempts are not treated as valid measurements and values are never averaged.
 - [ ] Saved data remain associated with the correct participant/examination and authorized site/operator context; unauthorized actors cannot read or mutate another participant's MCU examination.
 - [ ] The PDF is generated from the saved examination, includes participant/examination metadata, all captured screening results/context and notes, both manual signature areas, and the specified screening-not-diagnosis disclaimer.
@@ -154,6 +156,7 @@ Enable an appropriately authorized Operator/Site Staff user to verify or registe
 
 - Focused unit/feature/integration tests for value validation, BMI boundaries/conversion, highest-valid-PEF behavior, persistence/participant association, site/operator authorization, and unauthorized access/mutation denial.
 - PDF generation and content verification against persisted data, including required fields, disclaimer, signature areas, and browser print/download response.
+- Verify that only one canonical numeric height is persisted, BMI derives from it, the PDF contains the expected persisted height, and Microtoise appears only as method/equipment context when represented; verify that no duplicate clinical height value is introduced.
 - Relevant Operator UI/HTTP workflow verification from participant selection/check-in through save and PDF access.
 - Targeted regression tests for Member registration/identity and existing Basic Examination → Radiography progression, plus affected DICOM, AI PACS, and Doctor workflow tests.
 - Frontend build/type/lint checks if affected; backend tests, static analysis, and formatting checks if affected; repository-required full verification when triggered by policy.
@@ -167,7 +170,7 @@ The Executor reports the exact governing task revision and implementation baseli
 
 The Executor MUST stop and return to planning if:
 
-- Microtoise cannot be represented without inventing or materially changing its meaning;
+- execution discovers a genuinely different clinical requirement or an authoritative source showing that the supplied form uses `Microtoise` to mean something materially different from the established height-measuring instrument;
 - participant eligibility, consent, identity, clinical policy, ownership, or authorization requires a decision beyond existing approved semantics and this task;
 - implementation would complete, bypass, or change the existing radiography/Doctor flow;
 - suitable persistence/PDF/authorization patterns are unavailable and a material architecture or dependency decision is needed;
