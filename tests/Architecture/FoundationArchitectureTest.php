@@ -157,6 +157,7 @@ final class FoundationArchitectureTest extends TestCase
             '2026_09_05_000002_create_radiography_session_locators_and_grabber_clients.php',
             '2026_09_06_000001_add_pacs_identifiers_to_image_gateway_ai_tables.php',
             '2026_09_06_000002_add_derived_metadata_to_image_gateway_ai_tables.php',
+            '2026_09_15_000001_create_operator_mcu_examinations_table.php',
         ];
 
         $this->assertSame([], array_values(array_diff($migrations, $allowed)));

@@ -56,9 +56,9 @@ final class OneStopMcuController extends Controller
             'fasting_status' => ['required', 'in:fasting,non_fasting'],
             'fasting_duration_hours' => ['nullable', 'required_if:fasting_status,fasting', 'numeric', 'gte:0', 'max:9999.99'],
             'last_meal_at' => ['nullable', 'required_if:fasting_status,non_fasting', 'date_format:H:i'],
-            'pef_attempt_i' => ['nullable', 'numeric', 'gt:0', 'max:999999.99'],
-            'pef_attempt_ii' => ['nullable', 'numeric', 'gt:0', 'max:999999.99'],
-            'pef_attempt_iii' => ['nullable', 'numeric', 'gt:0', 'max:999999.99'],
+            'pef_attempt_i' => ['required', 'numeric', 'gt:0', 'max:999999.99'],
+            'pef_attempt_ii' => ['required', 'numeric', 'gt:0', 'max:999999.99'],
+            'pef_attempt_iii' => ['required', 'numeric', 'gt:0', 'max:999999.99'],
             'notes' => ['nullable', 'string', 'max:5000'],
         ]);
         if ($validator->fails()) {
@@ -86,7 +86,7 @@ final class OneStopMcuController extends Controller
     {
         try {
             $data = $mcu->report($admission);
-            $pdf = new Mpdf(['mode' => 'utf-8', 'format' => 'A4', 'margin_left' => 15, 'margin_right' => 15, 'margin_top' => 12, 'margin_bottom' => 12]);
+            $pdf = new Mpdf(['mode' => 'utf-8', 'format' => 'A4', 'margin_left' => 10, 'margin_right' => 10, 'margin_top' => 8, 'margin_bottom' => 8]);
             $pdf->WriteHTML(view('pdf.one-stop-mcu', $data)->render());
 
             return response($pdf->Output('', Destination::STRING_RETURN), 200, [

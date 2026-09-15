@@ -7,6 +7,7 @@ namespace App\Modules\Operator\Application\Services;
 use App\Modules\Operator\Domain\OperatorException;
 use App\Shared\Audit\AuditEvent;
 use App\Shared\Audit\AuditStore;
+use App\Shared\Security\ProtectedIdentifierService;
 use App\Shared\Time\Clock;
 use Carbon\CarbonImmutable;
 use DateTimeZone;
@@ -24,6 +25,7 @@ final readonly class OneStopMcuService
         private OperatorAuthorization $authorization,
         private OperatorShiftAssignmentService $assignments,
         private AuditStore $audit,
+        private ProtectedIdentifierService $identifiers,
         private Clock $clock,
     ) {}
 
@@ -172,11 +174,13 @@ final readonly class OneStopMcuService
             ->join('members', 'members.id', '=', 'exams.member_id')
             ->join('operator_profiles', 'operator_profiles.id', '=', 'exams.operator_profile_id')
             ->where('exams.operator_queue_admission_id', $admissionId)
-            ->select(['exams.*', 'members.name as member_name', 'members.birth_date', 'members.administrative_gender', 'members.medical_record_number', 'operator_profiles.display_name as examiner_name'])
+            ->select(['exams.*', 'members.name as member_name', 'members.birth_date', 'members.administrative_gender', 'members.encrypted_nik', 'operator_profiles.display_name as examiner_name'])
             ->first();
-        if ($exam === null) {
+        if ($exam === null || $exam->encrypted_nik === null) {
             throw new OperatorException('mcu_not_found', 'The saved MCU examination is unavailable.');
         }
+        $participantNik = $this->identifiers->display((string) $exam->encrypted_nik);
+        unset($exam->encrypted_nik);
 
         $at = CarbonImmutable::parse((string) $exam->examined_at, 'UTC')->setTimezone((string) $site->timezone);
         $this->audit->append(AuditEvent::fromContext(
@@ -192,6 +196,7 @@ final readonly class OneStopMcuService
 
         return [
             'exam' => $exam,
+            'participant_nik' => $participantNik,
             'site_name' => (string) $site->display_name,
             'site_address' => (string) ($site->address_line ?? ''),
             'examined_at_local' => $at->format('d-m-Y H:i'),
@@ -295,11 +300,10 @@ final readonly class OneStopMcuService
         }
 
         $pef = [
-            $number('pef_attempt_i', required: false, positive: true),
-            $number('pef_attempt_ii', required: false, positive: true),
-            $number('pef_attempt_iii', required: false, positive: true),
+            $number('pef_attempt_i', positive: true),
+            $number('pef_attempt_ii', positive: true),
+            $number('pef_attempt_iii', positive: true),
         ];
-        $validPef = array_values(array_filter($pef, static fn (?string $value): bool => $value !== null));
         $height = (float) $number('height_cm', positive: true);
         $weight = (float) $number('weight_kg', positive: true);
         $bmi = round($weight / (($height / 100) ** 2), 2);
@@ -338,7 +342,7 @@ final readonly class OneStopMcuService
             'pef_attempt_i' => $pef[0],
             'pef_attempt_ii' => $pef[1],
             'pef_attempt_iii' => $pef[2],
-            'pef_highest_value' => $validPef === [] ? null : max(array_map('floatval', $validPef)),
+            'pef_highest_value' => max(array_map('floatval', $pef)),
             'notes' => $notes === '' ? null : $notes,
         ];
     }

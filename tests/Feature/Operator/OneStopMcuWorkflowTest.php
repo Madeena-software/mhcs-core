@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Operator;
 
+use App\Modules\Operator\Application\Services\OneStopMcuService;
+use App\Modules\Operator\Domain\OperatorException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -52,18 +54,35 @@ final class OneStopMcuWorkflowTest extends TestCase
         $this->assertSame('340', number_format((float) $exam->pef_attempt_iii, 0, '.', ''));
         $this->assertTrue(Schema::hasColumn('operator_mcu_examinations', 'height_cm'));
         $this->assertFalse(Schema::hasColumn('operator_mcu_examinations', 'microtoise_value'));
+        $this->assertFalse(Schema::hasColumn('operator_mcu_examinations', 'nik'));
         $this->assertSame('waiting', DB::table('operator_queue_admissions')->where('id', $admissionId)->value('state'));
         $this->assertSame(0, DB::table('operator_vital_signs_executions')->count());
 
         $response = $this->get(route('operator.one-stop-mcu.pdf', $admissionId))
             ->assertOk()
             ->assertHeader('content-type', 'application/pdf');
-        $text = (new Parser)->parseContent($response->getContent())->getText();
+        $document = (new Parser)->parseContent($response->getContent());
+        $text = $document->getText();
+        $this->assertCount(1, $document->getPages());
         foreach ([
             'Synthetic Arrival Member',
+            '10-01-1988',
+            '900000000001',
+            'Rumah Skrining CV Prestige',
+            'PT Madeena',
+            'Jl. Lowanu No.68-72, Sorosutan',
+            'Kec. Umbulharjo, Kota Yogyakarta',
+            'Daerah Istimewa Yogyakarta 55162',
+            '+62 897-7067-528',
+            'Konsultasi hasil skrining via WhatsApp:',
+            'dr. Noor Istichawari, M.M. (dr. Nunung)',
+            '+62 822-3107-9219',
+            'Untuk konsultasi dan tindak lanjut setelah pemeriksaan.',
             (string) $exam->height_cm,
             'Microtoise',
             '350',
+            '330',
+            '340',
             '120 mmHg',
             '80 mmHg',
             '75 kg',
@@ -80,6 +99,7 @@ final class OneStopMcuWorkflowTest extends TestCase
         ] as $expected) {
             $this->assertStringContainsString($expected, $text);
         }
+        $this->assertStringNotContainsString((string) DB::table('members')->where('id', $fixture['memberId'])->value('medical_record_number'), $text);
         $this->assertSame(1, substr_count($text, '180 cm'));
         $this->assertStringContainsString('10-01-2040 03:30', $text);
 
@@ -106,35 +126,78 @@ final class OneStopMcuWorkflowTest extends TestCase
 
         $payload = $this->validPayload();
         $payload['pef_attempt_i'] = '250';
-        $payload['pef_attempt_ii'] = '';
+        $payload['pef_attempt_ii'] = '100';
         $payload['pef_attempt_iii'] = '300';
         $this->post(route('operator.one-stop-mcu.store', $admissionId), $payload)->assertRedirect();
 
         $this->assertSame('300', number_format((float) DB::table('operator_mcu_examinations')->value('pef_highest_value'), 0, '.', ''));
+        $highest = number_format((float) DB::table('operator_mcu_examinations')->value('pef_highest_value'), 2, '.', '');
+        $this->assertNotSame(number_format((250 + 100 + 300) / 3, 2, '.', ''), $highest);
         $this->assertDatabaseCount('operator_mcu_examinations', 1);
     }
 
-    public function test_all_missing_pef_attempts_are_saved_without_a_derived_highest_value(): void
+    public function test_each_missing_or_invalid_pef_attempt_is_rejected(): void
     {
-        [, $admissionId] = $this->checkedInAdmission('MCU-PEF-MISSING');
-        $payload = $this->validPayload();
-        $payload['fasting_status'] = 'non_fasting';
-        $payload['fasting_duration_hours'] = '';
-        $payload['last_meal_at'] = '12:15';
-        $payload['pef_attempt_i'] = '';
-        $payload['pef_attempt_ii'] = '';
-        $payload['pef_attempt_iii'] = '';
+        foreach ([
+            ['pef_attempt_i' => ''],
+            ['pef_attempt_ii' => ''],
+            ['pef_attempt_iii' => ''],
+            ['pef_attempt_i' => '', 'pef_attempt_ii' => '', 'pef_attempt_iii' => ''],
+            ['pef_attempt_i' => '0'],
+            ['pef_attempt_ii' => '-1'],
+            ['pef_attempt_iii' => 'not-a-number'],
+            ['pef_attempt_i' => '1e309'],
+        ] as $index => $invalid) {
+            [, $admissionId] = $this->checkedInAdmission('MCU-PEF-INVALID-'.$index, '90000000000'.$index);
+            $payload = array_replace($this->validPayload(), $invalid);
 
-        $this->post(route('operator.one-stop-mcu.store', $admissionId), $payload)->assertRedirect();
+            $this->post(route('operator.one-stop-mcu.store', $admissionId), $payload)
+                ->assertSessionHasErrors(array_keys($invalid));
+            $this->assertDatabaseCount('operator_mcu_examinations', 0);
+        }
+    }
 
-        $exam = DB::table('operator_mcu_examinations')->first();
-        $this->assertNotNull($exam);
-        $this->assertNull($exam->pef_attempt_i);
-        $this->assertNull($exam->pef_attempt_ii);
-        $this->assertNull($exam->pef_attempt_iii);
-        $this->assertNull($exam->pef_highest_value);
-        $this->assertSame('non_fasting', $exam->fasting_status);
-        $this->assertSame('12:15:00', $exam->last_meal_at);
+    public function test_service_layer_rejects_missing_pef_even_without_http_validation(): void
+    {
+        [, $admissionId] = $this->checkedInAdmission('MCU-PEF-SERVICE');
+        foreach ([
+            ['pef_attempt_i' => null],
+            ['pef_attempt_ii' => null],
+            ['pef_attempt_iii' => null],
+            ['pef_attempt_i' => null, 'pef_attempt_ii' => null, 'pef_attempt_iii' => null],
+            ['pef_attempt_i' => '0'],
+            ['pef_attempt_ii' => '-1'],
+            ['pef_attempt_iii' => 'invalid'],
+            ['pef_attempt_i' => '1e309'],
+        ] as $invalid) {
+            $payload = $this->validPayload();
+            foreach ($invalid as $key => $value) {
+                if ($value === null) {
+                    unset($payload[$key]);
+                } else {
+                    $payload[$key] = $value;
+                }
+            }
+            try {
+                app(OneStopMcuService::class)->record($admissionId, $payload);
+                $this->fail('The service must reject missing or invalid PEF attempts.');
+            } catch (OperatorException $exception) {
+                $this->assertSame('mcu_invalid', $exception->category);
+            }
+        }
+
+        $this->assertDatabaseCount('operator_mcu_examinations', 0);
+    }
+
+    public function test_pdf_is_unavailable_when_canonical_nik_is_missing(): void
+    {
+        [$fixture, $admissionId] = $this->checkedInAdmission('MCU-NIK-MISSING');
+        $this->post(route('operator.one-stop-mcu.store', $admissionId), $this->validPayload())->assertRedirect();
+        DB::table('members')->where('id', $fixture['memberId'])->update(['encrypted_nik' => null, 'nik_lookup_digest' => null]);
+
+        $this->get(route('operator.one-stop-mcu.pdf', $admissionId))
+            ->assertNotFound()
+            ->assertDontSee(DB::table('members')->where('id', $fixture['memberId'])->value('medical_record_number'));
     }
 
     public function test_unassigned_operator_cannot_read_or_mutate_an_mcu_examination(): void
@@ -147,15 +210,15 @@ final class OneStopMcuWorkflowTest extends TestCase
         $this->actingAs($other['operator']);
         $this->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
         $this->get(route('operator.one-stop-mcu.create', $admissionId))->assertForbidden();
-        $this->get(route('operator.one-stop-mcu.pdf', $admissionId))->assertForbidden();
+        $this->get(route('operator.one-stop-mcu.pdf', $admissionId))->assertForbidden()->assertDontSee('900000000001');
         $this->post(route('operator.one-stop-mcu.store', $admissionId), $this->validPayload())->assertForbidden();
         $this->assertDatabaseCount('operator_mcu_examinations', 1);
     }
 
     /** @return array{0: array<string, mixed>, 1: string} */
-    private function checkedInAdmission(string $ticketNumber): array
+    private function checkedInAdmission(string $ticketNumber, string $nik = '900000000001'): array
     {
-        $fixture = $this->operatorFixture(false);
+        $fixture = $this->operatorFixture(false, $nik);
         $this->actingAs($fixture['operator']);
         $this->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
         DB::table('bookings')->where('id', $fixture['bookingId'])->update(['status' => 'checked_in']);

@@ -59,12 +59,12 @@
                 @error('last_meal_at')<p class="error">{{ $message }}</p>@enderror
 
                 <h2>{{ __('Peak Flow Meter') }}</h2>
-                <p class="muted">{{ __('Enter each valid attempt in L/min. The highest valid attempt is recorded; attempts are not averaged.') }}</p>
+                <p class="muted">{{ __('Enter all three attempts as valid positive values in L/min. The highest value is recorded; attempts are not averaged.') }}</p>
                 <div class="grid">
                     @foreach (['i' => __('Attempt I'), 'ii' => __('Attempt II'), 'iii' => __('Attempt III')] as $key => $label)
                         <div>
                             <label for="pef_attempt_{{ $key }}">{{ $label }} (L/min)</label>
-                            <input id="pef_attempt_{{ $key }}" name="pef_attempt_{{ $key }}" type="number" min="0.01" step="any" value="{{ old('pef_attempt_'.$key) }}">
+                            <input id="pef_attempt_{{ $key }}" name="pef_attempt_{{ $key }}" type="number" min="0.01" step="any" value="{{ old('pef_attempt_'.$key) }}" required>
                             @error('pef_attempt_'.$key)<p class="error">{{ $message }}</p>@enderror
                         </div>
                     @endforeach

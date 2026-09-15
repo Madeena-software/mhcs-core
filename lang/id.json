@@ -653,7 +653,7 @@
     "Fasting duration (hours, when fasting)": "Durasi puasa (jam, jika puasa)",
     "Last meal time (when non-fasting)": "Waktu makan terakhir (jika tidak puasa)",
     "Peak Flow Meter": "Peak Flow Meter",
-    "Enter each valid attempt in L/min. The highest valid attempt is recorded; attempts are not averaged.": "Masukkan setiap percobaan valid dalam L/menit. Percobaan valid tertinggi yang dicatat; hasil tidak dirata-ratakan.",
+    "Enter all three attempts as valid positive values in L/min. The highest value is recorded; attempts are not averaged.": "Masukkan ketiga percobaan dengan nilai positif yang valid dalam L/menit. Nilai tertinggi yang dicatat; hasil tidak dirata-ratakan.",
     "Attempt I": "Percobaan I",
     "Attempt II": "Percobaan II",
     "Attempt III": "Percobaan III",
