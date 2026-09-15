@@ -56,6 +56,7 @@
             <a href="{{ route('operator.eligible-shifts') }}">{{ __('Assigned shifts') }}</a>
             <a href="{{ route('operator.verification-worklist') }}">{{ __('Verification worklist') }}</a>
             <a href="{{ route('operator.basic-examination-worklist') }}">{{ __('Basic-examination worklist') }}</a>
+            <a href="{{ route('operator.one-stop-mcu.index') }}">{{ __('One Stop MCU') }}</a>
             <a href="{{ route('operator.xray-readiness-worklist') }}">{{ __('X-ray readiness') }}</a>
             <a href="{{ route('operator.study.results') }}">{{ __('DICOM results') }}</a>
             <form method="POST" action="{{ route('logout') }}">

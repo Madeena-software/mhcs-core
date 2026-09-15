@@ -5,6 +5,7 @@ use App\Http\Controllers\Member\DashboardController;
 use App\Http\Controllers\Member\Mvp03BookingController;
 use App\Http\Controllers\Member\ProfileController;
 use App\Http\Controllers\Operator\ImageGatewayController;
+use App\Http\Controllers\Operator\OneStopMcuController;
 use App\Http\Controllers\Operator\OperatorAiReportController;
 use App\Http\Controllers\Operator\PortalController as OperatorPortalController;
 use App\Http\Controllers\PublicQueueDisplayController;
@@ -61,6 +62,10 @@ Route::middleware(['auth', EnsureOperatorPortalAccess::class])->group(function (
     Route::post('/operator/arrivals/cancel', [OperatorPortalController::class, 'cancelArrival'])->name('operator.arrivals.cancel');
     Route::get('/operator/verification-worklist', [OperatorPortalController::class, 'worklist'])->name('operator.verification-worklist');
     Route::get('/operator/basic-examination-worklist', [OperatorPortalController::class, 'basicExaminationWorklist'])->name('operator.basic-examination-worklist');
+    Route::get('/operator/one-stop-mcu', [OneStopMcuController::class, 'index'])->name('operator.one-stop-mcu.index');
+    Route::get('/operator/one-stop-mcu/{admission}', [OneStopMcuController::class, 'create'])->name('operator.one-stop-mcu.create');
+    Route::post('/operator/one-stop-mcu/{admission}', [OneStopMcuController::class, 'store'])->name('operator.one-stop-mcu.store');
+    Route::get('/operator/one-stop-mcu/{admission}/pdf', [OneStopMcuController::class, 'pdf'])->name('operator.one-stop-mcu.pdf');
     Route::get('/operator/xray-readiness-worklist', [OperatorPortalController::class, 'xrayReadinessWorklist'])->name('operator.xray-readiness-worklist');
     Route::get('/operator/xray-readiness-worklist/{admission}/capture', [ImageGatewayController::class, 'captureShow'])->name('operator.xray-capture.show');
     Route::post('/operator/xray-readiness-worklist/{admission}/capture', [ImageGatewayController::class, 'captureStore'])->name('operator.xray-capture.store');
