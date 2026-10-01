@@ -2,14 +2,14 @@
 title: Operator DICOM PNG Download and Worklist Filters
 document_id: MHCS-TASK-OPERATOR-DICOM-PNG-FILTERS-001
 version: 1.0
-status: draft
+status: validated-published
 language: en-US
 last_updated: 2026-10-02
 scope:
   - full-image PNG download from the Operator DICOM results list
   - patient/reference, date, and status filters on four Operator worklists
   - focused export, authorization, refresh, selection, and UI verification
-authority_note: Draft planning contract. Implementation is prohibited until readiness is verified and this exact contract is published with an immutable governing revision. The human authorized bounded task commits and, after validation and successful verification, automatic implementation commits and non-force pushes to the designated feature branch only. Deployment and other external-system mutations remain unauthorized.
+authority_note: Human-approved bounded delivery contract, executable upon immutable publication of this exact content. The human authorized task publication and, after successful verification, automatic implementation commits and non-force pushes to the designated feature branch only. Deployment and other external-system mutations remain unauthorized.
 ---
 
 # Executable Task
@@ -20,7 +20,7 @@ authority_note: Draft planning contract. Implementation is prohibited until read
 
 **Task path:** `.agents/tasks/operator-dicom-png-and-worklist-filters.md`
 
-**Task contract state:** Draft; not eligible for implementation.
+**Task contract state:** Validated/Published upon immutable publication of this exact content. The Planner handoff supplies its full publication SHA; execution and review remain tied to that exact revision.
 
 **Delivery objective:** Make the existing Operator results and operational lists easier to search and use, with full-image PNG export available directly from DICOM results.
 
@@ -34,13 +34,22 @@ Observed source provides protected DICOM access, individual `.dcm` download, sel
 
 ## Baseline and task revision
 
-**Candidate implementation baseline:** `b1a2204a2571920a6c696575a6480aad5a1294fd` on local `main`, observed with a clean working tree before this draft was created.
+**Implementation baseline:** `b1a2204a2571920a6c696575a6480aad5a1294fd`, approved by the human for this bounded successor on 2026-10-02. Local `main` was clean before task drafting; the feature branch initially differs from this baseline only in this task file.
 
-**Accepted baseline:** Not established by this planning pass. The candidate contains merged AI PACS integration. Before dependent publication, the Planner/Reviewer must establish the relevant prior review state and resolve any pending execution, review, remediation, or approval on overlapping surfaces. A merge commit alone is not implementation-acceptance evidence.
+**Prior delivery state:** The baseline contains the merged AI PACS integration. No pending Executor result or explicit outstanding review/remediation was identified for this conversation. The absence of reviews/checks on its merged PR does not by itself establish pending review. Historical full-task AI PACS acceptance and CI evidence remain unverified; this publication records human approval of the selected successor baseline and focused local compatibility evidence, not retrospective acceptance of the entire prior task.
 
-**Task revision:** Resolved when published; this draft has no immutable governing publication revision.
+**Task revision:** The full SHA of the commit containing this exact validated content, supplied externally in the Planner handoff. Resolve that SHA before implementation; a previous Draft commit does not govern execution.
 
-Do not treat the candidate as an accepted baseline or mark T5 passed while these prerequisites remain unresolved. Publication must identify the approved implementation baseline and the exact task path plus full immutable publication SHA.
+**Expected execution-start state:** The task-publication commit on `task/operator-dicom-png-and-worklist-filters`, with a clean working tree and production source identical to the implementation baseline. If additional implementation commits intervene, preserve them and return material drift to Planner/Reviewer.
+
+### Readiness and observed baseline evidence
+
+- Human approved the design, bounded commit/push workflow, and execution on 2026-10-02 ("saya acc agar bisa di eksekusi executor").
+- Planner checked current source and the four list routes/views, protected DICOM retrieval, batch selection, installed image-rendering facilities, relevant authority, and prior task/history identity.
+- Fresh isolated local verification on 2026-10-02: `APP_ENV=testing DB_CONNECTION=sqlite DB_DATABASE=:memory: DB_URL= QUEUE_CONNECTION=sync MHCS_PRIVATE_OBJECT_DISK=local vendor/bin/phpunit tests/Feature/Operator/Mvp14ImageGatewayIntegrationTest.php tests/Feature/Operator/OperatorPortraitDicomViewerTest.php tests/Feature/Operator/OperatorFieldOperationsSlice1Test.php tests/Feature/Operator/OperatorFieldOperationsSlice2Test.php tests/Feature/Operator/OperatorFieldOperationsSlice3Test.php tests/Feature/Operator/OperatorFieldOperationsSlice4Test.php tests/ImageGateway/ImageGatewayAiDispatchTest.php` passed: 133 tests, 1,071 assertions.
+- `node --test tests/JavaScript/operator-dicom-viewer.test.mjs` passed: 17 tests, zero failures.
+- These checks establish local compatibility evidence for the selected baseline. They do not verify the new PNG/filter feature, real browser export, live services, production, or the full historical AI PACS task. The Executor must supply the new-feature verification below.
+- No product source was changed during planning. No unresolved product or architecture decision was identified within the approved bounded scope.
 
 ## Objective
 
@@ -52,6 +61,7 @@ An authorized Operator can download one full-image PNG directly from each DICOM 
 
 - Human request and explicit clarification answers in the current conversation dated 2026-10-02: PNG column in DICOM results; full image rather than viewer screenshot; patient/examination-reference, date and status filters; exactly four Operator lists.
 - Human continuation instruction dated 2026-10-02, following the explicit automatic-commit/push proposal: proceed with bounded automatic commits and feature-branch pushes after verification, without force-push, merge to `main`, or deployment.
+- Human final execution approval dated 2026-10-02: "saya acc agar bisa di eksekusi executor", approving this task's publication and execution from the selected baseline.
 - `.agents/AGENTS.md`, `.agents/software-workflow.md`, `.agents/prompts/plan-create-task.md`, and `.agents/tasks/_template.md`.
 - `.agents/context/project.md` for orientation and authority routing; it is supporting context, not technical approval.
 - `docs/mvp/decision-log.md`: MVP-DEC-035/036 for protected Operator DICOM access and MVP-DEC-037 for Indonesian registry-backed browser copy.
@@ -108,9 +118,9 @@ An authorized Operator can download one full-image PNG directly from each DICOM 
 ### Remaining approval requirements
 
 - The human approved continuation of the proposed task and bounded automatic-commit/push workflow on 2026-10-02. Material changes to its product, date/status, image-export, or side-effect boundaries still require Planner/Reviewer handling.
-- Establish the relevant accepted baseline and close any overlapping pending review before dependent publication.
+- The human subsequently approved execution from the selected baseline. No further per-commit or pre-execution approval is required within this exact published contract.
 - Local task commits and the bounded Executor commit/push workflow below are authorized by the current human instruction; do not inherit permissions from older tasks.
-- Resolve the exact immutable governing task revision before implementation. A commit containing this Draft does not satisfy T5 or authorize implementation.
+- Resolve the exact immutable governing task revision before implementation. A commit containing an earlier Draft does not satisfy T5 or authorize implementation.
 
 ## Required capabilities
 
@@ -154,7 +164,7 @@ Return actual execution-start HEAD/branch/working-tree state; exact governing ta
 
 ## Stop conditions
 
-- Publication, baseline, prior review, or material approval prerequisites are unresolved.
+- The exact published task revision or implementation baseline cannot be resolved, or a material pending execution/review/remediation affecting this task is discovered.
 - Access cannot be preserved, image export would require a new dependency/service/storage/schema, or supported image types require unapproved frame/VOI/orientation policy.
 - A filter would expose foreign/historical unauthorized records, require new clinical states, or alter clinical action eligibility.
 - Task baseline drift, overlapping user work, or a material architecture/product conflict makes execution unsafe.
@@ -167,6 +177,7 @@ Return actual execution-start HEAD/branch/working-tree state; exact governing ta
 - Inspect repository/review state, create or revise this task, and commit only bounded planning changes locally on `task/operator-dicom-png-and-worklist-filters`.
 - Create that local feature branch from the verified candidate baseline if absent. Preserve an existing branch and stop if its history or work conflicts; do not reset or replace it.
 - A Draft commit is a durable planning snapshot only. Do not push a Draft as execution-ready or start implementation before T5 passes.
+- After human approval and task validation, publish this exact task by local commit and normal non-force push of `task/operator-dicom-png-and-worklist-filters` to `origin`, including initial remote branch creation/upstream tracking. Supply the observed immutable publication SHA in the handoff.
 
 ### Authorized Executor actions after validation/publication
 
