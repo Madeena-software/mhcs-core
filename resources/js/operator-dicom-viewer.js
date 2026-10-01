@@ -9,11 +9,14 @@ import {
     init as dicomImageLoaderInit,
 } from '@cornerstonejs/dicom-image-loader';
 import dicomParser from 'dicom-parser';
+import events from 'events';
 import {
     dicomLoadTimeout,
     VIEWER_TIMEOUT_MS,
     withViewerTimeout,
 } from './operator-viewer-timeout.js';
+
+export const BrowserEvents = events;
 
 const VIEWPORT_ID = 'mhcs-dicom-viewport';
 const ENGINE_ID = 'mhcs-dicom-engine';

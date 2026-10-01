@@ -43,7 +43,15 @@
         th, td { text-align: left; vertical-align: top; padding: 12px 10px; border-bottom: 1px solid #435461; }
         th { color: #c4d0d7; font-size: 14px; }
         .status { color: #b8f1c8; font-weight: 700; }
-        @media (max-width: 700px) { .nav { align-items: flex-start; flex-direction: column; } h1 { font-size: 28px; } }
+        .worklist-filter-bar { background: #17232c; border: 1px solid #435461; border-radius: 10px; padding: 16px; margin: 16px 0 20px; }
+        .filter-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; align-items: end; }
+        .filter-group { display: flex; flex-direction: column; gap: 6px; }
+        .filter-group label { margin: 0; font-size: 13px; font-weight: 600; color: #c4d0d7; }
+        .filter-group input, .filter-group select { padding: 9px 12px; font-size: 14px; border-radius: 6px; }
+        .filter-actions { display: flex; align-items: center; gap: 12px; margin-top: 14px; flex-wrap: wrap; }
+        .filter-count { font-size: 13px; font-weight: 600; color: #8fdfff; margin-left: auto; }
+        .btn-png-download { padding: 6px 12px; font-size: 13px; border-radius: 6px; font-weight: 700; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; }
+        @media (max-width: 700px) { .nav { align-items: flex-start; flex-direction: column; } h1 { font-size: 28px; } .filter-grid { grid-template-columns: 1fr; } .filter-count { margin-left: 0; width: 100%; } }
     </style>
 </head>
 <body>
@@ -83,5 +91,6 @@
         window.addEventListener('pagehide', () => window.clearInterval(timer), { once: true });
     })();
 </script>
+@vite('resources/js/app.js')
 </body>
 </html>

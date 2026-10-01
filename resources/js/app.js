@@ -1,5 +1,6 @@
 import { VIEWER_TIMEOUT_MS, withViewerTimeout } from './operator-viewer-timeout.js';
 import { initCaptureUpload } from './operator-upload.js';
+import { initWorklistFilters } from './operator-worklist-filters.js';
 
 function viewerTimeout(root) {
     const configured = Number(root.dataset.viewerTimeoutMs);
@@ -44,8 +45,15 @@ export async function bootstrapViewer(root, importViewer = () => import('./opera
     }
 }
 
+
 if (typeof document !== 'undefined') {
     initCaptureUpload();
+    initWorklistFilters(document);
+    if (document.querySelector('[data-png-download]')) {
+        import('./operator-dicom-png.js').then((module) => {
+            module.initPngDownloadButtons(document);
+        });
+    }
     const root = document.querySelector('[data-dicom-viewer]');
     if (root) {
         bootstrapViewer(root);
