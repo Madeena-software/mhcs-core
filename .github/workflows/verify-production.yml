@@ -51,8 +51,6 @@ jobs:
           VERIFY_PRESTIGE: ${{ inputs.verify_prestige }}
           VERIFY_PRESTIGE_MEMBERS: ${{ inputs.verify_prestige_members }}
           DIAGNOSE_PRESTIGE_LEGACY: ${{ inputs.diagnose_prestige_legacy }}
-          OPERATOR_DIAGNOSTIC_B64: >-
-            PD9waHAKCmRlY2xhcmUoc3RyaWN0X3R5cGVzPTEpOwoKdXNlIEFwcFxIdHRwXENvbnRyb2xsZXJzXE9wZXJhdG9yXFBvcnRhbENvbnRyb2xsZXI7CnVzZSBBcHBcTW9kZWxzXFVzZXI7CnVzZSBBcHBcTW9kdWxlc1xPcGVyYXRvclxBcHBsaWNhdGlvblxTZXJ2aWNlc1xPcGVyYXRvckF1dGhvcml6YXRpb247CnVzZSBBcHBcTW9kdWxlc1xPcGVyYXRvclxBcHBsaWNhdGlvblxTZXJ2aWNlc1xPcGVyYXRvclNoaWZ0QXNzaWdubWVudFNlcnZpY2U7CnVzZSBBcHBcTW9kdWxlc1xPcGVyYXRvclxEb21haW5cTW9kZWxzXE9wZXJhdG9yUHJvZmlsZTsKdXNlIEFwcFxNb2R1bGVzXE9wZXJhdG9yXERvbWFpblxNb2RlbHNcT3BlcmF0b3JTaXRlOwp1c2UgQXBwXFNoYXJlZFxBdXRob3JpemF0aW9uXEF1dGhvcml6YXRpb25DbGFpbVJlc29sdmVyOwp1c2UgSWxsdW1pbmF0ZVxDb250cmFjdHNcQ29uc29sZVxLZXJuZWw7CnVzZSBJbGx1bWluYXRlXFN1cHBvcnRcRmFjYWRlc1xBdXRoOwp1c2UgSWxsdW1pbmF0ZVxTdXBwb3J0XEZhY2FkZXNcREI7CnVzZSBJbGx1bWluYXRlXFN1cHBvcnRcRmFjYWRlc1xTY2hlbWE7CnVzZSBJbGx1bWluYXRlXFN1cHBvcnRcRmFjYWRlc1xWaWV3Owp1c2UgSWxsdW1pbmF0ZVxTdXBwb3J0XFZpZXdFcnJvckJhZzsKCnJlcXVpcmUgJ3ZlbmRvci9hdXRvbG9hZC5waHAnOwokYXBwID0gcmVxdWlyZSAnYm9vdHN0cmFwL2FwcC5waHAnOwokYXBwLT5tYWtlKEtlcm5lbDo6Y2xhc3MpLT5ib290c3RyYXAoKTsKCmVjaG8gIlxuPT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PVxuIjsKZWNobyAiPT09IE9QRVJBVE9SIEVMSUdJQkxFIFNISUZUUyBQUk9EVUNUSU9OIERJQUdOT1NUSUNTID09PVxuIjsKZWNobyAiPT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PVxuIjsKCmVjaG8gIlxuLS0tIDEuIFJVTlRJTUUsIEVOVklST05NRU5UICYgQ0FDSEVTIC0tLVxuIjsKZWNobyAibGFyYXZlbF9lbnZpcm9ubWVudD0iIC4gJGFwcC0+ZW52aXJvbm1lbnQoKSAuICJcbiI7CmVjaG8gInBocF92ZXJzaW9uPSIgLiBQSFBfVkVSU0lPTiAuICJcbiI7CmVjaG8gImxhcmF2ZWxfZnJhbWV3b3JrX3ZlcnNpb249IiAuICRhcHAtPnZlcnNpb24oKSAuICJcbiI7CnRyeSB7CiAgICAkbXlzcWxWZXIgPSBEQjo6c2VsZWN0KCJTRUxFQ1QgVkVSU0lPTigpIGFzIHYiKVswXS0+diA/PyAndW5rbm93bic7CiAgICBlY2hvICJteXNxbF9zZXJ2ZXJfdmVyc2lvbj0iIC4gJG15c3FsVmVyIC4gIlxuIjsKICAgICRzcWxNb2RlcyA9IERCOjpzZWxlY3QoIlNFTEVDVCBAQFNFU1NJT04uc3FsX21vZGUgYXMgc20sIEBAR0xPQkFMLnNxbF9tb2RlIGFzIGdtIilbMF0gPz8gbnVsbDsKICAgIGlmICgkc3FsTW9kZXMpIHsKICAgICAgICBlY2hvICJteXNxbF9zZXNzaW9uX3NxbF9tb2RlPSIgLiAkc3FsTW9kZXMtPnNtIC4gIlxuIjsKICAgICAgICBlY2hvICJteXNxbF9nbG9iYWxfc3FsX21vZGU9IiAuICRzcWxNb2Rlcy0+Z20gLiAiXG4iOwogICAgfQp9IGNhdGNoIChUaHJvd2FibGUgJGUpIHsKICAgIGVjaG8gIm15c3FsX3NlcnZlcl92ZXJzaW9uX2Vycm9yPSIgLiBnZXRfY2xhc3MoJGUpIC4gIlxuIjsKfQoKZWNobyAiY29uZmlnX2NhY2hlZD0iIC4gKGZpbGVfZXhpc3RzKGJhc2VfcGF0aCgnYm9vdHN0cmFwL2NhY2hlL2NvbmZpZy5waHAnKSkgPyAndHJ1ZScgOiAnZmFsc2UnKSAuICJcbiI7CmVjaG8gInJvdXRlc19jYWNoZWQ9IiAuIChmaWxlX2V4aXN0cyhiYXNlX3BhdGgoJ2Jvb3RzdHJhcC9jYWNoZS9yb3V0ZXMtdjcucGhwJykpID8gJ3RydWUnIDogJ2ZhbHNlJykgLiAiXG4iOwplY2hvICJldmVudHNfY2FjaGVkPSIgLiAoZmlsZV9leGlzdHMoYmFzZV9wYXRoKCdib290c3RyYXAvY2FjaGUvZXZlbnRzLnBocCcpKSA/ICd0cnVlJyA6ICdmYWxzZScpIC4gIlxuIjsKJGNvbXBpbGVkVmlld3MgPSBnbG9iKHN0b3JhZ2VfcGF0aCgnZnJhbWV3b3JrL3ZpZXdzLyoucGhwJykpID86IFtdOwplY2hvICJ2aWV3c19jYWNoZWRfY291bnQ9IiAuIGNvdW50KCRjb21waWxlZFZpZXdzKSAuICJcbiI7CgplY2hvICJcbi0tLSAyLiBFTlZJUk9OTUVOVCBWQVJJQUJMRSBOQU1FUyAoUFJFU0VOQ0UgT05MWSkgLS0tXG4iOwokZW52S2V5cyA9IGFycmF5X3VuaXF1ZShhcnJheV9tZXJnZShhcnJheV9rZXlzKCRfRU5WKSwgYXJyYXlfa2V5cygkX1NFUlZFUikpKTsKc29ydCgkZW52S2V5cyk7CmZvcmVhY2ggKCRlbnZLZXlzIGFzICRrZXkpIHsKICAgIGlmIChzdHJfc3RhcnRzX3dpdGgoJGtleSwgJ1BIUF8nKSB8fCBzdHJfc3RhcnRzX3dpdGgoJGtleSwgJ0FQUF8nKSB8fCBzdHJfc3RhcnRzX3dpdGgoJGtleSwgJ0RCXycpIHx8IHN0cl9zdGFydHNfd2l0aCgka2V5LCAnTUhDU18nKSB8fCBzdHJfc3RhcnRzX3dpdGgoJGtleSwgJ0FJX1BBQ1NfJykgfHwgc3RyX3N0YXJ0c193aXRoKCRrZXksICdRVUVVRV8nKSB8fCBzdHJfc3RhcnRzX3dpdGgoJGtleSwgJ0NBQ0hFXycpIHx8IHN0cl9zdGFydHNfd2l0aCgka2V5LCAnU0VTU0lPTl8nKSkgewogICAgICAgIGVjaG8gIkVOVl9QUkVTRU5UOiAiIC4gJGtleSAuICJcbiI7CiAgICB9Cn0KCmVjaG8gIlxuLS0tIDMuIFJFQ0VOVCBMQVJBVkVMIExPRyBFUlJPUlMgKExBU1QgMTAgQkxPQ0tTKSAtLS1cbiI7CiRsb2dQYXRoID0gc3RvcmFnZV9wYXRoKCdsb2dzL2xhcmF2ZWwubG9nJyk7CmlmICghZmlsZV9leGlzdHMoJGxvZ1BhdGgpKSB7CiAgICBlY2hvICJsYXJhdmVsLmxvZyBkb2VzIG5vdCBleGlzdFxuIjsKfSBlbHNlIHsKICAgICRsaW5lcyA9IGZpbGUoJGxvZ1BhdGgpOwogICAgJHRvdGFsTGluZXMgPSBjb3VudCgkbGluZXMpOwogICAgZWNobyAiVG90YWwgbG9nIGxpbmVzOiAiIC4gJHRvdGFsTGluZXMgLiAiXG4iOwoKICAgICRlcnJvckJsb2NrcyA9IFtdOwogICAgJGN1cnJlbnRCbG9jayA9IFtdOwogICAgZm9yICgkaSA9ICR0b3RhbExpbmVzIC0gMTsgJGkgPj0gMCAmJiBjb3VudCgkZXJyb3JCbG9ja3MpIDwgMTA7ICRpLS0pIHsKICAgICAgICAkbGluZSA9ICRsaW5lc1skaV07CiAgICAgICAgaWYgKHByZWdfbWF0Y2goJy9eXFtcZHs0fS1cZHsyfS1cZHsyfVsgVF1cZHsyfTpcZHsyfTpcZHsyfS8nLCAkbGluZSkpIHsKICAgICAgICAgICAgJGN1cnJlbnRCbG9ja1tdID0gJGxpbmU7CiAgICAgICAgICAgICRibG9ja1RleHQgPSBpbXBsb2RlKCcnLCBhcnJheV9yZXZlcnNlKCRjdXJyZW50QmxvY2spKTsKICAgICAgICAgICAgaWYgKHN0cl9jb250YWlucygkYmxvY2tUZXh0LCAnRVJST1InKSB8fCBzdHJfY29udGFpbnMoJGJsb2NrVGV4dCwgJ0V4Y2VwdGlvbicpIHx8IHN0cl9jb250YWlucygkYmxvY2tUZXh0LCAnZWxpZ2libGUtc2hpZnRzJykgfHwgc3RyX2NvbnRhaW5zKCRibG9ja1RleHQsICdQb3J0YWxDb250cm9sbGVyJykpIHsKICAgICAgICAgICAgICAgICRlcnJvckJsb2Nrc1tdID0gJGJsb2NrVGV4dDsKICAgICAgICAgICAgfQogICAgICAgICAgICAkY3VycmVudEJsb2NrID0gW107CiAgICAgICAgfSBlbHNlIHsKICAgICAgICAgICAgJGN1cnJlbnRCbG9ja1tdID0gJGxpbmU7CiAgICAgICAgfQogICAgfQoKICAgIGVjaG8gIkZvdW5kICIgLiBjb3VudCgkZXJyb3JCbG9ja3MpIC4gIiByZWNlbnQgcmVsZXZhbnQgZXJyb3IgYmxvY2tzLlxuIjsKICAgIGZvcmVhY2ggKCRlcnJvckJsb2NrcyBhcyAkaWR4ID0+ICRibG9jaykgewogICAgICAgIGVjaG8gIlxuLS0tIEVycm9yIEJsb2NrICMiIC4gKCRpZHggKyAxKSAuICIgLS0tXG4iOwogICAgICAgICRzYW5pdGl6ZWQgPSBwcmVnX3JlcGxhY2UoJy9bYS16QS1aMC05Ll8lKy1dK0BbYS16QS1aMC05Li1dK1wuW2EtekEtWl17Mix9LycsICdbUkVEQUNURURfRU1BSUxdJywgJGJsb2NrKTsKICAgICAgICAkc2FuaXRpemVkID0gcHJlZ19yZXBsYWNlKCcvQmVhcmVyXHMrW0EtWmEtejAtOS5ffitcLy1dKz0qL2knLCAnQmVhcmVyIFtSRURBQ1RFRF0nLCAkc2FuaXRpemVkKTsKICAgICAgICAkc2FuaXRpemVkID0gcHJlZ19yZXBsYWNlKCcvKHBhc3N3b3JkfHRva2VufGtleXxzZWNyZXQpPShbXlxzJl0rKS9pJywgJyQxPVtSRURBQ1RFRF0nLCAkc2FuaXRpemVkKTsKICAgICAgICAkYmxvY2tMaW5lcyA9IGV4cGxvZGUoIlxuIiwgJHNhbml0aXplZCk7CiAgICAgICAgZWNobyBpbXBsb2RlKCJcbiIsIGFycmF5X3NsaWNlKCRibG9ja0xpbmVzLCAwLCAzMCkpIC4gIlxuIjsKICAgIH0KfQoKZWNobyAiXG4tLS0gNC4gU0lNVUxBVEVEIE9QRVJBVE9SIEVMSUdJQkxFIFNISUZUUyBJTlZPQ0FUSU9OIC0tLVxuIjsKJHByb2ZpbGVzID0gT3BlcmF0b3JQcm9maWxlOjp3aGVyZSgnYWN0aXZlJywgdHJ1ZSktPmdldCgpOwplY2hvICJBY3RpdmUgT3BlcmF0b3IgUHJvZmlsZXMgaW4gUHJvZHVjdGlvbjogIiAuICRwcm9maWxlcy0+Y291bnQoKSAuICJcbiI7CgokY2xhaW1SZXNvbHZlciA9ICRhcHAtPm1ha2UoQXV0aG9yaXphdGlvbkNsYWltUmVzb2x2ZXI6OmNsYXNzKTsKJGNvbnRyb2xsZXIgPSAkYXBwLT5tYWtlKFBvcnRhbENvbnRyb2xsZXI6OmNsYXNzKTsKJGF1dGggPSAkYXBwLT5tYWtlKE9wZXJhdG9yQXV0aG9yaXphdGlvbjo6Y2xhc3MpOwokYXNzaWduID0gJGFwcC0+bWFrZShPcGVyYXRvclNoaWZ0QXNzaWdubWVudFNlcnZpY2U6OmNsYXNzKTsKCiRjb3VudGVyID0gMDsKZm9yZWFjaCAoJHByb2ZpbGVzIGFzICRwcm9maWxlKSB7CiAgICAkY291bnRlcisrOwogICAgZWNobyAiXG4tLS0gT3BlcmF0b3IgUHJvZmlsZSAjeyRjb3VudGVyfSAtLS1cbiI7CiAgICAkdXNlciA9IFVzZXI6OmZpbmQoJHByb2ZpbGUtPnVzZXJfaWQpOwogICAgaWYgKCEkdXNlcikgewogICAgICAgIGVjaG8gInVzZXJfZXhpc3RzPWZhbHNlXG4iOwogICAgICAgIGNvbnRpbnVlOwogICAgfQogICAgZWNobyAidXNlcl9jYW5fYXV0aGVudGljYXRlPSIgLiAoJHVzZXItPmNhbkF1dGhlbnRpY2F0ZSgpID8gJ3RydWUnIDogJ2ZhbHNlJykgLiAiXG4iOwogICAgZWNobyAidXNlcl9hY2NvdW50X3N0YXR1cz0iIC4gJHVzZXItPmFjY291bnRfc3RhdHVzIC4gIlxuIjsKICAgIGVjaG8gInVzZXJfbG9naW5fZW5hYmxlZD0iIC4gKCR1c2VyLT5sb2dpbl9lbmFibGVkID8gJ3RydWUnIDogJ2ZhbHNlJykgLiAiXG4iOwoKICAgICRyb2xlcyA9ICRjbGFpbVJlc29sdmVyLT5yb2xlcygkdXNlcik7CiAgICAkcGVybXMgPSAkY2xhaW1SZXNvbHZlci0+cGVybWlzc2lvbnMoJHVzZXIpOwogICAgZWNobyAiaGFzX3JvbGVfb3BlcmF0b3I9IiAuIChpbl9hcnJheShPcGVyYXRvckF1dGhvcml6YXRpb246OlJPTEUsICRyb2xlcywgdHJ1ZSkgPyAndHJ1ZScgOiAnZmFsc2UnKSAuICJcbiI7CiAgICBlY2hvICJoYXNfcGVybV9wb3J0YWxfYWNjZXNzPSIgLiAoaW5fYXJyYXkoT3BlcmF0b3JBdXRob3JpemF0aW9uOjpQT1JUQUxfQUNDRVNTLCAkcGVybXMsIHRydWUpID8gJ3RydWUnIDogJ2ZhbHNlJykgLiAiXG4iOwoKICAgICRzaXRlQXNzaWdubWVudHMgPSBEQjo6dGFibGUoJ29wZXJhdG9yX3NpdGVfYXNzaWdubWVudHMnKQogICAgICAgIC0+d2hlcmUoJ29wZXJhdG9yX3Byb2ZpbGVfaWQnLCAkcHJvZmlsZS0+aWQpCiAgICAgICAgLT53aGVyZSgnYWN0aXZlJywgdHJ1ZSkKICAgICAgICAtPmdldCgpOwogICAgZWNobyAiYWN0aXZlX3NpdGVfYXNzaWdubWVudHNfY291bnQ9IiAuICRzaXRlQXNzaWdubWVudHMtPmNvdW50KCkgLiAiXG4iOwoKICAgICRhY3RpdmVTaGlmdHMgPSBEQjo6dGFibGUoJ29wZXJhdG9yX3NoaWZ0X2Fzc2lnbm1lbnRzJykKICAgICAgICAtPndoZXJlKCdvcGVyYXRvcl9wcm9maWxlX2lkJywgJHByb2ZpbGUtPmlkKQogICAgICAgIC0+d2hlcmUoJ3N0YXR1cycsICdhY3RpdmUnKQogICAgICAgIC0+Y291bnQoKTsKICAgIGVjaG8gImFjdGl2ZV9zaGlmdF9hc3NpZ25tZW50c19jb3VudD0iIC4gJGFjdGl2ZVNoaWZ0cyAuICJcbiI7CgogICAgZm9yZWFjaCAoJHNpdGVBc3NpZ25tZW50cyBhcyAkc2EpIHsKICAgICAgICAkc2l0ZSA9IE9wZXJhdG9yU2l0ZTo6ZmluZCgkc2EtPm9wZXJhdG9yX3NpdGVfaWQpOwogICAgICAgIGlmICghJHNpdGUpIHsKICAgICAgICAgICAgZWNobyAiYXNzaWduZWRfc2l0ZV9leGlzdHM9ZmFsc2VcbiI7CiAgICAgICAgICAgIGNvbnRpbnVlOwogICAgICAgIH0KICAgICAgICBlY2hvICJzaXRlX2FjdGl2ZT0iIC4gKCRzaXRlLT5hY3RpdmUgPyAndHJ1ZScgOiAnZmFsc2UnKSAuICJcbiI7CgogICAgICAgIEF1dGg6OmxvZ2luKCR1c2VyKTsKICAgICAgICBzZXNzaW9uKCktPnB1dCgnb3BlcmF0b3IuYWN0aXZlX3NpdGVfaWQnLCAoc3RyaW5nKSRzaXRlLT5nZXRLZXkoKSk7CiAgICAgICAgc2Vzc2lvbigpLT5zYXZlKCk7CiAgICAgICAgVmlldzo6c2hhcmUoJ2Vycm9ycycsIG5ldyBWaWV3RXJyb3JCYWcpOwoKICAgICAgICBlY2hvICJDYWxsaW5nIFBvcnRhbENvbnRyb2xsZXI6OmVsaWdpYmxlKCkuLi5cbiI7CiAgICAgICAgdHJ5IHsKICAgICAgICAgICAgJHJlc3AgPSAkY29udHJvbGxlci0+ZWxpZ2libGUoJGF1dGgsICRhc3NpZ24pOwogICAgICAgICAgICBpZiAoJHJlc3AgaW5zdGFuY2VvZiBcSWxsdW1pbmF0ZVxWaWV3XFZpZXcpIHsKICAgICAgICAgICAgICAgIGVjaG8gImVsaWdpYmxlX3Jlc3VsdD1WaWV3UmV0dXJuZWRcbiI7CiAgICAgICAgICAgICAgICBlY2hvICJWaWV3IG5hbWU6ICIgLiAkcmVzcC0+bmFtZSgpIC4gIlxuIjsKICAgICAgICAgICAgICAgICRzaGlmdHNEYXRhID0gJHJlc3AtPmdldERhdGEoKVsnc2hpZnRzJ10gPz8gW107CiAgICAgICAgICAgICAgICBlY2hvICJTaGlmdHMgY291bnQ6ICIgLiBjb3VudCgkc2hpZnRzRGF0YSkgLiAiXG4iOwogICAgICAgICAgICAgICAgZm9yZWFjaCAoJHNoaWZ0c0RhdGEgYXMgJHNJZHggPT4gJHMpIHsKICAgICAgICAgICAgICAgICAgICBlY2hvICIgIFNoaWZ0ICMkc0lkeDogc3RhcnRzX2F0IHR5cGU9IiAuIGdldHR5cGUoJHMtPnNjaGVkdWxlX3N0YXJ0c19hdCkgLiAiLCBjbGFzcz0iIC4gKGlzX29iamVjdCgkcy0+c2NoZWR1bGVfc3RhcnRzX2F0KSA/IGdldF9jbGFzcygkcy0+c2NoZWR1bGVfc3RhcnRzX2F0KSA6ICdub3Rfb2JqZWN0JykgLiAiLCByYXdfdmFsPSIgLiBqc29uX2VuY29kZSgkcy0+Z2V0QXR0cmlidXRlcygpWydzY2hlZHVsZV9zdGFydHNfYXQnXSA/PyBudWxsKSAuICJcbiI7CiAgICAgICAgICAgICAgICB9CiAgICAgICAgICAgICAgICBlY2hvICJSZW5kZXJpbmcgQmxhZGUgdGVtcGxhdGUuLi5cbiI7CiAgICAgICAgICAgICAgICAkaHRtbCA9ICRyZXNwLT5yZW5kZXIoKTsKICAgICAgICAgICAgICAgIGVjaG8gInJlbmRlcl9yZXN1bHQ9U1VDQ0VTUyAobGVuZ3RoOiAiIC4gc3RybGVuKCRodG1sKSAuICIgYnl0ZXMpXG4iOwogICAgICAgICAgICB9IGVsc2VpZiAoJHJlc3AgaW5zdGFuY2VvZiBcSWxsdW1pbmF0ZVxIdHRwXFJlZGlyZWN0UmVzcG9uc2UpIHsKICAgICAgICAgICAgICAgIGVjaG8gImVsaWdpYmxlX3Jlc3VsdD1SZWRpcmVjdFJlc3BvbnNlIHRvICIgLiAkcmVzcC0+Z2V0VGFyZ2V0VXJsKCkgLiAiXG4iOwogICAgICAgICAgICB9IGVsc2UgewogICAgICAgICAgICAgICAgZWNobyAiZWxpZ2libGVfcmVzdWx0PSIgLiBnZXRfY2xhc3MoJHJlc3ApIC4gIlxuIjsKICAgICAgICAgICAgfQogICAgICAgIH0gY2F0Y2ggKFRocm93YWJsZSAkZSkgewogICAgICAgICAgICBlY2hvICJDQVBUVVJFRF9FWENFUFRJT049IiAuIGdldF9jbGFzcygkZSkgLiAiXG4iOwogICAgICAgICAgICBlY2hvICJFWENFUFRJT05fQ09ERT0iIC4gJGUtPmdldENvZGUoKSAuICJcbiI7CiAgICAgICAgICAgIGlmICgkZSBpbnN0YW5jZW9mIFxQRE9FeGNlcHRpb24gfHwgJGUgaW5zdGFuY2VvZiBcSWxsdW1pbmF0ZVxEYXRhYmFzZVxRdWVyeUV4Y2VwdGlvbikgewogICAgICAgICAgICAgICAgZWNobyAiU1FMU1RBVEU9IiAuICgkZS0+ZXJyb3JJbmZvWzBdID8/ICd1bmtub3duJykgLiAiXG4iOwogICAgICAgICAgICAgICAgZWNobyAiREJfRVJST1JfQ09ERT0iIC4gKCRlLT5lcnJvckluZm9bMV0gPz8gJ3Vua25vd24nKSAuICJcbiI7CiAgICAgICAgICAgIH0KICAgICAgICAgICAgJHNhbml0aXplZE1zZyA9IHByZWdfcmVwbGFjZSgnL1thLXpBLVowLTkuXyUrLV0rQFthLXpBLVowLTkuLV0rXC5bYS16QS1aXXsyLH0vJywgJ1tFTUFJTF0nLCAkZS0+Z2V0TWVzc2FnZSgpKTsKICAgICAgICAgICAgZWNobyAiRVhDRVBUSU9OX01FU1NBR0U9IiAuICRzYW5pdGl6ZWRNc2cgLiAiXG4iOwogICAgICAgICAgICBlY2hvICJFWENFUFRJT05fRklMRT0iIC4gJGUtPmdldEZpbGUoKSAuICI6IiAuICRlLT5nZXRMaW5lKCkgLiAiXG4iOwogICAgICAgICAgICBlY2hvICJTVEFDS19UUkFDRTpcbiI7CiAgICAgICAgICAgICR0cmFjZUxpbmVzID0gZXhwbG9kZSgiXG4iLCAkZS0+Z2V0VHJhY2VBc1N0cmluZygpKTsKICAgICAgICAgICAgZm9yZWFjaCAoYXJyYXlfc2xpY2UoJHRyYWNlTGluZXMsIDAsIDIwKSBhcyAkdGwpIHsKICAgICAgICAgICAgICAgIGVjaG8gIiAgIiAuICR0bCAuICJcbiI7CiAgICAgICAgICAgIH0KICAgICAgICB9CiAgICB9Cn0KCmVjaG8gIlxuLS0tIDUuIFBST0RVQ1RJT04gU0NIRU1BIE1FVEFEQVRBIC0tLVxuIjsKJHRhYmxlcyA9IFsKICAgICd1c2VycycsICdvcGVyYXRvcl9wcm9maWxlcycsICdvcGVyYXRvcl9zaXRlcycsICdvcGVyYXRvcl9zaXRlX2Fzc2lnbm1lbnRzJywKICAgICdvcGVyYXRvcl9lbGlnaWJsZV9zaGlmdHMnLCAnb3BlcmF0b3Jfc2hpZnRfYXNzaWdubWVudHMnLCAnc2hpZnRfc2NoZWR1bGVzJywKICAgICdib29raW5ncycsICdhdXRob3JpemF0aW9uX3JvbGVfYXNzaWdubWVudHMnLCAnYXV0aG9yaXphdGlvbl9wZXJtaXNzaW9uX2Fzc2lnbm1lbnRzJwpdOwoKZm9yZWFjaCAoJHRhYmxlcyBhcyAkdGFibGUpIHsKICAgIGlmICghU2NoZW1hOjpoYXNUYWJsZSgkdGFibGUpKSB7CiAgICAgICAgZWNobyAiVEFCTEUgJHRhYmxlOiBNSVNTSU5HXG4iOwogICAgICAgIGNvbnRpbnVlOwogICAgfQogICAgJGNvbHVtbnMgPSBEQjo6c2VsZWN0KCJTSE9XIEZVTEwgQ09MVU1OUyBGUk9NIGAkdGFibGVgIik7CiAgICBlY2hvICJUQUJMRSAkdGFibGUgKCIgLiBjb3VudCgkY29sdW1ucykgLiAiIGNvbHVtbnMpOlxuIjsKICAgIGZvcmVhY2ggKCRjb2x1bW5zIGFzICRjKSB7CiAgICAgICAgZWNobyAiICBjb2w6IHskYy0+RmllbGR9IHwgdHlwZTogeyRjLT5UeXBlfSB8IGNvbGxhdGlvbjogeyRjLT5Db2xsYXRpb259IHwgbnVsbDogeyRjLT5OdWxsfSB8IGtleTogeyRjLT5LZXl9IHwgZGVmYXVsdDogIiAuICgkYy0+RGVmYXVsdCA9PT0gbnVsbCA/ICdOVUxMJyA6ICRjLT5EZWZhdWx0KSAuICIgfCBleHRyYTogeyRjLT5FeHRyYX1cbiI7CiAgICB9CiAgICAkaW5kZXhlcyA9IERCOjpzZWxlY3QoIlNIT1cgSU5ERVggRlJPTSBgJHRhYmxlYCIpOwogICAgZWNobyAiICBpbmRleGVzOlxuIjsKICAgIGZvcmVhY2ggKCRpbmRleGVzIGFzICRpZHgpIHsKICAgICAgICBlY2hvICIgICAgeyRpZHgtPktleV9uYW1lfSAodW5pcXVlOiAiIC4gKCRpZHgtPk5vbl91bmlxdWUgPT0gMCA/ICd5ZXMnIDogJ25vJykgLiAiLCBjb2w6IHskaWR4LT5Db2x1bW5fbmFtZX0pXG4iOwogICAgfQp9CgplY2hvICJcbi0tLSA2LiBTQUZFIEFHR1JFR0FURSBEQVRBLVNIQVBFIEZJTkRJTkdTIC0tLVxuIjsKZWNobyAiLS0gUm93IGNvdW50cyAtLVxuIjsKZm9yZWFjaCAoJHRhYmxlcyBhcyAkdCkgewogICAgZWNobyAiJHQ6ICIgLiBEQjo6dGFibGUoJHQpLT5jb3VudCgpIC4gIlxuIjsKfQoKZWNobyAiXG4tLSBPcGVyYXRvciBlbGlnaWJsZSBzaGlmdHMgc3RhdHVzIGRpc3RyaWJ1dGlvbiAtLVxuIjsKJHN5bmNTdGF0dXNlcyA9IERCOjp0YWJsZSgnb3BlcmF0b3JfZWxpZ2libGVfc2hpZnRzJyktPnNlbGVjdCgnc3luY19zdGF0dXMnLCBEQjo6cmF3KCdjb3VudCgqKSBhcyBjJykpLT5ncm91cEJ5KCdzeW5jX3N0YXR1cycpLT5nZXQoKTsKZm9yZWFjaCAoJHN5bmNTdGF0dXNlcyBhcyAkcykgewogICAgZWNobyAic3luY19zdGF0dXM9eyRzLT5zeW5jX3N0YXR1c306IHskcy0+Y31cbiI7Cn0KCmVjaG8gIlxuLS0gU2hpZnQgc2NoZWR1bGVzIHN0YXR1cyBkaXN0cmlidXRpb24gLS1cbiI7CiRzY2hlZFN0YXR1c2VzID0gREI6OnRhYmxlKCdzaGlmdF9zY2hlZHVsZXMnKS0+c2VsZWN0KCdzdGF0dXMnLCBEQjo6cmF3KCdjb3VudCgqKSBhcyBjJykpLT5ncm91cEJ5KCdzdGF0dXMnKS0+Z2V0KCk7CmZvcmVhY2ggKCRzY2hlZFN0YXR1c2VzIGFzICRzKSB7CiAgICBlY2hvICJzY2hlZHVsZV9zdGF0dXM9eyRzLT5zdGF0dXN9OiB7JHMtPmN9XG4iOwp9CgplY2hvICJcbi0tIE9wZXJhdG9yIHNoaWZ0IGFzc2lnbm1lbnRzIHN0YXR1cyBkaXN0cmlidXRpb24gLS1cbiI7CiRhc3NpZ25TdGF0dXNlcyA9IERCOjp0YWJsZSgnb3BlcmF0b3Jfc2hpZnRfYXNzaWdubWVudHMnKS0+c2VsZWN0KCdzdGF0dXMnLCBEQjo6cmF3KCdjb3VudCgqKSBhcyBjJykpLT5ncm91cEJ5KCdzdGF0dXMnKS0+Z2V0KCk7CmZvcmVhY2ggKCRhc3NpZ25TdGF0dXNlcyBhcyAkcykgewogICAgZWNobyAiYXNzaWdubWVudF9zdGF0dXM9eyRzLT5zdGF0dXN9OiB7JHMtPmN9XG4iOwp9CgplY2hvICJcbi0tIE51bGwgY2hlY2tzIG9uIGtleSBjb2x1bW5zIC0tXG4iOwplY2hvICJvcGVyYXRvcl9lbGlnaWJsZV9zaGlmdHMuc2NoZWR1bGVfc3RhcnRzX2F0IElTIE5VTEw6ICIgLiBEQjo6dGFibGUoJ29wZXJhdG9yX2VsaWdpYmxlX3NoaWZ0cycpLT53aGVyZU51bGwoJ3NjaGVkdWxlX3N0YXJ0c19hdCcpLT5jb3VudCgpIC4gIlxuIjsKZWNobyAib3BlcmF0b3JfZWxpZ2libGVfc2hpZnRzLnNjaGVkdWxlX2VuZHNfYXQgSVMgTlVMTDogIiAuIERCOjp0YWJsZSgnb3BlcmF0b3JfZWxpZ2libGVfc2hpZnRzJyktPndoZXJlTnVsbCgnc2NoZWR1bGVfZW5kc19hdCcpLT5jb3VudCgpIC4gIlxuIjsKZWNobyAib3BlcmF0b3JfZWxpZ2libGVfc2hpZnRzLm1lbWJlcl9zY2hlZHVsZV9pZCBJUyBOVUxMOiAiIC4gREI6OnRhYmxlKCdvcGVyYXRvcl9lbGlnaWJsZV9zaGlmdHMnKS0+d2hlcmVOdWxsKCdtZW1iZXJfc2NoZWR1bGVfaWQnKS0+Y291bnQoKSAuICJcbiI7CmVjaG8gInNoaWZ0X3NjaGVkdWxlcy5zdGFydHNfYXQgSVMgTlVMTDogIiAuIERCOjp0YWJsZSgnc2hpZnRfc2NoZWR1bGVzJyktPndoZXJlTnVsbCgnc3RhcnRzX2F0JyktPmNvdW50KCkgLiAiXG4iOwplY2hvICJzaGlmdF9zY2hlZHVsZXMuZW5kc19hdCBJUyBOVUxMOiAiIC4gREI6OnRhYmxlKCdzaGlmdF9zY2hlZHVsZXMnKS0+d2hlcmVOdWxsKCdlbmRzX2F0JyktPmNvdW50KCkgLiAiXG4iOwplY2hvICJzaGlmdF9zY2hlZHVsZXMuZGlzcGxheV9yZWZlcmVuY2UgSVMgTlVMTDogIiAuIERCOjp0YWJsZSgnc2hpZnRfc2NoZWR1bGVzJyktPndoZXJlTnVsbCgnZGlzcGxheV9yZWZlcmVuY2UnKS0+Y291bnQoKSAuICJcbiI7CmVjaG8gInNoaWZ0X3NjaGVkdWxlcy5xdW90YSBJUyBOVUxMOiAiIC4gREI6OnRhYmxlKCdzaGlmdF9zY2hlZHVsZXMnKS0+d2hlcmVOdWxsKCdxdW90YScpLT5jb3VudCgpIC4gIlxuIjsKCmVjaG8gIlxuLS0gVGltZXN0YW1wcyByYW5nZSAtLVxuIjsKJG1pblN0YXJ0c0F0ID0gREI6OnRhYmxlKCdvcGVyYXRvcl9lbGlnaWJsZV9zaGlmdHMnKS0+bWluKCdzY2hlZHVsZV9zdGFydHNfYXQnKTsKJG1heFN0YXJ0c0F0ID0gREI6OnRhYmxlKCdvcGVyYXRvcl9lbGlnaWJsZV9zaGlmdHMnKS0+bWF4KCdzY2hlZHVsZV9zdGFydHNfYXQnKTsKZWNobyAib3BlcmF0b3JfZWxpZ2libGVfc2hpZnRzLnNjaGVkdWxlX3N0YXJ0c19hdCBtaW46ICIgLiAoJG1pblN0YXJ0c0F0ID8/ICdub25lJykgLiAiIHwgbWF4OiAiIC4gKCRtYXhTdGFydHNBdCA/PyAnbm9uZScpIC4gIlxuIjsKCmVjaG8gIlxuLS0gT3JwaGFuZWQgcmVmZXJlbmNlcyAtLVxuIjsKJG9ycGhhbmVkQXNzaWdubWVudHMgPSBEQjo6dGFibGUoJ29wZXJhdG9yX3NoaWZ0X2Fzc2lnbm1lbnRzJykKICAgIC0+bGVmdEpvaW4oJ29wZXJhdG9yX2VsaWdpYmxlX3NoaWZ0cycsICdvcGVyYXRvcl9lbGlnaWJsZV9zaGlmdHMuaWQnLCAnPScsICdvcGVyYXRvcl9zaGlmdF9hc3NpZ25tZW50cy5vcGVyYXRvcl9lbGlnaWJsZV9zaGlmdF9pZCcpCiAgICAtPndoZXJlTnVsbCgnb3BlcmF0b3JfZWxpZ2libGVfc2hpZnRzLmlkJykKICAgIC0+Y291bnQoKTsKZWNobyAib3JwaGFuZWRfc2hpZnRfYXNzaWdubWVudHNfbWlzc2luZ19lbGlnaWJsZV9zaGlmdD0iIC4gJG9ycGhhbmVkQXNzaWdubWVudHMgLiAiXG4iOwoKJG9ycGhhbmVkQXNzaWdubWVudHNQcm9maWxlID0gREI6OnRhYmxlKCdvcGVyYXRvcl9zaGlmdF9hc3NpZ25tZW50cycpCiAgICAtPmxlZnRKb2luKCdvcGVyYXRvcl9wcm9maWxlcycsICdvcGVyYXRvcl9wcm9maWxlcy5pZCcsICc9JywgJ29wZXJhdG9yX3NoaWZ0X2Fzc2lnbm1lbnRzLm9wZXJhdG9yX3Byb2ZpbGVfaWQnKQogICAgLT53aGVyZU51bGwoJ29wZXJhdG9yX3Byb2ZpbGVzLmlkJykKICAgIC0+Y291bnQoKTsKZWNobyAib3JwaGFuZWRfc2hpZnRfYXNzaWdubWVudHNfbWlzc2luZ19wcm9maWxlPSIgLiAkb3JwaGFuZWRBc3NpZ25tZW50c1Byb2ZpbGUgLiAiXG4iOwoKJG9ycGhhbmVkRWxpZ2libGVTY2hlZHVsZSA9IERCOjp0YWJsZSgnb3BlcmF0b3JfZWxpZ2libGVfc2hpZnRzJykKICAgIC0+bGVmdEpvaW4oJ3NoaWZ0X3NjaGVkdWxlcycsICdzaGlmdF9zY2hlZHVsZXMuaWQnLCAnPScsICdvcGVyYXRvcl9lbGlnaWJsZV9zaGlmdHMubWVtYmVyX3NjaGVkdWxlX2lkJykKICAgIC0+d2hlcmVOdWxsKCdzaGlmdF9zY2hlZHVsZXMuaWQnKQogICAgLT5jb3VudCgpOwplY2hvICJvcnBoYW5lZF9lbGlnaWJsZV9zaGlmdHNfbWlzc2luZ19zY2hlZHVsZT0iIC4gJG9ycGhhbmVkRWxpZ2libGVTY2hlZHVsZSAuICJcbiI7Cgokb3JwaGFuZWRFbGlnaWJsZVNpdGUgPSBEQjo6dGFibGUoJ29wZXJhdG9yX2VsaWdpYmxlX3NoaWZ0cycpCiAgICAtPmxlZnRKb2luKCdvcGVyYXRvcl9zaXRlcycsICdvcGVyYXRvcl9zaXRlcy5vcGVyYXRvcl9zaXRlX2lkJywgJz0nLCAnb3BlcmF0b3JfZWxpZ2libGVfc2hpZnRzLm9wZXJhdG9yX3NpdGVfaWQnKQogICAgLT53aGVyZU51bGwoJ29wZXJhdG9yX3NpdGVzLmlkJykKICAgIC0+Y291bnQoKTsKZWNobyAib3JwaGFuZWRfZWxpZ2libGVfc2hpZnRzX21pc3Npbmdfc2l0ZT0iIC4gJG9ycGhhbmVkRWxpZ2libGVTaXRlIC4gIlxuIjsKCmVjaG8gIlxuLS0gRGlyZWN0IGpvaW4gcXVlcnkgZnJvbSBPcGVyYXRvclNoaWZ0QXNzaWdubWVudFNlcnZpY2U6OmFzc2lnbmVkVG9DdXJyZW50T3BlcmF0b3IgLS1cbiI7CiRwYXJ0aWNpcGF0aW5nU3RhdHVzZXMgPSBbJ3BlbmRpbmcnLCAnY29uZmlybWVkJywgJ2F0dGVuZGVkJywgJ2NvbXBsZXRlZCddOwokcXVlcnlSb3dzID0gREI6OnRhYmxlKCdvcGVyYXRvcl9lbGlnaWJsZV9zaGlmdHMnKQogICAgLT5qb2luKCdvcGVyYXRvcl9zaGlmdF9hc3NpZ25tZW50cycsICdvcGVyYXRvcl9zaGlmdF9hc3NpZ25tZW50cy5vcGVyYXRvcl9lbGlnaWJsZV9zaGlmdF9pZCcsICc9JywgJ29wZXJhdG9yX2VsaWdpYmxlX3NoaWZ0cy5pZCcpCiAgICAtPmpvaW4oJ3NoaWZ0X3NjaGVkdWxlcycsICdzaGlmdF9zY2hlZHVsZXMuaWQnLCAnPScsICdvcGVyYXRvcl9lbGlnaWJsZV9zaGlmdHMubWVtYmVyX3NjaGVkdWxlX2lkJykKICAgIC0+c2VsZWN0KCdvcGVyYXRvcl9lbGlnaWJsZV9zaGlmdHMuKicpCiAgICAtPmFkZFNlbGVjdCgnc2hpZnRfc2NoZWR1bGVzLmRpc3BsYXlfcmVmZXJlbmNlIGFzIHNjaGVkdWxlX2Rpc3BsYXlfcmVmZXJlbmNlJykKICAgIC0+YWRkU2VsZWN0KCdzaGlmdF9zY2hlZHVsZXMucXVvdGEgYXMgc2NoZWR1bGVfcXVvdGEnKQogICAgLT5hZGRTZWxlY3QoWydjdXJyZW50X2NvbmZpcm1lZF9jb3VudCcgPT4gREI6OnRhYmxlKCdib29raW5ncycpCiAgICAgICAgLT5zZWxlY3RSYXcoJ2NvdW50KCopJykKICAgICAgICAtPndoZXJlQ29sdW1uKCdib29raW5ncy5zaGlmdF9zY2hlZHVsZV9pZCcsICdvcGVyYXRvcl9lbGlnaWJsZV9zaGlmdHMubWVtYmVyX3NjaGVkdWxlX2lkJykKICAgICAgICAtPndoZXJlSW4oJ2Jvb2tpbmdzLnN0YXR1cycsICRwYXJ0aWNpcGF0aW5nU3RhdHVzZXMpXSkKICAgIC0+Z2V0KCk7CgplY2hvICJEaXJlY3Qgam9pbiBxdWVyeSBtYXRjaGVkIHJvd3MgY291bnQ6ICIgLiAkcXVlcnlSb3dzLT5jb3VudCgpIC4gIlxuIjsKJHJJZHggPSAwOwpmb3JlYWNoICgkcXVlcnlSb3dzIGFzICRyb3cpIHsKICAgICRySWR4Kys7CiAgICBlY2hvICIgIFJvdyAjJHJJZHg6IHN5bmNfc3RhdHVzPXskcm93LT5zeW5jX3N0YXR1c30gfCBkaXNwbGF5X3JlZmVyZW5jZT17JHJvdy0+c2NoZWR1bGVfZGlzcGxheV9yZWZlcmVuY2V9IHwgcXVvdGE9eyRyb3ctPnNjaGVkdWxlX3F1b3RhfSB8IGN1cnJlbnRfY29uZmlybWVkPXskcm93LT5jdXJyZW50X2NvbmZpcm1lZF9jb3VudH0gfCBzdGFydHNfYXQ9eyRyb3ctPnNjaGVkdWxlX3N0YXJ0c19hdH0gKHR5cGU6ICIgLiBnZXR0eXBlKCRyb3ctPnNjaGVkdWxlX3N0YXJ0c19hdCkgLiAiKVxuIjsKfQo=
         shell: bash
         run: |
           set -euo pipefail
@@ -587,42 +585,154 @@ jobs:
           fi
 
           if [ "$DIAGNOSE_PRESTIGE_LEGACY" = "true" ]; then
-            echo "===> Run sanitized read-only operator eligible-shifts diagnostic"
+            echo "===> Run sanitized read-only legacy Prestige schedule diagnostic"
             if [ -z "$APP_CONTAINER" ]; then
-              echo "APP_CONTAINER_UNAVAILABLE=true"
+              echo "PRESTIGE_LEGACY_DIAGNOSTIC=failed"
               FAIL=1
             else
-              echo "--- SERVICE IMAGES & CONTAINER REVISIONS ---"
-              QUEUE_CONTAINER="$(container_for_service "$QUEUE_SERVICE")"
-              SCHEDULER_CONTAINER="$(container_for_service "$SCHEDULER_SERVICE")"
-              IMAGE_WORKER_CONTAINER="$(container_for_service "$IMAGE_WORKER_SERVICE")"
+              legacy_output=""
+              if legacy_output="$(docker exec "$APP_CONTAINER" php -r '
+                require "vendor/autoload.php";
+                $app = require "bootstrap/app.php";
+                $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+                $db = Illuminate\Support\Facades\DB::class;
 
-              QUEUE_SERVICE_IMAGE="$(docker service inspect "$QUEUE_SERVICE" --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 2>/dev/null || true)"
-              QUEUE_CONTAINER_IMAGE="$(docker inspect "$QUEUE_CONTAINER" --format '{{.Config.Image}}' 2>/dev/null || true)"
-              SCHEDULER_SERVICE_IMAGE="$(docker service inspect "$SCHEDULER_SERVICE" --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 2>/dev/null || true)"
-              SCHEDULER_CONTAINER_IMAGE="$(docker inspect "$SCHEDULER_CONTAINER" --format '{{.Config.Image}}' 2>/dev/null || true)"
-              WORKER_SERVICE_IMAGE="$(docker service inspect "$IMAGE_WORKER_SERVICE" --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 2>/dev/null || true)"
-              WORKER_CONTAINER_IMAGE="$(docker inspect "$IMAGE_WORKER_CONTAINER" --format '{{.Config.Image}}' 2>/dev/null || true)"
+                $sites = $db::table("examination_site_refs")
+                    ->where("operator_site_id", "site-prestige")
+                    ->where("code", "PRES-01")
+                    ->get(["id"]);
+                $offerings = $db::table("service_offerings")
+                    ->where("code", "SYN-CHEST-A")
+                    ->get(["id"]);
+                if ($sites->count() !== 1 || $offerings->count() !== 1) {
+                    echo "PRESTIGE_LEGACY_DIAGNOSTIC=failed".PHP_EOL;
+                    exit(1);
+                }
 
-              echo "queue_service_image=$QUEUE_SERVICE_IMAGE"
-              echo "queue_container_image=$QUEUE_CONTAINER_IMAGE"
-              echo "scheduler_service_image=$SCHEDULER_SERVICE_IMAGE"
-              echo "scheduler_container_image=$SCHEDULER_CONTAINER_IMAGE"
-              echo "image_worker_service_image=$WORKER_SERVICE_IMAGE"
-              echo "image_worker_container_image=$WORKER_CONTAINER_IMAGE"
+                $fixedSchedules = [
+                    "legacy_2026_08_14" => "2026-08-14 01:00:00",
+                    "legacy_2026_08_26" => "2026-08-26 01:00:00",
+                    "legacy_2026_08_27" => "2026-08-27 01:00:00",
+                    "legacy_2026_08_28" => "2026-08-28 01:00:00",
+                ];
+                $progressedTables = [
+                    "local_imaging_orders" => "shift_schedule_id",
+                    "operator_paper_tickets" => "member_schedule_id",
+                    "operator_queue_admissions" => "member_schedule_id",
+                    "operator_arrivals" => "member_schedule_id",
+                    "operator_identity_verifications" => "member_schedule_id",
+                    "member_paper_questionnaires" => "member_schedule_id",
+                    "member_vital_signs_assessments" => "member_schedule_id",
+                    "image_gateway_capture_sets" => "member_schedule_id",
+                ];
+                $prestigeUsers = $db::table("users")
+                    ->where("email", "like", "%@prestige.madeena-xray.com")
+                    ->get(["id"]);
+                $prestigeMemberIds = $prestigeUsers->isEmpty()
+                    ? collect()
+                    : $db::table("members")
+                        ->whereIn("user_id", $prestigeUsers->pluck("id"))
+                        ->pluck("id");
+                $siteId = $sites->first()->id;
+                $offeringId = $offerings->first()->id;
+                $globalMembers = [];
+                $legacyBookingCount = 0;
+                $legacyPointLedgerEntries = 0;
+                $legacyProgressedScheduleCount = 0;
+                $scheduleCount = 0;
 
-              QUEUE_REVISION="$(image_revision "$QUEUE_CONTAINER_IMAGE")"
-              SCHEDULER_REVISION="$(image_revision "$SCHEDULER_CONTAINER_IMAGE")"
-              WORKER_REVISION="$(image_revision "$WORKER_CONTAINER_IMAGE")"
-              echo "queue_revision=$QUEUE_REVISION"
-              echo "scheduler_revision=$SCHEDULER_REVISION"
-              echo "worker_revision=$WORKER_REVISION"
+                foreach ($fixedSchedules as $label => $startsAt) {
+                    $schedules = $db::table("shift_schedules")
+                        ->where("examination_site_id", $siteId)
+                        ->where("service_offering_id", $offeringId)
+                        ->where("starts_at", $startsAt)
+                        ->get(["id", "starts_at", "ends_at", "quota", "status"]);
+                    if ($schedules->count() > 1) {
+                        echo "PRESTIGE_LEGACY_DIAGNOSTIC=failed".PHP_EOL;
+                        exit(1);
+                    }
 
-              echo "--- MIGRATION STATUS ---"
-              docker exec "$APP_CONTAINER" php artisan migrate:status
+                    $row = [
+                        "label" => $label,
+                        "exists" => $schedules->count() === 1,
+                        "starts_at" => $schedules->count() === 1 ? (string) $schedules->first()->starts_at : null,
+                        "ends_at" => $schedules->count() === 1 ? (string) $schedules->first()->ends_at : null,
+                        "quota" => $schedules->count() === 1 ? (int) $schedules->first()->quota : null,
+                        "status" => $schedules->count() === 1 ? (string) $schedules->first()->status : null,
+                        "bookings_total" => 0,
+                        "booking_status_counts" => [],
+                        "distinct_members" => 0,
+                        "all_booked_members_in_prestige_cohort" => true,
+                        "member_set_has_37_unique" => false,
+                        "has_bookings" => false,
+                        "progressed_table_counts" => [],
+                        "has_progressed_clinical_records" => false,
+                        "operator_eligible_shifts" => 0,
+                        "operator_shift_assignments" => 0,
+                        "point_ledger_entries" => 0,
+                        "point_ledger_charge_entries" => 0,
+                        "point_ledger_reversal_entries" => 0,
+                        "has_point_ledger" => false,
+                    ];
+                    if ($schedules->count() === 1) {
+                        $scheduleCount++;
+                        $scheduleId = $schedules->first()->id;
+                        $bookings = $db::table("bookings")
+                            ->where("shift_schedule_id", $scheduleId)
+                            ->get(["member_id", "status"]);
+                        $members = $bookings->pluck("member_id")->unique()->values();
+                        $row["bookings_total"] = $bookings->count();
+                        $row["has_bookings"] = $bookings->isNotEmpty();
+                        $row["distinct_members"] = $members->count();
+                        $row["member_set_has_37_unique"] = $members->count() === 37;
+                        $row["all_booked_members_in_prestige_cohort"] = $members->diff($prestigeMemberIds)->isEmpty();
+                        $row["booking_status_counts"] = $bookings->groupBy("status")
+                            ->map(static fn ($statusBookings, $status): array => ["status" => (string) $status, "count" => $statusBookings->count()])
+                            ->values()->all();
+                        foreach ($members as $memberId) {
+                            $globalMembers[(string) $memberId] = true;
+                        }
+                        $legacyBookingCount += $bookings->count();
 
-              echo "$OPERATOR_DIAGNOSTIC_B64" | base64 -d | docker exec -i "$APP_CONTAINER" php
-              echo "PRESTIGE_LEGACY_DIAGNOSTIC=pass"
+                        foreach ($progressedTables as $table => $column) {
+                            $count = (int) $db::table($table)->where($column, $scheduleId)->count();
+                            $row["progressed_table_counts"][$table] = $count;
+                            $row["has_progressed_clinical_records"] = $row["has_progressed_clinical_records"] || $count > 0;
+                        }
+                        if ($row["has_progressed_clinical_records"]) {
+                            $legacyProgressedScheduleCount++;
+                        }
+                        $eligible = $db::table("operator_eligible_shifts")->where("member_schedule_id", $scheduleId);
+                        $row["operator_eligible_shifts"] = (int) $eligible->count();
+                        $row["operator_shift_assignments"] = (int) $db::table("operator_shift_assignments")
+                            ->join("operator_eligible_shifts", "operator_shift_assignments.operator_eligible_shift_id", "=", "operator_eligible_shifts.id")
+                            ->where("operator_eligible_shifts.member_schedule_id", $scheduleId)->count();
+                        $ledger = $db::table("point_ledger_entries")
+                            ->join("bookings", "point_ledger_entries.booking_id", "=", "bookings.id")
+                            ->where("bookings.shift_schedule_id", $scheduleId);
+                        $row["point_ledger_entries"] = (int) $ledger->count();
+                        $row["point_ledger_charge_entries"] = (int) $ledger->clone()->where("point_ledger_entries.entry_type", \App\Modules\Member\Domain\Enums\PointEntryType::Charge->value)->count();
+                        $row["point_ledger_reversal_entries"] = (int) $ledger->clone()->whereNotNull("point_ledger_entries.reverses_id")->count();
+                        $row["has_point_ledger"] = $row["point_ledger_entries"] > 0;
+                        $legacyPointLedgerEntries += $row["point_ledger_entries"];
+                    }
+                    echo "LEGACY_PRESTIGE_SCHEDULE ".json_encode($row, JSON_THROW_ON_ERROR).PHP_EOL;
+                }
+                echo "legacy_schedule_count=".$scheduleCount.PHP_EOL;
+                echo "legacy_booking_count=".$legacyBookingCount.PHP_EOL;
+                echo "legacy_distinct_members=".count($globalMembers).PHP_EOL;
+                echo "legacy_point_ledger_entries=".$legacyPointLedgerEntries.PHP_EOL;
+                echo "legacy_progressed_schedule_count=".$legacyProgressedScheduleCount.PHP_EOL;
+                echo "PRESTIGE_LEGACY_DIAGNOSTIC=pass".PHP_EOL;
+              ' 2>/dev/null)"; then
+                printf '%s\n' "$legacy_output"
+              else
+                if [ -n "$legacy_output" ]; then
+                  printf '%s\n' "$legacy_output"
+                fi
+                echo "PRESTIGE_LEGACY_DIAGNOSTIC=failed"
+                FAIL=1
+              fi
             fi
           else
             echo "PRESTIGE_LEGACY_DIAGNOSTIC=skipped"

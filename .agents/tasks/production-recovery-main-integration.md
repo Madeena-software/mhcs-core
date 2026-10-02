@@ -1,6 +1,6 @@
 ---
 title: Preserve deployed recovery before PNG release
-version: 1.0
+version: 1.1
 status: validated-published
 last_updated: 2026-10-02
 ---
@@ -59,3 +59,9 @@ Use an isolated checkout with synthetic environment and separately isolated data
 Stop release for unresolved blocking review findings, failed required verification, missing production-equivalent engine evidence, incompatible remote drift, unsafe test isolation, unexpected migration/data changes, or a required new product/architecture/privacy decision. Return the concrete gap to Planner/Reviewer; do not weaken the prior contracts to declare readiness.
 
 Terminal outcomes: REVIEW REQUIRED with observed evidence; Reviewer ACCEPTED only when all obligations pass; deployment only after separate G10. A blocked release does not invalidate independently accepted PNG/filter work.
+
+## Human post-deployment verification assignment, 2026-10-02
+
+After the missing synthetic Operator secret was disclosed, the human explicitly selected "Saya cek login dan eligible-shifts secara manual setelah deploy". The human owns authenticated production login/eligible-shifts smoke after deployment. The agent must record this as pending until the human supplies the result, while completing authorized local verification, review, merge, deployment and observed automated post-deploy health checks. Do not fabricate authenticated production success, create/reset accounts, inspect private data, or use missing credentials. This changes the production smoke responsibility only; it does not weaken local mechanism, regression, MySQL, privacy or review gates. Historical live AI journey validation remains unproven unless observed separately.
+
+The v1.0 publication at `32ba927c0806b6468b3a80e40cc6db42752f2a5d` governs verification/isolation work already started; the immutable publication of this v1.1 content governs the remaining integration and release review. Keep both identities in final evidence.
