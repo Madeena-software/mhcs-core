@@ -29,13 +29,13 @@
                     <option value="waiting">{{ __('Menunggu') }}</option>
                     <option value="called">{{ __('Dipanggil') }}</option>
                     <option value="in_service">{{ __('Sedang dilayani') }}</option>
-                    <option value="completed">{{ __('Selesai') }}</option>
                 </select>
             </div>
         </div>
         <div class="filter-actions">
             <button type="button" class="secondary" data-filter-reset>{{ __('Atur Ulang') }}</button>
             <span class="filter-count" data-filter-count hidden></span>
+            <span class="error" data-filter-error role="alert" hidden></span>
         </div>
     </div>
 
@@ -57,9 +57,10 @@
                 </thead>
                 <tbody>
                 @forelse ($entries as $entry)
+                    @php($rowTime = \Carbon\CarbonImmutable::parse($entry['ready_at'], 'UTC')->setTimezone(config('app.timezone')))
                     <tr data-worklist-row
                         data-search-text="{{ strtolower($entry['member_name'].' '.$entry['ticket_number'].' '.$entry['medical_record_number'].' '.$entry['site_name'].' '.$entry['schedule_display_reference']) }}"
-                        data-row-date="{{ substr((string) $entry['ready_at'], 0, 10) }}"
+                        data-row-date="{{ $rowTime->format('Y-m-d') }}"
                         data-row-status="{{ $entry['state'] }}">
                         <td>{{ in_array($entry['state'], ['called', 'in_service'], true) ? __('Current claimed admission') : $entry['ticket_number'] }}</td>
                         <td>{{ $entry['member_name'] }}</td>
@@ -68,7 +69,7 @@
                         <td>{{ $entry['schedule_display_reference'] }}</td>
                         <td>{{ __($entry['stage']) }}</td>
                         <td class="status">{{ __($entry['state']) }}</td>
-                        <td><time datetime="{{ $entry['ready_at'] }}">{{ $entry['ready_at'] }}</time></td>
+                        <td><time datetime="{{ $rowTime->toIso8601String() }}">{{ $rowTime->format('Y-m-d H:i:s') }}</time></td>
                         <td>
                             @if ($entry['claimed_by_current_operator'])
                                 <span class="status">{{ __('Claimed by you') }}</span>

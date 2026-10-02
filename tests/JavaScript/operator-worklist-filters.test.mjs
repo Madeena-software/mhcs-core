@@ -107,3 +107,12 @@ test('filterWorklistRow combines criteria conjunctively', () => {
         status: 'in_progress',
     }), false);
 });
+
+test('date parser rejects impossible calendar days, date suffixes and malformed criteria', () => {
+    for (const value of ['2026-02-30', '2026-13-01', '2026-00-01', '2026-10-02junk', '2026-10-021', '0000-01-01']) {
+        assert.equal(parseDateOnly(value), null, value);
+        assert.equal(filterWorklistRow({ dataset: { rowDate: '2026-10-02' } }, { dateFrom: value }), false, value);
+    }
+    assert.equal(parseDateOnly('2024-02-29'), '2024-02-29');
+    assert.equal(parseDateOnly('2026-02-29'), null);
+});

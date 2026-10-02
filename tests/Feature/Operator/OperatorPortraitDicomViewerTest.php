@@ -295,9 +295,6 @@ final class OperatorPortraitDicomViewerTest extends TestCase
             ->assertSee('select-all-studies', false)
             ->assertSee('name="studies[]"', false)
             ->assertSee($first);
-        $view = (string) file_get_contents(resource_path('views/operator/study-results.blade.php'));
-        $this->assertStringContainsString('studies().forEach((study) => { study.checked = all.checked; })', $view);
-        $this->assertStringContainsString('if (!studies().some((study) => study.checked)) event.preventDefault();', $view);
     }
 
     public function test_missing_private_dicom_is_denied_without_bubbling_a_storage_500(): void

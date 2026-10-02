@@ -87,10 +87,17 @@
 <script>
     (() => {
         if (!document.querySelector('[data-worklist-auto-refresh]')) return;
-        const timer = window.setInterval(() => window.location.reload(), 5000);
+        const timer = window.setInterval(() => {
+            if (!document.querySelector('[data-png-download][aria-busy="true"]')) window.location.reload();
+        }, 5000);
         window.addEventListener('pagehide', () => window.clearInterval(timer), { once: true });
     })();
 </script>
+<script type="application/json" data-operator-list-messages>{!! json_encode([
+    'filteredCount' => __('Menampilkan :visible dari :total'),
+    'totalCount' => __('Total: :total'),
+    'invalidRange' => __('Tanggal mulai harus sebelum atau sama dengan tanggal sampai.'),
+], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) !!}</script>
 @vite('resources/js/app.js')
 </body>
 </html>

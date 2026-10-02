@@ -172,11 +172,152 @@ final class OperatorWorklistFilterTest extends TestCase
         $foreign = $this->operatorFixture(false);
         $this->actingAs($foreign['operator'])->withSession(['operator.active_site_id' => $foreign['siteLocalId']]);
         $this->get(route('operator.study.dicom', $studyId))->assertForbidden();
+        foreach (['operator.study.results', 'operator.verification-worklist', 'operator.basic-examination-worklist', 'operator.xray-readiness-worklist'] as $route) {
+            $this->get(route($route).'?q=TEST&date_from=2000-01-01')->assertOk()->assertDontSee('data-row-status=', false);
+        }
 
         // Unauthenticated
         $this->actingAsGuest();
         $this->flushSession();
         $this->get(route('operator.study.dicom', $studyId))->assertRedirect('/login');
+        foreach (['operator.study.results', 'operator.verification-worklist', 'operator.basic-examination-worklist', 'operator.xray-readiness-worklist'] as $route) {
+            $this->get(route($route))->assertRedirect('/login');
+        }
+    }
+
+    public function test_verification_selector_matches_all_eligible_service_states_and_preserves_eligibility(): void
+    {
+        $fixture = $this->operatorFixture(false);
+        $this->actingAs($fixture['operator'])->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
+        DB::table('bookings')->where('id', $fixture['bookingId'])->update(['status' => 'arrived']);
+        $states = ['unclaimed', 'open', 'matched', 'nonclinical_validation', 'mismatch_reported', 'insufficient_evidence', 'cancelled'];
+        foreach ($states as $state) {
+            $arrival = (string) Str::uuid();
+            DB::table('operator_arrivals')->insert([
+                'id' => $arrival, 'booking_id' => $fixture['bookingId'], 'member_schedule_id' => $fixture['scheduleId'],
+                'operator_site_id' => $fixture['siteLocalId'], 'operator_profile_id' => $fixture['profileId'],
+                'occurrence_at' => '2040-01-10 10:15:00', 'recorded_at' => now(), 'operation_id' => (string) Str::uuid(),
+                'source' => 'test', 'status' => 'recorded', 'created_at' => now(), 'updated_at' => now(),
+            ]);
+            if ($state !== 'unclaimed') {
+                DB::table('operator_identity_verifications')->insert([
+                    'id' => (string) Str::uuid(), 'arrival_id' => $arrival, 'booking_id' => $fixture['bookingId'],
+                    'member_schedule_id' => $fixture['scheduleId'], 'operator_site_id' => $fixture['siteLocalId'],
+                    'operator_profile_id' => $fixture['profileId'], 'state' => $state, 'started_at' => now(),
+                    'operation_id' => (string) Str::uuid(), 'created_at' => now(), 'updated_at' => now(),
+                ]);
+            }
+        }
+        $response = $this->get(route('operator.verification-worklist'))->assertOk();
+        foreach ($states as $state) {
+            $response->assertSee('value="'.$state.'"', false)->assertSee('data-row-status="'.$state.'"', false);
+        }
+        foreach (['verified', 'pending_verification', 'refused'] as $state) {
+            $response->assertDontSee('value="'.$state.'"', false);
+        }
+        // Query parameters cannot broaden the service's existing booking eligibility.
+        DB::table('bookings')->where('id', $fixture['bookingId'])->update(['status' => 'checked_in']);
+        $this->get(route('operator.verification-worklist').'?status=matched&q=Synthetic')
+            ->assertOk()->assertDontSee('data-row-status=', false)->assertSee('data-empty-initial-row', false);
+        DB::table('bookings')->where('id', $fixture['bookingId'])->update(['status' => 'arrived']);
+        $foreign = $this->operatorFixture(false, '900000000002');
+        $this->actingAs($foreign['operator'])->withSession(['operator.active_site_id' => $foreign['siteLocalId']]);
+        $this->get(route('operator.verification-worklist').'?status=matched')->assertOk()->assertDontSee('data-row-status=', false);
+    }
+
+    public function test_browser_messages_are_registry_substituted_and_png_json_is_attribute_safe(): void
+    {
+        $fixture = $this->operatorFixture(false);
+        $this->actingAs($fixture['operator'])->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
+        $this->createAcceptedStudy($fixture, $this->insertCalledXrayAdmission($fixture));
+        $copy = [
+            'Memproses...' => 'PROCESS "quoted" <safe>', 'Menyimpan...' => 'SAVE test', 'Selesai' => 'DONE test',
+            'Gagal mengunduh gambar PNG. Pastikan berkas studi tersedia.' => 'ERROR test',
+            'Menampilkan :visible dari :total' => 'COUNT :visible/:total', 'Total: :total' => 'TOTAL :total',
+            'Tanggal mulai harus sebelum atau sama dengan tanggal sampai.' => 'RANGE test',
+        ];
+        app('translator')->setLoaded(['*' => ['*' => ['id' => array_replace(json_decode(file_get_contents(lang_path('id.json')), true, flags: JSON_THROW_ON_ERROR), $copy)]]]);
+        $response = $this->get(route('operator.study.results'))->assertOk();
+        $dom = new \DOMDocument;
+        @$dom->loadHTML($response->getContent());
+        $xpath = new \DOMXPath($dom);
+        $button = $xpath->query('//*[@data-png-download]')->item(0);
+        $this->assertNotNull($button);
+        $this->assertSame([
+            'processing' => $copy['Memproses...'], 'saving' => $copy['Menyimpan...'], 'done' => $copy['Selesai'],
+            'error' => $copy['Gagal mengunduh gambar PNG. Pastikan berkas studi tersedia.'],
+        ], json_decode($button->getAttribute('data-png-messages'), true, flags: JSON_THROW_ON_ERROR));
+        $messages = $xpath->query('//*[@data-operator-list-messages]')->item(0);
+        $this->assertNotNull($messages);
+        $this->assertSame([
+            'filteredCount' => $copy['Menampilkan :visible dari :total'], 'totalCount' => $copy['Total: :total'],
+            'invalidRange' => $copy['Tanggal mulai harus sebelum atau sama dengan tanggal sampai.'],
+        ], json_decode($messages->textContent, true, flags: JSON_THROW_ON_ERROR));
+        foreach (['operator.study.results', 'operator.verification-worklist', 'operator.basic-examination-worklist', 'operator.xray-readiness-worklist'] as $route) {
+            $this->get(route($route))->assertOk()->assertSee('data-filter-error role="alert" hidden', false);
+        }
+    }
+
+    public function test_four_lists_use_configured_timezone_for_display_and_inclusive_filter_date(): void
+    {
+        config(['app.timezone' => 'Asia/Jakarta']);
+        $fixture = $this->operatorFixture(false);
+        $this->actingAs($fixture['operator'])->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
+        $admission = $this->insertCalledXrayAdmission($fixture);
+        DB::table('operator_queue_admissions')->where('id', $admission)->update(['ready_at' => '2040-01-09 23:30:00', 'stage' => 'basic_examination']);
+        $this->get(route('operator.basic-examination-worklist'))->assertOk()
+            ->assertSee('data-row-date="2040-01-10"', false)->assertSee('2040-01-10 06:30:00');
+        DB::table('operator_queue_admissions')->where('id', $admission)->update(['stage' => 'xray']);
+        $this->get(route('operator.xray-readiness-worklist'))->assertOk()
+            ->assertSee('data-row-date="2040-01-10"', false)->assertSee('2040-01-10 06:30:00');
+        $study = $this->createAcceptedStudy($fixture, $admission);
+        $capture = DB::table('image_gateway_studies')->where('id', $study)->value('capture_set_id');
+        DB::table('image_gateway_capture_sets')->where('id', $capture)->update(['accepted_at' => '2040-01-09 23:30:00']);
+        $this->get(route('operator.study.results'))->assertOk()
+            ->assertSee('data-row-date="2040-01-10"', false)->assertSee('2040-01-10 06:30:00');
+        DB::table('bookings')->where('id', $fixture['bookingId'])->update(['status' => 'arrived']);
+        DB::table('operator_arrivals')->insert([
+            'id' => (string) Str::uuid(), 'booking_id' => $fixture['bookingId'], 'member_schedule_id' => $fixture['scheduleId'],
+            'operator_site_id' => $fixture['siteLocalId'], 'operator_profile_id' => $fixture['profileId'],
+            'occurrence_at' => '2040-01-09 23:30:00', 'recorded_at' => now(), 'operation_id' => (string) Str::uuid(),
+            'source' => 'test', 'status' => 'recorded', 'created_at' => now(), 'updated_at' => now(),
+        ]);
+        $this->get(route('operator.verification-worklist'))->assertOk()
+            ->assertSee('data-row-date="2040-01-10"', false)->assertSee('2040-01-10 06:30:00');
+    }
+
+    public function test_operational_status_metadata_matches_eligible_rows_and_filters_cannot_expand_shift_scope(): void
+    {
+        $fixture = $this->operatorFixture(false);
+        $this->actingAs($fixture['operator'])->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
+        $basic = $this->insertCalledXrayAdmission($fixture, 'BASIC-0007');
+        DB::table('operator_queue_admissions')->where('id', $basic)->update(['stage' => 'basic_examination']);
+        foreach (['waiting', 'called', 'in_service'] as $state) {
+            DB::table('operator_queue_admissions')->where('id', $basic)->update(['state' => $state]);
+            $this->get(route('operator.basic-examination-worklist'))->assertOk()->assertSee('data-row-status="'.$state.'"', false);
+        }
+        DB::table('operator_queue_admissions')->where('id', $basic)->update(['state' => 'completed']);
+        $this->get(route('operator.basic-examination-worklist').'?status=completed')->assertOk()->assertDontSee('data-row-status=', false);
+        $xray = $basic;
+        DB::table('operator_queue_admissions')->where('id', $xray)->update(['stage' => 'xray']);
+        foreach (['waiting', 'called'] as $state) {
+            DB::table('operator_queue_admissions')->where('id', $xray)->update(['state' => $state]);
+            $this->get(route('operator.xray-readiness-worklist'))->assertOk()->assertSee('data-row-status="'.$state.'"', false);
+        }
+        $study = $this->createAcceptedStudy($fixture, $xray);
+        $capture = DB::table('image_gateway_studies')->where('id', $study)->value('capture_set_id');
+        $studyRecord = (array) DB::table('image_gateway_studies')->where('id', $study)->first();
+        DB::table('image_gateway_studies')->where('id', $study)->delete();
+        DB::table('image_gateway_capture_sets')->where('id', $capture)->update(['processing_status' => 'failed']);
+        DB::table('operator_queue_admissions')->where('id', $xray)->update(['state' => 'awaiting_ai']);
+        $this->get(route('operator.xray-readiness-worklist'))->assertOk()->assertSee('data-row-status="dicom_processing_failed"', false);
+        DB::table('image_gateway_studies')->insert($studyRecord);
+        DB::table('image_gateway_capture_sets')->where('id', $capture)->update(['processing_status' => 'completed']);
+        DB::table('operator_queue_admissions')->where('id', $xray)->update(['state' => 'called']);
+        DB::table('operator_shift_assignments')->where('operator_profile_id', $fixture['profileId'])->update(['status' => 'cancelled']);
+        foreach (['operator.basic-examination-worklist', 'operator.xray-readiness-worklist', 'operator.study.results'] as $route) {
+            $this->get(route($route).'?q=0042&status=called&date_from=2000-01-01')->assertOk()->assertDontSee('data-row-status=', false);
+        }
     }
 
     private function insertCalledXrayAdmission(array $fixture, string $ticketNumber = 'TEST-XRAY-01'): string

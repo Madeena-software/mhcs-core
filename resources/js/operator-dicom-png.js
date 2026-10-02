@@ -1,258 +1,108 @@
-/**
- * Operator DICOM PNG Exporter
- *
- * Exports a DICOM study directly to PNG at native pixel dimensions (columns × rows)
- * using Cornerstone CPU rendering and default VOI LUT.
- * Completely independent of viewport zoom/pan/rotation/flip or DPR.
- */
-
 import dicomParser from 'dicom-parser';
-import {
-    decodeImageFrame,
-    createImage,
-    wadouri,
-} from '@cornerstonejs/dicom-image-loader';
-import {
-    init as cornerstoneInit,
-    metaData,
-} from '@cornerstonejs/core';
+import { createImage, wadouri } from '@cornerstonejs/dicom-image-loader';
+import { init as cornerstoneInit, metaData, utilities } from '@cornerstonejs/core';
 import { registerDicomDecoder } from './operator-dicom-viewer.js';
+import { VIEWER_TIMEOUT_MS, DICOM_LOAD_TIMEOUT_MS, withViewerTimeout } from './operator-viewer-timeout.js';
 
 export { registerDicomDecoder };
 
 export function extractPixelData(dataSet, frame = 0) {
-    const pixelDataElement = dataSet.elements.x7fe00010;
-    if (!pixelDataElement) {
-        throw new Error('DICOM pixel data tag (7FE0,0010) is missing.');
-    }
-    if (pixelDataElement.encapsulated) {
-        if (!dataSet.elements.x7fe00010.fragments || dataSet.elements.x7fe00010.fragments.length === 0) {
-            throw new Error('Encapsulated pixel data has no fragments.');
-        }
-        const fragments = dataSet.elements.x7fe00010.fragments;
-        const targetFragment = fragments.length > 1 ? fragments[frame + 1] || fragments[1] : fragments[0];
-        return new Uint8Array(dataSet.byteArray.buffer, targetFragment.offset, targetFragment.length);
-    } else {
-        return new Uint8Array(dataSet.byteArray.buffer, pixelDataElement.dataOffset, pixelDataElement.length);
-    }
+    // The installed native extractor assumes byteArray starts at buffer offset zero.
+    const pixelDataSet = dataSet.byteArray.byteOffset === 0 ? dataSet
+        : Object.assign(Object.create(dataSet), { byteArray: new Uint8Array(dataSet.byteArray) });
+    const pixels = wadouri.getPixelData(pixelDataSet, frame);
+    if (!pixels?.length) throw new Error('PNG export failed.');
+    return pixels;
 }
 
-export function generateLinearVOILUT(windowWidth, windowCenter) {
-    return function (modalityLutValue) {
-        const value = ((modalityLutValue - (windowCenter - 0.5)) / (windowWidth - 1) + 0.5) * 255.0;
-        return Math.min(Math.max(value, 0), 255);
-    };
-}
-
-export function generateLinearModalityLUT(slope, intercept) {
-    return (storedPixelValue) => storedPixelValue * slope + intercept;
-}
-
-/**
- * Renders an uncompressed or decoded Cornerstone Image object to an offscreen Canvas
- * at its exact native width and height (columns × rows) with default VOI LUT applied.
- */
-export function renderImageToCanvas(image, canvas) {
-    const width = image.columns;
-    const height = image.rows;
-    canvas.width = width;
-    canvas.height = height;
-
-    const ctx = canvas.getContext('2d');
-    const imgData = ctx.createImageData(width, height);
-    const data = imgData.data;
-
-    // Color images
-    if (image.color) {
-        const pixelData = image.voxelManager ? image.voxelManager.getScalarData() : image.getPixelData();
-        if (pixelData.length === width * height * 4) {
-            data.set(pixelData);
-        } else if (pixelData.length === width * height * 3) {
-            let j = 0;
-            for (let i = 0; i < pixelData.length; i += 3) {
-                data[j++] = pixelData[i];
-                data[j++] = pixelData[i + 1];
-                data[j++] = pixelData[i + 2];
-                data[j++] = 255;
-            }
-        }
-    } else {
-        // Grayscale / MONOCHROME
-        const pixelData = image.voxelManager ? image.voxelManager.getScalarData() : image.getPixelData();
-        const minVal = image.minPixelValue ?? 0;
-        const maxVal = image.maxPixelValue ?? 65535;
-        const windowWidth = Number(image.windowWidth) || (maxVal - minVal) || 1;
-        const windowCenter = Number(image.windowCenter) || (minVal + windowWidth / 2);
-        const invert = Boolean(image.invert);
-
-        const slope = image.slope ?? 1;
-        const intercept = image.intercept ?? 0;
-        const mlutfn = generateLinearModalityLUT(slope, intercept);
-        const vlutfn = generateLinearVOILUT(windowWidth, windowCenter);
-
-        const numPixels = width * height;
-        let pIdx = 0;
-        let cIdx = 0;
-
-        for (let i = 0; i < numPixels; i++) {
-            const raw = pixelData[pIdx++];
-            const modVal = image.isPreScaled ? raw : mlutfn(raw);
-            let intensity = vlutfn(modVal);
-            if (invert) {
-                intensity = 255 - intensity;
-            }
-            intensity = Math.min(255, Math.max(0, Math.round(intensity)));
-
-            data[cIdx++] = intensity;
-            data[cIdx++] = intensity;
-            data[cIdx++] = intensity;
-            data[cIdx++] = 255;
-        }
+export async function renderImageToCanvas(image, canvas) {
+    if (!Number.isInteger(image.columns) || !Number.isInteger(image.rows) || image.columns <= 0 || image.rows <= 0) {
+        throw new Error('PNG export failed.');
     }
-
-    ctx.putImageData(imgData, 0, 0);
+    canvas.width = image.columns;
+    canvas.height = image.rows;
+    // Export the native pixel grid, rather than fitting physical pixel spacing into a viewport.
+    await utilities.renderToCanvasCPU(canvas, { ...image, rowPixelSpacing: 1, columnPixelSpacing: 1 });
     return canvas;
 }
 
-/**
- * Downloads a DICOM study as a native PNG.
- */
-export async function downloadStudyAsPng(dicomUrl, filename, statusCallback = () => {}) {
-    registerDicomDecoder();
+export async function downloadStudyAsPng(dicomUrl, filename, statusCallback = () => {}, {
+    timeoutMs = VIEWER_TIMEOUT_MS, loadTimeoutMs = DICOM_LOAD_TIMEOUT_MS,
+} = {}) {
+    const abortController = new AbortController();
+    let provider;
+    let canvas;
+    let blobUrl;
+    let link;
     try {
-        await cornerstoneInit();
+        await withViewerTimeout(cornerstoneInit(), timeoutMs);
+        registerDicomDecoder();
+        statusCallback('downloading');
+        const response = await withViewerTimeout(fetch(dicomUrl, {
+            credentials: 'same-origin', signal: abortController.signal,
+        }), loadTimeoutMs);
+        if (!response.ok) throw new Error('PNG export failed.');
+        const buffer = await withViewerTimeout(response.arrayBuffer(), loadTimeoutMs);
+        statusCallback('decoding');
+        const dataSet = dicomParser.parseDicom(new Uint8Array(buffer));
+        const imageId = `wadouri:png-export-${crypto.randomUUID()}`;
+        provider = (type, requestedId) => requestedId === imageId
+            ? wadouri.metaData.metadataForDataset(type, imageId, dataSet) : undefined;
+        metaData.addProvider(provider, 10000);
+        const image = await withViewerTimeout(createImage(imageId, extractPixelData(dataSet),
+            dataSet.string('x00020010') || '1.2.840.10008.1.2', { decodeLevel: 0, preScale: { enabled: false } }), timeoutMs);
+        statusCallback('rendering');
+        canvas = document.createElement('canvas');
+        await withViewerTimeout(renderImageToCanvas(image, canvas), timeoutMs);
+        statusCallback('saving');
+        const blob = await withViewerTimeout(new Promise((resolve, reject) => {
+            canvas.toBlob(value => value ? resolve(value) : reject(new Error('PNG export failed.')), 'image/png');
+        }), timeoutMs);
+        blobUrl = URL.createObjectURL(blob);
+        link = document.createElement('a');
+        link.href = blobUrl;
+        // The existing public study reference is the only permitted filename component.
+        link.download = `${String(filename).replace(/\.png$/i, '').replace(/[^A-Za-z0-9_-]/g, '_') || 'DCM'}.png`;
+        document.body.appendChild(link);
+        link.click();
     } catch {
-        // Continue if already initialized
+        throw new Error('PNG export failed.');
+    } finally {
+        abortController.abort();
+        if (provider) metaData.removeProvider(provider);
+        link?.remove();
+        if (blobUrl) URL.revokeObjectURL(blobUrl);
+        if (canvas) { canvas.width = 0; canvas.height = 0; }
     }
-
-    statusCallback('downloading');
-    const response = await fetch(dicomUrl, { credentials: 'same-origin' });
-    if (!response.ok) {
-        throw new Error(`Failed to fetch DICOM file: HTTP ${response.status}`);
-    }
-
-    statusCallback('decoding');
-    const arrayBuffer = await response.arrayBuffer();
-    const byteArray = new Uint8Array(arrayBuffer);
-    const dataSet = dicomParser.parseDicom(byteArray);
-
-    const imageId = 'wadouri:' + dicomUrl;
-    wadouri.metaData.getImagePixelModule = wadouri.metaData.getImagePixelModule || (() => {});
-    const pixelModule = {
-        samplesPerPixel: dataSet.uint16('x00280002') || 1,
-        photometricInterpretation: dataSet.string('x00280004') || 'MONOCHROME2',
-        rows: dataSet.uint16('x00280010'),
-        columns: dataSet.uint16('x00280011'),
-        bitsAllocated: dataSet.uint16('x00280100') || 16,
-        bitsStored: dataSet.uint16('x00280101') || 16,
-        highBit: dataSet.uint16('x00280102') || 15,
-        pixelRepresentation: dataSet.uint16('x00280103') || 0,
-        planarConfiguration: dataSet.uint16('x00280006') || 0,
-        smallestPixelValue: dataSet.uint16('x00280106'),
-        largestPixelValue: dataSet.uint16('x00280107'),
-    };
-
-    const windowCenter = dataSet.floatString('x00281050') ?? dataSet.intString('x00281050');
-    const windowWidth = dataSet.floatString('x00281051') ?? dataSet.intString('x00281051');
-    const rescaleIntercept = dataSet.floatString('x00281052') ?? 0;
-    const rescaleSlope = dataSet.floatString('x00281053') ?? 1;
-
-    metaData.addProvider((type, qImageId) => {
-        if (qImageId === imageId) {
-            if (type === 'imagePixelModule') {
-                return pixelModule;
-            }
-            if (type === 'voiLutModule') {
-                return {
-                    windowCenter: windowCenter !== undefined ? Number(windowCenter) : undefined,
-                    windowWidth: windowWidth !== undefined ? Number(windowWidth) : undefined,
-                };
-            }
-            if (type === 'modalityLutModule') {
-                return {
-                    rescaleIntercept: Number(rescaleIntercept),
-                    rescaleSlope: Number(rescaleSlope),
-                };
-            }
-        }
-    }, 10000);
-
-    const pixelData = extractPixelData(dataSet, 0);
-    const transferSyntax = dataSet.string('x00020010') || '1.2.840.10008.1.2';
-
-    const image = await createImage(imageId, pixelData, transferSyntax, {
-        decodeLevel: 0,
-    });
-
-    statusCallback('rendering');
-    let canvas = document.createElement('canvas');
-    renderImageToCanvas(image, canvas);
-
-    statusCallback('saving');
-    const blob = await new Promise((resolve, reject) => {
-        canvas.toBlob((b) => {
-            if (b) resolve(b);
-            else reject(new Error('Canvas toBlob failed'));
-        }, 'image/png');
-    });
-
-    // Trigger download
-    const blobUrl = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = blobUrl;
-    link.download = filename.endsWith('.png') ? filename : `${filename}.png`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-
-    // Cleanup resources
-    setTimeout(() => {
-        URL.revokeObjectURL(blobUrl);
-        canvas.width = 0;
-        canvas.height = 0;
-        canvas = null;
-    }, 1000);
 }
 
 export function initPngDownloadButtons(container = document) {
-    const buttons = container.querySelectorAll('[data-png-download]');
-    buttons.forEach((btn) => {
-        btn.addEventListener('click', async (event) => {
+    container.querySelectorAll('[data-png-download]').forEach(btn => {
+        if (btn.dataset.pngInitialized === 'true') return;
+        const messages = JSON.parse(btn.dataset.pngMessages || '{}');
+        if (!['processing', 'saving', 'done', 'error'].every(key => typeof messages[key] === 'string' && messages[key])) return;
+        btn.dataset.pngInitialized = 'true';
+        const originalText = btn.textContent;
+        btn.addEventListener('click', async event => {
             event.preventDefault();
             if (btn.disabled || btn.dataset.busy === 'true') return;
-
-            const url = btn.dataset.dicomUrl;
-            const ref = btn.dataset.reference || 'study';
-            const originalText = btn.textContent;
-
             btn.disabled = true;
             btn.dataset.busy = 'true';
             btn.setAttribute('aria-busy', 'true');
-            btn.textContent = 'Memproses...';
-
+            btn.textContent = messages.processing;
             try {
-                await downloadStudyAsPng(url, `${ref}.png`, (stage) => {
-                    if (stage === 'rendering' || stage === 'saving') {
-                        btn.textContent = 'Menyimpan...';
-                    }
+                await downloadStudyAsPng(btn.dataset.dicomUrl, `${btn.dataset.reference || 'DCM'}.png`, stage => {
+                    if (stage === 'rendering' || stage === 'saving') btn.textContent = messages.saving;
                 });
-                btn.textContent = 'Selesai';
-                setTimeout(() => {
-                    btn.disabled = false;
-                    btn.dataset.busy = 'false';
-                    btn.removeAttribute('aria-busy');
-                    btn.textContent = originalText;
-                }, 1500);
-            } catch (err) {
-                console.error('[PNG DOWNLOAD ERROR]:', err);
-                btn.textContent = 'Gagal';
-                alert('Gagal mengunduh gambar PNG. Pastikan berkas studi tersedia.');
-                setTimeout(() => {
-                    btn.disabled = false;
-                    btn.dataset.busy = 'false';
-                    btn.removeAttribute('aria-busy');
-                    btn.textContent = originalText;
-                }, 2000);
+                btn.textContent = messages.done;
+            } catch {
+                btn.textContent = messages.error;
+                alert(messages.error);
+            } finally {
+                btn.disabled = false;
+                btn.dataset.busy = 'false';
+                btn.removeAttribute('aria-busy');
+                setTimeout(() => { if (btn.dataset.busy !== 'true') btn.textContent = originalText; }, 1500);
             }
         });
     });

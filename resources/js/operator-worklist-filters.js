@@ -11,10 +11,13 @@
  * 7. On study-results worklist: synchronizes selection and batch download so hidden/filtered rows are not selected/submitted.
  */
 
-export function parseDateOnly(dateStr) {
-    if (!dateStr || typeof dateStr !== 'string') return null;
-    const match = dateStr.trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
-    return match ? `${match[1]}-${match[2]}-${match[3]}` : null;
+export function parseDateOnly(value) {
+    if (typeof value !== 'string') return null;
+    const match = value.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?)?$/);
+    if (!match || Number(match[1]) === 0) return null;
+    const date = `${match[1]}-${match[2]}-${match[3]}`;
+    const parsed = new Date(`${date}T00:00:00Z`);
+    return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === date ? date : null;
 }
 
 export function filterWorklistRow(row, criteria) {
@@ -33,6 +36,8 @@ export function filterWorklistRow(row, criteria) {
     const rowDate = parseDateOnly(row.dataset.rowDate);
     const parsedFrom = parseDateOnly(dateFrom);
     const parsedTo = parseDateOnly(dateTo);
+
+    if ((dateFrom && !parsedFrom) || (dateTo && !parsedTo)) return false;
 
     if (parsedFrom && parsedTo && parsedFrom > parsedTo) {
         // If date range is inverted (from > to), no rows match
@@ -78,6 +83,18 @@ export function initWorklistFilters(container = document) {
     const statusSelect = filterBar.querySelector('[data-filter-status]');
     const resetButton = filterBar.querySelector('[data-filter-reset]');
     const countDisplay = filterBar.querySelector('[data-filter-count]');
+    const errorDisplay = filterBar.querySelector('[data-filter-error]');
+    const messages = JSON.parse(container.querySelector('[data-operator-list-messages]')?.textContent || '{}');
+    const selectionForm = container.querySelector('[data-study-selection]');
+    const selectAll = selectionForm?.querySelector('[data-select-all]');
+    const visibleCheckboxes = () => [...table.querySelectorAll('tr[data-worklist-row]:not([hidden]) input[name="studies[]"]')];
+    const syncSelection = () => {
+        if (!selectAll) return;
+        const checkboxes = visibleCheckboxes();
+        const checked = checkboxes.filter(checkbox => checkbox.checked).length;
+        selectAll.checked = checked > 0 && checked === checkboxes.length;
+        selectAll.indeterminate = checked > 0 && checked < checkboxes.length;
+    };
 
     const emptyRowTemplate = tbody.querySelector('[data-empty-filtered-row]');
     const initialEmptyRow = tbody.querySelector('[data-empty-initial-row]');
@@ -113,9 +130,9 @@ export function initWorklistFilters(container = document) {
     const populateInputsFromUrl = () => {
         const params = getUrlParams();
         if (queryInput && params.has('q')) queryInput.value = params.get('q');
-        if (dateFromInput && params.has('date_from')) dateFromInput.value = params.get('date_from');
-        if (dateToInput && params.has('date_to')) dateToInput.value = params.get('date_to');
-        if (statusSelect && params.has('status')) statusSelect.value = params.get('status');
+        if (dateFromInput) dateFromInput.value = /^\d{4}-\d{2}-\d{2}$/.test(params.get('date_from') || '') && parseDateOnly(params.get('date_from')) ? params.get('date_from') : '';
+        if (dateToInput) dateToInput.value = /^\d{4}-\d{2}-\d{2}$/.test(params.get('date_to') || '') && parseDateOnly(params.get('date_to')) ? params.get('date_to') : '';
+        if (statusSelect) statusSelect.value = [...statusSelect.options].some(option => option.value === params.get('status')) ? params.get('status') : '';
     };
 
     const getCriteria = () => ({
@@ -130,9 +147,10 @@ export function initWorklistFilters(container = document) {
         const rows = getRows();
         const total = rows.length;
 
-        if (total === 0) {
-            // Already empty from server
-            return;
+        const invertedRange = Boolean(criteria.dateFrom && criteria.dateTo && criteria.dateFrom > criteria.dateTo);
+        if (errorDisplay) {
+            errorDisplay.textContent = invertedRange ? messages.invalidRange : '';
+            errorDisplay.hidden = !invertedRange;
         }
 
         let visibleCount = 0;
@@ -155,7 +173,7 @@ export function initWorklistFilters(container = document) {
 
         // Toggle filtered empty state row
         if (emptyRowTemplate) {
-            emptyRowTemplate.hidden = (visibleCount > 0);
+            emptyRowTemplate.hidden = total === 0 || visibleCount > 0;
         }
 
         // Hide server initial empty row if filtered
@@ -167,16 +185,18 @@ export function initWorklistFilters(container = document) {
         if (countDisplay) {
             const hasActiveFilter = Boolean(criteria.query || criteria.dateFrom || criteria.dateTo || criteria.status);
             if (hasActiveFilter) {
-                countDisplay.textContent = `Menampilkan ${visibleCount} dari ${total}`;
+                countDisplay.textContent = (messages.filteredCount || '').replace(':visible', visibleCount).replace(':total', total);
                 countDisplay.hidden = false;
             } else {
-                countDisplay.textContent = `Total: ${total}`;
+                countDisplay.textContent = (messages.totalCount || '').replace(':total', total);
                 countDisplay.hidden = false;
             }
         }
 
         // Sync with URL params so 5s auto-refresh preserves state
         updateUrlParams(criteria);
+
+        syncSelection();
 
         // Notify study-selection handlers if present
         table.dispatchEvent(new CustomEvent('worklist:filtered', { detail: { visibleCount, total } }));
@@ -201,30 +221,16 @@ export function initWorklistFilters(container = document) {
     populateInputsFromUrl();
     applyFilters();
 
-    // Setup study selection sync for batch downloads
-    const selectionForm = container.querySelector('[data-study-selection]');
     if (selectionForm) {
-        const selectAllCheckbox = selectionForm.querySelector('[data-select-all]');
-        if (selectAllCheckbox) {
-            // Replace click/change behavior to only select currently visible rows
-            selectAllCheckbox.onclick = (e) => {
-                const visibleCheckboxes = [...selectionForm.querySelectorAll('tr[data-worklist-row]:not([hidden]) input[name="studies[]"]')];
-                visibleCheckboxes.forEach((cb) => {
-                    cb.checked = selectAllCheckbox.checked;
-                });
-            };
-        }
-
-        // Ensure on submit, any hidden row checkbox is unchecked or disabled
-        selectionForm.addEventListener('submit', (e) => {
-            const hiddenCheckboxes = [...selectionForm.querySelectorAll('tr[data-worklist-row][hidden] input[name="studies[]"]')];
-            hiddenCheckboxes.forEach((cb) => {
-                cb.checked = false;
-            });
-            const visibleChecked = [...selectionForm.querySelectorAll('tr[data-worklist-row]:not([hidden]) input[name="studies[]"]:checked')];
-            if (visibleChecked.length === 0) {
-                e.preventDefault();
-            }
+        selectAll?.addEventListener('change', () => {
+            visibleCheckboxes().forEach(checkbox => { checkbox.checked = selectAll.checked; });
+            syncSelection();
+        });
+        selectionForm.addEventListener('change', syncSelection);
+        selectionForm.addEventListener('submit', event => {
+            table.querySelectorAll('tr[data-worklist-row][hidden] input[name="studies[]"]').forEach(checkbox => { checkbox.checked = false; });
+            if (!visibleCheckboxes().some(checkbox => checkbox.checked)) event.preventDefault();
+            syncSelection();
         });
     }
 

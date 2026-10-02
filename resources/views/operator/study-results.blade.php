@@ -37,6 +37,7 @@
         <div class="filter-actions">
             <button type="button" class="secondary" data-filter-reset>{{ __('Atur Ulang') }}</button>
             <span class="filter-count" data-filter-count hidden></span>
+            <span class="error" data-filter-error role="alert" hidden></span>
         </div>
     </div>
 
@@ -66,9 +67,10 @@
                 </thead>
                 <tbody>
                 @forelse ($studies as $study)
+                    @php($rowTime = \Carbon\CarbonImmutable::parse($study['accepted_at'], 'UTC')->setTimezone(config('app.timezone')))
                     <tr data-worklist-row
                         data-search-text="{{ strtolower($study['member_name'].' '.$study['display_reference'].' '.$study['ticket_number'].' '.$study['medical_record_number'].' '.$study['schedule_display_reference']) }}"
-                        data-row-date="{{ substr((string) $study['accepted_at'], 0, 10) }}"
+                        data-row-date="{{ $rowTime->format('Y-m-d') }}"
                         data-row-status="{{ $study['ai_state'] ?? 'not_queued' }}">
                         <td><input type="checkbox" name="studies[]" value="{{ $study['study_id'] }}" aria-label="{{ __('Select study :reference', ['reference' => $study['display_reference']]) }}"></td>
                         <td><strong>{{ $study['display_reference'] }}</strong></td>
@@ -77,12 +79,13 @@
                         <td>{{ $study['medical_record_number'] }}</td>
                         <td>{{ $study['schedule_display_reference'] }}</td>
                         <td>{{ $study['format'] }}</td>
-                        <td><time datetime="{{ $study['accepted_at'] }}">{{ $study['accepted_at'] }}</time></td>
+                        <td><time datetime="{{ $rowTime->toIso8601String() }}">{{ $rowTime->format('Y-m-d H:i:s') }}</time></td>
                         <td><a href="{{ route('operator.study.show', $study['study_id']) }}">{{ __('Open DICOM study') }}</a></td>
                         <td>
                             <button type="button"
                                     class="secondary btn-png-download"
                                     data-png-download
+                                    data-png-messages="{{ json_encode(['processing' => __('Memproses...'), 'saving' => __('Menyimpan...'), 'done' => __('Selesai'), 'error' => __('Gagal mengunduh gambar PNG. Pastikan berkas studi tersedia.')]) }}"
                                     data-dicom-url="{{ route('operator.study.dicom', $study['study_id']) }}"
                                     data-reference="{{ $study['display_reference'] }}">
                                 {{ __('Unduh PNG') }}
@@ -137,15 +140,6 @@
         @endif
     @endforeach
 
-    <script>
-    (() => {
-        const form = document.querySelector('[data-study-selection]');
-        if (!form) return;
-        const all = form.querySelector('[data-select-all]');
-        const studies = () => [...form.querySelectorAll('input[name="studies[]"]')];
-        all.addEventListener('change', () => studies().forEach((study) => { study.checked = all.checked; }));
-        form.addEventListener('submit', (event) => { if (!studies().some((study) => study.checked)) event.preventDefault(); });
-    })();
-    </script>
+
 </section>
 @endsection

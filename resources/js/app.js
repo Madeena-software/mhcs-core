@@ -45,14 +45,41 @@ export async function bootstrapViewer(root, importViewer = () => import('./opera
     }
 }
 
+export async function bootstrapPngDownloads(container, importPng = () => import('./operator-dicom-png.js'), timeoutMs = VIEWER_TIMEOUT_MS) {
+    const buttons = [...container.querySelectorAll('[data-png-download]')];
+    const labels = buttons.map((button) => button.textContent);
+    const restore = () => buttons.forEach((button, index) => {
+        button.disabled = false;
+        button.removeAttribute('aria-busy');
+        button.textContent = labels[index];
+    });
+    buttons.forEach((button) => {
+        button.disabled = true;
+        button.setAttribute('aria-busy', 'true');
+        button.textContent = JSON.parse(button.dataset.pngMessages).processing;
+    });
+    try {
+        const png = await withViewerTimeout(importPng(), timeoutMs);
+        restore();
+        png.initPngDownloadButtons(container);
+    } catch {
+        restore();
+        buttons.forEach((button) => {
+            button.dataset.pngState = 'error';
+            button.addEventListener('click', (event) => {
+                event.preventDefault();
+                alert(JSON.parse(button.dataset.pngMessages).error);
+            });
+        });
+    }
+}
+
 
 if (typeof document !== 'undefined') {
     initCaptureUpload();
     initWorklistFilters(document);
     if (document.querySelector('[data-png-download]')) {
-        import('./operator-dicom-png.js').then((module) => {
-            module.initPngDownloadButtons(document);
-        });
+        bootstrapPngDownloads(document);
     }
     const root = document.querySelector('[data-dicom-viewer]');
     if (root) {

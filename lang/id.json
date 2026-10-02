@@ -643,5 +643,10 @@
     "Tidak ada data yang sesuai dengan filter.": "Tidak ada data yang sesuai dengan filter.",
     "Memproses...": "Memproses...",
     "Menyimpan...": "Menyimpan...",
-    "Gagal mengunduh gambar PNG. Pastikan berkas studi tersedia.": "Gagal mengunduh gambar PNG. Pastikan berkas studi tersedia."
+    "Gagal mengunduh gambar PNG. Pastikan berkas studi tersedia.": "Gagal mengunduh gambar PNG. Pastikan berkas studi tersedia.",
+    "Selesai": "Selesai",
+    "Menampilkan :visible dari :total": "Menampilkan :visible dari :total",
+    "Total: :total": "Total: :total",
+    "Tanggal mulai harus sebelum atau sama dengan tanggal sampai.": "Tanggal mulai harus sebelum atau sama dengan tanggal sampai.",
+    "nonclinical_validation": "Validasi nonklinis"
 }
