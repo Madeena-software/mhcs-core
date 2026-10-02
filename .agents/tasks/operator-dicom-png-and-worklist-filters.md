@@ -1,7 +1,7 @@
 ---
 title: Operator DICOM PNG Download and Worklist Filters
 document_id: MHCS-TASK-OPERATOR-DICOM-PNG-FILTERS-001
-version: 1.1
+version: 1.2
 status: validated-published
 language: en-US
 last_updated: 2026-10-02
@@ -9,7 +9,7 @@ scope:
   - full-image PNG download from the Operator DICOM results list
   - patient/reference, date, and status filters on four Operator worklists
   - focused export, authorization, refresh, selection, and UI verification
-authority_note: Human-approved bounded delivery contract, executable upon immutable publication of this exact content. The human authorized task publication and, after successful verification, automatic implementation commits and non-force pushes to the designated feature branch only. Deployment and other external-system mutations remain unauthorized.
+authority_note: Human-approved bounded delivery contract, executable upon immutable publication of this exact content. The human authorized task publication and, after successful verification, automatic implementation commits and non-force pushes to the designated feature branch only. The human subsequently authorized push, merge to main, and deployment on 2026-10-02; the release authorization addendum below controls those actions.
 ---
 
 # Executable Task
@@ -217,3 +217,13 @@ Return actual execution-start HEAD/branch/working-tree state; exact governing ta
 ## Expected terminal outcome
 
 `REVIEW REQUIRED` after valid publication and bounded execution, with observed PNG, filter, authorization and preservation evidence. The Executor must not self-declare implementation acceptance or release readiness.
+
+## Human release authorization addendum, 2026-10-02
+
+The human explicitly instructed: "saya ingin anda melanjutkan eksekusinya sampai push per merge main dan deploy". This supersedes the earlier prohibitions on PR publication, merge/main push, and deployment only for this bounded delivery. Product scope, original baseline, R1-R7 remediation, verification isolation, and privacy boundaries remain unchanged.
+
+- Publish this revised task on the existing feature branch, preserving history. The publication SHA of v1.2 governs renewed remediation; execution-start product remains candidate `1ed8005e57af1bc941b1ebd4d040b3e89138c555`.
+- After observed required verification and Planner/Reviewer acceptance of an immutable implementation revision, create/update its PR, normally push the feature branch, merge that accepted change into `main`, and synchronize local `main` without force or history rewriting.
+- Evaluate G10 separately and deploy the merged immutable main revision through the existing `.github/workflows/deploy-swarm.yml` workflow. Observe build, backup, deployment and post-deployment verification results, and report the actual terminal state.
+- Stop release on blocking verification/review findings, conflicting remote history, failed applicable release checks, or a need for new product/infrastructure/destructive-data decisions. No unrelated production changes, private-data inspection, secret disclosure, or dependency installation are authorized.
+- Earlier release/merge stop conditions and exclusions apply to the Executor until its review handoff; they do not prohibit the explicitly authorized subsequent Reviewer/release track above. Implementation acceptance remains distinct from release authorization.
