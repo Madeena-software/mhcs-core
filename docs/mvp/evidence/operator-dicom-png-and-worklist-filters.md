@@ -1,6 +1,6 @@
 ---
 title: Operator DICOM PNG and worklist filter remediation evidence
-status: review-required
+status: accepted-local-implementation
 last_updated: 2026-10-02
 ---
 
@@ -44,3 +44,7 @@ Explicit testing environment for PHP: `APP_ENV=testing DB_CONNECTION=sqlite DB_D
 These are local synthetic results, not CI or live private-data evidence. Chromium supports the observed browser path; other browsers and real patient images were not exercised. Genuine initialization failures propagate and initialization waits are bounded, but a hung Cornerstone initializer was not independently injected in the browser. Supported default rendering is delegated to the installed implementation; no new formats or multi-frame selection policy were added.
 
 G10 remained blocked for deploying PNG-only main because observed deployed `d0f99ecd604a2b0aa0f31a62396790b04028c9eb` includes recovery commits missing main. Independent PNG acceptance does not authorize deleting those fixes or establish full historical recovery/AI task acceptance. The separately human-approved integration task must close that review/release gap before deployment.
+
+# Immutable review verdict
+
+Reviewer ACCEPTED A9 and CLOSED R8/R1-R7 for PNG/filter implementation `e4159889033b4a3c90cd74b632de5ed53b264f4f` against task `036417ad91d16af1be13ab65770915554061f6f4` and original baseline. Reviewer verified clean exact HEAD, final delta, observed PHP/build/Pint evidence and independently reran the explicit five-file Node allowlist (37 successes) plus baseline-to-final diff check. No blocking PNG finding remained. This revision is the accepted baseline for this bounded PNG/filter scope only. Recovery/main integration and G10 remain separate; no deployment is claimed here.
