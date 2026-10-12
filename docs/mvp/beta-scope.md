@@ -2,7 +2,7 @@
 
 ## Admin-first operational scope
 
-The human-directed priority is one persistent internal Admin login and a unified operational dashboard, recorded in [MVP-DEC-044](decision-log.md#admin-first-priority-decision). This is the approved documentation/planning direction for eventual real patient operations. It is not approval to expose unverified clinical, privacy, authentication, import, migration, or production behavior. The [governing task and baseline](README.md#current-synchronization-marker) define this documentation execution.
+The human-directed priority is one persistent internal Admin login and a unified operational dashboard, recorded in [MVP-DEC-044](decision-log.md#admin-first-priority-decision). This is the approved documentation/planning direction for eventual real patient operations. It is not approval to expose unverified clinical, privacy, authentication, import, migration, or production behavior. The [current authority and task status](README.md#current-authority-and-status) define this documentation execution.
 
 | Target outcome | Domain responsibility | Existing baseline evidence / target distinction | Open dependency |
 |---|---|---|---|

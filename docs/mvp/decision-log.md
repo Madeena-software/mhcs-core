@@ -2,6 +2,8 @@
 
 ## Admin-first priority decision
 
+The Admin-first documentation implementation `7132e7001b704789f6d122bcfad6a5b4e040bc0b` was independently accepted and merged through PR #5 as `8bb0c21e87e6f9e2c32a01ccab83aed37f1e91b7`. This records acceptance of that documentation implementation only, not application acceptance. The separate lean-docs cleanup is governed by task publication `09b0f462fe94976394bb1357077e1a185895a3f2` and remains **Review Required** pending independent review.
+
 **Authority:** Human-directed planning handoff and independent Planner/Reviewer ACCEPTED verdict on `74755cb2c0b40c061b4734c1c1fb5b267a7eb805`, supplied in the 2026-10-12 Executor handoff. Governing task: `.agents/tasks/admin-first-documentation-rebaseline.md @ 5e47b8d61db27741c2048b7c5131b5a7f0f4ef49`.
 
 | Decision ID | Date | Decision | Reason | Impact | Temporary control | Revisit trigger | Status |
