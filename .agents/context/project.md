@@ -30,6 +30,20 @@ This is the application repository's context entrypoint. The maintained business
 - Historical business-source provenance: `Madeena-software/mhcs-business-docs @ 645058e431f59c4450a136e72f140e6819b79f32`. This is no longer maintained active authority and is not asserted equivalent to the Google Doc.
 - Admin-first documentation implementation `7132e7001b704789f6d122bcfad6a5b4e040bc0b` was independently accepted and merged through PR #5 as `8bb0c21e87e6f9e2c32a01ccab83aed37f1e91b7`; this is not application acceptance. The current documentation cleanup is Review Required pending independent review.
 
+## Accepted Admin registration development slice
+
+The immutable accepted development baseline for bounded synthetic/local
+Admin-assisted adult Member registration is
+`21d279831455d32fe2a707e8d306af861c0bbb08`, governed by
+`.agents/tasks/admin-first-manual-member-registration.md` at
+`e7ccc686da049e78d7634125237fc794b30a0908`, from implementation baseline
+`fb25354311121fc8163256cd0530d9cbcb66bb68`.
+[V7/A9 acceptance evidence](../../docs/mvp/evidence/admin-first-manual-member-registration-acceptance.md)
+records the externally supplied independent verdict, AC1–AC8 scope, verification
+limits and unresolved gaps. This supersedes the older application-baseline
+orientation only for that bounded slice. PR #7 integration and release approval
+remain separate; no broader gap or Work Package completion is claimed.
+
 ## Purpose
 
 ### Why MHCS Exists and the Healthcare Problem Being Solved
