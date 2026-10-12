@@ -1,8 +1,8 @@
 ---
 title: Lean Documentation and Business Authority Transition
 document_id: MHCS-TASK-LEAN-DOCS-BUSINESS-AUTHORITY-001
-version: 0.2
-status: Draft
+version: 0.3
+status: validated-published
 language: en-US
 last_updated: 2026-10-12
 scope:
@@ -19,7 +19,7 @@ authority_note: Draft planning contract only. The Google Doc remains Stakeholder
 
 **Task path:** `.agents/tasks/lean-docs-and-business-authority.md`
 
-**Task contract state:** Draft; not authorized for execution until independently reviewed and published at an immutable revision.
+**Task contract state:** Validated/Published. The exact immutable governing revision is the task-publication commit recorded in the Executor handoff.
 
 **Delivery objective / Work Package / MVP:** One bounded documentation-only cleanup and authority-reference transition.
 
@@ -40,6 +40,12 @@ This task does not approve draft business propositions or retire binding technic
 The Admin-first documentation implementation `7132e7001b704789f6d122bcfad6a5b4e040bc0b` was independently accepted and merged through PR #5 as `8bb0c21e87e6f9e2c32a01ccab83aed37f1e91b7`. Treat that accepted merge as the baseline; do not repeat a full review of the prior implementation. Reconcile only material changes or new evidence since that accepted baseline. Preserve `.agents/tasks/admin-first-documentation-rebaseline.md` and all other historical task contracts unchanged.
 
 **Historical Git reference for current documentation:** `Madeena-software/mhcs-core @ 8bb0c21e87e6f9e2c32a01ccab83aed37f1e91b7`. For every approved deletion, verify that this exact object contains the file and record the path plus full SHA in the new historical index. Do not use a moving branch/tag as the historical locator.
+
+## Independent validation decision
+
+**Reviewed task revision:** `d2f0671ea200b1189f4515e225efbf5c415e580b`.
+
+**Verdict:** REMEDIATION ACCEPTED. The independent Reviewer approved this contract for publication and the bounded documentation execution described here. This approval does not authorize new product, clinical, privacy, security, or operational decisions. The publication commit containing this exact Validated/Published task content is its governing task revision; record that full SHA in the Executor handoff before execution.
 
 ## Objective
 
