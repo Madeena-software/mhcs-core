@@ -1,17 +1,17 @@
 ---
 title: Admin-first Operational MVP Documentation Rebaseline
 document_id: MHCS-TASK-ADMIN-FIRST-DOCUMENTATION-REBASELINE-001
-version: 1.1
-status: draft
+version: 1.2
+status: validated-published
 language: en-US
 last_updated: 2026-10-12
 scope:
-  - candidate contract for a later lean Admin-first documentation rebaseline
+  - validated contract for a lean Admin-first documentation rebaseline
   - context entrypoint and active MVP planning only
-authority_note: Draft for independent Planner/Reviewer review. The human approved task authoring and branch publication, not application implementation or self-approval of unresolved product, clinical, security, or privacy decisions.
+authority_note: Independently approved for publication and seven-document execution following review of 74755cb2c0b40c061b4734c1c1fb5b267a7eb805. Open product, clinical, security, privacy, import, authentication, production-data, and release decisions remain unresolved.
 ---
 
-# Executable Task — Draft
+# Executable Task
 
 ## Task identity
 
@@ -19,7 +19,7 @@ authority_note: Draft for independent Planner/Reviewer review. The human approve
 
 **Task path:** `.agents/tasks/admin-first-documentation-rebaseline.md`
 
-**Task contract state:** `Draft` — candidate published for review, not Validated/Published or execution-ready.
+**Task contract state:** `Validated/Published` upon the Phase 1 publication commit containing this exact content. Its full SHA must be recorded before documentation execution.
 
 **Delivery objective / Work Package / MVP:** One bounded documentation rebaseline supporting the Admin-first operational MVP. This contract produces coherent documentation and traceability, not the operational application.
 
@@ -31,7 +31,7 @@ The human's task-authoring/publication handoff received on 2026-10-12 approves p
 
 The existing repository combines August controlled-beta priorities, historical implementation matrices, later operational exceptions, and a September business-context overlay. These are useful but do not provide one consistent current delivery contract. The outcome is a concise context entrypoint and active MVP planning set that makes authority, current implementation, desired MVP behavior, future scope, and unresolved decisions explicit. The extensive implementation ledgers remain unchanged historical authority and reference.
 
-The current authoring execution changes only this candidate task. All dispositions and acceptance criteria below govern a **later, independently validated documentation execution**.
+Phase 1 changes only this task to record independent validation and publication. Phase 2 executes the seven-document contract against that exact immutable publication revision.
 
 ## Baseline and task revision
 
@@ -39,7 +39,7 @@ The current authoring execution changes only this candidate task. All dispositio
 
 **Execution-start observation:** Local `main`, HEAD, and freshly fetched `origin/main` all matched that SHA; the worktree was clean. The supplied reference HEAD is identical, so there is no intervening mainline delta to reconcile. Authoring branch: `task/admin-first-doc-rebaseline`, created from verified `origin/main`.
 
-**Task revision:** The full immutable commit containing this exact file, supplied in the authoring handoff. An immutable Draft revision is not T5 validation. Any material correction must use this same stable path and a newly resolvable governing revision.
+**Task revision:** The full Phase 1 publication commit containing this exact file, recorded in the Executor handoff before Phase 2. Any material correction must use this same stable path and a newly resolvable governing revision.
 
 **Accepted-baseline limitation:** The SHA above is the observed implementation baseline, not a new A9 acceptance claim. Its merge of Operator–AI PACS work is visible in Git, but this authoring pass did not independently review that application's acceptance, CI, clinical readiness, or deployment. The Planner must reconcile relevant pending execution/review state before validating dependent work.
 
@@ -51,7 +51,15 @@ Before later execution, reconcile any drift in either repository and explicitly 
 
 **Review basis:** `1ad0839c7c88961ee16209d17bee11e4687630eb` on `task/admin-first-doc-rebaseline`.
 
-The human's review-remediation instruction narrows the later refactor to the context entrypoint and necessary active MVP planning documents. The three `docs/implementation/` ledgers become KEEP / historical authority and reference; archival, cache cleanup, and exhaustive source/identifier reconciliation are excluded. Preserve existing authority, decisions, identifiers, evidence, integration and security boundaries, and open approvals. This revision remains Draft and authorizes no documentation implementation.
+The human's review-remediation instruction narrows the later refactor to the context entrypoint and necessary active MVP planning documents. The three `docs/implementation/` ledgers become KEEP / historical authority and reference; archival, cache cleanup, and exhaustive source/identifier reconciliation are excluded. Preserve existing authority, decisions, identifiers, evidence, integration and security boundaries, and open approvals. That remediation remained Draft pending independent review; the decision below now authorizes its bounded documentation execution.
+
+## Independent validation decision
+
+**Reviewed revision:** `74755cb2c0b40c061b4734c1c1fb5b267a7eb805`.
+
+**Decision:** The human-supplied independent Planner/Reviewer verdict is **ACCEPTED**, dated 2026-10-12. The bounded contract is approved for validation/publication and execution within its seven-document scope only. This permits recording Admin-first as the human-directed operational MVP priority and retaining unresolved policies as open/deferred; it does not approve application behavior, migration, clinical/security/privacy/import/authentication mechanisms, production-data use, or release.
+
+**Execution-state reconciliation:** At Phase 1 start, local HEAD and remote branch matched the reviewed revision and the working tree was clean. Changes since the application baseline are task-authoring/remediation only. The human directs documentation execution from this reviewed state; no new application acceptance or A9 claim is made. Stop if subsequent drift materially changes the bounded basis.
 
 ## Objective
 
@@ -113,7 +121,7 @@ These observations are grounded in the pinned sources, not approvals to resolve 
 | C7 — Stale orientation and status | Context points at absent local `docs/business/`, hypothetical module contexts, and an old context revision. MVP status documents stop at `841465faac4e8b1dd3670103052a9c4f075bfd04`; conformance matrices retain a 2026-08-04 snapshot and missing old specification paths. | Repair navigation in the scoped context/MVP documents and identify the implementation ledgers as historical authority/reference. Preserve their source digests and unresolved provenance unchanged; resolving their old missing paths is outside this task. Verify only implementation/acceptance claims changed in active guidance. |
 | C8 — Current baseline acceptance | Main includes recent field/AI work beyond the dated status ledger; task frontmatter still says validated-published and does not prove execution acceptance or release. | Planner reconciles relevant exact task revisions, execution results, review verdicts, and overlap. Unknown state remains unknown. This candidate does not reopen or accept those application tasks. |
 
-**Gate assessment:** Business-priority reconciliation reopens B0/P1 for the affected delivery line; R2/A3/D4 must carry the reconciled scope and constraints. T5 is **not passed**. Publication of this Draft closes none of those gates.
+**Gate assessment:** Independent approval establishes readiness for this documentation-only contract once its exact publication revision is recorded. T5 applies only to the seven-document rebaseline. B0/P1/R2/A3/D4 decisions needed for future application implementation remain open where listed; documentation approval does not close clinical, security, privacy, import, temporary-access, production-data, or release gates.
 
 ## Scope
 
@@ -180,7 +188,7 @@ When consolidating narrative or changing a section/anchor in a scoped document, 
 
 ### Dependencies
 
-- Independent Planner/Reviewer review of this exact candidate and relevant baseline/overlapping task state.
+- Independent Planner/Reviewer approval of the reviewed contract is recorded above; resolve the exact Phase 1 publication revision before execution.
 - Product Owner reconciliation of C1/C2 and the exact active-MVP supersession boundary; technical/security/clinical/privacy owners for affected policy changes.
 - Read access to pinned business sources and relevant historical references used by the edited documents. An unavailable source stays an explicit evidence gap; broad source recovery is not required.
 - Coordinate changes to the scoped context entrypoint and active MVP documents with any concurrent delivery; do not overwrite unpublished work.
@@ -196,7 +204,7 @@ When consolidating narrative or changing a section/anchor in a scoped document, 
 
 | Decision / evidence | Owner | Required before |
 |---|---|---|
-| Approve this documentation contract, reconcile baseline/overlap, and record exact governing revision | Independent Planner/Reviewer with Product Owner for scope changes | T5 and later documentation execution |
+| Independent contract approval recorded above; resolve immutable publication revision | Executor records the Phase 1 commit SHA | Before Phase 2; no expansion of seven-document scope |
 | Record exact priority, permanent-portal, Doctor-workspace, and import supersession; decide whether unresolved matters remain explicitly deferred | Product Owner | Promoting new scope/requirements from Draft to Approved |
 | Admin/clinical access matrix; staff identity, credentials, assignment, delegation, session expiry/revocation/recovery; accountable clinical actions | Product, clinical, security/privacy, technical authorities | Approving affected access requirements; later implementation |
 | Finalized-result definition, signing/finalization/amendment, recipient/guardian authorization, secure-link lifetime/disclosure/revocation and fallback | Clinical and security/privacy authorities with Product Owner | Approving result-delivery requirements; later implementation |
@@ -204,7 +212,7 @@ When consolidating narrative or changing a section/anchor in a scoped document, 
 | CSV/XLSX field/template, identity matching, duplicate/conflict/invalid-row handling and atomicity, validation/error disclosure, storage and retention policy | Product, Member-domain and privacy/security owners | Approving generic import specification; later implementation |
 | Environment readiness, production data/migration, deployment, and release | Designated release authority and relevant domain owners | Separate G10 work; never authorized here |
 
-These unresolved product mechanisms need not all be designed to perform a documentation-only rebaseline. The Planner may validate documentation work that explicitly preserves them as open/deferred, with owners and triggers, after approving that bounded treatment. The Executor must never choose their outcomes. This authoring pass does not make that validation decision.
+The independent Planner/Reviewer has approved documentation work that preserves these mechanisms as open/deferred, with owners and triggers. The Executor must never choose their outcomes or treat documentation validation as approval of application policies.
 
 ## Required capabilities
 
@@ -257,23 +265,17 @@ Recording an already identified open decision as open is permitted by the valida
 
 ## Side-effect authorization
 
-### Current authoring/publication execution
+### Explicitly authorized publication and execution
 
-The original human handoff authorized creating and publishing `task/admin-first-doc-rebaseline`. The current review-remediation instruction explicitly authorizes updating **this file only**, lightweight verification, local commit(s), and a non-force push to that same existing branch. The reviewed authoring revision is `1ad0839c7c88961ee16209d17bee11e4687630eb`; preserve its ancestry and unrelated work. Commit and push follow successful bounded verification without repeated approval. Stop on incompatible branch drift; never overwrite remote history.
+The current human Executor handoff authorizes Phase 1 task validation/publication and Phase 2 documentation execution on `task/admin-first-doc-rebaseline`, with non-force local commits and push to `origin`. Phase 1 changes this task only and must commit successfully before Phase 2 begins. Phase 2 changes only the seven existing documents listed in scope, uses the exact Phase 1 governing revision, and is committed separately. Preserve unrelated work and remote history; stop on incompatible drift.
 
-No PR or issue creation/update, merge, deployment, release, production mutation, business-repository mutation, force-push, reset/clean, secret handling, or existing-document refactor is authorized in this execution.
-
-### Later documentation execution
-
-The latest human review instruction narrows the original restructuring direction to the seven existing documents listed in scope. Later edits may begin only after this contract is independently validated and its exact governing revision is supplied. No archival, deletion, implementation-ledger rewrite, or mutation outside that write scope is authorized. Preserve unrelated source, governance, independently authoritative contracts, production records, existing task contracts, and unpublished work.
-
-The current commit/push permission is specific to task-authoring publication; it does not authorize a later Executor to publish refactored documentation, create a PR, merge, mutate external services, or release. Those side effects require applicable separate authorization.
+No archival, deletion, implementation-ledger rewrite, application mutation, business-repository mutation, PR/issue activity, merge, deployment, production operation, release, destructive operation, or force-push is authorized.
 
 ## Expected terminal outcome
 
-**This execution:** Candidate task committed and pushed, still Draft, returned for independent Planner/Reviewer review. Stop; no Executor Launcher or application/documentation-refactor execution.
+**Phase 1:** Validated task committed with its full immutable publication SHA recorded before Phase 2.
 
-**Later validated documentation execution:** `Review Required` with the exact resulting revision/state and truthful evidence, or `Planning Required` with the blocking condition and supporting evidence. The Executor does not self-declare final acceptance or production readiness.
+**Phase 2:** Documentation implementation committed separately and branch pushed; return `Review Required` with exact revisions and truthful focused verification evidence, then stop for independent Reviewer evaluation. Use `Planning Required` if a stop condition prevents completion. The Executor does not self-declare documentation acceptance, application acceptance, production readiness, or release approval.
 
 ## Review and remediation handling
 
