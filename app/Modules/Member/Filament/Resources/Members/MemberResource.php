@@ -84,7 +84,7 @@ final class MemberResource extends Resource
     {
         return FileUpload::make($name)->label($label)
             ->disk('local')->visibility('private')->storeFiles(false)->previewable(false)->preventFilePathTampering()
-            ->acceptedFileTypes(['image/jpeg', 'image/png', 'image/webp'])
+            ->acceptedFileTypes(['image/jpeg', 'image/png'])
             ->maxSize(max(1, (int) config('mhcs.upload.max_file_bytes') / 1024));
     }
 

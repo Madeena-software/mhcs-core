@@ -91,8 +91,8 @@ final class CreateMember extends CreateRecord
             }
             $contents = $file->get();
             $mime = (new \finfo(FILEINFO_MIME_TYPE))->buffer($contents);
-            if (! in_array($mime, ['image/jpeg', 'image/png', 'image/webp'], true) || @getimagesizefromstring($contents) === false) {
-                throw ValidationException::withMessages(['data.'.$field => 'Gunakan foto JPEG, PNG, atau WebP yang valid.']);
+            if (! in_array($mime, ['image/jpeg', 'image/png'], true) || @getimagesizefromstring($contents) === false) {
+                throw ValidationException::withMessages(['data.'.$field => 'Gunakan foto JPEG atau PNG yang valid.']);
             }
             $inputs[$field] = [$type, $contents, $mime];
         }

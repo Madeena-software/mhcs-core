@@ -185,11 +185,19 @@ final readonly class MemberRegistrationService
                     'updated_at' => $this->clock->now(),
                 ]);
 
+                if ($adminAssisted) {
+                    // Bind pending evidence to this uncommitted new Member, never a completed registration.
+                    DB::table('member_operations')
+                        ->where('operation_type', 'registration')
+                        ->where('operation_id', $data->operationId)
+                        ->update(['result' => json_encode(['member_id' => $memberId], JSON_THROW_ON_ERROR)]);
+                }
+
                 $member = Member::query()->findOrFail($memberId);
                 foreach ([$data->identityDocument, $data->profilePhoto] as $asset) {
                     if ($asset !== null) {
                         if ($adminAssisted) {
-                            $this->assets->recordPendingForAdminRegistration($member, $asset, $context);
+                            $this->assets->recordPendingForAdminRegistration($member, $asset, $context, $data->operationId);
                         } else {
                             $this->assets->recordForRegistration($member, $asset, $context);
                         }

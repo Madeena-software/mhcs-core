@@ -56,11 +56,25 @@ final readonly class MemberVerificationAssetService
         Member $member,
         VerificationAssetInput $input,
         AuthenticatedContext $callerContext,
+        string $registrationOperationId,
     ): string {
         $context = $this->authorization->registration(RegistrationSource::Administrator, true);
         $this->assertCallerContextMatchesTrustedContext($callerContext, $context);
 
-        return DB::transaction(function () use ($member, $input, $context): string {
+        if (DB::transactionLevel() === 0) {
+            throw new MemberIdentityException('Pending evidence requires an in-progress registration transaction.');
+        }
+
+        return DB::transaction(function () use ($member, $input, $context, $registrationOperationId): string {
+            $operation = DB::table('member_operations')
+                ->where('operation_type', 'registration')
+                ->where('operation_id', $registrationOperationId)
+                ->lockForUpdate()->first();
+            if ($operation === null || $operation->status !== 'pending'
+                || (json_decode($operation->result ?? 'null', true)['member_id'] ?? null) !== (string) $member->id) {
+                throw new MemberIdentityException('Pending evidence requires the bound new-registration operation.');
+            }
+
             $row = DB::table('members')->where('id', $member->id)->lockForUpdate()->first();
             if (
                 $row === null

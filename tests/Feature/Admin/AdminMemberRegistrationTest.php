@@ -31,6 +31,8 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
+use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 use Livewire\Livewire;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
@@ -116,6 +118,79 @@ final class AdminMemberRegistrationTest extends TestCase
         $component->assertSet('data', []);
         $this->get('/admin/members')->assertOk()->assertSee($member->medical_record_number)->assertDontSee($form['nik']);
         $this->get('/admin/members/'.$member->id)->assertOk()->assertSee('Menunggu verifikasi')->assertDontSee($form['nik'])->assertDontSee('objects/');
+    }
+
+    public static function photoFormats(): array
+    {
+        return [['jpg'], ['png'], ['webp']];
+    }
+
+    #[DataProvider('photoFormats')]
+    public function test_only_jpeg_and_png_are_accepted_before_private_persistence(string $extension): void
+    {
+        $this->actingAs($this->admin());
+        $component = Livewire::test(CreateMember::class)->fillForm($this->form() + [
+            'identity_document' => UploadedFile::fake()->image('ktp.'.$extension),
+            'profile_photo' => UploadedFile::fake()->image('profile.'.$extension),
+        ])->call('create');
+        if ($extension === 'webp') {
+            $component->assertHasFormErrors(['identity_document', 'profile_photo']);
+            $this->assertDatabaseCount('members', 0);
+            $this->assertDatabaseCount('member_verification_assets', 0);
+            $this->assertSame([], Storage::disk('local')->allFiles('objects'));
+        } else {
+            $component->assertHasNoFormErrors()->assertRedirect('/admin/members');
+            $this->assertDatabaseCount('member_verification_assets', 2);
+            foreach (DB::table('member_verification_assets')->pluck('private_object_key') as $key) {
+                Storage::disk('local')->assertExists($key);
+            }
+        }
+    }
+
+    public function test_creation_handler_rejects_webp_content_even_with_a_jpeg_filename(): void
+    {
+        $this->actingAs($this->admin());
+        $file = UploadedFile::fake()->image('synthetic.webp');
+        Storage::disk('local')->put('livewire-tmp/synthetic.jpg', $file->getContent());
+        $component = Livewire::test(CreateMember::class)->instance();
+        try {
+            (new \ReflectionMethod(CreateMember::class, 'handleRecordCreation'))->invoke($component, $this->form() + [
+                'identity_document' => new TemporaryUploadedFile('synthetic.jpg', 'local'),
+            ]);
+            $this->fail('WebP content must be rejected by the creation handler.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('data.identity_document', $exception->errors());
+        }
+        $this->assertDatabaseCount('members', 0);
+        $this->assertDatabaseCount('member_verification_assets', 0);
+        $this->assertSame([], Storage::disk('local')->allFiles('objects'));
+    }
+
+    public function test_completed_pending_registration_cannot_receive_assets_through_registration_entry(): void
+    {
+        $this->actingAs($this->admin(true));
+        $data = $this->data();
+        $result = app(MemberRegistrationService::class)->registerAdminAssisted($data);
+        $member = Member::query()->findOrFail($result->memberId);
+        $asset = $this->data(true)->identityDocument;
+        $context = app(MemberAuthorization::class)->registration(RegistrationSource::Administrator, true);
+        $auditCount = DB::table('audit_events')->count();
+        DB::transaction(function () use ($member, $asset, $context, $data): void {
+            $assets = app(MemberVerificationAssetService::class);
+            $this->reject(fn () => $assets->recordPendingForAdminRegistration($member, $asset, $context, $data->operationId));
+            $this->reject(fn () => $assets->recordPendingForAdminRegistration($member, $asset, $context, 'missing-operation'));
+            DB::table('member_operations')->insert([
+                'id' => (string) Str::uuid(), 'operation_type' => 'registration', 'operation_id' => 'another-pending-operation',
+                'payload_hash' => str_repeat('a', 64), 'status' => 'pending',
+                'result' => json_encode(['member_id' => (string) Str::uuid()], JSON_THROW_ON_ERROR),
+                'created_at' => now(), 'updated_at' => now(),
+            ]);
+            $this->reject(fn () => $assets->recordPendingForAdminRegistration($member, $asset, $context, 'another-pending-operation'));
+            DB::table('member_operations')->where('operation_id', 'another-pending-operation')->delete();
+        });
+        $this->assertDatabaseCount('member_verification_assets', 0);
+        $this->assertDatabaseCount('audit_events', $auditCount);
+        $this->assertDatabaseHas('members', ['id' => $member->id, 'identity_status' => 'pending_verification', 'identity_document_type' => null]);
     }
 
     public function test_create_access_and_submission_are_denied_to_ineligible_accounts(): void
@@ -363,22 +438,23 @@ final class AdminMemberRegistrationTest extends TestCase
         foreach ([['identityDocument' => $profile], ['profilePhoto' => $ktp], ['identityDocument' => new VerificationAssetInput(VerificationAssetType::Kia, $ktp->object)], ['identityDocument' => new VerificationAssetInput(VerificationAssetType::Ktp, $ktp->object, 'image/jpeg', 'replacement')]] as $override) {
             $this->reject(fn () => $service->registerAdminAssisted($this->data(false, false, $override)));
         }
-        $result = $service->registerAdminAssisted($this->data());
-        $member = Member::query()->findOrFail($result->memberId);
-        $context = app(MemberAuthorization::class)->registration(RegistrationSource::Administrator, true);
-        $assets = app(MemberVerificationAssetService::class);
         foreach ([
             new PrivateObject(OpaqueObjectKey::fromString('public/fake'), str_repeat('a', 64), 1, new DateTimeImmutable),
             new PrivateObject(OpaqueObjectKey::fromString('objects/fake'), 'bad', 1, new DateTimeImmutable),
             new PrivateObject(OpaqueObjectKey::fromString('objects/fake'), str_repeat('a', 64), 0, new DateTimeImmutable),
         ] as $object) {
-            $this->reject(fn () => $assets->recordPendingForAdminRegistration($member, new VerificationAssetInput(VerificationAssetType::Ktp, $object), $context));
+            $this->reject(fn () => $service->registerAdminAssisted($this->data(false, false, ['identityDocument' => new VerificationAssetInput(VerificationAssetType::Ktp, $object)])));
+            $this->assertDatabaseCount('members', 0);
+            $this->assertDatabaseCount('member_operations', 0);
         }
-        $this->reject(fn () => $assets->recordPendingForAdminRegistration($member, new VerificationAssetInput(VerificationAssetType::Kia, $ktp->object), $context));
+        $result = $service->registerAdminAssisted($this->data());
+        $member = Member::query()->findOrFail($result->memberId);
+        $context = app(MemberAuthorization::class)->registration(RegistrationSource::Administrator, true);
+        $assets = app(MemberVerificationAssetService::class);
         $forged = new AuthenticatedContext(actorId: LocalId::fromString('different-actor'), roles: ['administrator'], permissions: ['member.registration.manage'], purpose: 'member.registration');
-        $this->reject(fn () => $assets->recordPendingForAdminRegistration($member, $ktp, $forged));
+        $this->reject(fn () => $assets->recordPendingForAdminRegistration($member, $ktp, $forged, 'synthetic-operation'));
         $this->actingAs($this->admin(false, [], ['member.account.read']));
-        $this->reject(fn () => $assets->recordPendingForAdminRegistration($member, $ktp, $context));
+        $this->reject(fn () => $assets->recordPendingForAdminRegistration($member, $ktp, $context, 'synthetic-operation'));
         $this->assertDatabaseCount('member_verification_assets', 0);
     }
 
