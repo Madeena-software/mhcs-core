@@ -196,7 +196,7 @@ final class Mvp02AdminAccessTest extends TestCase
         $this->assertDatabaseCount('users', 1);
         $this->assertDatabaseCount('members', 0);
         $this->assertDatabaseCount('authorization_role_assignments', 1);
-        $this->assertDatabaseCount('authorization_permission_assignments', 11);
+        $this->assertDatabaseCount('authorization_permission_assignments', 12);
         $this->assertTrue(Hash::check('admin-password', $password) === false);
     }
 
@@ -444,7 +444,7 @@ final class Mvp02AdminAccessTest extends TestCase
             'active' => true,
         ]);
         $this->assertDatabaseCount('authorization_role_assignments', 1);
-        $this->assertDatabaseCount('authorization_permission_assignments', 11);
+        $this->assertDatabaseCount('authorization_permission_assignments', 12);
     }
 
     public function test_existing_admin_stops_on_inactive_or_unrelated_claims_without_reactivating_them(): void
@@ -522,6 +522,67 @@ final class Mvp02AdminAccessTest extends TestCase
         app()->instance('env', 'production');
         $this->expectException(RuntimeException::class);
         (new MvpAdminSeeder)->run();
+    }
+
+    public function test_registration_bootstrap_reconciles_exact_permission_once_without_verification(): void
+    {
+        $this->seed(MvpAdminSeeder::class);
+        $admin = User::query()->where('email', 'mvp-admin@example.test')->sole();
+        $before = $admin->getAttributes();
+        DB::table('authorization_permission_assignments')->where('user_id', $admin->id)->where('permission', 'member.registration.manage')->delete();
+        $claims = DB::table('authorization_permission_assignments')->where('user_id', $admin->id)->orderBy('permission')->get()->toArray();
+        $this->seed(MvpAdminSeeder::class);
+        $this->seed(MvpAdminSeeder::class);
+        $this->assertSame($before, $admin->fresh()->getAttributes());
+        $this->assertEquals($claims, DB::table('authorization_permission_assignments')->where('user_id', $admin->id)->where('permission', '!=', 'member.registration.manage')->orderBy('permission')->get()->toArray());
+        $this->assertSame(1, DB::table('authorization_permission_assignments')->where('permission', 'member.registration.manage')->where('assigned_by_user_id', null)->where('active', true)->count());
+        $this->assertDatabaseMissing('authorization_permission_assignments', ['permission' => 'member.identity.verify']);
+        $this->assertDatabaseCount('authorization_permission_assignments', 12);
+        $this->assertDatabaseCount('authorization_role_assignments', 1);
+    }
+
+    public function test_registration_bootstrap_rejects_nonbootstrap_or_revoked_grants(): void
+    {
+        $this->seed(MvpAdminSeeder::class);
+        $admin = User::query()->where('email', 'mvp-admin@example.test')->sole();
+        $other = User::factory()->create();
+        foreach ([['assigned_by_user_id' => $other->id, 'active' => true], ['assigned_by_user_id' => null, 'active' => false]] as $state) {
+            DB::table('authorization_permission_assignments')->where('user_id', $admin->id)->where('permission', 'member.registration.manage')->update($state);
+            try {
+                (new MvpAdminSeeder)->run();
+                $this->fail('Invalid bootstrap provenance or a revoked grant must stop reconciliation.');
+            } catch (RuntimeException) {
+                $this->assertDatabaseHas('authorization_permission_assignments', ['user_id' => $admin->id, 'permission' => 'member.registration.manage'] + $state);
+            }
+        }
+        $this->assertDatabaseMissing('authorization_permission_assignments', ['permission' => 'member.identity.verify']);
+        $this->assertDatabaseCount('authorization_permission_assignments', 12);
+    }
+
+    public function test_nonlocal_effective_allowlist_excludes_registration_even_with_override(): void
+    {
+        $seeder = new MvpAdminSeeder;
+        $method = new \ReflectionMethod($seeder, 'permissions');
+        $original = app()->environment();
+        $previous = getenv('MHCS_ALLOW_PRODUCTION_MVP_SEED');
+        putenv('MHCS_ALLOW_PRODUCTION_MVP_SEED=true');
+        try {
+            foreach (['production', 'staging', 'preview'] as $environment) {
+                app()->instance('env', $environment);
+                $permissions = $method->invoke($seeder);
+                $this->assertCount(11, $permissions);
+                $this->assertNotContains('member.registration.manage', $permissions);
+                $this->assertNotContains('member.identity.verify', $permissions);
+            }
+            foreach (['local', 'testing'] as $environment) {
+                app()->instance('env', $environment);
+                $this->assertCount(12, $method->invoke($seeder));
+                $this->assertContains('member.registration.manage', $method->invoke($seeder));
+            }
+        } finally {
+            app()->instance('env', $original);
+            putenv($previous === false ? 'MHCS_ALLOW_PRODUCTION_MVP_SEED' : 'MHCS_ALLOW_PRODUCTION_MVP_SEED='.$previous);
+        }
     }
 
     /** @param list<string> $roles @param list<string> $permissions */

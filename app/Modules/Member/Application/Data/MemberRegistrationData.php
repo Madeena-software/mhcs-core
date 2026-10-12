@@ -24,8 +24,8 @@ final readonly class MemberRegistrationData
         public ?string $kk,
         public ?string $phone,
         public RegistrationSource $registrationSource,
-        public VerificationAssetInput $identityDocument,
-        public VerificationAssetInput $profilePhoto,
+        public ?VerificationAssetInput $identityDocument,
+        public ?VerificationAssetInput $profilePhoto,
         array $guardianMemberIds = [],
         array $externalIdentifiers = [],
     ) {

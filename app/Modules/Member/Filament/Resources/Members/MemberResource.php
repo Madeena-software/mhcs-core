@@ -7,9 +7,15 @@ namespace App\Modules\Member\Filament\Resources\Members;
 use App\Models\User;
 use App\Modules\Member\Application\Services\AccountStateService;
 use App\Modules\Member\Application\Services\MemberAuthorization;
+use App\Modules\Member\Domain\Enums\RegistrationSource;
 use App\Modules\Member\Domain\Models\Member;
+use App\Shared\Time\Clock;
 use Filament\Actions\Action;
+use Filament\Forms\Components\DatePicker;
+use Filament\Forms\Components\FileUpload;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\TextInput;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
@@ -57,6 +63,29 @@ final class MemberResource extends Resource
             ->selectRaw("(CASE WHEN current_address IS NOT NULL AND TRIM(current_address) <> '' THEN 25 ELSE 0 END + CASE WHEN emergency_contact_name IS NOT NULL AND TRIM(emergency_contact_name) <> '' THEN 25 ELSE 0 END + CASE WHEN emergency_contact_relationship IS NOT NULL AND TRIM(emergency_contact_relationship) <> '' THEN 25 ELSE 0 END + CASE WHEN emergency_contact_phone IS NOT NULL AND TRIM(emergency_contact_phone) <> '' THEN 25 ELSE 0 END) AS profile_completion_value")
             ->whereHas('user')
             ->with('user:id,email,account_status,login_enabled,must_change_password');
+    }
+
+    public static function form(Schema $schema): Schema
+    {
+        return $schema->components([
+            TextInput::make('name')->label('Nama')->required()->maxLength(255),
+            TextInput::make('nik')->label('NIK')->required()->regex('/\A[0-9]{16}\z/')->maxLength(16),
+            DatePicker::make('birth_date')->label('Tanggal lahir')->required()->maxDate(fn () => app(Clock::class)->now()->modify('-17 years')->format('Y-m-d'))->rules(['date', 'before_or_equal:'.app(Clock::class)->now()->modify('-17 years')->format('Y-m-d')]),
+            Select::make('administrative_gender')->label('Jenis kelamin administratif')->required()->options(['male' => 'Laki-laki', 'female' => 'Perempuan', 'unspecified' => 'Tidak ditentukan'])->in(['male', 'female', 'unspecified']),
+            TextInput::make('kk')->label('Nomor KK (opsional)')->regex('/\A[0-9]{16}\z/')->maxLength(16),
+            TextInput::make('email')->label('Email (opsional)')->email()->maxLength(255),
+            TextInput::make('phone')->label('Telepon (opsional)')->maxLength(255),
+            self::photoField('identity_document', 'Foto KTP (opsional)'),
+            self::photoField('profile_photo', 'Foto profil (opsional)'),
+        ]);
+    }
+
+    private static function photoField(string $name, string $label): FileUpload
+    {
+        return FileUpload::make($name)->label($label)
+            ->disk('local')->visibility('private')->storeFiles(false)->previewable(false)->preventFilePathTampering()
+            ->acceptedFileTypes(['image/jpeg', 'image/png', 'image/webp'])
+            ->maxSize(max(1, (int) config('mhcs.upload.max_file_bytes') / 1024));
     }
 
     public static function infolist(Schema $schema): Schema
@@ -173,6 +202,7 @@ final class MemberResource extends Resource
     {
         return [
             'index' => Pages\ListMembers::route('/'),
+            'create' => Pages\CreateMember::route('/create'),
             'view' => Pages\ViewMember::route('/{record}'),
         ];
     }
@@ -189,7 +219,14 @@ final class MemberResource extends Resource
 
     public static function canCreate(): bool
     {
-        return false;
+        try {
+            app(MemberAuthorization::class)->accountRead();
+            app(MemberAuthorization::class)->registration(RegistrationSource::Administrator, true);
+
+            return true;
+        } catch (Throwable) {
+            return false;
+        }
     }
 
     public static function canEdit(Model $record): bool
@@ -318,6 +355,7 @@ final class MemberResource extends Resource
     private static function statusOptions(): array
     {
         return [
+            'pending_activation' => 'Menunggu aktivasi',
             'pending_verification' => 'Menunggu verifikasi',
             'verified' => 'Terverifikasi',
             'nonclinical_validation' => 'Nonclinical validation',
@@ -330,6 +368,7 @@ final class MemberResource extends Resource
         return match ($value) {
             'active' => 'Aktif',
             'suspended' => 'Ditangguhkan',
+            'pending_activation' => 'Menunggu aktivasi',
             'pending_verification' => 'Menunggu verifikasi',
             'verified' => 'Terverifikasi',
             'nonclinical_validation' => 'Nonclinical validation',

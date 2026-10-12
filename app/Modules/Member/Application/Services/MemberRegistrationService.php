@@ -22,6 +22,7 @@ use App\Shared\Validation\NonclinicalValidationContext;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use JsonException;
 use Throwable;
@@ -39,18 +40,58 @@ final readonly class MemberRegistrationService
 
     public function register(MemberRegistrationData $data): MemberRegistrationResult
     {
+        return $this->registerWithPolicy($data, false);
+    }
+
+    public function registerAdminAssisted(MemberRegistrationData $data): MemberRegistrationResult
+    {
+        if (
+            $data->registrationSource !== RegistrationSource::Administrator
+            || ! $this->isAdult($data->birthDate)
+            || $data->password !== null
+            || $data->guardianMemberIds !== []
+            || $data->externalIdentifiers !== []
+            || ($data->identityDocument !== null && ($data->identityDocument->type !== VerificationAssetType::Ktp || $data->identityDocument->replacesId !== null))
+            || ($data->profilePhoto !== null && ($data->profilePhoto->type !== VerificationAssetType::ProfilePhoto || $data->profilePhoto->replacesId !== null))
+            || Validator::make([
+                'nik' => $data->nik, 'kk' => $data->kk, 'email' => $data->email,
+                'name' => $data->name, 'gender' => $data->administrativeGender,
+            ], [
+                'nik' => ['required', 'regex:/\A[0-9]{16}\z/'],
+                'kk' => ['nullable', 'regex:/\A[0-9]{16}\z/'],
+                'email' => ['nullable', 'email', 'max:255'],
+                'name' => ['required', 'string', 'max:255'],
+                'gender' => ['required', 'in:male,female,unspecified'],
+            ])->fails()
+        ) {
+            throw new MemberIdentityException('The adult administrator registration data is invalid.');
+        }
+
+        $context = $this->authorization->registration(RegistrationSource::Administrator, true);
+        $actor = User::query()->find((string) $context->actorId);
+        if ($actor === null || ! $actor->canAuthenticate()) {
+            throw new MemberIdentityException('An eligible administrator account is required.');
+        }
+
+        return $this->registerWithPolicy($data, true);
+    }
+
+    private function registerWithPolicy(MemberRegistrationData $data, bool $adminAssisted): MemberRegistrationResult
+    {
         if ($data->registrationSource === RegistrationSource::NonclinicalValidation) {
             throw new MemberIdentityException('Nonclinical validation requires its dedicated registration boundary.');
         }
 
         $adult = $this->isAdult($data->birthDate);
         $context = $this->authorization->registration($data->registrationSource, $adult);
-        $this->assertRegistrationAuthorization($data, $context, $adult);
-        $approved = $this->authorization->hasAdministratorPermission($context, MemberAuthorization::IDENTITY_VERIFICATION_PERMISSION);
-        $payloadHash = $this->payloadHash($data, (string) $context->actorId);
+        if (! $adminAssisted) {
+            $this->assertRegistrationAuthorization($data, $context, $adult);
+        }
+        $approved = ! $adminAssisted && $this->authorization->hasAdministratorPermission($context, MemberAuthorization::IDENTITY_VERIFICATION_PERMISSION);
+        $payloadHash = $this->payloadHash($data, (string) $context->actorId, $adminAssisted);
 
         try {
-            return DB::transaction(function () use ($data, $context, $adult, $approved, $payloadHash): MemberRegistrationResult {
+            return DB::transaction(function () use ($data, $context, $adult, $approved, $payloadHash, $adminAssisted): MemberRegistrationResult {
                 $operation = DB::table('member_operations')
                     ->where('operation_type', 'registration')
                     ->where('operation_id', $data->operationId)
@@ -132,7 +173,7 @@ final readonly class MemberRegistrationService
                     'family_id' => $familyId,
                     'medical_record_number' => $medicalRecordNumber,
                     'identity_status' => $identityStatus,
-                    'identity_document_type' => $data->identityDocument->type->value,
+                    'identity_document_type' => $data->identityDocument?->type->value,
                     'encrypted_nik' => $nik['encrypted_display'],
                     'nik_lookup_digest' => $nik['lookup_digest'],
                     'name' => $data->name,
@@ -145,8 +186,15 @@ final readonly class MemberRegistrationService
                 ]);
 
                 $member = Member::query()->findOrFail($memberId);
-                $this->assets->recordForRegistration($member, $data->identityDocument, $context);
-                $this->assets->recordForRegistration($member, $data->profilePhoto, $context);
+                foreach ([$data->identityDocument, $data->profilePhoto] as $asset) {
+                    if ($asset !== null) {
+                        if ($adminAssisted) {
+                            $this->assets->recordPendingForAdminRegistration($member, $asset, $context);
+                        } else {
+                            $this->assets->recordForRegistration($member, $asset, $context);
+                        }
+                    }
+                }
                 $this->externalIdentifiers($memberId, $data->externalIdentifiers);
                 $this->guardians($memberId, $data->guardianMemberIds, $adult, $context);
 
@@ -172,7 +220,10 @@ final readonly class MemberRegistrationService
                         'account_status' => $accountStatus,
                         'identity_status' => $identityStatus,
                         'dependent' => ! $adult,
-                    ],
+                    ] + ($adminAssisted ? [
+                        'identity_document_supplied' => $data->identityDocument !== null,
+                        'profile_photo_supplied' => $data->profilePhoto !== null,
+                    ] : []),
                 ));
 
                 DB::table('member_operations')
@@ -349,6 +400,10 @@ final readonly class MemberRegistrationService
 
     private function assertRegistrationAuthorization(MemberRegistrationData $data, AuthenticatedContext $context, bool $adult): void
     {
+        if ($data->identityDocument === null || $data->profilePhoto === null) {
+            throw new MemberIdentityException('Registration requires one identity document and one profile photograph.');
+        }
+
         if ($data->identityDocument->type === VerificationAssetType::ProfilePhoto || $data->profilePhoto->type !== VerificationAssetType::ProfilePhoto) {
             throw new MemberIdentityException('Registration requires one identity document and one profile photograph.');
         }
@@ -478,9 +533,9 @@ final readonly class MemberRegistrationService
         }
     }
 
-    private function payloadHash(MemberRegistrationData $data, string $actorId): string
+    private function payloadHash(MemberRegistrationData $data, string $actorId, bool $adminAssisted): string
     {
-        return hash('sha256', json_encode([
+        $payload = [
             'operation_id' => $data->operationId,
             'actor_id' => $actorId,
             'email' => $data->email,
@@ -491,11 +546,17 @@ final readonly class MemberRegistrationService
             'kk' => $data->kk,
             'phone' => $data->phone,
             'source' => $data->registrationSource->value,
-            'identity_asset' => [$data->identityDocument->type->value, $data->identityDocument->object->checksum],
-            'profile_asset' => [$data->profilePhoto->type->value, $data->profilePhoto->object->checksum],
+            'identity_asset' => $data->identityDocument === null ? null : [$data->identityDocument->type->value, $data->identityDocument->object->checksum],
+            'profile_asset' => $data->profilePhoto === null ? null : [$data->profilePhoto->type->value, $data->profilePhoto->object->checksum],
             'guardians' => $data->guardianMemberIds,
             'external_identifiers' => $data->externalIdentifiers,
-        ], JSON_THROW_ON_ERROR));
+        ];
+        // Keep legacy replay encoding byte-for-byte; only the scoped entry adds a discriminator.
+        if ($adminAssisted) {
+            $payload['entry'] = 'admin_assisted_adult';
+        }
+
+        return hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR));
     }
 
     private function email(?string $email): ?string
