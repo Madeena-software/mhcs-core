@@ -1,13 +1,13 @@
 ---
 title: Admin-first Operational MVP Documentation Rebaseline
 document_id: MHCS-TASK-ADMIN-FIRST-DOCUMENTATION-REBASELINE-001
-version: 1.0
+version: 1.1
 status: draft
 language: en-US
 last_updated: 2026-10-12
 scope:
-  - candidate umbrella contract for a later documentation-only rebaseline
-  - business-authority reconciliation, repository orientation, and delivery traceability
+  - candidate contract for a later lean Admin-first documentation rebaseline
+  - context entrypoint and active MVP planning only
 authority_note: Draft for independent Planner/Reviewer review. The human approved task authoring and branch publication, not application implementation or self-approval of unresolved product, clinical, security, or privacy decisions.
 ---
 
@@ -21,7 +21,7 @@ authority_note: Draft for independent Planner/Reviewer review. The human approve
 
 **Task contract state:** `Draft` — candidate published for review, not Validated/Published or execution-ready.
 
-**Delivery objective / Work Package / MVP:** One documentation-rebaseline umbrella supporting the Admin-first operational MVP. This contract produces coherent documentation and traceability, not the operational application.
+**Delivery objective / Work Package / MVP:** One bounded documentation rebaseline supporting the Admin-first operational MVP. This contract produces coherent documentation and traceability, not the operational application.
 
 **Owner / designated planning authority:** Human MHCS Product Owner and repository Planner/Reviewer. Clinical, security, privacy/legal, technical, and release decisions retain their designated authorities; this task does not appoint substitutes.
 
@@ -29,7 +29,7 @@ authority_note: Draft for independent Planner/Reviewer review. The human approve
 
 The human's task-authoring/publication handoff received on 2026-10-12 approves planning around **one persistent internal Admin login and one unified Admin-first operational dashboard**, with Member, Operator, Doctor, and Image Gateway retaining their domain-owned capabilities. The target is eventual real operations with patient data, not a synthetic demonstration.
 
-The existing repository combines August controlled-beta priorities, historical implementation matrices, later operational exceptions, and a September business-context overlay. These are useful but do not provide one consistent current delivery contract. The outcome is a smaller, navigable documentation set that makes authority, current implementation, desired MVP behavior, future scope, and unresolved decisions explicit.
+The existing repository combines August controlled-beta priorities, historical implementation matrices, later operational exceptions, and a September business-context overlay. These are useful but do not provide one consistent current delivery contract. The outcome is a concise context entrypoint and active MVP planning set that makes authority, current implementation, desired MVP behavior, future scope, and unresolved decisions explicit. The extensive implementation ledgers remain unchanged historical authority and reference.
 
 The current authoring execution changes only this candidate task. All dispositions and acceptance criteria below govern a **later, independently validated documentation execution**.
 
@@ -47,9 +47,15 @@ The current authoring execution changes only this candidate task. All dispositio
 
 Before later execution, reconcile any drift in either repository and explicitly confirm or republish the baseline. Do not silently substitute a moving branch for either immutable reference.
 
+## Remediation
+
+**Review basis:** `1ad0839c7c88961ee16209d17bee11e4687630eb` on `task/admin-first-doc-rebaseline`.
+
+The human's review-remediation instruction narrows the later refactor to the context entrypoint and necessary active MVP planning documents. The three `docs/implementation/` ledgers become KEEP / historical authority and reference; archival, cache cleanup, and exhaustive source/identifier reconciliation are excluded. Preserve existing authority, decisions, identifiers, evidence, integration and security boundaries, and open approvals. This revision remains Draft and authorizes no documentation implementation.
+
 ## Objective
 
-Reconcile and simplify `.agents/context/` and `docs/` into one traceable Admin-first operational-MVP documentation baseline, preserving applicable domain authority, integration contracts, stable identifiers, safety constraints, historical decisions, and evidence while separating implemented behavior from approved target behavior and unapproved proposals.
+Establish a lean Admin-first priority, scope, gaps, roadmap, and decision history in `.agents/context/project.md` and the six active MVP planning documents listed below. Preserve applicable domain authority, stable identifiers, safety constraints, and historical decisions by reference; distinguish current implementation, desired MVP behavior, future scope, and unresolved proposals without rewriting unchanged source ledgers.
 
 ## Authoritative inputs
 
@@ -90,7 +96,7 @@ The following are task acceptance labels, not replacements for existing requirem
 | DR-06 | Preserve source, requirement, decision, gap, work-package, task, and evidence identities through restructuring | Canonical protocol §§8, 12, 15, 22; existing ARCH-/DES-/DOC-/IMG-/MEM-/OPR-/UIL-, WP-, MVP-GAP-, MVP-DEC-, FIELD-OPS-, and INT- identifiers |
 | DR-07 | Make orientation, current state, desired state, future scope, and recoverable history discoverable | Human handoff; canonical context and evidence rules; inspected document inventory below |
 
-New requirement proposals must have a source, owner, approval status, dependency, and verification expectation. Existing IDs must not be renumbered or silently reused. Preserve merged/retired ID mappings and record replacements bidirectionally.
+New requirement proposals must have a source, owner, approval status, dependency, and verification expectation. Existing IDs must not be renumbered or silently reused. Preserve existing merged/retired ID mappings by reference; record replacements for identifiers affected by the edited planning documents. Do not rebuild the unchanged requirement or source-coverage ledgers.
 
 ## Verified conflicts and readiness gaps
 
@@ -104,7 +110,7 @@ These observations are grounded in the pinned sources, not approvals to resolve 
 | C4 — Consent and stage progression | Business context describes signed paper consent per visit and staged examination. The urgent field task records reusable versioned master consent, lightweight visit confirmation, and optional audited Basic Examination bypass. | Preserve the interim human directive and historical consent records; seek explicit source reconciliation rather than reinstating obsolete rules or generalizing the exception. |
 | C5 — Privacy and storage exceptions | MVP-DEC-017's unsupported approval claims were corrected through 018 and the bounded 019 closure. MVP-DEC-038/041 retain plain private objects instead of earlier application encryption; 035/036 change Operator DICOM download/access conditions. | Preserve exact audience, purpose, date, supersession, and environment limits. Do not treat bounded approvals as general production/privacy approval or silently harmonize conflicting encryption/access wording. |
 | C6 — Import and real-data scope | MVP-DEC-008 deferred import; 021/025/026/027 and 042/043 authorized limited roster/rehearsal exceptions. `docs/mvp/import-data/README.md` specifies a one-time CSV and credential handoff. | New CSV/XLSX templates/validation are planned capabilities, not satisfied by the old fixture. Product/privacy approval is needed for schema, matching/deduplication, invalid-row/conflict behavior, recipient data, and any migration. No real roster may enter this documentation exercise. |
-| C7 — Stale orientation and status | Context points at absent local `docs/business/`, hypothetical module contexts, and an old context revision. MVP status documents stop at `841465faac4e8b1dd3670103052a9c4f075bfd04`; conformance matrices retain a 2026-08-04 snapshot and missing old specification paths. | Repair active navigation and clearly date historical evidence. Preserve old source digests and recoverable immutable references; do not manufacture old source correspondence. Reverify current claims before changing implementation/acceptance statuses. |
+| C7 — Stale orientation and status | Context points at absent local `docs/business/`, hypothetical module contexts, and an old context revision. MVP status documents stop at `841465faac4e8b1dd3670103052a9c4f075bfd04`; conformance matrices retain a 2026-08-04 snapshot and missing old specification paths. | Repair navigation in the scoped context/MVP documents and identify the implementation ledgers as historical authority/reference. Preserve their source digests and unresolved provenance unchanged; resolving their old missing paths is outside this task. Verify only implementation/acceptance claims changed in active guidance. |
 | C8 — Current baseline acceptance | Main includes recent field/AI work beyond the dated status ledger; task frontmatter still says validated-published and does not prove execution acceptance or release. | Planner reconciles relevant exact task revisions, execution results, review verdicts, and overlap. Unknown state remains unknown. This candidate does not reopen or accept those application tasks. |
 
 **Gate assessment:** Business-priority reconciliation reopens B0/P1 for the affected delivery line; R2/A3/D4 must carry the reconciled scope and constraints. T5 is **not passed**. Publication of this Draft closes none of those gates.
@@ -113,17 +119,23 @@ These observations are grounded in the pinned sources, not approvals to resolve 
 
 ### In scope — later documentation execution only
 
-- Reconcile the above direction and authority conflicts through explicitly attributed decisions or recorded unresolved proposals.
-- Rewrite the repository orientation as a concise map of this application repository, its pinned business sources, module ownership, current evidence, active delivery scope, and pending gates.
-- Rebaseline active MVP scope, roadmap, requirement/source mappings, gap register, and decision records under `docs/`; retain future obligations and historical status separately.
-- Consolidate genuinely duplicated narrative where one authoritative source remains accessible. Use existing document locations when adequate; no mandatory new hierarchy or one-file-per-concern scheme.
-- Apply the disposition table below, with an auditable old-path/section/ID → retained/replacement/archive reference map. Mechanically repair affected references only within the permitted documentation surface.
+The write scope is limited to these existing documents, with edits only where needed for the Admin-first rebaseline:
+
+- `.agents/context/project.md`
+- `docs/mvp/README.md`
+- `docs/mvp/beta-scope.md`
+- `docs/mvp/roadmap.md`
+- `docs/mvp/beta-gap-register.md`
+- `docs/mvp/decision-log.md`
+- `docs/mvp/work-package-status.md`
+
+Within that scope, establish the new priority, scope, dependencies, gaps, and decision history; record authority conflicts as attributed decisions or open proposals. Keep context concise and link to unchanged business sources, historical implementation ledgers, contracts, and evidence. Consolidate duplicated narrative only within these documents, preserving affected identifiers and historical decisions. No separate document hierarchy, requirement-ledger rewrite, new files, relocation, archival, or deletion is required or authorized.
 
 ### Out of scope
 
 Application code, routes, UI, tests that change runtime contracts, migrations, configuration, dependencies, accounts, credentials, data import, runtime validation using patient data, production/clinical records, operational execution, deployment, or release. No implementation of Admin, import, links, workspaces, report finalization, or authentication.
 
-Do not edit `Madeena-software/mhcs-business-docs`, MPIPS, root/runtime instruction files, `.agents/AGENTS.md`, `.agents/software-workflow.md`, prompts, templates, manifests, or other governance protocols. Existing `.agents/tasks/` contracts remain unchanged; identify their status/overlap in the documentation instead. Links from protected surfaces that would require mutation must be preserved by retaining their destinations or returned to planning.
+All files outside the seven-document write scope remain read-only, including `docs/implementation/`, business-source copies, evidence, import guidance/data, prototypes, integration contracts, and historical design material. Do not edit `Madeena-software/mhcs-business-docs`, MPIPS, root/runtime instruction files, `.agents/AGENTS.md`, `.agents/software-workflow.md`, prompts, templates, manifests, or other governance protocols. Existing `.agents/tasks/` contracts remain unchanged; identify their status/overlap in the documentation instead. Links from protected surfaces that would require mutation must be preserved by retaining their destinations or returned to planning.
 
 ### Preserved behavior and authority
 
@@ -135,34 +147,34 @@ Do not edit `Madeena-software/mhcs-business-docs`, MPIPS, root/runtime instructi
 
 ### Proposed KEEP / UPDATE / ARCHIVE / DELETE disposition
 
-Inventory basis: tracked contents at the implementation baseline. KEEP preserves meaning and provenance; UPDATE permits bounded reconciliation; ARCHIVE removes material from active guidance while retaining discoverable immutable history; DELETE is limited to demonstrably redundant non-authoritative material. None occurs in the authoring execution. More specific rows override broader rows.
+Inventory basis: tracked contents at the implementation baseline. UPDATE is limited to the seven-document write scope; KEEP preserves all other content and paths. There are no ARCHIVE or DELETE actions in this narrowed contract. None of the later documentation updates occurs in this authoring/remediation execution.
 
 | Surface | Disposition | Inspection basis and safe execution condition |
 |---|---|---|
 | `.agents/context/project.md` | UPDATE | Product-context overlay is useful but misroutes local business/module links and lacks the current application baseline. Replace duplicated narrative with concise pinned authority/evidence routing and explicit Admin-first target status. |
-| `.agents/context/business/01-business-overview.md`, `02-user-stories.md`, `03-system-responsibilities.md` | KEEP | Verified exact copies of the pinned accepted business sources; preserve portable source access and open-decision wording. Do not rewrite upstream authority locally. Link reconciliation decisions beside them rather than forking their meaning. |
+| `.agents/context/business/01-business-overview.md`, `02-user-stories.md`, `03-system-responsibilities.md` | KEEP | Verified exact copies of the pinned accepted business sources; preserve portable source access and open-decision wording. Do not rewrite upstream authority locally. Link reconciliation decisions from the scoped MVP documents rather than forking their meaning. |
 | `docs/mvp/README.md` | UPDATE | Active entrypoint still declares controlled beta and portal components. Make the new active planning scope, authority order, navigation, and review status unambiguous. |
 | `docs/mvp/beta-scope.md` | UPDATE | Distinguish current application, Admin-first target, and historical beta. Retain the historical adult/rehearsal restrictions as dated scope; do not generalize them into new policy. |
-| `docs/mvp/roadmap.md` | UPDATE | Reprioritize the target journey and dependencies, not requirement IDs. Move superseded deadlines/parallel-workstream narrative out of active guidance with traceable history; no new implementation tasks in this contract. |
+| `docs/mvp/roadmap.md` | UPDATE | Reprioritize the target journey and dependencies, not requirement IDs. Label superseded deadlines/parallel-workstream narrative as historical within the existing document; no new implementation tasks in this contract. |
 | `docs/mvp/beta-gap-register.md` | UPDATE | Retain gap IDs, evidence, controls, and closure criteria. Add/reclassify Admin-first authority/readiness gaps without declaring them closed merely because the roadmap changes. |
-| `docs/mvp/work-package-status.md` | UPDATE | Separate dated accepted foundations from unverified current state and future obligations. Recent merged field/AI work requires scoped evidence, not blanket completion. |
+| `docs/mvp/work-package-status.md` | UPDATE | Update only the planning orientation needed to distinguish the new priority from dated accepted foundations and future obligations. Retain existing status records; verify only claims changed by this rebaseline, without auditing every Work Package. |
 | `docs/mvp/decision-log.md` | UPDATE | Preserve all historical rows and approval provenance. Add attributed proposed/approved supersession links; preserve 017→018→019, 020→031, 032→035→036, 038→041, and 042→043 chains and their limited scope. |
-| `docs/implementation/mhcs-core-implementation-plan.md` | UPDATE | Work-package definitions and CON-/DEC-/DEP-/APP-/RISK- registers remain valuable. Separate historical critical-path ordering and inventory from active Admin-first priorities; preserve obligations and unresolved source provenance. |
-| `docs/implementation/mhcs-core-requirements-matrix.md` | UPDATE | Its 594 active-requirement snapshot contains stable IDs and assignments. Map retained, deferred, proposed-superseded, and approved-superseded obligations without cosmetic status changes or renumbering. |
-| `docs/implementation/mhcs-core-source-coverage.md` | UPDATE | Preserve the 982-ID lifecycle and heading/statement/design coverage, including old source digests. Consolidation is allowed only with complete retained ID/source/successor mappings and immutable historical retrieval. |
+| `docs/implementation/mhcs-core-implementation-plan.md` | KEEP / historical authority and reference | Retain Work Package definitions, CON-/DEC-/DEP-/APP-/RISK- registers, historical ordering, and unresolved provenance unchanged. Link from active MVP planning; no rewrite or exhaustive reconciliation. |
+| `docs/implementation/mhcs-core-requirements-matrix.md` | KEEP / historical authority and reference | Preserve its 594-requirement snapshot, stable IDs, assignments, and source links unchanged. Active MVP documents may reference relevant rows; no requirement-by-requirement remapping or rewrite. |
+| `docs/implementation/mhcs-core-source-coverage.md` | KEEP / historical authority and reference | Preserve the 982-ID lifecycle, heading/statement/design coverage, and source digests unchanged. No consolidation, ledger rewrite, or exhaustive source recovery. |
 | `docs/mpips/mhcs-dicom-api.md`, `docs/mpips/mhcs-grabber-dicom-ingestion-contract.md`, `docs/mpips/examples/*.json` | KEEP | Independently authoritative conversion/direct-ingestion contracts and examples. Do not merge them into generic MVP prose or change their contract meaning. |
 | `docs/mvp/evidence/*.md` (all existing records), `docs/member/wp-04-identity-evidence.md`, `docs/security/wp-02-security-evidence.md` | KEEP | Dated evidence includes bounded acceptance, incomplete review, remediation, privacy closure, and production records. Preserve bytes and paths; active indexes may explain limitations. Never rewrite them as current proof. |
 | `docs/operator/physical-printer-validation-protocol.md` | KEEP | Hardware-specific validation remains an operational dependency; dashboard changes do not remove it. |
 | `docs/mvp/local-core-walkthrough.md` | KEEP | Explicitly disposable non-clinical rehearsal; retain its local-only boundary and link it as such, not as the operational MVP or production procedure. |
-| `docs/mvp/import-data/README.md` | UPDATE | Preserve the historical one-time CSV header/mapping and credential restrictions; distinguish future reusable CSV/XLSX templates and pending approval. No real input/output data or newly invented schema. |
+| `docs/mvp/import-data/README.md` | KEEP | Historical one-time CSV guidance and credential restrictions remain unchanged. Describe planned CSV/XLSX capabilities and pending approval only in active MVP scope/gap documents. |
 | `docs/mvp/import-data/.gitignore` and ignored contents | KEEP / DO NOT ACCESS DATA | Existing exclusion protects roster/credential files. Do not weaken it, ingest ignored files, or treat them as deletion candidates. |
-| `docs/superpowers/specs/2026-08-09-mvp-workstream-planner-split-design.md` | ARCHIVE | Approved historical two-workstream design is superseded by MVP-DEC-031 and references obsolete planner paths. Remove it from active guidance, retaining original content, original path identity, supersession pointer, and immutable retrieval. |
+| `docs/superpowers/specs/2026-08-09-mvp-workstream-planner-split-design.md` | KEEP / historical reference | Preserve the original design and path. Active MVP guidance may cite MVP-DEC-031 as its supersession; archival and repair of this historical file are outside scope. |
 | `docs/operator/reference/claude-design/` HTML, JSX, JS, CSS | KEEP | Design-only prototype bundle, not product or implementation proof; archived task references still point to `photo-booth.jsx` and `style.css`. No design-system refactor or default deletion. |
-| `docs/operator/reference/claude-design/graphify-out/cache/stat-index.json` | DELETE candidate | Inspected contents are derived filename sizes, timestamps, word counts, and hashes, not authority. Delete only after confirming no functional consumer requires it and recording its baseline retrieval reference; otherwise KEEP. No other file is an unconditional deletion candidate. |
+| `docs/operator/reference/claude-design/graphify-out/cache/stat-index.json` | KEEP | Derived prototype cache is unrelated to the lean planning rebaseline; no cleanup or deletion. |
 | `.agents/tasks/*.md`, `.agents/tasks/archive/*.md` excluding this candidate | KEEP, read-only | Preserve exact governing revisions and status history. In particular `operator-capture-display-reference.md` already declares itself superseded; that alone does not justify deleting or relocating a task. |
-| All other tracked material not explicitly covered | KEEP | Default preservation. Reclassify only after inspection demonstrates necessity within this documentation objective; protected surfaces require planning return. |
+| All other tracked material not explicitly covered | KEEP | Outside the write scope; preserve unchanged. Any necessary expansion requires Planner review and a republished contract. |
 
-When archival or consolidation removes an active path/section, retain an in-scope navigation pointer or verified immutable path plus replacement mapping. Git history alone without a discoverable retrieval reference is insufficient. A proven duplicate may be removed only after its authority/status, unique content, inbound references, replacement, and recoverability are checked. If uncertain, keep it and record the open disposition.
+When consolidating narrative or changing a section/anchor in a scoped document, preserve affected identifiers and historical decisions and repair affected references within the write scope. If a reference from an unchanged file would break, retain the target anchor/path or return to planning. Do not repair or exhaustively reconcile unrelated historical references.
 
 ## Dependencies and assumptions
 
@@ -170,8 +182,8 @@ When archival or consolidation removes an active path/section, retain an in-scop
 
 - Independent Planner/Reviewer review of this exact candidate and relevant baseline/overlapping task state.
 - Product Owner reconciliation of C1/C2 and the exact active-MVP supersession boundary; technical/security/clinical/privacy owners for affected policy changes.
-- Read access to pinned business sources and retained historical core objects needed for source recovery. An unavailable source stays an explicit evidence gap.
-- Coordinate changes to shared context, MVP documents, and matrices with any concurrent delivery; do not overwrite unpublished work.
+- Read access to pinned business sources and relevant historical references used by the edited documents. An unavailable source stays an explicit evidence gap; broad source recovery is not required.
+- Coordinate changes to the scoped context entrypoint and active MVP documents with any concurrent delivery; do not overwrite unpublished work.
 
 ### Approved assumptions
 
@@ -205,7 +217,7 @@ Repository read and bounded documentation write; read-only Git/history access to
 - Mark new authority-bearing proposals Draft until approved. Date and attribute supersession; preserve the old decision's scope and reference.
 - Do not silently resolve any C1–C8 conflict from existing code, graph output, or the apparent recency of a document.
 - Never label an AI screening PDF as a signed clinical report or equate processing completion with Member publication approval.
-- Documentation-only deletion must be justified, recoverable, and reference-safe. No patient data, secrets, ignored roster files, or application artifacts may be copied into documentation or commits.
+- Keep all files outside the seven-document write scope unchanged. No archival, deletion, historical-ledger rewrite, or exhaustive repository-wide reconciliation. No patient data, secrets, ignored roster files, or application artifacts may be copied into documentation or commits.
 
 ## Acceptance criteria
 
@@ -213,11 +225,11 @@ Repository read and bounded documentation write; read-only Git/history access to
 - [ ] **DR-02:** The seven human-directed outcomes are represented with domain owners, current/target/future classification, and visible gaps; planned CSV/XLSX import and templates do not imply existing functionality or approved schema.
 - [ ] **DR-03:** DICOM/NPZ ownership and protected contracts remain intact; worklist, processing, AI screening output, doctor finalization, and recipient release are distinct.
 - [ ] **DR-04/05:** Persistent Admin access, temporary clinical/staff workspaces, and temporary authorized Member results are distinguished; access, clinical authorship, consent, privacy, audit, and unresolved mechanics remain explicit without inventing policy.
-- [ ] **DR-06:** Every affected existing requirement, gap, decision, work package, and source mapping retains its identifier and recoverable disposition. Merged/retired identifiers resolve to their retained history or successor; deferral does not imply completion.
+- [ ] **DR-06:** Identifiers and source/decision references used in the edited planning documents are preserved or have explicit scoped successor mappings. Unchanged requirement/source-coverage ledgers retain their historical authority by reference; deferral does not imply completion.
 - [ ] **DR-07:** `.agents/context/project.md` routes a reader to valid authority, current observed evidence, active MVP planning, open approvals, and historical material without requiring duplicated full specifications. Current claims identify baseline and evidence limits.
-- [ ] **DR-06/07:** Every changed, moved, consolidated, archived, or deleted document has a justified disposition and verified old→new/history mapping; protected evidence/contracts/governance and existing task content remain unchanged.
+- [ ] **DR-06/07:** Changes are limited to the seven-document write scope and preserve affected section/identifier references. The three implementation ledgers, business sources, approved historical decisions, evidence, contracts, security boundaries, governance, and existing task content remain unchanged.
 - [ ] **DR-05/07:** C1–C8 are either resolved by attributable approval/evidence or explicitly open with owner, impact, temporary treatment, and resolution trigger. No unsupported acceptance, production-readiness, compliance, or release claim remains in rewritten active guidance.
-- [ ] **DR-06/07:** No newly broken active relative link, heading anchor, or path reference is introduced. Existing historical missing targets are classified with immutable retrieval or an explicit unresolved gap, not silently replaced by invented authority.
+- [ ] **DR-06/07:** No newly broken reference is introduced by edits to scoped documents. Check changed references and inbound references to changed anchors only; unrelated historical missing targets remain recorded limitations without a repository-wide repair requirement.
 
 ## Verification requirements
 
@@ -225,9 +237,9 @@ Repository read and bounded documentation write; read-only Git/history access to
 
 1. Record actual execution baseline, governing task revision, working-tree state, business-source SHA, and drift/overlap reconciliation before edits.
 2. Review the complete diff and `git diff --check`; verify the changed-file allowlist and unchanged protected evidence, contracts, governance, application, and existing task surfaces against the baseline.
-3. Check affected Markdown relative links, heading anchors, and literal path references. Search inbound references before each relocation/deletion, including references from protected paths. Compare pre/post results so historical unresolved links are not reported as new regressions or falsely claimed fixed.
-4. Compare requirement/gap/decision/work-package ID sets and source mappings before/after. Explain every removed active occurrence through a retained record or approved supersession; preserve historical source digests and approval chains.
-5. Walk the documentation from the context entrypoint through target scope, authority, requirements, gaps, evidence, and archives. Verify each current implementation or acceptance claim against scoped source/test/review evidence at its stated revision; label unverified claims accordingly.
+3. Check changed Markdown links, heading anchors, and literal path references in affected documents. Search specifically for inbound references to any changed anchor; retain compatibility for references from read-only files. Do not scan or repair all historical links when their source documents are unchanged.
+4. Compare only identifiers and source/decision mappings affected by edits in the scoped documents. Explain removed or changed references through retained records or explicit supersession. Do not enumerate or reconcile the unchanged implementation ledgers or all repository identifiers.
+5. Walk the scoped context/MVP navigation to priority, scope, roadmap, gaps, decisions, and referenced historical authority/evidence. Verify only newly added or changed implementation/acceptance claims against relevant evidence; retain unverified status where proof is unavailable.
 6. Review C1–C8 and the seven target outcomes against the pinned business sources and human direction. Check that no unresolved clinical/access/import policy became approved through wording alone.
 7. Check the diff for credentials, patient data, real roster content, and private operational payloads. Use aggregate/sanitized references only.
 
@@ -235,11 +247,11 @@ Application tests, external clinical calls, deployment, and production probes ar
 
 ### Required evidence
 
-Report exact governing task path/revision, baseline, result revision or precise working-tree state, changed-file summary, disposition/traceability mapping, commands actually run and observed outcomes, reference/ID check results, approvals relied upon, unresolved decisions, deviations, and checks not run. Local document checks are not CI or application acceptance. Keep execution evidence outside this contract to avoid self-certification.
+Report exact governing task path/revision, baseline, result revision or precise working-tree state, changed-file summary, affected reference/identifier mappings, commands actually run and observed outcomes, scoped reference/ID check results, approvals relied upon, unresolved decisions, deviations, and checks not run. Local document checks are not CI or application acceptance. Keep execution evidence outside this contract to avoid self-certification.
 
 ## Stop conditions
 
-Stop the affected work and return to Planner/Reviewer when required authority is missing or contradictory; a dependency or baseline cannot be reconciled; task scope changes materially; acceptance requires application/governance/business-repository mutation; a proposed deletion would lose unique authority or inaccessible evidence; links cannot be preserved within scope; an unexpected security/privacy/data-integrity issue requires new authority; or a side effect is not authorized.
+Stop the affected work and return to Planner/Reviewer when required authority is missing or contradictory; a dependency or baseline cannot be reconciled; task scope changes materially; acceptance requires application/governance/business-repository mutation; preserving authority would require archival, deletion, or historical-ledger changes outside scope; links cannot be preserved within scope; an unexpected security/privacy/data-integrity issue requires new authority; or a side effect is not authorized.
 
 Recording an already identified open decision as open is permitted by the validated documentation contract. Resolving it by invention is not. Unknown task/acceptance state must not be converted into accepted, obsolete, or executable status.
 
@@ -247,13 +259,13 @@ Recording an already identified open decision as open is permitted by the valida
 
 ### Current authoring/publication execution
 
-The human explicitly authorizes creating `task/admin-first-doc-rebaseline` from verified `origin/main`, writing **this file only**, non-destructive verification, local commit(s), and a non-force push of the new branch to `origin`. Commit and push follow successful bounded verification without repeated approval. If the remote branch already exists, stop instead of overwriting it.
+The original human handoff authorized creating and publishing `task/admin-first-doc-rebaseline`. The current review-remediation instruction explicitly authorizes updating **this file only**, lightweight verification, local commit(s), and a non-force push to that same existing branch. The reviewed authoring revision is `1ad0839c7c88961ee16209d17bee11e4687630eb`; preserve its ancestry and unrelated work. Commit and push follow successful bounded verification without repeated approval. Stop on incompatible branch drift; never overwrite remote history.
 
 No PR or issue creation/update, merge, deployment, release, production mutation, business-repository mutation, force-push, reset/clean, secret handling, or existing-document refactor is authorized in this execution.
 
 ### Later documentation execution
 
-The human has authorized substantial restructuring of the in-scope documentation, including justified deletion of genuinely obsolete documentation. It may begin only after this contract is independently validated and its exact governing revision is supplied. That permission excludes unrelated source, governance protocols, independently authoritative contracts, production records, existing task contracts, and unpublished work.
+The latest human review instruction narrows the original restructuring direction to the seven existing documents listed in scope. Later edits may begin only after this contract is independently validated and its exact governing revision is supplied. No archival, deletion, implementation-ledger rewrite, or mutation outside that write scope is authorized. Preserve unrelated source, governance, independently authoritative contracts, production records, existing task contracts, and unpublished work.
 
 The current commit/push permission is specific to task-authoring publication; it does not authorize a later Executor to publish refactored documentation, create a PR, merge, mutate external services, or release. Those side effects require applicable separate authorization.
 
