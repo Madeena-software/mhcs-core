@@ -1,5 +1,19 @@
 # Work Package status ledger
 
+## Admin-first status orientation
+
+[MVP-DEC-044](decision-log.md#admin-first-priority-decision) changes the operational planning priority to Admin-first; it changes no Work Package assignment or accepted scope. This documentation implementation is Review Required under [the governing task](README.md#current-synchronization-marker). No new application acceptance, Work Package completion, compliance, or release status is declared.
+
+At application baseline `b1a2204a2571920a6c696575a6480aad5a1294fd`, source includes an Admin panel with Member/Operator resources, authenticated Grabber DICOM ingestion, Operator study actions, and AI-report download/retry actions. These are observations from `app/Providers/Filament/AdminPanelProvider.php`, `routes/api.php`, and `routes/web.php`; they do not prove a unified target dashboard, generic import, temporary clinical workspaces, or secure finalized Member results.
+
+Later [field-operations](../../.agents/tasks/urgent-operator-field-operations.md) and [Operator–AI PACS](../../.agents/tasks/operator-ai-pacs-integration.md) contracts and merged history postdate the old table, especially its WP-24 no-AI statement. Their source/intent lineage is not a new acceptance verdict. AI output remains unverified screening; Doctor owns clinical judgments and report finalization. C1–C8 remain tracked in [MVP-GAP-027–034](beta-gap-register.md#admin-first-gaps-and-authority-reconciliation).
+
+The [implementation plan](../implementation/mhcs-core-implementation-plan.md), [requirements matrix](../implementation/mhcs-core-requirements-matrix.md), and [source-coverage ledger](../implementation/mhcs-core-source-coverage.md) remain KEEP / historical authority and reference. Read relevant entries for ownership and stable identifiers; do not reconstruct or relabel all Work Packages for this rebaseline.
+
+## Historical status snapshot and evidence — retained
+
+Everything below retains the 2026-08-21 table and dated addenda. Statements of current implementation or absence describe those recorded dates, not a fresh audit of the application baseline. Existing statuses, requirement assignments, evidence references, and acceptance limitations are unchanged; new target priority does not invalidate accepted foundations or establish completion.
+
 Historical MVP-02 evidence-closure note: baseline
 03ba160f2080a6924ae64402e48be990cc9c7ffd was confirmed as an ancestor of
 execution commit f7a3eaeb54b97642bd61d545ebcbf5e26f69f93c; 32 focused tests

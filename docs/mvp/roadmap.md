@@ -1,4 +1,25 @@
-# Controlled-beta roadmap
+# Admin-first operational MVP roadmap
+
+## Admin-first planning sequence
+
+The approved priority is the [Admin-first operational scope](beta-scope.md#admin-first-operational-scope), not the old MVP-01→MVP-09 date sequence. [MVP-DEC-044](decision-log.md#admin-first-priority-decision) records that planning supersession while preserving milestone IDs, accepted foundations, domain ownership, and historical evidence. This is a dependency map, not an executable application task or deadline commitment.
+
+| Planning outcome | Reuse / traceability | Prerequisite and next gate |
+|---|---|---|
+| Admin operations: sites, shifts, Members, examination assignments and manual registration | Existing Admin foundation and FIELD-OPS-001/002/003; relevant WP-04/06/10/11 references | Define capability boundaries and account/portal transition before any application changes; MVP-GAP-027 |
+| Centralized study intake/worklist and processing visibility | Authenticated direct DICOM and legacy NPZ/MPIPS contracts; FIELD-OPS-007/008/009; INT-DUAL-001/INT-ASYNC-001 | Reuse owning-module boundaries; distinguish processing state from clinical output; MVP-GAP-027/029 |
+| CSV/XLSX templates and bulk registration | MEM-214/MEM-228, US-B2B-001/002; historical MVP-08/Prestige are limited references | Approve schema, identity matching, invalid-row/conflict handling, transaction and privacy rules; MVP-GAP-032 |
+| Temporary staff/clinical workspaces | US-STAFF-SHARED-002, US-DOCTOR-SHARED-002/004; Doctor Work Packages remain reference obligations | Approve credentials, assignments, permitted actions, authentication/session lifecycle and clinical accountability; MVP-GAP-028/029 |
+| Authorized finalized Member results | US-MEMBER-003/009/019 and US-DOCTOR-RAD-003/007/008 | Approved finalization/amendment and recipient/guardian rules precede release; approve link expiry/revocation/disclosure/recovery; MVP-GAP-029 |
+| Real operational readiness | Existing security/privacy, consent, storage and bounded deployment evidence | Close applicable clinical/security/privacy/data/environment gates with current evidence; MVP-GAP-030/031/034 and existing release gaps; separate G10 |
+
+Registration and centralized worklist planning may advance only within their approved boundaries; import, workspace, result-delivery, and release implementations require their own validated contracts after relevant decisions. No dependency is satisfied merely by this documentation update. Preserve existing paths, integration behavior, audit, and account data while planning transitions.
+
+Current documentation execution is governed by [the publication record](README.md#current-synchronization-marker), with independent implementation review still required. No application milestone is newly accepted or completed. Keep the [three implementation ledgers](README.md#authority-and-relationship) as historical authority/reference rather than rewriting their extensive assignments.
+
+## Historical controlled-beta roadmap — retained
+
+The remainder is the August 2026 roadmap and addenda, including their contemporaneous status, future tense, deadlines, and direct-main/workstream instructions. They retain their evidence meaning and IDs but do not select the current next task. The Admin-first planning sequence above supersedes the old active ordering only; no merge, deployment, clinical scope, or release permission follows from historical prose.
 
 This is the active bounded-MVP roadmap, not a global linear task queue or a
 date plan. MVP-02 through MVP-09 remain provisional and may be reprioritized by
