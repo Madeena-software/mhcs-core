@@ -19,21 +19,22 @@ Concise orientation for `Madeena-software/mhcs-core`. Start with the [active MVP
 
 ## Adoption Model
 
-This is the application repository's context entrypoint. Business-source copies under `business/` remain unchanged; technical evidence and delivery planning live here, not in the business repository.
+This is the application repository's context entrypoint. The maintained business working reference is the Google Doc below; local copies of the former business repository are provenance only and are removed after active links are repaired.
 
 ## Repository identity
 
 - Repository: `Madeena-software/mhcs-core`; modular application with Member, Operator, Doctor, and Image Gateway ownership.
 - Application baseline: `b1a2204a2571920a6c696575a6480aad5a1294fd`.
 - Documentation execution: `task/admin-first-doc-rebaseline`, governed by [the validated task](../tasks/admin-first-documentation-rebaseline.md) at `5e47b8d61db27741c2048b7c5131b5a7f0f4ef49`.
-- Business authority: `Madeena-software/mhcs-business-docs @ 645058e431f59c4450a136e72f140e6819b79f32`.
-- Documentation implementation requires independent review; this context establishes no new accepted application baseline or release approval.
+- Maintained business working reference: [Stakeholder Discussion Draft v0.2](https://docs.google.com/document/d/1zxmPjB-gevtVuaoTEmAtLjpDWlJf7USnkeigVbPJw0E/edit). No exact source revision or verified immutable snapshot is available; BP-*, D-*, BR-*, and EX-* content is not approved by this reference.
+- Historical business-source provenance: `Madeena-software/mhcs-business-docs @ 645058e431f59c4450a136e72f140e6819b79f32`. This is no longer maintained active authority and is not asserted equivalent to the Google Doc.
+- Admin-first documentation implementation `7132e7001b704789f6d122bcfad6a5b4e040bc0b` was independently accepted and merged through PR #5 as `8bb0c21e87e6f9e2c32a01ccab83aed37f1e91b7`; this is not application acceptance. The current documentation cleanup is Review Required pending independent review.
 
 ## Purpose
 
 ### Why MHCS Exists and the Healthcare Problem Being Solved
 
-MHCS coordinates healthcare pathways while participants retain their own authority. See the [business overview](business/01-business-overview.md) for the problem, journeys, and actor responsibilities.
+MHCS coordinates healthcare pathways while participants retain their own authority. The maintained business working reference is the [Stakeholder Discussion Draft v0.2](https://docs.google.com/document/d/1zxmPjB-gevtVuaoTEmAtLjpDWlJf7USnkeigVbPJw0E/edit); its content remains unapproved and its immutable revision is unavailable.
 
 ### Intended Future Direction
 
@@ -47,13 +48,12 @@ The human approved the bounded documentation rebaseline after independent review
 
 ### Business sources and decisions
 
-- [Business overview](business/01-business-overview.md).
-- [System responsibilities](business/03-system-responsibilities.md), including module ownership, access map, and open decisions.
+- [Stakeholder Discussion Draft v0.2](https://docs.google.com/document/d/1zxmPjB-gevtVuaoTEmAtLjpDWlJf7USnkeigVbPJw0E/edit); not approved authority. The former business repository revision above is historical provenance only.
 - [MVP decisions](../../docs/mvp/decision-log.md): preserve historical approval scope; the new priority does not resolve conflicting clinical policies.
 
 ### Product / PRD authority
 
-[User stories](business/02-user-stories.md) define actor intent and acceptance. Open or candidate source sections retain their status. The [active scope](../../docs/mvp/beta-scope.md#admin-first-operational-scope) records the human-directed target without inventing mechanisms.
+Business propositions in the Google Doc do not define approved user-story acceptance. The [active scope](../../docs/mvp/beta-scope.md#admin-first-operational-scope) records the human-directed target without inventing mechanisms.
 
 ### Requirements and matrices
 
@@ -79,7 +79,7 @@ G10 is separate from documentation review, application acceptance, and bounded h
 
 ### Other authority
 
-The business repository is read-only in this execution. Local source copies are pinned references; this context and derived graphs do not amend them.
+The former business repository is historical provenance only. The supplied Google Doc is the maintained working draft, but without an exact source revision or verified immutable snapshot no adoption or approval claim may be made from it.
 
 ## Observed implementation evidence map
 
@@ -125,7 +125,7 @@ Member retains identity, booking, and recipient relations; Operator retains site
 
 ### Available scoped context
 
-The three `business/` files above are the available business-source package. No module-context files are asserted to exist. Use the seven-document MVP map and scoped implementation evidence when needed.
+No local business-source package is maintained here. Use the linked Google Doc as a Draft working reference and the seven-document MVP map and scoped technical evidence for repository context.
 
 ## Known Gaps and Open Decisions
 
@@ -135,7 +135,7 @@ The three `business/` files above are the available business-source package. No 
 
 ### Non-blocking
 
-Business-source open decisions on communication/payment providers, commercial policy, qualifications, specialty workflows, account migration, NPZ details, and FHIR artifacts remain in [System Responsibilities](business/03-system-responsibilities.md#open-design-decisions). They do not block writing this approved documentation scope, but cannot be assumed resolved for dependent application work.
+Business-source open decisions on communication/payment providers, commercial policy, qualifications, specialty workflows, account migration, NPZ details, and FHIR artifacts remain unresolved. The Google Doc's draft content is not an approval for these decisions; they cannot be assumed resolved for dependent application work.
 
 ## Repository conventions
 
@@ -143,4 +143,4 @@ Preserve least privilege, server-derived actor/site/shift/case authorization, MR
 
 ## Context verification
 
-Updated 2026-10-12 against the application baseline and governing documentation task above. The pinned business remote remained unchanged at preflight; its three local source copies match the reviewed package. Earlier context snapshot `25a4af4590cd423b1cc91708c3b2f16200c06d6d` is historical. Verification is limited to affected documentation, references, and cited source observations; no application, clinical, legal, production, or release readiness is established.
+Updated 2026-10-12 against the application baseline and governing documentation task above. Former business source provenance is `Madeena-software/mhcs-business-docs @ 645058e431f59c4450a136e72f140e6819b79f32`; removed local copies are retrievable from the repository documentation baseline indexed in [history](../../docs/history-index.md). The Google Doc remains Draft v0.2; no exact revision or verified immutable snapshot was available. Earlier context snapshot `25a4af4590cd423b1cc91708c3b2f16200c06d6d` is historical. Verification is limited to affected documentation, references, and cited source observations; no application, clinical, legal, production, or release readiness is established.

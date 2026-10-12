@@ -2,7 +2,7 @@
 
 ## Admin-first status orientation
 
-[MVP-DEC-044](decision-log.md#admin-first-priority-decision) changes the operational planning priority to Admin-first; it changes no Work Package assignment or accepted scope. This documentation implementation is Review Required under [the governing task](README.md#current-synchronization-marker). No new application acceptance, Work Package completion, compliance, or release status is declared.
+[MVP-DEC-044](decision-log.md#admin-first-priority-decision) changes the operational planning priority to Admin-first; it changes no Work Package assignment or accepted scope. The prior Admin-first documentation implementation `7132e7001b704789f6d122bcfad6a5b4e040bc0b` was independently accepted and merged through PR #5 as `8bb0c21e87e6f9e2c32a01ccab83aed37f1e91b7`; this is not application acceptance. The separate lean-docs cleanup governed by task publication `09b0f462fe94976394bb1357077e1a185895a3f2` is Review Required pending independent review. No new application acceptance, Work Package completion, compliance, or release status is declared.
 
 At application baseline `b1a2204a2571920a6c696575a6480aad5a1294fd`, source includes an Admin panel with Member/Operator resources, authenticated Grabber DICOM ingestion, Operator study actions, and AI-report download/retry actions. These are observations from `app/Providers/Filament/AdminPanelProvider.php`, `routes/api.php`, and `routes/web.php`; they do not prove a unified target dashboard, generic import, temporary clinical workspaces, or secure finalized Member results.
 

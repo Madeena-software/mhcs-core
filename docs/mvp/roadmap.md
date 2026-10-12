@@ -15,7 +15,7 @@ The approved priority is the [Admin-first operational scope](beta-scope.md#admin
 
 Registration and centralized worklist planning may advance only within their approved boundaries; import, workspace, result-delivery, and release implementations require their own validated contracts after relevant decisions. No dependency is satisfied merely by this documentation update. Preserve existing paths, integration behavior, audit, and account data while planning transitions.
 
-Current documentation execution is governed by [the publication record](README.md#current-synchronization-marker), with independent implementation review still required. No application milestone is newly accepted or completed. Keep the [three implementation ledgers](README.md#authority-and-relationship) as historical authority/reference rather than rewriting their extensive assignments.
+The prior Admin-first documentation implementation was independently accepted through PR #5 and merged as `8bb0c21e87e6f9e2c32a01ccab83aed37f1e91b7`; this does not accept application behavior. The current lean-docs cleanup is governed by task publication `09b0f462fe94976394bb1357077e1a185895a3f2` and remains Review Required pending independent review. No application milestone is newly accepted or completed. Keep the [three implementation ledgers](README.md#maintained-planning-and-authority) as historical authority/reference rather than rewriting their extensive assignments.
 
 ## Historical controlled-beta roadmap — retained
 
