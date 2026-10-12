@@ -8,7 +8,7 @@ last_updated: 2026-10-12
 scope:
   - audit and simplify active repository documentation
   - transition maintained business reference to the designated Google Doc
-authority_note: Draft planning contract only. The Google Doc remains Stakeholder Discussion Draft v0.2; its BP-*, D-*, BR-*, and EX-* content is not approved by this task.
+authority_note: Validated repository task contract. The Google Doc remains Stakeholder Discussion Draft v0.2; its BP-*, D-*, BR-*, and EX-* content is not approved by this task.
 ---
 
 # Executable Task
@@ -35,7 +35,7 @@ This task does not approve draft business propositions or retire binding technic
 
 **Implementation baseline:** `8bb0c21e87e6f9e2c32a01ccab83aed37f1e91b7` (`origin/main` at task authoring).
 
-**Task revision:** Resolve only after independent validation and publication. This Draft is not a T5-ready Executor contract.
+**Task revision:** The full SHA of this publication commit is recorded in the Executor handoff. This Validated/Published task revision is the governing contract for the bounded execution below.
 
 The Admin-first documentation implementation `7132e7001b704789f6d122bcfad6a5b4e040bc0b` was independently accepted and merged through PR #5 as `8bb0c21e87e6f9e2c32a01ccab83aed37f1e91b7`. Treat that accepted merge as the baseline; do not repeat a full review of the prior implementation. Reconcile only material changes or new evidence since that accepted baseline. Preserve `.agents/tasks/admin-first-documentation-rebaseline.md` and all other historical task contracts unchanged.
 
