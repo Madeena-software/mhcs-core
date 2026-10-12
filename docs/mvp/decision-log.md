@@ -1,5 +1,31 @@
 # MVP decision log
 
+## Admin-first priority decision
+
+**Authority:** Human-directed planning handoff and independent Planner/Reviewer ACCEPTED verdict on `74755cb2c0b40c061b4734c1c1fb5b267a7eb805`, supplied in the 2026-10-12 Executor handoff. Governing task: `.agents/tasks/admin-first-documentation-rebaseline.md @ 5e47b8d61db27741c2048b7c5131b5a7f0f4ef49`.
+
+| Decision ID | Date | Decision | Reason | Impact | Temporary control | Revisit trigger | Status |
+|---|---|---|---|---|---|---|---|
+| MVP-DEC-044 | 2026-10-12 | Establish one persistent internal Admin login and unified domain-owned operational dashboard as the MVP planning priority | Human direction and independent review approve the seven-document rebaseline | Context and active MVP scope, gaps, roadmap, and decision history; seven target outcomes in the scope table | Preserve existing application, actors, historical decisions, identifiers, evidence and integration/security boundaries; keep clinical/access/privacy/import/authentication/production policies open; documentation implementation still requires independent review | Material change in human direction or discovery requiring new authority | Approved |
+
+### Limited supersession and preservation
+
+| Earlier decision / planning reference | Effect of MVP-DEC-044 |
+|---|---|
+| MVP-DEC-006 and MVP-01-first sequence | Superseded as the active next-work priority; retain the Member login/profile accepted foundation and all historical evidence. No account removal or migration. |
+| MVP-DEC-028/029 and dated Operator-first delivery targets | Superseded as current priority/deadline guidance; preserve the earlier approved targets and delivered evidence at their dates. No replacement deployment deadline is invented. |
+| MVP-DEC-004/005/010 and old MVP-06/07 boundaries | Blanket internal Doctor exclusion and external/manual-only fallback no longer define the target planning scope. Temporary clinical workspaces and authorized finalized Member results are desired outcomes; clinical authentication, report policy, access and routing remain unresolved, not newly approved implementation. |
+| MVP-DEC-008, bounded 021/025/026/027, and MVP-08 | Generic import is part of target planning; the former ordering deferral does not select the next task. Preserve historical one-time schemas, mappings and real-data/credential gates; CSV/XLSX mechanics remain open. |
+| MVP-DEC-001/002/011/013/014 | Preserve Work Package obligations, gap/evidence rules, separate production readiness and domain-owned shared administration. Admin-first does not create a monolithic Admin domain. |
+| MVP-DEC-017/018/019/033/035/036/038/041 | Preserve attributable clinical/privacy approval corrections, consent history, DICOM access and storage exceptions with their exact scopes; conflicts are not resolved by priority change. |
+| MVP-DEC-020→031 and 042→043 | Preserve historical delivery-topology and fixture supersession chains. This documentation branch authorization does not authorize main merge or generalize the rehearsal exception. |
+
+All old rows below remain unchanged, including their original Approved/Superseded labels. The table above records the later priority effect without rewriting historical approval. The [active gaps](beta-gap-register.md#admin-first-gaps-and-authority-reconciliation) identify unresolved owners and triggers; they are not approvals to select policy defaults.
+
+## Historical decisions — retained
+
+The following records preserve the original pivot and its subsequent dated decisions. Read each within its date, scope, environment, supersession chain and evidence; approval for one slice is not blanket clinical, production-data or release authority.
+
 Decision date for this pivot: **2026-08-05**. Each future entry must use the fields below and one of Proposed, Approved, Superseded, or Rejected.
 
 | Decision ID | Date | Decision | Reason | Impact | Temporary control | Revisit trigger | Status |

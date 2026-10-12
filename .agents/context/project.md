@@ -1,320 +1,146 @@
 ---
-title: MHCS Core Product Context
+title: MHCS Core Repository Context
 document_id: AGENT-CONTEXT-MHCS-CORE-001
-version: 1.0
-status: approved-context
+version: 1.1
+status: supporting-context
 language: en-US
-last_updated: 2026-09-02
+last_updated: 2026-10-12
 scope:
-  - repository-level AI orientation
-  - product authority mapping
-  - product intent and boundaries
-authority_note: This file is supporting, refreshable repository context. Approved repository authority in Madeena-software/mhcs-business-docs governs intended behavior. Observed repository evidence in Madeena-software/mhcs-core governs claims about current implementation reality. Neither silently overrides the other, and this context replaces neither.
+  - repository orientation and authority/evidence routing
+  - Admin-first operational MVP planning
+authority_note: Supporting context, not product authority or implementation proof. Approved business sources and scoped human decisions govern intent; observed repository evidence governs implementation claims.
 ---
 
 # Repository Context
 
-This file is the repository-level context entrypoint for AI-assisted software delivery when adopted into the **MHCS Core** application repository (`Madeena-software/mhcs-core/.agents/context/project.md`).
-
-It provides a verified orientation map of MHCS Core, identifies where authoritative product information lives, summarizes product intent, human workflows, and boundaries, and routes agents to authoritative sources.
-
 ### Document Role
 
-This document provides **MHCS Core product context**.
-
-It is intended for:
-- AI coding agents;
-- software engineers;
-- technical planners.
-
-It explains:
-- product purpose and clinical problem domain;
-- human workflows;
-- actor responsibilities;
-- authority boundaries;
-- product intent.
-
-It explicitly does **NOT** define or mandate:
-- programming language or runtime;
-- web or application framework;
-- database engine or schema;
-- API implementation;
-- deployment details;
-- source-code structure.
-
-Technical implementation details remain owned by the implementation repository (`Madeena-software/mhcs-core`). This document guides implementation by defining what problem MHCS Core solves, whom it serves, and what boundaries must be preserved.
+Concise orientation for `Madeena-software/mhcs-core`. Start with the [active MVP map](../../docs/mvp/README.md), then load the sources relevant to the governing task.
 
 ## Adoption Model
 
-This document is designed to be adopted into:
-
-`Madeena-software/mhcs-core/.agents/context/project.md`
-
-It provides product intent and business orientation for MHCS Core. It does not
-replace source code, tests, migrations, runtime evidence, or implementation
-documentation in that repository.
-
----
+This is the application repository's context entrypoint. Business-source copies under `business/` remain unchanged; technical evidence and delivery planning live here, not in the business repository.
 
 ## Repository identity
 
-**Name:**  
-`Madeena-software/mhcs-core`
-
-**Repository type:**  
-Healthcare orchestration application platform
-
-**Primary responsibility:**  
-Connecting Members, physical healthcare facilities, Site Staff, and Doctors through coordinated screening, diagnostic examination, and clinical review workflows.
-
----
+- Repository: `Madeena-software/mhcs-core`; modular application with Member, Operator, Doctor, and Image Gateway ownership.
+- Application baseline: `b1a2204a2571920a6c696575a6480aad5a1294fd`.
+- Documentation execution: `task/admin-first-doc-rebaseline`, governed by [the validated task](../tasks/admin-first-documentation-rebaseline.md) at `5e47b8d61db27741c2048b7c5131b5a7f0f4ef49`.
+- Business authority: `Madeena-software/mhcs-business-docs @ 645058e431f59c4450a136e72f140e6819b79f32`.
+- Documentation implementation requires independent review; this context establishes no new accepted application baseline or release approval.
 
 ## Purpose
 
-**MHCS Core** is an Indonesia-led healthcare orchestration platform that connects Members, healthcare facilities (such as Puskesmas and clinics), Site Staff, and Doctors through coordinated screening, diagnostic, and review workflows.
-
 ### Why MHCS Exists and the Healthcare Problem Being Solved
 
-In Indonesia, healthcare access and diagnostic interpretation face structural geographical and specialist distribution challenges. Millions of individuals undergo preventive screening or medical examinations at distributed physical locations where certified diagnostic specialists (such as radiologists and specialist physicians) are not physically co-located. The traditional healthcare pathway suffers from:
-1. **Fragmented service handoffs:** Disconnect between registration, vital-sign assessment, image capture, processing, and clinical interpretation.
-2. **Specialist shortages at examination sites:** Non-radiologist operators capture imaging, but high-quality interpretation requires remote specialist review.
-3. **Friction in citizen engagement:** Requiring patients to install dedicated mobile applications or remember portal credentials causes steep drop-offs in preventive screening participation.
-4. **Safety and consent gaps:** Clinical identity, guardian authorization, and explicit patient consent must be verified on-site with high fidelity, not inferred through loose online interactions.
-
-MHCS solves these challenges not by replacing health infrastructure or clinical judgement, but by orchestrating existing healthcare capabilities into continuous, reliable, end-to-end service pathways.
+MHCS coordinates healthcare pathways while participants retain their own authority. See the [business overview](business/01-business-overview.md) for the problem, journeys, and actor responsibilities.
 
 ### Intended Future Direction
 
-The strategic MHCS product coordinates broader healthcare journeys across prevention, screening, clinical findings, referral, treatment, and continuous monitoring. The current core operating slice focuses on:
-```text
-booking → on-site check-in & consent → basic examination → radiography capture → processing coordination → finalized result & optional specialist review
-```
-Future pathways will expand this orchestration to additional modalities, multi-specialty clinical consultations, and health-system interoperability, with each participant retaining authority within its own domain.
-
----
+Broader healthcare orchestration remains strategic scope. The active operational priority is one persistent internal Admin login and a unified dashboard over domain-owned operations. Target scope includes manual registration, planned CSV/XLSX templates/import validation, centralized study monitoring, temporary staff/clinical workspaces, and authorized time-limited Member results; these targets are not implementation claims.
 
 ## Current Context State
 
-**Current state:**  
-`mhcs-business-docs` is the Product Authority Repository for MHCS Core.
-
-**Relevant summary:**  
-`Madeena-software/mhcs-core` is the application implementation repository. Its
-implementation must conform to the approved business and product definitions
-without redefining product intent or safety boundaries for technical
-convenience.
-
----
+The human approved the bounded documentation rebaseline after independent review of `74755cb2c0b40c061b4734c1c1fb5b267a7eb805`. [MVP-DEC-044](../../docs/mvp/decision-log.md#admin-first-priority-decision) records the priority and its limited supersession. Earlier beta acceptance, exceptions, and evidence remain historical, with no account removal, migration, clinical access expansion, or production operation implied.
 
 ## Intended authority map
 
-Map the intended-authority responsibilities defined by the delivery protocol to the actual approved sources used by MHCS Core:
-
 ### Business sources and decisions
 
-- `docs/business/01-business-overview.md`: End-to-end business flow, strategic positioning, detailed actor journeys, and operating model.
-- `docs/business/03-system-responsibilities.md`: System responsibilities, ownership boundaries, access controls, payment/earning triggers, and interoperability boundary.
+- [Business overview](business/01-business-overview.md).
+- [System responsibilities](business/03-system-responsibilities.md), including module ownership, access map, and open decisions.
+- [MVP decisions](../../docs/mvp/decision-log.md): preserve historical approval scope; the new priority does not resolve conflicting clinical policies.
 
 ### Product / PRD authority
 
-- `docs/business/01-business-overview.md`: High-level product intent, service episodes, and actor responsibilities.
-- `docs/business/02-user-stories.md`: 86 human-centric user stories detailing user intent, acceptance criteria, and interaction surfaces.
+[User stories](business/02-user-stories.md) define actor intent and acceptance. Open or candidate source sections retain their status. The [active scope](../../docs/mvp/beta-scope.md#admin-first-operational-scope) records the human-directed target without inventing mechanisms.
 
 ### Requirements and matrices
 
-- `docs/business/02-user-stories.md`: User story catalogue with acceptance criteria.
-- `docs/business/03-system-responsibilities.md#business-to-technical-traceability`: Traceability map connecting user stories to system responsibilities and implementation boundaries.
+KEEP / historical authority and reference, unchanged:
+
+- [Implementation plan](../../docs/implementation/mhcs-core-implementation-plan.md): Work Packages and approval/dependency registers.
+- [Requirements matrix](../../docs/implementation/mhcs-core-requirements-matrix.md): stable IDs and assignments.
+- [Source coverage](../../docs/implementation/mhcs-core-source-coverage.md): ID lifecycle, original source digests, and unresolved provenance.
+
+Their 2026-08-04 evidence classifications are historical, not current application status. Use only relevant references; no exhaustive ledger reconstruction is required for the documentation rebaseline.
 
 ### Architecture and repository policy
 
-- Architecture specifications, ADRs, module designs, and technical standards remain owned by and located within `Madeena-software/mhcs-core`.
+[Repository contract](../AGENTS.md) and [delivery protocol](../software-workflow.md) control execution. Administration is a presentation surface, not a fifth business domain. [MPIPS conversion](../../docs/mpips/mhcs-dicom-api.md) and [Grabber DICOM ingestion](../../docs/mpips/mhcs-grabber-dicom-ingestion-contract.md) retain independent contract authority.
 
 ### Delivery planning
 
-- Governing validated tasks located in `.agents/tasks/` in the respective active repository.
+[Roadmap](../../docs/mvp/roadmap.md#admin-first-planning-sequence), [gaps](../../docs/mvp/beta-gap-register.md#admin-first-gaps-and-authority-reconciliation), and [status orientation](../../docs/mvp/work-package-status.md#admin-first-status-orientation) distinguish planned work from dated evidence. Only validated task revisions authorize implementation.
 
 ### Release policy
 
-- Operational release procedures and deployment gates remain governed by repository-specific delivery policy in `mhcs-core`.
+G10 is separate from documentation review, application acceptance, and bounded historical deployment. Production-data use, environment readiness, migration, and release approvals remain open where not explicitly granted.
 
 ### Other authority
 
-- **Source Repository:** `Madeena-software/mhcs-business-docs` (governing Product Authority Repository).
-- Provenance reference: The context package in `docs/project.md` and `docs/business/` provides complete orientation for `mhcs-core` without requiring external repository access during execution.
-
----
+The business repository is read-only in this execution. Local source copies are pinned references; this context and derived graphs do not amend them.
 
 ## Observed implementation evidence map
 
-Map the repository evidence in `mhcs-core` used to establish what currently exists, what changed, and what has actually been verified:
-
 ### Source and configuration
 
-- Application source code, module service providers, domain services, and configuration in `Madeena-software/mhcs-core`.
+At the application baseline, `app/Providers/Filament/AdminPanelProvider.php` declares `/admin` with Member/Operator resources; `routes/api.php` declares authenticated Grabber ingestion, and `routes/web.php` declares Operator study and AI-report actions. These source observations do not prove the unified target dashboard, generic import, temporary workspaces, or finalized-result delivery.
 
 ### Data and migrations
 
-- Database migrations, schema definitions, and model relationships in `Madeena-software/mhcs-core`.
+Existing schema and identity boundaries remain unchanged. No account transition, import, or production-data operation is performed by this documentation contract.
 
 ### Tests and verification
 
-- Unit, feature, integration, and contract tests in `Madeena-software/mhcs-core`.
+Use the relevant unchanged [historical evidence](../../docs/mvp/work-package-status.md) and the exact task/review revision for any acceptance claim. No application tests were rerun for this documentation rebaseline.
 
 ### Version control and CI
 
-- Git repository commit history and CI workflow runs in `Madeena-software/mhcs-core`.
+The baseline's merged field/AI work is visible in Git; merge and task status alone do not establish application acceptance. No current CI or runtime certification is asserted here.
 
 ### Runtime and operational evidence
 
-- Runtime logs, staging environment observations, and integration test executions.
-
----
+[Production rehearsal evidence](../../docs/mvp/evidence/prestige-production-rehearsal-data.md) and [deployment evidence](../../docs/mvp/evidence/production-swarm-deployment.md) apply only to their dated, bounded scopes.
 
 ## Top-level architecture and boundaries
 
 ### Product Intent vs. Implementation
 
-When designing and building MHCS Core, distinguish between what is stable product intent and what is changeable implementation detail:
-
-| Category | Product Intent (Stable) | Technical Implementation (Changeable) |
-|---|---|---|
-| **Goals & Value** | Seamless screening coordination, verified patient identity, zero-cost doctor-requested repeat exams, fast and safe result delivery. | Service architecture, queue mechanisms, background workers, caching strategies. |
-| **Actors & Roles** | Clear role boundaries (Member, B2B Representative, Site Staff, Doctor, Global Admin); independent Site Staff operational roles; distinction between Radiologist and Specialist. | Role and permission implementation mechanisms (e.g. database tables, permission libraries, token claims). |
-| **Human Workflows** | Physical identity verification on-site, signed paper consent scan, sequential stage releases, controlled clinical review handoffs. | UI libraries, form validation engines, component libraries, state management. |
-| **Authority Boundaries** | Separation of Requester, Payer, Subject of Care, Guardian, and Result Recipient; clinical binary ownership; least-privilege image access. | File storage drivers, object store configurations, database foreign keys. |
-| **Interaction Surfaces** | Messaging Interaction Surface as a persistent citizen touchpoint; temporary task-specific workspaces for staff and doctors; no permanent citizen portal. | Web frameworks, HTTP routes, WebSocket transports, frontend build tools. |
-
-The software implementation must faithfully follow product intent. Implementation mechanisms may evolve as technology advances, but product intent, actor authority, and safety boundaries must remain intact.
+The [scope table](../../docs/mvp/beta-scope.md#admin-first-operational-scope) separates existing evidence, approved direction, and future/unresolved behavior. Current code cannot retroactively approve product policy.
 
 ### Core Actors
 
-1. **Member:** The citizen or patient receiving care. Interacts primarily through the persistent Messaging Interaction Surface for booking coordination, reminders, and result notifications. The underlying Communication Channel may be WhatsApp, SMS, voice communication, or another approved channel. Opens a secure temporary result surface when richer viewing or download is needed.
-   - **Requester / Contact:** The person coordinating the booking conversation.
-   - **Payer:** The person or entity funding the service.
-   - **Subject of Care:** The person physically undergoing examination.
-   - **Guardian:** The legally authorized guardian (for minors or dependent care), verified on-site.
-   - **Result Recipient:** The authorized recipient of the finalized clinical result.
-2. **Authorized B2B Representative:** The human representative of a Business Customer (enterprise, insurer, or institutional employer) that centrally funds and provisions member examination packages. Determines member scope, service, site, date, and shift allocations. Holds sole authority to request official B2B booking changes.
-3. **Site Staff:** Operational personnel deployed at physical examination facilities, working in temporary Site Workspaces across three independently assignable roles:
-   - **Reception / Registration:** Performs booking lookup, physical photo-identity verification, signed paper-consent confirmation, walk-in registration, on-site payment tracking, and visit ticket issuance.
-   - **Basic Examination:** Claims eligible tickets, records vital signs measurement, point-of-care blood screening, structured health interview, and releases stage to radiography.
-   - **Radiography:** Claims X-ray tickets, operates imaging capture, reviews image quality, conducts justified retakes or omissions, and submits complete image sets for processing.
-4. **Doctor:** Qualified medical professionals working in assignment-scoped temporary Clinical / DICOM Workspaces:
-   - **Radiologist:** Reviews authorized raw/processed DICOM imaging studies, evaluates diagnostic usability, orders controlled repeats when clinically necessary (triggering zero-cost member repeat entitlements), drafts, and finalizes diagnostic radiology reports.
-   - **Authorized Specialist:** Non-radiologist clinical specialists (e.g. pulmonologists, cardiologists) who review cases within their accredited specialty and modality scope and produce specialty-appropriate clinical consultations or endorsements.
-5. **Global Admin / Super Admin:** System administrators managing platform configuration and governance via Persistent Admin Web (site management, staff qualification checks, financial audits, B2B enterprise provisioning, and exception routing).
+Admin coordinates domain-owned operations. Members, radiographers, radiologists, and other authorized staff retain distinct identities and assignments. Requester, payer, subject of care, guardian, and result recipient remain separate authority roles.
 
 ### Interaction Model
 
-```text
-Persistent Coordination             Scoped Operational Execution           Administrative Control
-┌───────────────────────┐           ┌─────────────────────────────┐        ┌──────────────────────┐
-│       Messaging       │ ────────> │  Temporary Workspaces       │        │ Persistent Admin Web │
-│ (Citizen coordination,│           │  - Temporary Result Surface │        │  (Multi-domain governance,│
-│  staff dispatch,      │           │  - Temporary Site Workspace │        │   auditing, configuration,│
-│  case notifications)  │           │  - Temporary Clinical /     │        │   exception handling)│
-└───────────────────────┘           │    DICOM Workspace          │        └──────────────────────┘
-                                    └─────────────────────────────┘
-```
-
-1. **Messaging Interaction Surface:** Persistent human coordination capability between MHCS and participants. It supports B2C booking initiation, appointment confirmations, visit reminders, dispatch offers to staff, case availability notifications to doctors, and result readiness alerts. Delivery may use an available Communication Channel such as WhatsApp, SMS, voice communication, or another approved channel, depending on availability, user accessibility, and approved integrations. Ordinary chat is never used to collect sensitive physical identity documents or to store permanent clinical diagnostic records.
-2. **Temporary Web Workspace (Temporary Result Surface):** Secure, time-bounded result viewing and report downloading for Members via time-limited signed links. Does not require a permanent username/password portal account.
-3. **Temporary Site Workspace:** Task-focused operational interface for Site Staff during an active shift (registration, queue status, vital-sign recording, radiography capture submission). Scoped strictly to the active site, shift, and assigned role.
-4. **Temporary Clinical / DICOM Workspace:** Diagnostic study review and clinical reporting environment for Doctors (DICOM viewing, image manipulation, quality evaluation, repeat requests, report drafting, finalization). Scoped per claimed case; closes upon case completion or release.
-5. **Persistent Admin Web:** Unified administrative governance across all operational domains.
+Persistent Admin access is the operational priority. Temporary assignment-scoped staff/clinical workspaces and secure time-limited Member results are target surfaces, with authentication, expiry, revocation, recovery, and disclosure rules still open. Messaging remains a business coordination surface; no channel/provider decision is made here.
 
 ### Responsibility Boundary
 
-- **MHCS Core Owns:**
-  - End-to-end workflow orchestration across screening stages;
-  - Role, credential, and assignment authorization enforcement;
-  - Patient consent, identity verification, and booking management;
-  - Staged queue progression and physical site operational handoffs;
-  - Clinical binary storage coordination, access tokening, and audit;
-  - Result dispatch orchestration and temporary surface lifecycle;
-  - Financial tracking: B2B quotas, B2C payments, staff/doctor earnings.
-- **MHCS Core Does Not Define:**
-  - External clinical policy or diagnostic standards;
-  - Medical judgement (diagnostic conclusions remain solely owned by interpreting Doctors);
-  - External processing internals (AI inference and image conversion mechanics operate across a protected boundary, e.g. MPIPS);
-  - Hardware internals (Grabber/X-ray machine physical drivers operate at equipment level).
-
----
+Member retains identity, booking, and recipient relations; Operator retains site/staff and operational stage responsibilities; Doctor retains clinical judgments and report authorship; Image Gateway retains private imaging, processing, and publication coordination. MPIPS remains a separate private processing boundary. Admin navigation transfers none of these responsibilities.
 
 ## Scoped context
 
-Additional scoped context may exist under `.agents/context/` in `mhcs-core` when partitioned by module or domain:
-
 ### Available scoped context
 
-- `Member Core` → `modules/member/project.md` (when partitioned in `mhcs-core`)
-- `Operator Core` → `modules/operator/project.md` (when partitioned in `mhcs-core`)
-- `Doctor Core` → `modules/doctor/project.md` (when partitioned in `mhcs-core`)
-- `Image Gateway` → `modules/image-gateway/project.md` (when partitioned in `mhcs-core`)
-
----
+The three `business/` files above are the available business-source package. No module-context files are asserted to exist. Use the seven-document MVP map and scoped implementation evidence when needed.
 
 ## Known Gaps and Open Decisions
 
 ### Blocking
 
-- None.
+[MVP-GAP-027–034](../../docs/mvp/beta-gap-register.md#admin-first-gaps-and-authority-reconciliation) cover Admin assembly/portal transition, temporary clinical workspaces, access and finalization, consent/bypass, privacy/storage, import, documentation review, and application acceptance evidence. These remain open for their affected implementation or review stage. In particular, the business Site Staff access map and the scoped Operator AI-report directive require explicit reconciliation; AI output is not a doctor-finalized report.
 
 ### Non-blocking
 
-The following unresolved choices remain in the business authority. They affect
-provider selection, payment and refund policy, identity and credential rules,
-clinical specialization, implementation boundaries, and interoperability
-conformance; none changes the product direction stated above.
-
-The detailed decision register is maintained in
-`docs/business/03-system-responsibilities.md`:
-1. **Communication Channel Provider:** Approved provider, gateway, and hosting model for the available Messaging Channel.
-2. **Messaging Conversational Architecture:** LLM architecture and conversational triage design.
-3. **Payment Gateway Provider & Webhook Contracts:** Supported methods (QRIS, VA, e-wallet) and webhook contracts.
-4. **Madeena Points Commercial Policy:** Retirement, conversion to loyalty credits, or direct rupiah pricing.
-5. **Deposit vs. Full-Payment Policy:** Advance payment vs deposit vs pay-at-site options for Messaging-coordinated bookings.
-6. **Cancellation & Refund Terms:** Cancellation cutoffs and automated settlement workflows.
-7. **Clinical Result Delivery Channel Mechanics:** Session, authentication, retention, and fallback mechanics for the temporary result surface.
-8. **On-Site Identity Verification Procedure:** Minimum data capture and comparison mechanics at Reception / Registration.
-9. **Staff Credential & Regulatory Qualification Rules:** Verification criteria for operational roles and doctors.
-10. **Specialty-Specific Doctor Workflows:** Clinical workflows and reporting templates for non-radiologist specialists.
-11. **Staff Authorization Implementation Mechanism:** Application implementation details for enforcing the three Site Staff roles.
-12. **Beta Account Migration Mechanism:** Migration schedule for legacy MVP/beta accounts.
-13. **Grabber NPZ Schema:** TIFF bytes vs raw numeric array and compatibility fields.
-14. **FHIR R5 Conformance Artifacts:** Canonical URLs, profiles, and validator fixtures.
-
----
+Business-source open decisions on communication/payment providers, commercial policy, qualifications, specialty workflows, account migration, NPZ details, and FHIR artifacts remain in [System Responsibilities](business/03-system-responsibilities.md#open-design-decisions). They do not block writing this approved documentation scope, but cannot be assumed resolved for dependent application work.
 
 ## Repository conventions
 
-1. **Preserve Business Intent Over Technical Convenience:**
-   Do not alter user-facing workflows, payment rules, or clinical steps merely to fit default framework abstractions or convenience patterns.
-2. **Preserve Actor Authority and Least Privilege:**
-   Enforce role boundaries strictly. Non-clinical site staff must never access clinical AI narrative contents or doctor reports; doctors only access studies assigned within their accredited specialty; members access only their authorized results.
-3. **Preserve Safety and Verification Integrity:**
-   Never bypass physical identity verification, consent confirmation, or doctor quality review gates. A reservation code is a booking locator, not proof of identity.
-4. **Preserve Citizen Simplicity:**
-   Do not introduce mandatory account creation, usernames, or passwords for Members. Honor the Messaging + Temporary Result Surface model.
-5. **Conflict Resolution:**
-   When technical requirements or existing codebase assumptions conflict with business intent, **stop and review the intended business behavior first**. Technical specifications serve business intent, not the reverse.
-
----
+Preserve least privilege, server-derived actor/site/shift/case authorization, MRN/NIK separation, private objects, idempotency, validation, and attributable audit. A locator or possession of a link is not identity or clinical authority. Preserve consent and report history and current scoped exceptions without extending them. Escalate conflicts through the authority named in the gap register; never use convenience or implementation presence as approval.
 
 ## Context verification
 
-This context is supporting, refreshable repository knowledge.
-
-**Last verified:**  
-2026-09-02
-
-**Verified against repository revision:**  
-`25a4af4590cd423b1cc91708c3b2f16200c06d6d` (context creation snapshot)
-
-**Verified sources:**  
-- `docs/business/01-business-overview.md`
-- `docs/business/02-user-stories.md`
-- `docs/business/03-system-responsibilities.md`
-
-**Known verification limitations:**  
-Application code and technical architecture specifications are maintained separately in `Madeena-software/mhcs-core`.
+Updated 2026-10-12 against the application baseline and governing documentation task above. The pinned business remote remained unchanged at preflight; its three local source copies match the reviewed package. Earlier context snapshot `25a4af4590cd423b1cc91708c3b2f16200c06d6d` is historical. Verification is limited to affected documentation, references, and cited source observations; no application, clinical, legal, production, or release readiness is established.

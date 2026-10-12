@@ -1,4 +1,35 @@
-# Controlled-beta scope
+# Admin-first operational MVP scope
+
+## Admin-first operational scope
+
+The human-directed priority is one persistent internal Admin login and a unified operational dashboard, recorded in [MVP-DEC-044](decision-log.md#admin-first-priority-decision). This is the approved documentation/planning direction for eventual real patient operations. It is not approval to expose unverified clinical, privacy, authentication, import, migration, or production behavior. The [governing task and baseline](README.md#current-synchronization-marker) define this documentation execution.
+
+| Target outcome | Domain responsibility | Existing baseline evidence / target distinction | Open dependency |
+|---|---|---|---|
+| Admin manages sites, shifts, Members, and examination assignments | Admin presentation over Member/Operator; Doctor owns clinical assignment authority | The existing `/admin` provider declares Member/Operator resources. A complete unified operational dashboard is a target, not proved by that provider. | MVP-GAP-027: capability/assignment scope and account transition |
+| Manual registration and planned CSV/XLSX bulk import with downloadable templates and validation | Member identity/booking with authorized Operator/Admin actions | FIELD-OPS-001/002/003 record field registration/shift capabilities. The historical one-time roster and MEM-214/MEM-228 are references, not a generic CSV/XLSX specification. | MVP-GAP-032: schema, matching, conflict/invalid-row policy, transaction and privacy rules |
+| Authenticated DICOM ingestion feeds a centralized worklist | Operator session association; Image Gateway imaging/processing | Authenticated Grabber routes and Operator study worklist routes exist. The centralized Admin worklist is desired behavior. Preserve both direct DICOM and legacy NPZ/MPIPS paths. | MVP-GAP-027; retain FIELD-OPS-007/008/009 and ingestion contracts |
+| Admin monitors incoming studies, processing, and report status | Image Gateway processing; Doctor clinical reports | Operator AI-report actions exist under the scoped integration task. A status surface grants no unrestricted access to clinical contents. AI PDFs are unverified screening output. | MVP-GAP-029: access matrix and screening/finalization/publication distinction |
+| Members receive authorized finalized results through secure time-limited links without permanent portal accounts | Member recipient/guardian authority, Doctor finalization, Image Gateway publication | Business US-MEMBER-003/009/016/017/018/019 establish the target. Permanent beta portal foundations are historical implementation; their removal or migration is not authorized. | MVP-GAP-027/029: recipient rules, signing, link expiry/revocation/disclosure/recovery |
+| Radiographers/radiologists use temporary authorized workspaces | Operator/Doctor role and assignment boundaries | Business US-STAFF-SHARED-002 and US-DOCTOR-SHARED-002/004 support the direction. Clinical authentication, permitted actions, session lifecycle, qualification, and finalization remain open. | MVP-GAP-028/029: credentials and clinical authority |
+| Clinical identities, assignments, reports, and access events remain attributable and auditable | All owning domains | Retain existing audit, identity and lineage controls; a shared Admin surface must not collapse responsible clinical actors or approve shared credentials. | MVP-GAP-028/029/031: delegation, access purposes, privacy and audit |
+
+Existing source observations are at `b1a2204a2571920a6c696575a6480aad5a1294fd`: `app/Providers/Filament/AdminPanelProvider.php`, `routes/api.php`, and `routes/web.php`. Referenced task contracts establish scoped intent and lineage; they do not alone prove runtime correctness, acceptance, or release. No application verification was performed in this documentation execution.
+
+### Preserved boundaries and exclusions
+
+- Admin is a presentation/routing surface. Member, Operator, Doctor, and Image Gateway retain domain-owned records, authorization, mutations, and audit.
+- Preserve server-derived role/site/shift/case/ownership checks, MRN/NIK separation, consent history, validation, idempotency, private binaries, sanitized logs, and clinical accountability. Locators and link possession confer no clinical identity or signing authority.
+- Processing completion, AI output, doctor-finalized reports, and authorized Member release are distinct. No clinical AI/report access exception is generalized by this scope.
+- Reusable consent/basic-examination bypass and earlier storage/DICOM-access exceptions retain their scoped task/decision provenance; conflicts with business sources remain open under MVP-GAP-030/031.
+- No public self-registration, account deletion/migration, data import, new report-finalization/authentication mechanism, production-data use, deployment, or release is authorized by this documentation rebaseline. CSV/XLSX fields and transaction/error policies are deliberately unspecified until approved.
+- Messaging/channel selection, payments/payouts, broader B2B agreements, child/guardian exposure, specialty expansion, FHIR profiles, and full Work Package conformance remain future or separately governed obligations. Reprioritization does not retire them.
+
+See [active gaps](beta-gap-register.md#admin-first-gaps-and-authority-reconciliation) for owners, controls, and resumption triggers; [roadmap](roadmap.md#admin-first-planning-sequence) for planning dependencies.
+
+## Historical controlled-beta scope — retained
+
+Everything below records the August controlled-beta scope and its dated approvals. Its portal-first components, Doctor exclusion, deadlines, storage wording, and rehearsal limits describe that earlier period. MVP-DEC-044 supersedes their active priority only; policy conflicts remain explicitly open. The original sections and anchors remain for historical traceability and are not current readiness claims.
 
 ## Objective and status
 
