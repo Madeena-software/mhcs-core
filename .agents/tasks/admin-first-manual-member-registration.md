@@ -1,17 +1,17 @@
 ---
 title: Admin-first Manual Member Registration
 document_id: MHCS-TASK-ADMIN-FIRST-MANUAL-MEMBER-REGISTRATION-001
-version: 1.2
-status: draft
+version: 1.3
+status: validated-published
 language: en-US
 last_updated: 2026-10-12
 scope:
-  - first bounded Admin functional slice proposal
+  - validated first bounded Admin functional slice
   - existing Admin and Operator implementation audit
-authority_note: Draft for independent review. This publication authorizes no application implementation, capability provisioning, account migration, production operation, or release.
+authority_note: Independently approved for validated publication following review of 7df3215e15bfee9ce43f29197bafaa298d9ad964. Authorizes only the bounded implementation and local/testing synthetic bootstrap verification below; no production provisioning, account migration, deployment or release.
 ---
 
-# Draft Implementation Task
+# Validated Implementation Task
 
 ## Task identity
 
@@ -19,7 +19,7 @@ authority_note: Draft for independent review. This publication authorizes no app
 
 **Task path:** `.agents/tasks/admin-first-manual-member-registration.md`
 
-**Task contract state:** `Draft`. Draft completeness validation is distinct from T5 executable validation. Do not route this revision to an Executor.
+**Task contract state:** `Validated/Published` at the publication commit containing this exact content. The full immutable governing SHA must be confirmed in the publication handoff before execution.
 
 **Delivery objective / Work Package / MVP:** First Admin-first operational slice, limited to administrator-assisted Member registration and the existing Member directory; relevant WP-04 identity and WP-10 shared administration foundations. This does not complete either Work Package or MVP-GAP-027.
 
@@ -31,19 +31,41 @@ The human Planner handoff dated 2026-10-12 requests a reuse-first audit and a ne
 
 The checkout and remote `main` were observed at `fb25354311121fc8163256cd0530d9cbcb66bb68`, with a clean tracked working tree before authoring. Dedicated branch: `task/admin-first-manual-member-registration`.
 
-That SHA is the supplied verified main baseline, not newly established application acceptance. The recent history contains documentation merges #5 and #6. `.agents/context/project.md` and `docs/mvp/README.md` still describe the lean-docs implementation as Review Required; this Draft neither re-reviews nor accepts that work. The scoped baseline assessment below establishes usability for this registration task without claiming general acceptance of later application work or the documentation cleanup. Those broader independent-review states remain unchanged.
+That SHA is the supplied verified main baseline, not newly established application acceptance. The recent history contains documentation merges #5 and #6. `.agents/context/project.md` and `docs/mvp/README.md` still describe the lean-docs implementation as Review Required; this task neither re-reviews nor accepts that work. The scoped baseline assessment below establishes usability for this registration task without claiming general acceptance of later application work or the documentation cleanup. Those broader independent-review states remain unchanged.
 
 The target is one persistent Admin dashboard. Existing portal/account flows must remain intact while later contracts settle their transition. Administration remains a presentation surface over Member, Operator, Doctor and Image Gateway ownership.
 
 **Remediation basis:** Independent review of Draft `32a23c2fe3cc99176e854a4bc7f271bf8dd574bb` and the human-approved product decisions supplied on 2026-10-12. Adult registration requires NIK, name, birth date and administrative gender; KTP and profile photographs are independently optional. Every new registration in this slice starts `pending_verification`, regardless of the registering Admin's verification permission. Identity verification is a separate explicit Admin action. Members need no permanent dashboard login in this MVP. These decisions supersede the earlier Draft's mandatory-photo and permission-driven auto-verification proposal only within this bounded slice; they do not approve unrelated flow changes or permission provisioning.
 
-**Final remediation basis:** Review of `0ff9fe526ded01118e140c6bc08b25140b3d1da4` and the human authorization to add only `member.registration.manage` to the existing MVP Admin bootstrap permission allowlist strictly for local/testing. This resolves that specific provisioning approval; it grants no production permission, production seeder execution, identity-verification permission, role or Operator permission. Current work still changes this Draft only.
+**Final remediation basis:** Review of `0ff9fe526ded01118e140c6bc08b25140b3d1da4` and the human authorization to add only `member.registration.manage` to the existing MVP Admin bootstrap permission allowlist strictly for local/testing. This resolves that specific provisioning approval; it grants no production permission, production seeder execution, identity-verification permission, role or Operator permission.
+
+## Independent validation and approval disposition
+
+**Independently reviewed task revision:** `7df3215e15bfee9ce43f29197bafaa298d9ad964`.
+
+**Reviewer verdict:** `APPROVED FOR VALIDATED PUBLICATION`, supplied by the human publication handoff. The independent technical review found no additional blocking contract defects. This publication changes lifecycle/approval records only; the reviewed objective, eight acceptance criteria, implementation scope, exclusions and execution/side-effect boundaries are preserved.
+
+**Human-approved registration policy:** Mandatory adult NIK and basic demographics; independently optional KTP/profile photographs; all four combinations; initial `pending_verification`, User `pending_activation`, `login_enabled=false`, no automatic evidence approval, no Member login requirement; explicit physical verification remains a separate future workflow. Only the local/testing bootstrap registration permission is approved.
+
+**Scoped MEM-040 exception:** The approved policy permits absent photographs solely in the new adult Admin-assisted entry. Independent review approved this bounded compatibility contract. Legacy mandatory-evidence registration and verification requirements remain unchanged; MEM-043 private-storage/history controls apply to any supplied evidence. This publication records the exception without rewriting the historical requirement matrix or approving a general verification bypass.
+
+**Applicable governance check:** `docs/implementation/mhcs-core-implementation-plan.md` APP-001/003/004 and WP-02/WP-04/WP-10 approval needs apply proportionately to the bounded responsibility under `.agents/software-workflow.md` sections 9.4, 21 and 24. The authority record is the human-approved policy/provisioning, the supplied independent technical verdict for the exact reviewed revision, and the existing scoped storage decisions below; no additional approver identity or signature is asserted.
+
+| Approval concern | Disposition for this contract |
+|---|---|
+| Member identity/product policy and scoped MEM-040 exception | Satisfied by the explicit Product Owner decisions and independent approval of this exact bounded contract; no physical verification or activation policy is weakened |
+| APP-001 technical/security boundary and local/testing exact registration grant | Satisfied for this slice by the independent technical verdict, explicit human grant authorization and preserved trusted claims/private storage/audit requirements; no deployment or broader trust-boundary approval is claimed |
+| APP-003 product/financial and WP-10 administration | Product scope approved; financial rates, funding, booking, payout, import and cash changes are excluded, so no financial decision is invented or required here |
+| APP-004/WP-04 privacy/legal/identity and private objects | Existing MVP-DEC-038/040/041 authorize the synthetic/local private-object boundary; no new real-data collection/disclosure, lawful basis, retention/deletion policy or production storage exception is implemented. Those privacy/legal approvals remain required before real/production use and are not claimed satisfied globally |
+| APP-002 clinical/interoperability and FHIR portions of WP-10 | No clinical judgment, verification procedure, report, FHIR mapping or external exchange is included; required approvals for those later workflows remain separate |
+
+No additional designated approval was identified as required for this synthetic/local implementation contract. If execution reveals a new regulated-identity, disclosure, retention, clinical or security exception, stop for its actual designated authority; the present approval does not cover it.
 
 ## Baseline and task revision
 
 **Implementation baseline:** `fb25354311121fc8163256cd0530d9cbcb66bb68`.
 
-**Task revision:** The full commit SHA containing this Draft is supplied in the Planner handoff. Any future validated publication must resolve its own exact immutable revision and explicitly reconfirm the implementation baseline.
+**Task revision:** The full SHA of the publication commit containing this exact Validated/Published content is supplied and confirmed in the Planner publication handoff. Use `.agents/tasks/admin-first-manual-member-registration.md @ <that full publication SHA>` as the governing task identity; the reviewed Draft SHA above is the validation basis, not the governing execution revision. The implementation baseline remains the separate immutable SHA above.
 
 ## Observed implementation audit
 
@@ -80,11 +102,12 @@ This is the smallest coherent Admin-only workflow that can reuse the existing Me
 - Human Planner handoff dated 2026-10-12: product direction, reuse-first constraint, audit scope, Draft delivery and explicit side-effect limits.
 - Human-approved remediation decisions dated 2026-10-12: mandatory NIK/demographics, independently optional photographs, pending-only registration, separate explicit verification and no required permanent Member dashboard login. The earlier Draft is not authority for contradictory behavior.
 - Final human authorization dated 2026-10-12: local/testing-only MVP Admin bootstrap registration permission and focused reconciliation tests; production provisioning and all other new roles/permissions remain excluded.
+- Human publication handoff dated 2026-10-12: independent approval of `7df3215e15bfee9ce43f29197bafaa298d9ad964`, authority to publish this same contract, commit and push the publication-only change; no implementation in the publication session.
 - `.agents/AGENTS.md`, `.agents/software-workflow.md`, `.agents/prompts/plan-create-task.md` and `.agents/tasks/_template.md`.
 - `docs/mvp/decision-log.md` MVP-DEC-044; `docs/mvp/beta-scope.md` Admin-first operational scope; `docs/mvp/roadmap.md` Admin-first planning sequence; `docs/mvp/beta-gap-register.md` MVP-GAP-027–034.
 - `docs/implementation/mhcs-core-requirements-matrix.md` and `docs/implementation/mhcs-core-implementation-plan.md`, retained requirement/ownership references. Their historical implementation-status columns and removed context-source paths are not current evidence or newly approved behavior.
 
-The maintained Google business Doc remains Draft with unresolved immutable provenance. This task does not fetch, edit, approve or adopt its propositions. The human decisions above are approved intent; the technical adaptation and remaining authorization boundaries below are Draft for independent review.
+The maintained Google business Doc remains Draft with unresolved immutable provenance. This task does not fetch, edit, approve or adopt its propositions. The human decisions and independently approved bounded technical contract above govern this task; external Draft business content does not.
 
 ### Requirement traceability
 
@@ -96,13 +119,13 @@ The maintained Google business Doc remains Draft with unresolved immutable prove
 | AC7: preserve unrelated flows and domain ownership | Human exclusions; MEM-122; MVP-GAP-027–030/032; repository reuse discipline |
 | AC8: exact local/testing bootstrap permission extension | Final human authorization; existing `MvpAdminSeeder` reconciliation and persistent exact-claim boundary; no production permission expansion |
 
-No historical requirement is marked implemented, verified or accepted by this Draft. The acceptance IDs are local to this task, not a new global requirement registry.
+No historical requirement is marked implemented, verified or accepted by this publication. The acceptance IDs are local to this task, not a new global requirement registry.
 
-**Scoped authority discrepancy:** MEM-040 describes mandatory current identity/profile assets at registration; the approved human decision permits neither asset in this adult Admin-assisted slice. MEM-043's privacy/history controls still apply to supplied assets, but no current/approved evidence is invented. Record this task's bounded exception in the governing validated publication; do not globally rewrite the historical matrix or infer that unrelated online, walk-in, child, seed or nonclinical paths now permit missing evidence. Any unresolved authority-precedence question returns to Planner/Reviewer before T5.
+**Scoped authority reconciliation:** MEM-040 describes mandatory current identity/profile assets at registration; the approved human decision permits neither asset in this adult Admin-assisted slice. The bounded exception is recorded in the validation disposition above. MEM-043's privacy/history controls still apply to supplied assets, but no current/approved evidence is invented. Do not globally rewrite the historical matrix or infer that unrelated online, walk-in, child, seed or nonclinical paths now permit missing evidence. Any newly discovered authority conflict returns to Planner/Reviewer.
 
 ## Scope
 
-### In scope, after approval and validated publication only
+### In scope
 
 - Add a create entry/form to the existing Member Filament resource and return to its safe list/detail presentation. Use the existing panel and layout; no second dashboard or generic wizard.
 - Support the adult Admin-assisted path only (17 or older by the existing domain Clock rule). Required data: name, birth date, administrative gender and NIK. Independently optional uploads: KTP photograph and profile photograph. All four combinations (neither, KTP only, profile only, both) must work. Optional existing fields: email, phone and KK. No guardian, external identifier, affiliation or office-location editing in this slice.
@@ -117,7 +140,7 @@ No historical requirement is marked implemented, verified or accepted by this Dr
 
 `MemberResource.php`, `Pages/ListMembers.php`, one new create page or equivalent existing-resource action, `MemberRegistrationData`, `MemberRegistrationService`, `MemberVerificationAssetService`, `database/seeders/MvpAdminSeeder.php`, focused permission-reconciliation coverage in `tests/Feature/Admin/Mvp02AdminAccessTest.php`, and focused domain/Admin feature tests. Reuse existing Member data/services and private storage; no schema or lockfile change is expected. Only the approved local/testing bootstrap permission extension is included. Review the route-absence assertions in `Mvp02MemberAdministrationTest` when adding create access: preserve read-only denial, edit/delete/bulk/export denial and safe directory fields. Existing standard/online/child/seed/nonclinical callers, asset review/replacement, activation, Member identity tests, Admin access tests and architecture/security tests are regression surfaces.
 
-### Smallest safe domain compatibility proposal
+### Approved bounded domain compatibility contract
 
 1. Keep `MemberRegistrationService::register` as the legacy mandatory-evidence boundary. Add one explicit adult Admin-assisted entry method in the same service; its name is Executor discretion. It must revalidate source `Administrator`, adult age, trusted Admin/registration permission, mandatory valid NIK, no password and no guardian/external-identifier payload before any mutation. The UI cannot select a caller-controlled bypass flag or strip verification permission from a forged context. Existing `register` callers with source `Administrator` still retain legacy behavior; source alone cannot select the new policy.
 2. Make the two `MemberRegistrationData` asset slots nullable without changing existing positional/named constructor callers. Nullable representation does not authorize absent assets: legacy `register` must explicitly reject null in either slot before dereference. The scoped new entry validates any supplied identity asset as KTP and supplied photo as ProfilePhoto; unrelated online/walk-in/child paths retain their exact evidence and age/guardian checks. No new registration service, DTO hierarchy, mode registry or policy framework is needed.
@@ -127,7 +150,7 @@ No historical requirement is marked implemented, verified or accepted by this Dr
 6. Make this path's operation hash null-aware: absent slots are explicit null; supplied slots retain type/checksum identity. Bind a fixed internal Admin-assisted discriminator to this new path so a legacy operation cannot replay a differently governed registration. Keep legacy hash encoding unchanged for durable existing replays. Reusing a key with changed photo presence/content or another actor/path must fail safely. Reuse the existing operation table/transaction; no migration or separate idempotency store.
 7. Registration/asset audit retains authenticated actor and purpose, pending outcome and actual optional-asset presence, without raw NIK/KK, file data or credentials. Cleanup covers only objects created by that attempt and not referenced by committed rows, including replay and partial upload failure; no-upload registration creates nothing to clean up.
 
-This is a bounded policy adaptation authorized by the new product decisions, not a global relaxation. Equivalent smaller implementation details are allowed if they meet every boundary above; approval of the executable contract is still required.
+This is a bounded policy adaptation authorized by the new product decisions and independent contract review, not a global relaxation. Equivalent smaller implementation details are allowed if they meet every boundary above.
 
 ### Nullable document metadata and downstream compatibility audit
 
@@ -174,7 +197,7 @@ After independent validated publication, local/testing synthetic fixture setup m
 
 **Usable implementation baseline — resolved for this task:** retain `fb25354311121fc8163256cd0530d9cbcb66bb68`, supplied as verified main by the human and observed as remote main during final remediation. `.agents/context/project.md` and `docs/mvp/work-package-status.md` identify application snapshot `b1a2204a2571920a6c696575a6480aad5a1294fd`; the status ledger records WP-02/WP-04 accepted foundations and WP-10's bounded existing administration evidence, with `docs/member/wp-04-identity-evidence.md` and `docs/mvp/evidence/mvp-02-shared-admin-shell-member-administration.md` supplying scoped historical verification. Git ancestry and explicit checked diffs show `app/`, `database/`, `tests/`, `config/`, `routes/`, Composer and frontend manifests/lockfiles unchanged from that application snapshot to the supplied baseline, and from the supplied baseline to this Draft branch. The original authoring's 49 tests/396 assertions add scoped baseline evidence only. No pending registration implementation was found on this branch.
 
-This establishes a reproducible, inspected application baseline for bounded local development; it does not establish a new A9 acceptance of the entire application, accept recent unrelated Operator/AI work, resolve the independent documentation-cleanup review or close MVP-GAP-034. Those broader states do not make this separate registration Draft depend on a new whole-application certification. If relevant application surfaces change before publication/execution, reconcile the immutable baseline again.
+This establishes a reproducible, inspected application baseline for bounded local development; it does not establish a new A9 acceptance of the entire application, accept recent unrelated Operator/AI work, resolve the independent documentation-cleanup review or close MVP-GAP-034. Those broader states do not make this separate registration task depend on a new whole-application certification. If relevant application surfaces change before execution, reconcile the immutable baseline again. Publication preflight reconfirmed the reviewed branch/revision, baseline ancestry, remote main and unchanged application/schema/test/config/dependency scope.
 
 **Synthetic/local private storage — resolved within existing authorization:** `docs/mvp/decision-log.md` at the implementation baseline records approved MVP-DEC-038 (KTP/profile assets included in the bounded plain-private-object policy), MVP-DEC-040 (every private object, including identity assets, may use the disposable local private filesystem), and MVP-DEC-041 (plain private objects retain non-public, opaque-keyed, grant-authorized, integrity-checked controls; local/private S3 selection changes no authorization rule). `.agents/tasks/admin-first-documentation-rebaseline.md` C5 preserves these scoped decisions. The old WP-02/WP-04 evidence's encrypted-storage wording is historical, not a reason to remove current access controls or invent a new storage policy.
 
@@ -187,12 +210,12 @@ Observed corroboration: `app/Providers/AppServiceProvider.php` binds `PrivateObj
 | Item | Classification / owner | Resolution trigger |
 |---|---|---|
 | Optional photos, mandatory NIK/demographics, initially pending identity, separate verification and no required permanent Member login | Product decision resolved by the supplied human approval | Do not reopen these decisions or retain contradictory mandatory-photo/auto-verification criteria |
-| Validate the bounded domain adaptation and scoped MEM-040 discrepancy | Blocking for T5; independent Planner/Reviewer and relevant Member/security authorities | Approve the distinct entry, legacy preservation, pending-only assets and safe account flags in this exact contract; no globally weakened evidence requirement |
+| Bounded domain adaptation and scoped MEM-040 exception | Resolved by the recorded Product Owner decisions and independent approval of reviewed revision `7df3215e15bfee9ce43f29197bafaa298d9ad964` | Preserve the distinct entry, legacy rules, pending-only assets and safe account flags; escalate new authority conflicts |
 | Local/testing registration-permission provisioning | Resolved by the final human authorization | Include the bounded environment-sensitive seeder/reconciliation tests; no production or verification grant |
 | Synthetic/local private evidence storage | Resolved within MVP-DEC-038/040/041 scope, with source/fixture corroboration above | Preserve private controls and synthetic/local limits; production policy stays open and excluded |
 | Usable implementation baseline for this registration slice | Resolved by supplied verified SHA, unchanged relevant application tree, accepted-foundation references and scoped evidence above | Reconfirm exact baseline before validated publication; no whole-application A9 or unrelated review acceptance is claimed |
 | Admin operational role/site/shift authority, field-registration identity/funding policy | Blocking only for deferred preferred journey; Product, Member/Operator and security/privacy authorities, MVP-GAP-027/030 | Separate approved contract before Admin arrival/check-in work; no assumptions or temporary privilege grants here |
-| Temporary access, report finalization/recipient access, import and portal migration decisions | Deferred, non-blocking for this narrow Draft; existing gap-register owners | Resolve before their separate later tasks; preserve exclusions here |
+| Temporary access, report finalization/recipient access, import and portal migration decisions | Deferred, non-blocking for this narrow task; existing gap-register owners | Resolve before their separate later tasks; preserve exclusions here |
 
 The approved product decisions are authoritative for this slice; unresolved technical/authorization items are not approved assumptions. Real operations require separate production-data, environment and release approval.
 
@@ -240,20 +263,20 @@ Observed result: **49 tests passed, 396 assertions**. This verifies existing tes
 
 ## Stop conditions
 
-Stop and return **Planning Required** if the contract is still Draft; an approval above is unresolved; baseline acceptance/reconciliation is required and unavailable; unrelated registration/verification/activation semantics must change; fake evidence or auto-verification is proposed; adult/guardian scope must expand; an unapproved permission/assignment or schema change is needed; private-object cleanup or legacy replay cannot be preserved; verification reveals a materially different authority/security/data-integrity boundary; or completion requires excluded behavior or an unapproved side effect. The approved optional-photo/pending-only adaptation is not itself a stop condition. Do not broaden this task into physical identity verification or the preferred check-in workflow.
+Stop and return **Planning Required** if the exact immutable Validated/Published governing revision is unavailable; a new required approval is unresolved; baseline reconciliation is required and unavailable; unrelated registration/verification/activation semantics must change; fake evidence or auto-verification is proposed; adult/guardian scope must expand; an unapproved permission/assignment or schema change is needed; private-object cleanup or legacy replay cannot be preserved; verification reveals a materially different authority/security/data-integrity boundary; or completion requires excluded behavior or an unapproved side effect. The approved optional-photo/pending-only adaptation is not itself a stop condition. Do not broaden this task into physical identity verification or the preferred check-in workflow.
 
 ## Side-effect authorization
 
-**Current Planner authoring:** Human explicitly authorizes this Draft file, dedicated branch, validation, commit and push for independent review. Authoring must not edit application code/tests/configuration or external business documents. No PR, merge, deployment, production mutation or release is authorized.
+**Current Planner publication:** Human explicitly authorizes this task-file-only validated publication, contract checks, commit and push on the existing task branch. Publication must not edit application code/tests/configuration or external business documents and ends after confirming the immutable governing revision. No Executor launch, PR, merge, deployment, production mutation or release occurs in this publication session.
 
-**Future Executor:** None while Draft. After an independently approved validated revision exists, its bounded implementation/test mutations and approved local/testing synthetic bootstrap verification may proceed under that exact revision. This Draft grants no execution authorization; future commit, push, PR, production permission provisioning, external mutation, dependency installation and release remain unauthorized absent explicit separate authorization.
+**Future Executor:** Once this publication's full governing SHA is confirmed, this contract authorizes its bounded implementation/test mutations and approved local/testing synthetic bootstrap verification against the exact implementation baseline. Implementation commits, pushes, PRs, production permission provisioning, external mutation, dependency installation and release remain unauthorized absent explicit separate authorization. The current session performs publication only; execution belongs to a subsequent Executor handoff.
 
 ## Expected terminal outcome and review handling
 
-**Current terminal state:** T5 contract ready for independent validation, still Draft, not Validated/Published and no Executor launcher. The prior product/provisioning/scoped baseline/local-storage blockers are resolved as recorded. Independent Planner/Reviewer must validate the bounded domain adaptation and scoped MEM-040 exception against the approved human decisions, reconfirm the baseline and publish an exact validated revision before execution. Structural Draft validation is not that verdict or publication. No other unresolved implementation dependency was identified for the bounded synthetic/local slice; future physical verification and production gates remain excluded.
+**Current terminal state:** Validated/Published. T5 passes when contract verification and the full immutable publication revision are confirmed. Independent review and the scoped product/provisioning/baseline/local-storage authority are recorded above. No unresolved implementation dependency was identified for this bounded synthetic/local slice; future physical verification and production gates remain excluded. Publication is not implementation, A9 acceptance or G10 release.
 
 **Future implementation:** Review Required with observed evidence, or Planning Required at a stop condition. Reviewer evaluates the exact validated task revision and bounded implementation; an accepted immutable revision is separate from G10 release authorization. Bounded remediation uses this same task path; new operational/clinical objectives require separate planning.
 
-## Draft validation record
+## Publication validation record
 
-Final remediation assessment on 2026-10-12: B0/P1 product intent and local/testing bootstrap provisioning have explicit human approval. R2 records the scoped MEM-040 exception; A3 proposes the bounded compatibility change using existing nullable schema and preserving legacy controls. Scoped baseline suitability and synthetic/local private storage are supported by the exact sources and observed Git checks above. D4 is bounded. The contract is ready for independent T5 validation, but T5 is **not passed** until the independent verdict and immutable Validated/Published revision exist. Structural checks cover required contract concerns, eight acceptance criteria, approved input/status/provisioning decisions, baseline references and the same-file-only diff. No application acceptance, independent review, operational gap closure or release approval is asserted.
+Publication assessment on 2026-10-12: B0/P1 product intent and local/testing bootstrap provisioning have explicit human approval. R2 records the approved scoped MEM-040 exception; A3's bounded compatibility contract was independently approved using existing nullable schema and preserving legacy controls. Scoped baseline suitability and synthetic/local private storage are supported by the cited authority and observed Git checks. D4 is bounded. The supplied independent verdict approves T5 publication; final T5 confirmation requires passing contract checks and the exact immutable publication SHA in the handoff. Verification preserves the reviewed objective, eight acceptance criteria, included/excluded scope and side-effect boundaries. No application implementation, A9 acceptance, operational gap closure or release approval is asserted.
