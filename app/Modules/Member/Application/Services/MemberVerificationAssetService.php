@@ -52,6 +52,45 @@ final readonly class MemberVerificationAssetService
         return DB::transaction(fn (): string => $this->record($member, $input, $context, $approved));
     }
 
+    public function recordPendingForAdminRegistration(
+        Member $member,
+        VerificationAssetInput $input,
+        AuthenticatedContext $callerContext,
+        string $registrationOperationId,
+    ): string {
+        $context = $this->authorization->registration(RegistrationSource::Administrator, true);
+        $this->assertCallerContextMatchesTrustedContext($callerContext, $context);
+
+        if (DB::transactionLevel() === 0) {
+            throw new MemberIdentityException('Pending evidence requires an in-progress registration transaction.');
+        }
+
+        return DB::transaction(function () use ($member, $input, $context, $registrationOperationId): string {
+            $operation = DB::table('member_operations')
+                ->where('operation_type', 'registration')
+                ->where('operation_id', $registrationOperationId)
+                ->lockForUpdate()->first();
+            if ($operation === null || $operation->status !== 'pending'
+                || (json_decode($operation->result ?? 'null', true)['member_id'] ?? null) !== (string) $member->id) {
+                throw new MemberIdentityException('Pending evidence requires the bound new-registration operation.');
+            }
+
+            $row = DB::table('members')->where('id', $member->id)->lockForUpdate()->first();
+            if (
+                $row === null
+                || $row->registration_source !== RegistrationSource::Administrator->value
+                || $row->identity_status !== IdentityStatus::PendingVerification->value
+                || new DateTimeImmutable($row->birth_date) > $this->clock->now()->modify('-17 years')->setTime(0, 0)
+                || ! in_array($input->type, [VerificationAssetType::Ktp, VerificationAssetType::ProfilePhoto], true)
+                || $input->replacesId !== null
+            ) {
+                throw new MemberIdentityException('Pending registration evidence requires an adult pending administrator registration.');
+            }
+
+            return $this->record($member, $input, $context, false);
+        });
+    }
+
     public function review(string $assetId, bool $approve, string $purpose = 'member.identity.verify'): void
     {
         if ($purpose !== 'member.identity.verify') {

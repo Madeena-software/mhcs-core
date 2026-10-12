@@ -104,7 +104,7 @@ final class Mvp02MemberAdministrationTest extends TestCase
         $this->actingAs($readOnly)->get('/admin/members')->assertOk();
         $this->actingAs($readOnly)->get('/admin/members/'.$member->id)->assertOk()->assertDontSee('Audit Member');
         $this->assertStringNotContainsString('/create', (string) $this->app['router']->getRoutes()->getByName('filament.admin.resources.members.index')?->uri());
-        $this->assertNull($this->app['router']->getRoutes()->getByName('filament.admin.resources.members.create'));
+        $this->actingAs($readOnly)->get('/admin/members/create')->assertForbidden();
         $this->assertNull($this->app['router']->getRoutes()->getByName('filament.admin.resources.members.edit'));
     }
 

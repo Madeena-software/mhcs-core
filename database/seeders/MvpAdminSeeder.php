@@ -85,7 +85,7 @@ final class MvpAdminSeeder extends Seeder
                 'updated_at' => $now,
             ]);
 
-            foreach (self::PERMISSIONS as $permission) {
+            foreach ($this->permissions() as $permission) {
                 DB::table('authorization_permission_assignments')->insert([
                     'id' => (string) Str::uuid(),
                     'user_id' => $userId,
@@ -99,6 +99,14 @@ final class MvpAdminSeeder extends Seeder
         });
 
         MvpCredentialFile::reset(self::EMAIL, $plaintext);
+    }
+
+    /** @return list<string> */
+    private function permissions(): array
+    {
+        return app()->environment(['local', 'testing'])
+            ? [...self::PERMISSIONS, 'member.registration.manage']
+            : self::PERMISSIONS;
     }
 
     private function assertExistingAccount(User $user): void
@@ -141,13 +149,13 @@ final class MvpAdminSeeder extends Seeder
             ->where('user_id', $userId)
             ->lockForUpdate()
             ->get();
-        $expected = collect(self::PERMISSIONS);
+        $expected = collect($this->permissions());
 
         if ($permissions->contains(static fn (object $row): bool => ! $expected->contains($row->permission))) {
             throw new RuntimeException('The existing MVP admin account has inconsistent permission assignments.');
         }
 
-        foreach (self::PERMISSIONS as $permission) {
+        foreach ($this->permissions() as $permission) {
             $matching = $permissions->where('permission', $permission);
             if ($matching->count() > 1) {
                 throw new RuntimeException('The existing MVP admin account has duplicate permission assignments.');
