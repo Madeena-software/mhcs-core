@@ -20,14 +20,29 @@ Earlier source observations were at `b1a2204a2571920a6c696575a6480aad5a1294fd`: 
 
 The direct 2026-10-13 Product Owner handoff recorded in [MVP-DEC-045–047](decision-log.md#admin-first-product-and-first-functional-slice--2026-10-13) approves the following **target product direction**, not delivery completion. The earlier scope table and dated evidence remain traceability, with these later refinements controlling target planning:
 
-- Central Admin coordinates operations over existing domain owners. One canonical backend **Patient** replaces legacy Member terminology only through a separately approved controlled migration; frontend labels are **Peserta Skrining** or **Pasien** by context. Existing Member models, accounts and accepted registration remain unchanged in the first slice.
+- Central Admin coordinates operations over existing domain owners. One canonical backend **Patient** replaces legacy Member terminology only through separately approved controlled refactoring, without duplicating Patient and Member identities; frontend labels are **Peserta Skrining** or **Pasien** by context. Existing Member models, accounts and accepted registration remain unchanged in the first slice.
 - Support internal **SIM + Teleradiology** and external **Teleradiology-only** integration modes. Authenticated Grabber DICOM ingestion remains the ingestion boundary; external SIMRS contracts and correlation need separate design and verification.
 - Radiographers complete examination-scoped metadata. Radiologists authenticate individually and receive assigned worklists. AI-only screening and AI + Radiologist services have distinct AI-processing, screening-completion, clinical-finalization and patient-publication states. Admin coordinates escalation of review-required AI examinations; clinical judgment remains attributable to the authorized clinician.
 - Secure examination-scoped result links require expiry, revocation, amendment suspension and notification tracking. Mechanisms, clinical release criteria and recipient/privacy rules require separate review. Legacy Operator portals and identities retire eventually through controlled migration, not through this board.
 
 **First priority:** [Draft Admin Facility-Session Operations Board](../../.agents/tasks/admin-facility-session-operations.md), under MVP-GAP-027. Journey: `/admin/login` → `/admin` → managed facility and facility-local date → persisted schedules with service, start/end, status, quota and authorized capacity/booking/arrival summaries → existing authorized facility/schedule create/edit → return and refresh persisted state. Registration and authorized detail pages remain reachable. Consider all facilities under MHCS management with exact current permissions; neither panel access nor selected facility is a grant.
 
-The board performs no booking, arrival, queue or clinical mutation and duplicates no scheduling logic. Unauthorized/unavailable summaries are distinct from verified zero. Its proposed date, aggregates, disclosure, read-audit and inactive-facility rules are Draft and require named decisions in the task before T5. PR #8 is recommended for supersession only; this cycle does not modify, close or merge it. Patient migration, external SIMRS, radiologist workspace, AI/report safety and publication remain separate contracts. [MVP-GAP-035/036](beta-gap-register.md#ai-report-safety-and-provenance-follow-up) preserve current source findings without asserting any real-patient incident.
+The board performs no booking, arrival, queue or clinical mutation and duplicates no scheduling logic. Unauthorized/unavailable summaries are distinct from verified zero. D1–D3 now have explicit Product Owner approval under MVP-DEC-048–050: managed-facility/history scope, facility-local session-start dates, and independently authorized operational summary categories. Query/enforcement/audit details, small-count disclosure and X1 schedule-count disposition remain unapproved and block T5. PR #8 is recommended for supersession only; this cycle does not modify, close or merge it. Patient migration, external SIMRS, radiologist workspace, AI/report safety and publication remain separate contracts. [MVP-GAP-035/036](beta-gap-register.md#ai-report-safety-and-provenance-follow-up) preserve current source findings without asserting any real-patient incident.
+
+### Canonical Patient identity target
+
+[MVP-DEC-051](decision-log.md#product-owner-refinement-approval--2026-10-13) records the complete Product Owner direction. These are target requirements for a separate identity contract, not an Admin-board migration:
+
+- **Patient is the single canonical backend identity entity.** Refactor/migrate legacy Member through controlled compatibility work; do not create a parallel identity that duplicates the same person.
+- **No permanent login account is required** for a Patient. Clinical identity and authenticated access remain distinct responsibilities.
+- **MRNs are facility-scoped.** The future identifier/matching architecture must preserve historical identifiers and their facility context.
+- **NIK may be unavailable at initial intake.** Do not fabricate it or treat absence as a safe identity match.
+- **Provisional Patient identity must be supported**, with later reconciliation defined in a separate approved contract.
+- **Ambiguous matches require controlled review**; no automatic unsafe merge or implicit identity consolidation.
+- **Preserve historical examinations, relationships and references**, including compatibility for existing associations and integrations.
+- **Preserve auditability** across identity changes and reconciliation; migration does not authorize rewriting historical evidence.
+
+Current Member implementation binds `user_id`, uses a globally unique MRN field, and accepted adult Admin registration requires NIK. The scoped nonclinical NIK exception is not general intake approval. These differences remain explicit target-versus-current gaps, not historical requirement rewrites or authorization to change the board's registration. Patient account/MRN/matching/provisional-state/schema mechanisms and migration approvals must be planned separately with Product, technical/data and privacy/security review.
 
 ### Preserved boundaries and exclusions
 
