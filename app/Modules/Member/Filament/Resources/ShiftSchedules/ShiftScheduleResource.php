@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Modules\Member\Filament\Resources\ShiftSchedules;
 
 use App\Modules\Member\Application\Services\MemberAuthorization;
-use App\Modules\Member\Application\Services\Mvp03BookingService;
 use App\Modules\Member\Domain\Models\ExaminationSiteReference;
 use App\Modules\Member\Domain\Models\ServiceOffering;
 use App\Modules\Member\Domain\Models\ShiftSchedule;
@@ -56,7 +55,7 @@ final class ShiftScheduleResource extends Resource
             TextColumn::make('starts_at')->label('Mulai')->dateTime()->sortable(),
             TextColumn::make('quota')->label('Kuota'),
             TextColumn::make('status')->label('Status')->formatStateUsing(fn (string $state): string => $state === 'open' ? 'Terbuka' : 'Ditutup'),
-            TextColumn::make('confirmed_count')->label('Terkonfirmasi')->state(fn (ShiftSchedule $record): int => $record->bookings()->whereIn('status', Mvp03BookingService::capacityStatuses())->count()),
+            TextColumn::make('confirmed_count')->label('Kapasitas Tercadangkan')->state(fn (ShiftSchedule $record, $livewire): ?int => $livewire instanceof Pages\ListShiftSchedules ? $livewire->capacityFor($record) : null)->placeholder(fn ($livewire): string => $livewire instanceof Pages\ListShiftSchedules && $livewire->capacityState() === 'denied' ? 'Tidak diizinkan' : 'Data tidak tersedia'),
         ])->actions(self::authorized('scheduleManage') ? [
             EditAction::make()
                 ->url(fn (ShiftSchedule $record): string => self::getUrl('edit', ['record' => $record])),

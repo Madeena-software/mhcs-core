@@ -166,11 +166,11 @@ final class Mvp02AdminAccessTest extends TestCase
         $this->assertStringNotContainsString('admin-password', $audit);
     }
 
-    public function test_authenticated_panel_access_redirects_to_the_explicit_member_resource(): void
+    public function test_authenticated_panel_access_opens_operational_board(): void
     {
         $this->actingAs($this->userWithClaims())
             ->get('/admin')
-            ->assertRedirect('/admin/members');
+            ->assertOk();
     }
 
     public function test_admin_logout_is_post_only_and_invalidates_the_shared_session(): void
@@ -248,7 +248,7 @@ final class Mvp02AdminAccessTest extends TestCase
             'updated_at' => now(),
         ]);
 
-        $this->actingAs($admin)->get('/admin')->assertRedirect('/admin/members');
+        $this->actingAs($admin)->get('/admin')->assertOk();
 
         DB::table('authorization_permission_assignments')
             ->where('user_id', $admin->id)
