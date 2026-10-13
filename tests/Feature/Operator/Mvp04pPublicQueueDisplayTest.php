@@ -22,7 +22,7 @@ final class Mvp04pPublicQueueDisplayTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->app->instance(Clock::class, new FrozenClock(new DateTimeImmutable('2040-01-10T03:30:00+00:00')));
+        $this->app->instance(Clock::class, new FrozenClock(new DateTimeImmutable('2030-01-10T03:30:00+00:00')));
     }
 
     public function test_public_lcd_page_uses_indonesian_labels(): void
@@ -110,23 +110,23 @@ final class Mvp04pPublicQueueDisplayTest extends TestCase
     public function test_lcd_excludes_future_and_ended_schedules_but_includes_an_active_schedule(): void
     {
         $fixture = $this->operatorFixture(false);
-        $this->app->instance(Clock::class, new FrozenClock(new DateTimeImmutable('2040-01-10T03:30:00+00:00')));
+        $this->app->instance(Clock::class, new FrozenClock(new DateTimeImmutable('2030-01-10T03:30:00+00:00')));
 
         DB::table('shift_schedules')->where('id', $fixture['scheduleId'])->update([
-            'starts_at' => '2040-01-10 04:00:00',
-            'ends_at' => '2040-01-10 05:00:00',
+            'starts_at' => '2030-01-10 04:00:00',
+            'ends_at' => '2030-01-10 05:00:00',
         ]);
         $this->getJson(route('lcd.queue', $fixture['siteLocalId']))->assertOk()->assertJsonPath('current', [])->assertJsonPath('recent_calls', []);
 
         DB::table('shift_schedules')->where('id', $fixture['scheduleId'])->update([
-            'starts_at' => '2040-01-10 03:00:00',
-            'ends_at' => '2040-01-10 04:00:00',
+            'starts_at' => '2030-01-10 03:00:00',
+            'ends_at' => '2030-01-10 04:00:00',
         ]);
         $this->getJson(route('lcd.queue', $fixture['siteLocalId']))->assertOk()->assertJsonPath('current', [])->assertJsonPath('recent_calls', []);
 
         DB::table('shift_schedules')->where('id', $fixture['scheduleId'])->update([
-            'starts_at' => '2040-01-10 02:00:00',
-            'ends_at' => '2040-01-10 03:00:00',
+            'starts_at' => '2030-01-10 02:00:00',
+            'ends_at' => '2030-01-10 03:00:00',
         ]);
         $this->getJson(route('lcd.queue', $fixture['siteLocalId']))->assertOk()->assertJsonPath('current', [])->assertJsonPath('recent_calls', []);
     }
@@ -134,7 +134,7 @@ final class Mvp04pPublicQueueDisplayTest extends TestCase
     public function test_ended_schedule_hides_existing_current_and_recent_rows(): void
     {
         $fixture = $this->operatorFixture(false);
-        DB::table('shift_schedules')->where('id', $fixture['scheduleId'])->update(['starts_at' => '2040-01-10 02:00:00', 'ends_at' => '2040-01-10 03:00:00']);
+        DB::table('shift_schedules')->where('id', $fixture['scheduleId'])->update(['starts_at' => '2030-01-10 02:00:00', 'ends_at' => '2030-01-10 03:00:00']);
         $this->getJson(route('lcd.queue', $fixture['siteLocalId']))
             ->assertOk()
             ->assertJsonPath('current', [])
@@ -148,7 +148,7 @@ final class Mvp04pPublicQueueDisplayTest extends TestCase
         $siteB = $this->operatorFixture(false);
         DB::table('members')->where('id', $siteB['memberId'])->update(['nik_lookup_digest' => hash('sha256', 'lcd-'.$siteB['memberId'])]);
         $otherSite = $this->operatorFixture(false);
-        DB::table('shift_schedules')->where('id', $siteB['scheduleId'])->update(['examination_site_id' => $siteA['siteReferenceId'], 'starts_at' => '2040-01-10 03:00:00', 'ends_at' => '2040-01-10 04:00:00']);
+        DB::table('shift_schedules')->where('id', $siteB['scheduleId'])->update(['examination_site_id' => $siteA['siteReferenceId'], 'starts_at' => '2030-01-10 03:00:00', 'ends_at' => '2030-01-10 04:00:00']);
         $this->insertLcdCalledRow($siteA, $siteA['siteLocalId'], $siteA['profileId'], 'LCD-A');
         $this->insertLcdCalledRow($siteB, $siteA['siteLocalId'], $siteA['profileId'], 'LCD-B');
         $this->insertLcdCalledRow($otherSite, $otherSite['siteLocalId'], $otherSite['profileId'], 'LCD-OTHER');
@@ -169,20 +169,20 @@ final class Mvp04pPublicQueueDisplayTest extends TestCase
         $scheduleA = $this->operatorFixture(false);
         DB::table('members')->where('id', $scheduleA['memberId'])->update(['nik_lookup_digest' => hash('sha256', 'lcd-'.$scheduleA['memberId'])]);
         $scheduleB = $this->operatorFixture(false);
-        DB::table('shift_schedules')->where('id', $scheduleA['scheduleId'])->update(['starts_at' => '2040-01-10 03:00:00', 'ends_at' => '2040-01-10 04:00:00']);
-        DB::table('shift_schedules')->where('id', $scheduleB['scheduleId'])->update(['starts_at' => '2040-01-10 05:00:00', 'ends_at' => '2040-01-10 06:00:00']);
+        DB::table('shift_schedules')->where('id', $scheduleA['scheduleId'])->update(['starts_at' => '2030-01-10 03:00:00', 'ends_at' => '2030-01-10 04:00:00']);
+        DB::table('shift_schedules')->where('id', $scheduleB['scheduleId'])->update(['starts_at' => '2030-01-10 05:00:00', 'ends_at' => '2030-01-10 06:00:00']);
         $this->insertLcdCalledRow($scheduleA, $scheduleA['siteLocalId'], $scheduleA['profileId'], 'LCD-A');
 
         $lcd = fn (string $at): array => (new PublicQueueDisplayController(new FrozenClock(new DateTimeImmutable($at))))->queue($scheduleA['siteLocalId'])->getData(true);
-        $this->assertSame(['LCD-A'], array_column($lcd('2040-01-10T03:30:00+00:00')['current'], 'ticket_number'));
-        $this->assertSame([], $lcd('2040-01-10T04:30:00+00:00')['current']);
-        $this->assertSame([], $lcd('2040-01-10T04:30:00+00:00')['recent_calls']);
+        $this->assertSame(['LCD-A'], array_column($lcd('2030-01-10T03:30:00+00:00')['current'], 'ticket_number'));
+        $this->assertSame([], $lcd('2030-01-10T04:30:00+00:00')['current']);
+        $this->assertSame([], $lcd('2030-01-10T04:30:00+00:00')['recent_calls']);
 
         DB::table('shift_schedules')->where('id', $scheduleB['scheduleId'])->update(['examination_site_id' => $scheduleA['siteReferenceId']]);
-        $this->assertSame([], $lcd('2040-01-10T05:30:00+00:00')['current']);
-        $this->assertSame([], $lcd('2040-01-10T05:30:00+00:00')['recent_calls']);
+        $this->assertSame([], $lcd('2030-01-10T05:30:00+00:00')['current']);
+        $this->assertSame([], $lcd('2030-01-10T05:30:00+00:00')['recent_calls']);
         $this->insertLcdCalledRow($scheduleB, $scheduleA['siteLocalId'], $scheduleA['profileId'], 'LCD-B');
-        $payload = $lcd('2040-01-10T05:30:00+00:00');
+        $payload = $lcd('2030-01-10T05:30:00+00:00');
         $this->assertSame(['LCD-B'], array_column($payload['current'], 'ticket_number'));
         $this->assertDatabaseHas('operator_queue_admissions', ['member_schedule_id' => $scheduleA['scheduleId']]);
         $this->assertDatabaseHas('operator_queue_admission_history', ['operator_queue_admission_id' => DB::table('operator_queue_admissions')->where('member_schedule_id', $scheduleA['scheduleId'])->value('id')]);

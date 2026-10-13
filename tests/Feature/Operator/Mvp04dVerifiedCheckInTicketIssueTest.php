@@ -56,6 +56,14 @@ final class Mvp04dVerifiedCheckInTicketIssueTest extends TestCase
     public function test_verified_consent_confirmed_booking_is_checked_in_and_gets_one_private_ticket(): void
     {
         $fixture = $this->readyFixture();
+        $this->assertDatabaseHas('examination_consents', [
+            'booking_id' => $fixture['bookingId'],
+            'signed_at' => '2030-01-10 00:00:00',
+        ]);
+        $this->assertDatabaseHas('member_master_consents', [
+            'member_id' => $fixture['memberId'],
+            'signed_at' => '2030-01-10 00:00:00',
+        ]);
         $operationId = (string) Str::uuid();
 
         $this->post(route('operator.check-in.store', $fixture['caseId']), [
@@ -157,12 +165,12 @@ final class Mvp04dVerifiedCheckInTicketIssueTest extends TestCase
 
         $this->post(route('operator.xray-readiness-worklist.claim', $xray->id), ['operation_id' => (string) Str::uuid()])->assertRedirect();
         $this->post(route('operator.xray-readiness-worklist.call', $xray->id), ['operation_id' => (string) Str::uuid()])->assertRedirect();
-        $this->app->instance(Clock::class, new FrozenClock(new DateTimeImmutable('2040-01-10T03:30:00+00:00')));
+        $this->app->instance(Clock::class, new FrozenClock(new DateTimeImmutable('2030-01-10T03:30:00+00:00')));
         $lcd = new PublicQueueDisplayController(app(Clock::class));
         $active = $lcd->queue($fixture['siteLocalId'])->getData(true);
         $this->assertSame('T-001', $active['current'][0]['ticket_number']);
         $this->assertSame(['ticket_number', 'destination'], array_keys($active['current'][0]));
-        $expired = (new PublicQueueDisplayController(new FrozenClock(new DateTimeImmutable('2040-01-10T04:00:00+00:00'))))->queue($fixture['siteLocalId'])->getData(true);
+        $expired = (new PublicQueueDisplayController(new FrozenClock(new DateTimeImmutable('2030-01-10T04:00:00+00:00'))))->queue($fixture['siteLocalId'])->getData(true);
         $this->assertSame([], $expired['current']);
         $this->assertSame([], $expired['recent_calls']);
         $this->assertDatabaseHas('operator_queue_admissions', ['id' => $xray->id]);
@@ -390,8 +398,8 @@ PHP;
         $this->insertPdo($pdo, 'insert into operator_sites (id, operator_site_id, organization_id, organization_name, code, display_name, address_line, timezone, active, source_version, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [$siteId, $stableSiteId, $stableOrganizationId, 'Synthetic Operator Organization', 'CONCURRENCY-SITE', 'Synthetic Operator Site', null, 'Asia/Jakarta', 1, '1', $now, $now]);
         $this->insertPdo($pdo, 'insert into service_offerings (id, code, name, includes_ai, includes_doctor, point_price, active, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?)', [$serviceId, $serviceCode, 'Synthetic Radiography', 1, 0, '2.5000', 1, $now, $now]);
         $this->insertPdo($pdo, 'insert into point_exchange_rates (id, rupiah_per_point, status, effective_at, configured_by_admin_id, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?)', [$rateId, 10000, 'active', $now, null, $now, $now]);
-        $this->insertPdo($pdo, 'insert into shift_schedules (id, display_reference, examination_site_id, service_offering_id, starts_at, ends_at, quota, status, eligible_at, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [$scheduleId, 'JAD-'.Str::upper(Str::random(8)), $siteReferenceId, $serviceId, '2040-01-10 03:00:00', '2040-01-10 04:00:00', 5, 'open', $now, $now, $now]);
-        $this->insertPdo($pdo, 'insert into operator_eligible_shifts (id, member_schedule_id, operator_site_id, schedule_starts_at, schedule_ends_at, confirmed_count_at_eligibility, quota, event_version, source_event_id, eligible_at, sync_status, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [$eligibleId, $scheduleId, $stableSiteId, '2040-01-10 03:00:00', '2040-01-10 04:00:00', 5, 5, 1, 'test:operator-concurrency:'.$scheduleId, $now, 'eligible', $now, $now]);
+        $this->insertPdo($pdo, 'insert into shift_schedules (id, display_reference, examination_site_id, service_offering_id, starts_at, ends_at, quota, status, eligible_at, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [$scheduleId, 'JAD-'.Str::upper(Str::random(8)), $siteReferenceId, $serviceId, '2030-01-10 03:00:00', '2030-01-10 04:00:00', 5, 'open', $now, $now, $now]);
+        $this->insertPdo($pdo, 'insert into operator_eligible_shifts (id, member_schedule_id, operator_site_id, schedule_starts_at, schedule_ends_at, confirmed_count_at_eligibility, quota, event_version, source_event_id, eligible_at, sync_status, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [$eligibleId, $scheduleId, $stableSiteId, '2030-01-10 03:00:00', '2030-01-10 04:00:00', 5, 5, 1, 'test:operator-concurrency:'.$scheduleId, $now, 'eligible', $now, $now]);
 
         foreach ($operatorIds as $index => $operatorId) {
             $profileId = $profileIds[$index];
@@ -660,7 +668,7 @@ PHP;
         ]);
         $this->insertIdentityAssets($fixture);
         $this->startOperatorSession($fixture);
-        $arrival = app(OperatorArrivalService::class)->confirm($fixture['bookingId'], '2040-01-10T10:15:00+07:00');
+        $arrival = app(OperatorArrivalService::class)->confirm($fixture['bookingId'], '2030-01-10T10:15:00+07:00');
         app(OperatorArrivalService::class)->recordConfirmed($arrival['confirmation_token']);
         $arrivalId = (string) DB::table('operator_arrivals')->where('booking_id', $fixture['bookingId'])->value('id');
         $case = app(OperatorIdentityVerificationService::class)->start($arrivalId, (string) Str::uuid());
@@ -673,7 +681,7 @@ PHP;
                 'form_version' => 'V1',
                 'signer_type' => 'member',
                 'signature_confirmed' => '1',
-                'signed_at' => '2040-01-10',
+                'signed_at' => '2030-01-10',
                 'operation_id' => (string) Str::uuid(),
                 'scan' => UploadedFile::fake()->createWithContent('signed-consent.pdf', "%PDF-1.7\nsynthetic signed paper\n%%EOF"),
             ])->assertRedirect();

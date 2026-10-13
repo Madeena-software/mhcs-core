@@ -196,7 +196,7 @@ final class Mvp04jPrivateVitalSignsCaptureTest extends TestCase
                     $fixture['bookingId'],
                     $fixture['scheduleId'],
                     $payload,
-                    '2040-01-10T03:20:00+00:00',
+                    '2030-01-10T03:20:00+00:00',
                 );
                 $this->fail('Invalid positive-input BMI data must be rejected by the Member contract.');
             } catch (Mvp03Exception) {

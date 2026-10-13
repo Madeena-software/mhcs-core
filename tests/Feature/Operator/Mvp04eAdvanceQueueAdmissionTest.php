@@ -301,7 +301,7 @@ final class Mvp04eAdvanceQueueAdmissionTest extends TestCase
         ]);
         $this->insertIdentityAssets($fixture);
         $this->startOperatorSession($fixture);
-        $arrival = app(OperatorArrivalService::class)->confirm($fixture['bookingId'], '2040-01-10T10:15:00+07:00');
+        $arrival = app(OperatorArrivalService::class)->confirm($fixture['bookingId'], '2030-01-10T10:15:00+07:00');
         app(OperatorArrivalService::class)->recordConfirmed($arrival['confirmation_token']);
         $arrivalId = (string) DB::table('operator_arrivals')->where('booking_id', $fixture['bookingId'])->value('id');
         $case = app(OperatorIdentityVerificationService::class)->start($arrivalId, (string) Str::uuid());
@@ -314,7 +314,7 @@ final class Mvp04eAdvanceQueueAdmissionTest extends TestCase
                 'form_version' => 'V1',
                 'signer_type' => 'member',
                 'signature_confirmed' => '1',
-                'signed_at' => '2040-01-10',
+                'signed_at' => '2030-01-10',
                 'operation_id' => (string) Str::uuid(),
                 'scan' => UploadedFile::fake()->createWithContent('signed-consent.pdf', "%PDF-1.7\nsynthetic signed paper\n%%EOF"),
             ])->assertRedirect();
@@ -366,6 +366,6 @@ final class Mvp04eAdvanceQueueAdmissionTest extends TestCase
 
     private function freezeIssueTime(): void
     {
-        $this->app->instance(Clock::class, new FrozenClock(new DateTimeImmutable('2040-01-10T03:10:00+00:00')));
+        $this->app->instance(Clock::class, new FrozenClock(new DateTimeImmutable('2030-01-10T03:10:00+00:00')));
     }
 }

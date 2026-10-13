@@ -219,7 +219,7 @@ final class Mvp04OperatorPortalTest extends TestCase
         $this->get('/operator')->assertOk()->assertSee('Belum ada lokasi aktif yang dipilih.');
         $this->post('/operator/site', ['site_id' => $fixture['siteLocalId']])->assertRedirect(route('operator.dashboard'));
 
-        $this->get('/operator/attendance/'.$fixture['scheduleId'].'?at=2040-01-10T10:15:00%2B07:00')
+        $this->get('/operator/attendance/'.$fixture['scheduleId'].'?at=2030-01-10T10:15:00%2B07:00')
             ->assertOk()
             ->assertSee('Synthetic Arrival Member')
             ->assertSee('MRN-'.substr($fixture['memberId'], 0, 8))
@@ -250,7 +250,7 @@ final class Mvp04OperatorPortalTest extends TestCase
         ]);
         $this->actingAs($fixture['operator'])->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
 
-        $this->get(route('operator.attendance', ['schedule' => $fixture['scheduleId'], 'at' => '2040-01-10T10:15:00+07:00']))
+        $this->get(route('operator.attendance', ['schedule' => $fixture['scheduleId'], 'at' => '2030-01-10T10:15:00+07:00']))
             ->assertOk()
             ->assertSee('Synthetic Arrival Member')
             ->assertSee('Identitas tidak ditampilkan')
@@ -263,7 +263,7 @@ final class Mvp04OperatorPortalTest extends TestCase
             permissions: ['operator.attendance.read'],
             siteId: LocalId::fromString($fixture['siteLocalId']),
             purpose: 'operator.attendance.read',
-        ), $fixture['siteStableId'], $fixture['scheduleId'], '2040-01-10T03:30:00+00:00');
+        ), $fixture['siteStableId'], $fixture['scheduleId'], '2030-01-10T03:30:00+00:00');
         $this->assertSame(null, $rows[0]['nik']);
         $this->assertSame(null, $rows[0]['masked_nik']);
         $this->assertSame('nonclinical_validation', $rows[0]['identity_status']);
@@ -315,7 +315,7 @@ final class Mvp04OperatorPortalTest extends TestCase
             ->assertOk()
             ->assertSee(route('operator.attendance', [
                 'schedule' => $fixture['scheduleId'],
-                'at' => '2040-01-10T03:00:00+00:00',
+                'at' => '2030-01-10T03:00:00+00:00',
             ]), false);
     }
 
@@ -361,7 +361,7 @@ final class Mvp04OperatorPortalTest extends TestCase
 
         $this->actingAs($fixture['operator']);
         $this->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
-        $response = $this->get('/operator/attendance/'.$fixture['scheduleId'].'?at=2040-01-10T10:15:00%2B07:00')
+        $response = $this->get('/operator/attendance/'.$fixture['scheduleId'].'?at=2030-01-10T10:15:00%2B07:00')
             ->assertOk()
             ->assertSee('Synthetic Arrival Member')
             ->assertSee('Sudah tiba')
@@ -378,17 +378,17 @@ final class Mvp04OperatorPortalTest extends TestCase
         DB::table('bookings')->where('id', $fixture['bookingId'])->update(['status' => 'checked_in']);
         $this->actingAs($fixture['operator'])->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
 
-        $this->get(route('operator.attendance', ['schedule' => $fixture['scheduleId'], 'at' => '2040-01-10T10:15:00+07:00']))
+        $this->get(route('operator.attendance', ['schedule' => $fixture['scheduleId'], 'at' => '2030-01-10T10:15:00+07:00']))
             ->assertSee('Buka antrean pemeriksaan dasar');
 
         $one = $this->insertAcceptedStudy($fixture, 'ONE');
-        $this->get(route('operator.attendance', ['schedule' => $fixture['scheduleId'], 'at' => '2040-01-10T10:15:00+07:00']))
+        $this->get(route('operator.attendance', ['schedule' => $fixture['scheduleId'], 'at' => '2030-01-10T10:15:00+07:00']))
             ->assertSee(route('operator.study.show', $one), false)
             ->assertSee('Buka studi DICOM')
             ->assertDontSee('Buka antrean pemeriksaan dasar');
 
         $this->insertAcceptedStudy($fixture, 'TWO');
-        $this->get(route('operator.attendance', ['schedule' => $fixture['scheduleId'], 'at' => '2040-01-10T10:15:00+07:00']))
+        $this->get(route('operator.attendance', ['schedule' => $fixture['scheduleId'], 'at' => '2030-01-10T10:15:00+07:00']))
             ->assertSee(route('operator.study.results'), false)
             ->assertDontSee(route('operator.study.show', $one), false)
             ->assertSee('Daftar kerja hasil DICOM')
@@ -430,14 +430,14 @@ final class Mvp04OperatorPortalTest extends TestCase
 
         $this->post('/operator/arrivals/confirm', [
             'booking_id' => $fixture['bookingId'],
-            'occurrence_at' => '2040-01-10T10:15:00',
+            'occurrence_at' => '2030-01-10T10:15:00',
         ])->assertSessionHasErrors('arrival');
         $this->assertDatabaseHas('bookings', ['id' => $fixture['bookingId'], 'status' => 'confirmed']);
         $this->assertDatabaseCount('operator_arrivals', 0);
 
         $this->post('/operator/arrivals/confirm', [
             'booking_id' => $fixture['bookingId'],
-            'occurrence_at' => '2040-01-10T10:15:00+07:00',
+            'occurrence_at' => '2030-01-10T10:15:00+07:00',
         ])->assertOk()->assertSee('Konfirmasi dan catat kedatangan');
 
         $token = (string) data_get(session('operator.arrival_confirmation'), 'token');
@@ -450,7 +450,7 @@ final class Mvp04OperatorPortalTest extends TestCase
             'schedule_id' => (string) Str::uuid(),
         ])->assertRedirect(route('operator.attendance', [
             'schedule' => $fixture['scheduleId'],
-            'at' => '2040-01-10T03:15:00+00:00',
+            'at' => '2030-01-10T03:15:00+00:00',
         ]));
 
         $this->assertDatabaseHas('bookings', ['id' => $fixture['bookingId'], 'status' => 'arrived']);
@@ -459,7 +459,7 @@ final class Mvp04OperatorPortalTest extends TestCase
 
         $this->post('/operator/arrivals', ['confirmation_token' => $token])->assertRedirect(route('operator.attendance', [
             'schedule' => $fixture['scheduleId'],
-            'at' => '2040-01-10T03:15:00+00:00',
+            'at' => '2030-01-10T03:15:00+00:00',
         ]));
         $this->assertDatabaseCount('operator_arrivals', 1);
     }
@@ -473,7 +473,7 @@ final class Mvp04OperatorPortalTest extends TestCase
 
         $this->post('/operator/arrivals/confirm', [
             'booking_id' => $fixture['bookingId'],
-            'occurrence_at' => '2040-01-10T10:15:00+07:00',
+            'occurrence_at' => '2030-01-10T10:15:00+07:00',
         ])->assertOk();
         $cancelledToken = (string) data_get(session('operator.arrival_confirmation'), 'token');
         $this->post('/operator/arrivals/cancel', ['confirmation_token' => $cancelledToken])->assertRedirect(route('operator.dashboard'));
@@ -482,7 +482,7 @@ final class Mvp04OperatorPortalTest extends TestCase
 
         $this->post('/operator/arrivals/confirm', [
             'booking_id' => $fixture['bookingId'],
-            'occurrence_at' => '2040-01-10T10:15:00+07:00',
+            'occurrence_at' => '2030-01-10T10:15:00+07:00',
         ])->assertOk();
         $expired = session('operator.arrival_confirmation');
         $this->assertIsArray($expired);
@@ -503,7 +503,7 @@ final class Mvp04OperatorPortalTest extends TestCase
         $this->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
         DB::table('operator_site_assignments')->where('operator_profile_id', $fixture['profileId'])->update(['active' => false, 'revoked_at' => now()]);
 
-        $this->get('/operator/attendance/'.$fixture['scheduleId'].'?at=2040-01-10T10:15:00%2B07:00')->assertRedirect(route('operator.dashboard'));
+        $this->get('/operator/attendance/'.$fixture['scheduleId'].'?at=2030-01-10T10:15:00%2B07:00')->assertRedirect(route('operator.dashboard'));
     }
 
     /** @param array<string, mixed> $fixture */

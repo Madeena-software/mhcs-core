@@ -257,8 +257,8 @@ final class Mvp04lAtomicXrayClaimTest extends TestCase
     public function test_xray_worklist_remains_fifo_and_contains_member_and_shift_context_without_clinical_data(): void
     {
         $fixture = $this->readyFixture();
-        $first = $this->insertAdmission($fixture, 'FIFO-XRAY-1', 'xray', null, '2040-01-10 03:01:00');
-        $second = $this->insertAdmission($fixture, 'FIFO-XRAY-2', 'xray', $this->copyBooking($fixture), '2040-01-10 03:02:00');
+        $first = $this->insertAdmission($fixture, 'FIFO-XRAY-1', 'xray', null, '2030-01-10 03:01:00');
+        $second = $this->insertAdmission($fixture, 'FIFO-XRAY-2', 'xray', $this->copyBooking($fixture), '2030-01-10 03:02:00');
 
         $response = $this->get(route('operator.xray-readiness-worklist'))
             ->assertOk()
