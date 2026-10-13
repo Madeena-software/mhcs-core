@@ -8,6 +8,7 @@ use App\Modules\Member\Application\Services\AdminBookingSummaryRead;
 use App\Modules\Member\Application\Services\AdminSessionBoardRead;
 use App\Modules\Member\Application\Services\MemberAuthorization;
 use App\Modules\Member\Domain\Enums\RegistrationSource;
+use App\Modules\Operator\Application\Contracts\AdminStudyIntakes;
 use App\Modules\Operator\Application\Services\AdminSessionArrivalRead;
 use App\Modules\Operator\Application\Services\OperatorAuthorization;
 use App\Shared\Authorization\AdminOperationalRead;
@@ -118,6 +119,6 @@ final class AdminFacilitySessionOperations extends Dashboard
             $arrivals = ['state' => 'denied', 'values' => null, 'observed_at' => null];
         }
 
-        return compact('facilities', 'board', 'bookings', 'arrivals') + ['scheduleManage' => $gate->allowed(fn () => app(MemberAuthorization::class)->scheduleManage()), 'siteManage' => $gate->allowed(fn () => app(OperatorAuthorization::class)->siteManage()) && $gate->allowed(fn () => app(OperatorAuthorization::class)->siteRead()), 'memberRead' => $gate->allowed(fn () => app(MemberAuthorization::class)->accountRead()), 'registration' => $gate->allowed(fn () => app(MemberAuthorization::class)->registration(RegistrationSource::Administrator, true))];
+        return compact('facilities', 'board', 'bookings', 'arrivals') + ['studyWorklist' => $gate->allowed(fn () => app(AdminStudyIntakes::class)->authorize()), 'scheduleManage' => $gate->allowed(fn () => app(MemberAuthorization::class)->scheduleManage()), 'siteManage' => $gate->allowed(fn () => app(OperatorAuthorization::class)->siteManage()) && $gate->allowed(fn () => app(OperatorAuthorization::class)->siteRead()), 'memberRead' => $gate->allowed(fn () => app(MemberAuthorization::class)->accountRead()), 'registration' => $gate->allowed(fn () => app(MemberAuthorization::class)->registration(RegistrationSource::Administrator, true))];
     }
 }

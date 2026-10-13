@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace App\Modules\ImageGateway;
 
+use App\Modules\ImageGateway\Application\Contracts\AdminStudyWorklist;
 use App\Modules\ImageGateway\Application\Contracts\AiPacsAdapterContract;
 use App\Modules\ImageGateway\Application\Contracts\AiPacsDerivedPdfGeneratorContract;
 use App\Modules\ImageGateway\Application\Contracts\AiPacsReportDownloaderContract;
 use App\Modules\ImageGateway\Application\Contracts\ImageGatewayAiServiceContract;
 use App\Modules\ImageGateway\Application\Contracts\OperatorStudyQuery;
+use App\Modules\ImageGateway\Application\Services\AdminStudyWorklistRead;
 use App\Modules\ImageGateway\Application\Services\ImageGatewayAiService;
 use App\Modules\ImageGateway\Application\Services\ImageGatewayCaptureService;
 use App\Modules\ImageGateway\Domain\Security\ManifestSigner;
@@ -24,6 +26,7 @@ final class ImageGatewayServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
+        $this->app->bind(AdminStudyWorklist::class, AdminStudyWorklistRead::class);
         $this->app->make(ModuleRegistry::class)->register('Image Gateway');
         $this->app->scoped(OperatorStudyQuery::class, ImageGatewayCaptureService::class);
         $this->app->scoped(ImageGatewayAiServiceContract::class, ImageGatewayAiService::class);

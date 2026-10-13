@@ -65,7 +65,7 @@ final class AdminOperationalRead
             $phase = 'source';
             $result = DB::transaction(function () use ($permission, $query, $action, $source, $section, &$target, &$metadata, &$phase) {
                 $values = $query();
-                if ($action === 'member.admin-session-board.read' && $section === 'schedules' && is_array($values) && isset($values['facility']['reference'], $values['metadata'])) {
+                if ((($action === 'member.admin-session-board.read' && $section === 'schedules') || ($action === 'member.admin-study-references.read' && $section === 'study_links')) && is_array($values) && isset($values['facility']['reference'], $values['metadata'])) {
                     $target = $values['facility']['reference'];
                     $metadata = $values['metadata'];
                 }
