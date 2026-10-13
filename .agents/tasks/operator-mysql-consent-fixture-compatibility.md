@@ -2,13 +2,13 @@
 title: Operator MySQL Consent Fixture Compatibility
 document_id: MHCS-TASK-OPERATOR-MYSQL-CONSENT-FIXTURE-COMPATIBILITY-001
 version: 1.0
-status: draft
+status: validated-published
 language: en-US
 last_updated: 2026-10-13
 scope:
   - synthetic Operator date fixture compatibility
   - focused MySQL and SQLite verification
-authority_note: Draft for independent Planner/Reviewer validation. Publication does not authorize implementation or clinical behavior changes.
+authority_note: Independently validated T5 contract. Bounded fixture execution and ordinary commit/push are authorized by the Product Owner publication/execution handoff; clinical behavior changes remain prohibited.
 ---
 
 # Executable Task
@@ -19,7 +19,7 @@ authority_note: Draft for independent Planner/Reviewer validation. Publication d
 
 **Task path:** `.agents/tasks/operator-mysql-consent-fixture-compatibility.md`
 
-**Task contract state:** `Draft`
+**Task contract state:** `Validated/Published`
 
 **Delivery objective / Work Package / MVP:** Bounded Operator synthetic-fixture compatibility maintenance; not broad MySQL validation remediation or Admin Board work.
 
@@ -37,7 +37,7 @@ The [Admin Board acceptance](../../docs/mvp/evidence/admin-facility-session-oper
 
 Remote `origin/main` was fetched and verified at this SHA on 2026-10-13. It integrates the accepted board slice; this task does not redefine its accepted application revision `1ec07b154d1c7db3cd4fe389f3219091ea8ca595`.
 
-**Task revision:** Exact full Git SHA containing this content, supplied by publication handoff. Independent validation must identify the subsequent exact immutable Validated/Published revision before execution. Baseline and task revision are distinct; do not silently change either.
+**Task revision:** Exact full immutable Git SHA containing this Validated/Published content, resolved and verified from the published remote commit before execution. Baseline and task revision are distinct; do not silently change either.
 
 ## Objective
 
@@ -75,11 +75,11 @@ Consent, check-in, ticket, queue, idempotency, authorization and fail-closed ass
 
 ## Dependencies and assumptions
 
-- Independent T5 validation and exact immutable Validated/Published revision are prerequisites to any fixture implementation; this Draft is publication-only.
+- Independent Planner/Reviewer validated the exact Draft at `46f181ab27ab36e705b7dec28c7da89bb0207924`; exact immutable Validated/Published remote revision verification remains a prerequisite to fixture implementation.
 - Available installed test runtime, supported PHP/MySQL drivers, disposable MySQL 8.4 and isolated SQLite fixtures are required; no dependency installation is authorized.
 - Published timestamp rejection is an evidence-backed starting hypothesis. Do not assume every unsuccessful test shares that root cause or that 2030 fixes the nonclinical state discrepancy.
 - Inspect all consumers before changing a shared fixture. Reconcile intervening baseline changes with Planner/Reviewer; preserve unrelated work.
-- Remaining approvals: independent task validation before bounded implementation, independent V7/A9 afterward, and separate authorization for implementation Git publication or any expanded scope. No release authority is granted.
+- Remaining approvals: independent V7/A9 after bounded implementation and separate authorization for any expanded scope. The Product Owner publication/execution handoff authorizes bounded ordinary commit/push on this task branch. No release authority is granted.
 
 ## Required capabilities
 
@@ -119,16 +119,16 @@ Stop correction and return to Planner/Reviewer if the baseline or governing revi
 
 ## Side-effect authorization
 
-**Current publication handoff:** Create one dedicated task branch from the verified baseline; author only this Draft document; run focused documentation checks; stage/commit only this path and ordinary-push the branch for independent review. No force push, merge or separate planning PR; keep eventual implementation on the same coherent delivery line where safely reconciled by Planner/Reviewer.
+**Current publication handoff:** On the existing dedicated task branch, publish the independently validated Draft as Validated/Published with only necessary lifecycle wording reconciliation; run focused documentation checks; stage/commit only this path and ordinary-push the branch. Fetch and verify the exact immutable published task revision before implementation. No force push, merge or new PR.
 
-**Future execution, only after independent validation:** Bounded synthetic test/fixture edits and local isolated verification, including owned disposable containers/databases and cleanup of owned temporary resources. Implementation commit/push/PR creation requires an explicit subsequent handoff; this publication authorization does not carry over to application work. No production, real-data, deployment, release, dependency installation, secret disclosure or unrelated mutation.
+**Execution, only after verified publication:** Bounded synthetic test/fixture edits and local isolated verification, including owned disposable containers/databases and cleanup of owned temporary resources. The Product Owner publication/execution handoff explicitly authorizes ordinary implementation commit/push to this same task branch for independent review; do not create another PR. No production, real-data, deployment, release, dependency installation, secret disclosure or unrelated mutation.
 
 ## Expected terminal outcome
 
-Publication now: **TASK REVIEW REQUIRED** with exact branch, commit, task path, single-file diff and observed documentation checks. No implementation launcher or acceptance claim.
+Publication failure or material contract change: **TASK REVIEW REQUIRED** without implementation. Successful immutable publication verification permits the bounded execution below; no acceptance claim.
 
-Future execution: **REVIEW REQUIRED** with reviewable fixture changes and truthful evidence, or **PLANNING REQUIRED** on a stop condition. Residual genuine defects are escalated separately; the Executor does not self-accept implementation.
+Execution: **REVIEW REQUIRED** with reviewable fixture changes and truthful evidence, or **PLANNING REQUIRED** on a stop condition. Residual genuine defects are escalated separately; the Executor does not self-accept implementation.
 
 ## Review and remediation handling
 
-Independent Planner/Reviewer validates this Draft and publishes an exact governing revision before implementation. Review subsequent work against that revision and the pinned baseline. Bounded fixture-contract remediation uses this stable path and a new immutable governing revision when materially changed; distinct behavior defects require separate planning. Acceptance and release remain separate. Execution evidence belongs in the handoff/review record, not as self-certification in this planning contract.
+Independent Planner/Reviewer has validated the exact Draft; publish and verify its immutable Validated/Published revision before implementation. Review subsequent work against that revision and the pinned baseline. Bounded fixture-contract remediation uses this stable path and a new immutable governing revision when materially changed; distinct behavior defects require separate planning. Acceptance and release remain separate. Execution evidence belongs in the handoff/review record, not as self-certification in this planning contract.
