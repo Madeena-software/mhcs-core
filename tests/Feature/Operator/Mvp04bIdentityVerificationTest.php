@@ -53,7 +53,7 @@ final class Mvp04bIdentityVerificationTest extends TestCase
 
         $this->post(route('operator.identity-verification.lookup', $case['case_id']), [
             'nik' => '900000000001',
-            'at' => '2040-01-10T10:15:00+07:00',
+            'at' => '2030-01-10T10:15:00+07:00',
         ])->assertRedirect(route('operator.paper-consent.show', $case['case_id']));
 
         $this->assertDatabaseHas('operator_identity_verifications', [
@@ -113,7 +113,7 @@ final class Mvp04bIdentityVerificationTest extends TestCase
         $this->startSession();
         $this->actingAs($fixture['operator']);
         $this->withSession(['operator.active_site_id' => $fixture['siteLocalId']]);
-        $arrival = app(OperatorArrivalService::class)->confirm($fixture['bookingId'], '2040-01-10T10:15:00+07:00');
+        $arrival = app(OperatorArrivalService::class)->confirm($fixture['bookingId'], '2030-01-10T10:15:00+07:00');
         app(OperatorArrivalService::class)->recordConfirmed($arrival['confirmation_token']);
         $arrivalId = (string) DB::table('operator_arrivals')->where('booking_id', $fixture['bookingId'])->value('id');
 
@@ -677,7 +677,7 @@ final class Mvp04bIdentityVerificationTest extends TestCase
     /** @param array<string, mixed> $fixture */
     private function arriveAndStart(array $fixture): array
     {
-        $arrival = app(OperatorArrivalService::class)->confirm($fixture['bookingId'], '2040-01-10T10:15:00+07:00');
+        $arrival = app(OperatorArrivalService::class)->confirm($fixture['bookingId'], '2030-01-10T10:15:00+07:00');
         app(OperatorArrivalService::class)->recordConfirmed($arrival['confirmation_token']);
         $arrivalId = (string) DB::table('operator_arrivals')->where('booking_id', $fixture['bookingId'])->value('id');
 

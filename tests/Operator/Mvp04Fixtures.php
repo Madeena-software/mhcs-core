@@ -29,8 +29,8 @@ trait Mvp04Fixtures
         $bookingId = (string) Str::uuid();
         $profileId = (string) Str::uuid();
         $eligibleId = (string) Str::uuid();
-        $siteStart = '2040-01-10 03:00:00';
-        $siteEnd = '2040-01-10 04:00:00';
+        $siteStart = '2030-01-10 03:00:00';
+        $siteEnd = '2030-01-10 04:00:00';
         $protected = app(ProtectedIdentifierService::class)->protect($nik);
 
         DB::table('members')->insert([

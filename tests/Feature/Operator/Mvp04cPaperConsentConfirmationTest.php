@@ -106,7 +106,7 @@ final class Mvp04cPaperConsentConfirmationTest extends TestCase
         $this->post(route('operator.paper-consent.store', $fixture['caseId']), $payload)->assertRedirect();
         $this->post(route('operator.paper-consent.store', $fixture['caseId']), [
             ...$payload,
-            'signed_at' => '2040-01-11',
+            'signed_at' => '2030-01-11',
         ])->assertRedirect();
         $this->post(route('operator.paper-consent.store', $fixture['caseId']), $this->payload((string) Str::uuid()))
             ->assertRedirect();
@@ -123,7 +123,7 @@ final class Mvp04cPaperConsentConfirmationTest extends TestCase
             ['form_version' => 'V2'],
             ['signer_type' => 'representative'],
             ['signature_confirmed' => '0'],
-            ['signed_at' => '2040-01-10T09:59:00+07:00'],
+            ['signed_at' => '2030-01-10T09:59:00+07:00'],
             ['scan' => UploadedFile::fake()->createWithContent('signed.pdf', 'plain text')],
             ['scan' => UploadedFile::fake()->create('signed.pdf', 102401, 'application/pdf')],
         ];
@@ -170,7 +170,7 @@ final class Mvp04cPaperConsentConfirmationTest extends TestCase
         $this->makeMemberDigestUnique($fixture);
         $this->grantIdentityPermission($fixture);
         $this->startOperatorSession($fixture);
-        $arrival = app(OperatorArrivalService::class)->confirm($fixture['bookingId'], '2040-01-10T10:15:00+07:00');
+        $arrival = app(OperatorArrivalService::class)->confirm($fixture['bookingId'], '2030-01-10T10:15:00+07:00');
         app(OperatorArrivalService::class)->recordConfirmed($arrival['confirmation_token']);
         $arrivalId = (string) DB::table('operator_arrivals')->where('booking_id', $fixture['bookingId'])->value('id');
         $case = app(OperatorIdentityVerificationService::class)->start($arrivalId, (string) Str::uuid());
@@ -237,7 +237,7 @@ final class Mvp04cPaperConsentConfirmationTest extends TestCase
         $this->grantIdentityPermission($fixture);
         $this->insertIdentityAssets($fixture);
         $this->startOperatorSession($fixture);
-        $arrival = app(OperatorArrivalService::class)->confirm($fixture['bookingId'], '2040-01-10T10:15:00+07:00');
+        $arrival = app(OperatorArrivalService::class)->confirm($fixture['bookingId'], '2030-01-10T10:15:00+07:00');
         app(OperatorArrivalService::class)->recordConfirmed($arrival['confirmation_token']);
         $arrivalId = (string) DB::table('operator_arrivals')->where('booking_id', $fixture['bookingId'])->value('id');
         $case = app(OperatorIdentityVerificationService::class)->start($arrivalId, (string) Str::uuid());
@@ -317,7 +317,7 @@ final class Mvp04cPaperConsentConfirmationTest extends TestCase
             'form_version' => 'V1',
             'signer_type' => 'member',
             'signature_confirmed' => '1',
-            'signed_at' => '2040-01-10',
+            'signed_at' => '2030-01-10',
             'operation_id' => $operationId,
             'scan' => UploadedFile::fake()->createWithContent('signed-consent.pdf', "%PDF-1.7\nsynthetic signed paper\n%%EOF"),
         ];

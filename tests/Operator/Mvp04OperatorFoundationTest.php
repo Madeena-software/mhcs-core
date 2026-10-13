@@ -88,7 +88,7 @@ final class Mvp04OperatorFoundationTest extends TestCase
         app(OperatorActiveSiteService::class)->select($fixture['siteLocalId']);
         $service = app(OperatorArrivalService::class);
 
-        $confirmation = $service->confirm($fixture['bookingId'], '2040-01-10T10:15:00+07:00');
+        $confirmation = $service->confirm($fixture['bookingId'], '2030-01-10T10:15:00+07:00');
         $first = $service->recordConfirmed($confirmation['confirmation_token']);
         $replay = $service->recordConfirmed($confirmation['confirmation_token']);
 
@@ -96,7 +96,7 @@ final class Mvp04OperatorFoundationTest extends TestCase
         $this->assertDatabaseHas('bookings', ['id' => $fixture['bookingId'], 'status' => 'arrived']);
         $this->assertDatabaseCount('operator_arrivals', 1);
         $arrival = DB::table('operator_arrivals')->where('booking_id', $fixture['bookingId'])->first();
-        $this->assertSame('2040-01-10 03:15:00', $arrival->occurrence_at);
+        $this->assertSame('2030-01-10 03:15:00', $arrival->occurrence_at);
         $this->assertNotSame($arrival->occurrence_at, $arrival->recorded_at);
 
         $this->assertSame($first['arrival_id'], $replay['arrival_id']);
@@ -141,7 +141,7 @@ final class Mvp04OperatorFoundationTest extends TestCase
         $this->actingAs($fixture['operator']);
         $sites = app(OperatorActiveSiteService::class);
         $sites->select($fixture['siteLocalId']);
-        $arrival = app(OperatorArrivalService::class)->confirm($fixture['bookingId'], '2040-01-10T10:15:00+07:00');
+        $arrival = app(OperatorArrivalService::class)->confirm($fixture['bookingId'], '2030-01-10T10:15:00+07:00');
         app(OperatorArrivalService::class)->recordConfirmed($arrival['confirmation_token']);
 
         $secondSiteId = $this->addSecondSite($fixture);
@@ -159,7 +159,7 @@ final class Mvp04OperatorFoundationTest extends TestCase
         $this->actingAs($fixture['operator']);
         $sites = app(OperatorActiveSiteService::class);
         $sites->select($fixture['siteLocalId']);
-        $confirmation = app(OperatorArrivalService::class)->confirm($fixture['bookingId'], '2040-01-10T10:15:00+07:00');
+        $confirmation = app(OperatorArrivalService::class)->confirm($fixture['bookingId'], '2030-01-10T10:15:00+07:00');
         $secondSiteId = $this->addSecondSite($fixture);
 
         try {
@@ -189,7 +189,7 @@ final class Mvp04OperatorFoundationTest extends TestCase
 
         foreach (['cancelled', 'expired', 'malformed'] as $case) {
             $sites->select($fixture['siteLocalId']);
-            $confirmation = $service->confirm($fixture['bookingId'], '2040-01-10T10:15:00+07:00');
+            $confirmation = $service->confirm($fixture['bookingId'], '2030-01-10T10:15:00+07:00');
 
             if ($case === 'cancelled') {
                 $service->cancelConfirmation($confirmation['confirmation_token']);
@@ -219,18 +219,18 @@ final class Mvp04OperatorFoundationTest extends TestCase
         $context = $this->operatorContext($fixture);
         $attendance = app(OperatorAttendanceContract::class);
 
-        $this->assertCount(1, $attendance->query($context, $fixture['siteStableId'], $fixture['scheduleId'], '2040-01-10T10:15:00+07:00'));
+        $this->assertCount(1, $attendance->query($context, $fixture['siteStableId'], $fixture['scheduleId'], '2030-01-10T10:15:00+07:00'));
         $auditCount = DB::table('audit_events')->count();
 
         try {
-            $attendance->query($context, 'operator-site-other', $fixture['scheduleId'], '2040-01-10T10:15:00+07:00');
+            $attendance->query($context, 'operator-site-other', $fixture['scheduleId'], '2030-01-10T10:15:00+07:00');
             $this->fail('Mismatched stable site was accepted by attendance.');
         } catch (Mvp03Exception) {
             $this->assertSame($auditCount, DB::table('audit_events')->count());
         }
 
         try {
-            $attendance->resolveBookingForArrival($context, 'operator-site-other', $fixture['bookingId'], '2040-01-10T10:15:00+07:00');
+            $attendance->resolveBookingForArrival($context, 'operator-site-other', $fixture['bookingId'], '2030-01-10T10:15:00+07:00');
             $this->fail('Mismatched stable site was accepted by arrival resolution.');
         } catch (Mvp03Exception) {
             $this->assertDatabaseHas('bookings', ['id' => $fixture['bookingId'], 'status' => 'confirmed']);
@@ -243,7 +243,7 @@ final class Mvp04OperatorFoundationTest extends TestCase
         $context = $this->operatorContext($fixture);
         $attendance = app(OperatorAttendanceContract::class);
 
-        $this->assertCount(1, $attendance->query($context, $fixture['siteStableId'], $fixture['scheduleId'], '2040-01-09T10:15:00+07:00'));
+        $this->assertCount(1, $attendance->query($context, $fixture['siteStableId'], $fixture['scheduleId'], '2030-01-09T10:15:00+07:00'));
     }
 
     public function test_member_transition_rejects_mismatched_site_without_side_effects(): void
@@ -259,8 +259,8 @@ final class Mvp04OperatorFoundationTest extends TestCase
                 $context,
                 'operator-site-other',
                 $fixture['bookingId'],
-                '2040-01-10T10:15:00+07:00',
-                '2040-01-10T03:15:00+00:00',
+                '2030-01-10T10:15:00+07:00',
+                '2030-01-10T03:15:00+00:00',
                 'mismatch-operation',
             );
             $this->fail('Mismatched stable site was accepted by Member transition.');
@@ -278,7 +278,7 @@ final class Mvp04OperatorFoundationTest extends TestCase
         DB::table('operator_site_assignments')->where('operator_profile_id', $fixture['profileId'])->update(['active' => false]);
 
         try {
-            app(OperatorAttendanceContract::class)->query($this->operatorContext($fixture), $fixture['siteStableId'], $fixture['scheduleId'], '2040-01-10T10:15:00+07:00');
+            app(OperatorAttendanceContract::class)->query($this->operatorContext($fixture), $fixture['siteStableId'], $fixture['scheduleId'], '2030-01-10T10:15:00+07:00');
             $this->fail('An inactive Operator assignment granted site authority.');
         } catch (Mvp03Exception $exception) {
             $this->assertSame('A trusted Operator attendance context is required.', $exception->getMessage());
@@ -311,7 +311,7 @@ final class Mvp04OperatorFoundationTest extends TestCase
         $outboxCount = DB::table('outbox_messages')->count();
 
         try {
-            app(OperatorArrivalService::class)->confirm($fixture['bookingId'], '2040-01-10T10:15:00+07:00');
+            app(OperatorArrivalService::class)->confirm($fixture['bookingId'], '2030-01-10T10:15:00+07:00');
             $this->fail("{$case} booking unexpectedly arrived.");
         } catch (\Throwable) {
             $this->assertDatabaseHas('bookings', ['id' => $fixture['bookingId'], 'status' => 'confirmed']);
