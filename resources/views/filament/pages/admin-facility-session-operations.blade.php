@@ -23,6 +23,7 @@
  <h2>{{ $session['reference'] }} · {{ $session['service_label'] }}</h2>
  <p>{{ $session['start'] }} — {{ $session['end'] }} · {{ $session['status']==='open'?'Terbuka':'Ditutup' }} · Kuota: {{ $session['quota'] }}</p>
  @if($scheduleManage)<a href="{{ \App\Modules\Member\Filament\Resources\ShiftSchedules\ShiftScheduleResource::getUrl('edit',['record'=>$id]) }}">Edit Jadwal {{ $session['reference'] }}</a>@endif
+ @if($studyWorklist)<a href="{{ \App\Providers\Filament\Pages\AdminCentralizedStudyWorklist::getUrl(parameters: ['facility'=>$facility, 'date'=>$date, 'session'=>$id]) }}">{{ __('Centralized Study Worklist') }} {{ $session['reference'] }}</a>@endif
  <h3>Booking dan Kapasitas</h3>
  @if($bookings['state']==='available')
  <p>Total Booking: {{ $bookings['values'][$id]['total'] }} · Kapasitas Tercadangkan: {{ $bookings['values'][$id]['reserved'] }} · Sisa Kapasitas: {{ max(0, $bookings['values'][$id]['remaining']) }}</p>

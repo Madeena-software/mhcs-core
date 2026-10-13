@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Modules\Member;
 
+use App\Modules\Member\Application\Contracts\AdminStudyReferences;
 use App\Modules\Member\Application\Contracts\ArrivalReferenceIntegrity;
 use App\Modules\Member\Application\Contracts\NonclinicalValidationIdentityContract;
 use App\Modules\Member\Application\Contracts\OperatorAttendanceContract;
@@ -14,6 +15,7 @@ use App\Modules\Member\Application\Contracts\OperatorServiceOfferingQuery;
 use App\Modules\Member\Application\Contracts\OperatorSiteReferenceSynchronizer;
 use App\Modules\Member\Application\Contracts\OperatorVitalSignsContract;
 use App\Modules\Member\Application\Services\AdminArrivalReferenceIntegrity;
+use App\Modules\Member\Application\Services\AdminStudyReferenceRead;
 use App\Modules\Member\Application\Services\MemberContextResolver;
 use App\Modules\Member\Application\Services\MemberCredentialIdentifierResolver;
 use App\Modules\Member\Application\Services\Mvp04AttendanceService;
@@ -36,6 +38,7 @@ final class MemberServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
+        $this->app->bind(AdminStudyReferences::class, AdminStudyReferenceRead::class);
         $this->app->bind(ArrivalReferenceIntegrity::class, AdminArrivalReferenceIntegrity::class);
         $this->app->make(ModuleRegistry::class)->register('Member');
         $this->app->scoped(OperatorAttendanceContract::class, Mvp04AttendanceService::class);

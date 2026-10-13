@@ -9,7 +9,9 @@ use App\Modules\Member\Application\Contracts\ShiftScheduleClosureHandler;
 use App\Modules\Member\Application\Contracts\TrustedOperatorIdentityVerificationContextResolver;
 use App\Modules\Member\Application\Contracts\TrustedOperatorSiteContextResolver;
 use App\Modules\Operator\Application\Contracts\AdminSessionArrivals;
+use App\Modules\Operator\Application\Contracts\AdminStudyIntakes;
 use App\Modules\Operator\Application\Services\AdminSessionArrivalRead;
+use App\Modules\Operator\Application\Services\AdminStudyIntakeRead;
 use App\Modules\Operator\Application\Services\InteractiveOperatorAccessService;
 use App\Modules\Operator\Application\Services\RadiographySessionLocatorService;
 use App\Modules\Operator\Infrastructure\OperatorActiveSiteResolver;
@@ -23,6 +25,7 @@ final class OperatorServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
+        $this->app->bind(AdminStudyIntakes::class, AdminStudyIntakeRead::class);
         $this->app->bind(AdminSessionArrivals::class, AdminSessionArrivalRead::class);
         $this->app->make(ModuleRegistry::class)->register('Operator');
         $this->app->scoped(ActiveSiteResolver::class, OperatorActiveSiteResolver::class);

@@ -17,6 +17,7 @@ use App\Modules\Operator\Filament\Resources\OperatorShiftAssignments\OperatorShi
 use App\Modules\Operator\Filament\Resources\OperatorSiteAssignments\OperatorSiteAssignmentResource;
 use App\Modules\Operator\Filament\Resources\OperatorSites\OperatorSiteResource;
 use App\Modules\Operator\Filament\Resources\OperatorXrayProtocolMappings\OperatorXrayProtocolMappingResource;
+use App\Providers\Filament\Pages\AdminCentralizedStudyWorklist;
 use App\Providers\Filament\Pages\AdminFacilitySessionOperations;
 use App\Providers\Filament\Pages\AdminLogin;
 use Filament\Http\Middleware\Authenticate as FilamentAuthenticate;
@@ -41,7 +42,7 @@ final class AdminPanelProvider extends PanelProvider
             ->path('admin')
             ->brandName('MHCS Administration')
             ->login(AdminLogin::class)
-            ->pages([AdminFacilitySessionOperations::class])
+            ->pages([AdminFacilitySessionOperations::class, AdminCentralizedStudyWorklist::class])
             ->resources([
                 MemberResource::class,
                 ServiceOfferingResource::class,
