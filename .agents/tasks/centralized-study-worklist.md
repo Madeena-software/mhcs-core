@@ -2,13 +2,13 @@
 title: Centralized Study Worklist — Operational Monitoring
 document_id: MHCS-TASK-CENTRALIZED-STUDY-WORKLIST-001
 version: 1.0
-status: draft
+status: Validated/Published
 language: en-US
 last_updated: 2026-10-13
 scope:
   - managed-facility session radiography intake monitoring
   - minimized domain-owned operational reads
-authority_note: Draft reconnaissance contract; no implementation authority. Independent T5 validation and the scoped disclosure decisions below are required before execution.
+authority_note: Independently reviewed contract finalized under explicit Product Owner SW-D1/D2 approval for synthetic development. Execution requires verified immutable publication; independent V7/A9 acceptance and release approval remain separate.
 ---
 
 # Executable Task
@@ -19,7 +19,7 @@ authority_note: Draft reconnaissance contract; no implementation authority. Inde
 
 **Task path:** `.agents/tasks/centralized-study-worklist.md`
 
-**Task contract state:** `Draft — TASK REVIEW REQUIRED`
+**Task contract state:** `Validated/Published`
 
 **Delivery objective / Work Package / MVP:** First functional study-monitoring slice under MVP-GAP-027; Member/Operator intake association and Image Gateway processing visibility. No broader Work Package completion.
 
@@ -27,13 +27,15 @@ authority_note: Draft reconnaissance contract; no implementation authority. Inde
 
 ## Delivery context and baseline
 
-The direct human handoff “MHCS — Plan Centralized Study Worklist” authorizes reconnaissance and one task-only branch, ordinary commit and push for independent review. It excludes application implementation in this run and requires independent T5 before implementation.
+The original human handoff “MHCS — Plan Centralized Study Worklist” authorized Draft reconnaissance and publication. The subsequent Product Owner continuation “MHCS — Finalize T5 and Implement Centralized Study Worklist” supplies SW-D1/D2 approval after independent Draft review and authorizes task finalization, immutable publication, bounded implementation and synthetic verification, and ordinary commit/push to the existing task branch only. No PR or merge is authorized.
 
 **Implementation baseline:** `c63577f2f677998ebbcc88ff0f407db028ffb539`.
 
 Observed local immutable commit and remote `main` agree on 2026-10-13. This integrates PR #10's Admin board and PR #11's Operator MySQL fixture correction. The [board acceptance record](../../docs/mvp/evidence/admin-facility-session-operations-acceptance.md) remains the bounded development acceptance of application revision `1ec07b154d1c7db3cd4fe389f3219091ea8ca595`; this task neither reaccepts that slice nor certifies the fixture correction. Repository context/roadmap still contain older pending-board wording: use immutable source and the acceptance record for current reality, without rewriting historical documents here. No dependent board implementation is awaiting this task.
 
-**Task revision:** Exact full Git commit containing this Draft, supplied in the review handoff. On validation, resolve the exact published task-content revision separately from the implementation baseline; never execute from a branch name alone.
+**Reviewed Draft revision:** `66d1d23da0a9b9302693d1c1dbd34060afd50c1b`. The human continuation reports independent Planner/Reviewer technical sufficiency with SW-D1/D2 as the remaining material approval blockers. Conditional T5 verdict: content validated after approved SW-D1/D2 disposition; immutable publication required before implementation.
+
+**Governing task revision:** Resolve the exact full Git commit containing this Validated/Published content by ordinary push, fetch and remote-content verification before execution, separately from the implementation baseline. Never execute from a branch name alone. No Executor self-review substitutes for independent V7/A9 acceptance.
 
 ## Objective
 
@@ -42,7 +44,7 @@ Provide an authenticated, read-only Admin worklist for existing radiography inta
 ## Authoritative inputs and traceability
 
 - [Repository contract](../AGENTS.md), [delivery protocol](../software-workflow.md), [task convention](_template.md); [project context](../context/project.md) is supporting orientation.
-- Direct handoff above → objective, read-only/exclusion boundaries, Draft publication and independent validation prerequisite.
+- Original handoff and Product Owner continuation above → reviewed objective, read-only/exclusion boundaries, SW-D1/D2 decisions, conditional T5 finalization and bounded publication/execution authorization.
 - [Active scope](../../docs/mvp/beta-scope.md#admin-first-operational-scope) and [roadmap](../../docs/mvp/roadmap.md#admin-first-planning-sequence) → centralized intake/processing target over existing owners.
 - [MVP-DEC-044–046, 048–049, 053](../../docs/mvp/decision-log.md) → Admin priority, distinct AI/clinical/publication concepts, managed facilities and local session-start date, existing board read safeguards. DEC-053 approves the specified board aggregates/internal integrity checks; it does **not** approve examination-level disclosure or extend Operator content permissions.
 - [MVP-GAP-027/028/029/031/035/036](../../docs/mvp/beta-gap-register.md) → broader transition, staff credentials, content/finalization/privacy, audit operationalization and AI safety/provenance remain open. AC1–AC8 address only this operational slice.
@@ -104,14 +106,14 @@ Preserve Member registration/booking/capacity/consent/history, board/X1 acceptan
 
 ## Authorization, disclosure decisions and dependencies
 
-**Proposed minimum gate (unapproved extension):** fresh eligible Admin with `member.admin.access`, `member.schedule.read`, `member.booking.read` and `operator.audit.read`, verified through existing owning authorization mechanisms, for all intake/status rows. Schedule directory retains its existing schedule-read boundary; lacking any row capability returns denied without executing protected intake/Gateway queries. All required gates apply to every owner read, initial HTTP load, Livewire action/render, filter, page and refresh, and immediately before public serialization. Panel access alone, manage-only capabilities, role name, selected facility or knowledge of a reference is insufficient. No new permissions/assignments are created.
+**Approved minimum gate (SW-D1):** fresh eligible internal Admin with `member.admin.access`, `member.schedule.read`, `member.booking.read` and `operator.audit.read`, verified through existing owning authorization mechanisms, for all intake/status rows in verified MHCS-managed facilities, including authorized historical sessions at inactive facilities. Schedule directory retains its existing schedule-read boundary; lacking any row capability returns denied without executing protected intake/Gateway queries. All required gates apply to every owner read, initial HTTP load, Livewire action/render, filter, page and refresh, and immediately before public serialization. Panel access alone, manage-only capabilities, role name, selected facility or knowledge of a reference is insufficient. No new permissions/assignments are created.
 
-Requiring booking-read for row linkage is deliberate minimization relative to reusing identity-rich Operator paths, but it does not itself supply authority. Before T5, obtain an attributable internal Product/technical/security/privacy disposition on:
+**Decision provenance and authority:** SW-D1 and SW-D2 are explicit Product Owner decisions supplied in the human continuation on 2026-10-13 after independent Draft review. The Product Owner affirms internal product, technical and security/privacy-policy decision authority for this synthetic-development scope. No separate human reviewers, signatures or external approvals are asserted.
 
-1. **SW-D1 — Disclosure and existing-capability use:** approve or reject the exact gate above for minimized per-intake references, capture/DICOM existence and AI-job states across trusted managed facilities, including inactive historical facilities. Confirm the single-session admission boundary and all-or-none row gate. If approved, implement those exact gates; if rejected or a new grant is required, return to planning rather than provisioning it. Board aggregate approval is insufficient.
-2. **SW-D2 — Integrity and read-audit boundary:** approve the owner-contract tuple validation, public field whitelist, unavailable/denied withholding, and minimized attributable facility/session/date/purpose/outcome audit committed before disclosure. Confirm synthetic-development separation from still-unresolved operational audit retention/access and real-data/release policy. Ticket/study references can still reveal participation and must be assessed explicitly; no invented anonymization or small-count exception.
+1. **SW-D1 — Approved disclosure and existing-capability use:** permit the exact four-capability gate above for minimized per-intake operational references and technical processing states in the single-session admission boundary, with all-or-none row authorization. The existing public whitelist remains restricted to session/ticket references, optional study display reference, receipt/processing/DICOM-record/AI-job states and approved facility/session context. No names, NIK, MRN, patient identifiers, internal UUIDs, DICOM contents, private object references, findings, reports or clinical conclusions. This approval is specific to SW-D1/D2 and does not automatically extend previous Admin Board aggregate permissions.
+2. **SW-D2 — Approved integrity and read-audit boundary:** Member, Operator and Image Gateway validate their respective owned relationships through narrow owner contracts. Minimized attributable operational read audit must commit before successful protected disclosure, with fresh authorization and audit-only database effects. Authorization, source, integrity or audit failures withhold affected data without inventing successful empty results. Ticket/study references can reveal participation; their minimized disclosure is explicitly permitted only within this approved synthetic-development boundary.
 
-These are the material unresolved decisions for this operational slice; independent T5 is not a substitute for designated-authority approval. Clinical finalization, clinical content access, recipient rules, temporary credentials and result publication remain independently deferred under GAP-028/029. GAP-035/036 do not block a status-only synthetic slice if SW-D1/D2 and T5 confirm isolation: no report generator/report table read/PDF access or claim of AI correctness/facility provenance. Retention, hospital/legal/privacy and real-data/G10 approval remain separate before any operational use with real records.
+Clinical finalization, clinical content access, recipient rules, temporary credentials and result publication remain independently deferred under GAP-028/029. GAP-035/036 remain open: this status-only synthetic slice reads no report generator/report table/PDF and claims no AI correctness/facility provenance. Operational audit retention/access policy, external privacy/legal obligations, hospital/clinical approval, real-patient processing and G10/release authorization remain unresolved production dependencies. These approvals do not authorize operational use with real records.
 
 **Required capabilities after validation:** scoped repository writes, installed PHP/Filament/Livewire runtime, synthetic test fixtures, owned disposable SQLite and MySQL 8.4, available Pest/Chromium browser tooling. No external imaging provider, storage account, clinical system, production database or credentials are required. Consult current official framework documentation if implementation materially depends on uncertain/version-sensitive API behavior; do not change dependencies to bypass runtime limits.
 
@@ -142,12 +144,12 @@ Historical board evidence reports Filament/Commonmark installed-versus-locked dr
 
 ## Stop conditions
 
-Stop and return to Planner/Reviewer if SW-D1/D2 or independent exact-revision T5 is missing; baseline changes require reconciliation; trusted mapping/association cannot be validated through owner contracts; required gates require a new grant or impersonation; disclosure requires identity/clinical/PDF fields; status semantics require new transitions; existing schema cannot support the bounded read; verification requires production/external credentials or unauthorized installation; security/privacy/clinical ambiguity or material failure cannot be resolved within this scope. Never silently expand to all bookings, external studies, object access or a Patient migration to satisfy acceptance.
+Stop and return to Planner/Reviewer if approved SW-D1/D2 disposition or verified immutable T5 publication is missing; publication requiring material scope or policy changes beyond the supplied decisions requires independent review; baseline changes require reconciliation; trusted mapping/association cannot be validated through owner contracts; required gates require a new grant or impersonation; disclosure requires identity/clinical/PDF fields; status semantics require new transitions; existing schema cannot support the bounded read; verification requires production/external credentials or unauthorized installation; security/privacy/clinical ambiguity or material failure cannot be resolved within this scope. Never silently expand to all bookings, external studies, object access or a Patient migration to satisfy acceptance.
 
 ## Side-effect authorization and terminal outcome
 
-**This run:** only this Draft task on `task/centralized-study-worklist-planning`, ordinary commit and push for independent review, as explicitly authorized by the human handoff. No separate planning PR, duplicate documentation, application edits, grant provisioning, merge, deployment or production/external clinical operation.
+**This run:** the Product Owner continuation explicitly authorizes ordinary commit/push of the finalized task and bounded source/test implementation plus concise verification evidence to `task/centralized-study-worklist-planning` only, using installed tooling and isolated synthetic SQLite/MySQL/browser environments. Implementation begins only after ordinary push, fetch and exact immutable governing task verification. No force push, PR, merge, deployment, production operation, dependency installation, grant provisioning or unrelated changes.
 
-**Future execution:** this Draft grants no implementation or publication permissions. After designated SW-D1/D2 disposition and independent T5, publish a validated exact revision and record explicit bounded source/test/synthetic-environment and any commit/push/PR permissions before execution. G10/real-data approval remains separate.
+**Remaining approval boundaries:** independent V7/A9 review and acceptance are required after implementation. Operational audit retention/access, external legal/privacy, clinical, real-data and G10/release approval remain separate. No Radiographer or Radiologist workspace implementation in this run.
 
-**Expected terminal outcome now:** `TASK REVIEW REQUIRED`, exact Draft path/commit/branch; wait for independent T5. No Executor launcher. Future implementation ends `Review Required` with exact governing task/baseline/implementation revisions, changed files, observed commands/results and gaps, or `Planning Required` at a stop condition. Executor cannot self-declare acceptance. Bounded review corrections update this same stable task path and republish; materially different authority/objective returns to planning.
+**Expected terminal outcome:** `REVIEW REQUIRED` with exact governing task/baseline/implementation and fetched remote revisions, complete changed-file inventory, AC1–AC8 observed commands/results including unsuccessful checks and limitations, returned for independent Planner/Reviewer V7/A9 evaluation; or `Planning Required` at a stop condition. Executor cannot self-declare acceptance. Bounded review corrections update this same stable task path and republish; materially different authority/objective returns to planning.
