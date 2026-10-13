@@ -4,7 +4,7 @@ document_id: AGENT-CONTEXT-MHCS-CORE-001
 version: 1.1
 status: supporting-context
 language: en-US
-last_updated: 2026-10-12
+last_updated: 2026-10-13
 scope:
   - repository orientation and authority/evidence routing
   - Admin-first operational MVP planning
@@ -24,11 +24,11 @@ This is the application repository's context entrypoint. The maintained business
 ## Repository identity
 
 - Repository: `Madeena-software/mhcs-core`; modular application with Member, Operator, Doctor, and Image Gateway ownership.
-- Application baseline: `b1a2204a2571920a6c696575a6480aad5a1294fd`.
-- Documentation execution: `task/admin-first-doc-rebaseline`, governed by [the validated task](../tasks/admin-first-documentation-rebaseline.md) at `5e47b8d61db27741c2048b7c5131b5a7f0f4ef49`.
+- Verified integrated main and proposed board implementation baseline: `fc37002d106b839c0b881e7dec7021c91389f501` (PR #7 merge), observed 2026-10-13. Older `b1a2204a2571920a6c696575a6480aad5a1294fd` remains the earlier source-observation baseline.
+- Historical documentation execution: `task/admin-first-doc-rebaseline`, governed by [the validated task](../tasks/admin-first-documentation-rebaseline.md) at `5e47b8d61db27741c2048b7c5131b5a7f0f4ef49`. Current planning: `task/admin-facility-session-board-planning`, T5 publication finalization of Draft PR #9 from `e05882df6dd66cea72ee735702b8cacad144e918`; [functional board task](../tasks/admin-facility-session-operations.md) is Validated/Published; explicit execution authority activates only after exact immutable publication verification.
 - Maintained business working reference: [Stakeholder Discussion Draft v0.2](https://docs.google.com/document/d/1zxmPjB-gevtVuaoTEmAtLjpDWlJf7USnkeigVbPJw0E/edit). No exact source revision or verified immutable snapshot is available; BP-*, D-*, BR-*, and EX-* content is not approved by this reference.
 - Historical business-source provenance: `Madeena-software/mhcs-business-docs @ 645058e431f59c4450a136e72f140e6819b79f32`. This is no longer maintained active authority and is not asserted equivalent to the Google Doc.
-- Admin-first documentation implementation `7132e7001b704789f6d122bcfad6a5b4e040bc0b` was independently accepted and merged through PR #5 as `8bb0c21e87e6f9e2c32a01ccab83aed37f1e91b7`; this is not application acceptance. The current documentation cleanup is Review Required pending independent review.
+- Admin-first documentation implementation `7132e7001b704789f6d122bcfad6a5b4e040bc0b` was independently accepted and merged through PR #5 as `8bb0c21e87e6f9e2c32a01ccab83aed37f1e91b7`; this is not application acceptance. The lean-docs cleanup is merged through PR #6 at `fb25354311121fc8163256cd0530d9cbcb66bb68`, with independent acceptance recorded in that PR; current planning overlay requires its own independent review.
 
 ## Accepted Admin registration development slice
 
@@ -41,8 +41,7 @@ Admin-assisted adult Member registration is
 [V7/A9 acceptance evidence](../../docs/mvp/evidence/admin-first-manual-member-registration-acceptance.md)
 records the externally supplied independent verdict, AC1–AC8 scope, verification
 limits and unresolved gaps. This supersedes the older application-baseline
-orientation only for that bounded slice. PR #7 integration and release approval
-remain separate; no broader gap or Work Package completion is claimed.
+orientation only for that bounded slice. PR #7 is now integrated at `fc37002d106b839c0b881e7dec7021c91389f501`, with application code unchanged from the accepted revision. Release approval remains separate; no broader gap or Work Package completion is claimed.
 
 ## Purpose
 
@@ -57,6 +56,10 @@ Broader healthcare orchestration remains strategic scope. The active operational
 ## Current Context State
 
 The human approved the bounded documentation rebaseline after independent review of `74755cb2c0b40c061b4734c1c1fb5b267a7eb805`. [MVP-DEC-044](../../docs/mvp/decision-log.md#admin-first-priority-decision) records the priority and its limited supersession. Earlier beta acceptance, exceptions, and evidence remain historical, with no account removal, migration, clinical access expansion, or production operation implied.
+
+The direct Product Owner handoff on 2026-10-13 approves [MVP-DEC-045–047](../../docs/mvp/decision-log.md#admin-first-product-and-first-functional-slice--2026-10-13): canonical Patient through a later controlled migration, contextual Peserta Skrining/Pasien labels, internal SIM + Teleradiology and external Teleradiology-only modes, individual radiologist authentication/worklists, separate processing/screening/finalization/publication states, Admin AI escalation, secure examination-scoped links and eventual legacy Operator retirement. The first functional priority is the facility-session board over persisted schedules and independently authorized summaries. These decisions are target direction, not technical/clinical/privacy or implementation approval.
+
+PR #8 is preserved open Draft at `bc9d25724319de068d354c39fa3fbd4b9d0140c2`; navigation-only candidate recommended for supersession. D1–D3 remain product-approved and MVP-DEC-051 preserves the complete separate Patient target. [MVP-DEC-053](../../docs/mvp/decision-log.md#final-internal-d4-approval--2026-10-13) records attributable Product Owner approval of D4-A–I with explicitly confirmed internal product/technical/security/privacy-policy authority. Domain-owned reads, internal arrival-association validation, fresh exact authorization, trusted managed-facility scope, exact internal operational counts including one, minimized attributable audit/failure withholding and narrow X1 A are internally approved. Separate Reviewer /root/t5_reviewer confirms contract sufficiency; the new human T5 handoff authorizes bounded source/test, isolated synthetic verification and one Draft stacked implementation PR after exact validated publication is verified. Audit retention/access operationalization has no verified applicable policy and remains a production/real-data/release dependency; separate Reviewer confirmed synthetic-development separation. This is not external legal, hospital/clinical, real-data or deployment approval, independent acceptance or completed implementation tests. See [approved-policy assessment](../tasks/admin-facility-session-operations.md#d4-technical-assessment-and-approved-internal-policy), [AC matrix](../tasks/admin-facility-session-operations.md#t5-readiness-matrix) and [exact-revision review package](../tasks/admin-facility-session-operations.md#independent-exact-revision-t5-review-package). T5 CONTRACT VALIDATED; EXACT PUBLICATION VERIFICATION REQUIRED BEFORE EXECUTION; no launcher or application work.
 
 ## Intended authority map
 
@@ -107,7 +110,7 @@ Existing schema and identity boundaries remain unchanged. No account transition,
 
 ### Tests and verification
 
-Use the relevant unchanged [historical evidence](../../docs/mvp/work-package-status.md) and the exact task/review revision for any acceptance claim. No application tests were rerun for this documentation rebaseline.
+Use the relevant unchanged [historical evidence](../../docs/mvp/work-package-status.md) and the exact task/review revision for any acceptance claim. Earlier documentation execution did not rerun application tests. This planning cycle ran the three Admin access/booking/Operator administration suites at the unchanged integrated baseline: 27 tests passed, 246 assertions, using synthetic SQLite testing fixtures. This is local regression evidence, not board implementation or CI.
 
 ### Version control and CI
 
@@ -145,7 +148,9 @@ No local business-source package is maintained here. Use the linked Google Doc a
 
 ### Blocking
 
-[MVP-GAP-027–034](../../docs/mvp/beta-gap-register.md#admin-first-gaps-and-authority-reconciliation) cover Admin assembly/portal transition, temporary clinical workspaces, access and finalization, consent/bypass, privacy/storage, import, documentation review, and application acceptance evidence. These remain open for their affected implementation or review stage. In particular, the business Site Staff access map and the scoped Operator AI-report directive require explicit reconciliation; AI output is not a doctor-finalized report.
+[MVP-GAP-027–034](../../docs/mvp/beta-gap-register.md#admin-first-gaps-and-authority-reconciliation) cover Admin assembly/portal transition, temporary clinical workspaces, access and finalization, consent/bypass, privacy/storage, import, documentation review, and application acceptance evidence. Their broader scopes remain open at affected stages; MVP-GAP-033 now distinguishes prior bounded documentation review resolved through PR #5/#6 from this new overlay review. In particular, the business Site Staff access map and the scoped Operator AI-report directive require explicit reconciliation; AI output is not a doctor-finalized report.
+
+Source-verified [MVP-GAP-035/036](../../docs/mvp/beta-gap-register.md#ai-report-safety-and-provenance-follow-up) track invented normal-result fallbacks and fallback facility branding for separate Image Gateway/clinical/provenance planning. They do not permit a clinical fix in the board or establish any real-patient incident.
 
 ### Non-blocking
 
@@ -157,4 +162,4 @@ Preserve least privilege, server-derived actor/site/shift/case authorization, MR
 
 ## Context verification
 
-Updated 2026-10-12 against the application baseline and governing documentation task above. Former business source provenance is `Madeena-software/mhcs-business-docs @ 645058e431f59c4450a136e72f140e6819b79f32`; removed local copies are retrievable from the repository documentation baseline indexed in [history](../../docs/history-index.md). The Google Doc remains Draft v0.2; no exact revision or verified immutable snapshot was available. Earlier context snapshot `25a4af4590cd423b1cc91708c3b2f16200c06d6d` is historical. Verification is limited to affected documentation, references, and cited source observations; no application, clinical, legal, production, or release readiness is established.
+Updated 2026-10-13 against verified integrated main, PR #6/#7 merge metadata, immutable registration evidence, PR #8 candidate and scoped current source. Former business source provenance is `Madeena-software/mhcs-business-docs @ 645058e431f59c4450a136e72f140e6819b79f32`; removed local copies are retrievable from the repository documentation baseline indexed in [history](../../docs/history-index.md). The Google Doc remains Draft v0.2; no exact revision or verified immutable snapshot was available. Earlier context snapshot `25a4af4590cd423b1cc91708c3b2f16200c06d6d` is historical. Verification is limited to affected documentation, references, and cited source observations; no application, clinical, legal, production, or release readiness is established.
