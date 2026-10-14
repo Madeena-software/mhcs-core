@@ -1,4 +1,103 @@
-# Radiographer workspace — checkpoint 0 execution stop
+# Radiographer workspace — checkpoint 0 execution evidence
+
+## Current resume result — GD authorized, checkpoint 0 verified
+
+The Product Owner's “MHCS — Unblock Build and Finish Radiographer Workspace”
+launcher authorizes GD and demonstrably necessary locked PHP extension repairs
+in both existing PHP stages, unchanged dependency versions/lockfiles, isolated
+verification and ordinary commit/push on the existing branch. This authorization
+resolves the historical GD stop documented below. The governing task is unchanged.
+
+Implemented GD with Debian `libpng-dev`, `libjpeg62-turbo-dev`,
+`libfreetype6-dev`, `docker-php-ext-configure gd --with-freetype --with-jpeg`
+and `docker-php-ext-install ... gd` in both stages. No other missing extension
+repair was necessary. Composer platform validation remains enabled.
+
+The complete command `docker build --target app -t
+mhcs-radiographer-checkpoint0:local .` **passed**. Final image ID:
+`sha256:c4729ec2d773448d102008f3f10e81f95a3144190f75462222557e5a092628a5`.
+The image retains its www-data user, PHP-FPM entrypoint and health check.
+
+The first target-image probe correctly failed closed: Node 24 rejects the
+workstation Node 22's V8 `--no-expose-wasm` option. The adapter now uses
+Node 24's supported `--jitless` invocation while retaining all memory, CPU,
+time, output, permission and seccomp limits. The production-target image was
+rebuilt and verification repeated. Parser tests require the packaged Node 24;
+the workstation Node 22 produces a startup warning with this invocation and
+is not claimed compatible. No warning was waived to make verification pass.
+
+Added PHP `SensitiveParameter` attributes to bytes and owner-identity inputs:
+the first synthetic failure exposed argument values in PHP's default stack
+trace formatting. A test explicitly disables PHP's global argument-hiding
+setting and verifies that both inputs remain redacted. No real data was used.
+
+Exact isolated probe preparation/execution (the helper contains only synthetic
+Part-10 generators and checks, and no application environment bootstrap):
+
+```sh
+docker create --name mhcs-rad0-probe-gd-fixed-20261014 --network none --entrypoint php mhcs-radiographer-checkpoint0:local /tmp/check-dicom-runtime.php
+docker cp tests/Deployment/check-dicom-runtime.php mhcs-rad0-probe-gd-fixed-20261014:/tmp/check-dicom-runtime.php
+docker cp tests/Support/SyntheticDicom.php mhcs-rad0-probe-gd-fixed-20261014:/tmp/SyntheticDicom.php
+docker start -a mhcs-rad0-probe-gd-fixed-20261014
+```
+
+**Passed, container exit 0, user www-data (UID 33), network none:**
+
+- all **19** extension requirements from locked production packages;
+- PHP **8.4.26**, Node **24.21.0**, locked parser package **1.8.21**;
+- actual explicit/implicit synthetic Part-10 parsing and immutable hash;
+- conflicting file-meta, unsupported syntax, truncation and duplicate rejection;
+- kernel socket denial, CPU termination, allocation and filesystem-read denial.
+
+A second disposable container used the same final application image with the
+already installed development vendor tree and test files copied in solely to
+run PHPUnit; this is **not** a change to the production image's dependencies.
+It ran as www-data with network none. Its command was:
+
+```sh
+php /var/www/html/vendor/bin/phpunit tests/ImageGateway/BoundedDicomVerifierTest.php tests/Deployment/ProductionDockerBuildResilienceTest.php tests/Architecture tests/Security
+```
+
+**Passed: 63 tests, 2,237 assertions, exit 0.** An initial test-file path error
+was corrected by copying `tests/.` into the existing directory; the complete
+command was rerun successfully. `vendor/bin/pint --dirty` and `git diff --check`
+passed. Composer/npm declarations, both lockfiles and the immutable governing
+task match the prior revision byte-for-byte. No CI or production runner was used.
+
+### Remaining bounded integrity decision
+
+**Planning Required: owner-authoritative clinical-finalization source.**
+Checkpoint 0 is verified; the complete workspace is not implemented or accepted.
+The next delivery work requires a safe owner contract for the task's clinical
+guard. Governing task lines 153/157/183 require serialized applicable finalization
+checks, controlled reopen only when no clinically finalized report exists, and
+explicit withholding/stop when Doctor status is unknown. AI state cannot replace
+this guard, and the task forbids fabricating a Doctor context/workflow.
+
+Read-only inspection of `app/Modules/Doctor/` finds only its provider and boundary
+READMEs. `DoctorServiceProvider` registers the module name; it binds no status
+query. `Application/Contracts/README.md` reserves contracts for later work, and
+the Domain/Infrastructure READMEs state no business persistence is implemented.
+The inspected migrations contain AI reports but no Doctor finalization records.
+Graph coverage was checked for these bounded paths/scopes, and material claims
+were verified from source. This does not claim that external clinical reports
+do not exist. No production systems or patient records were inspected.
+
+Required input: identify the trusted owner-authoritative status source/contract,
+or approve a minimal Doctor-owned guard registry populated only through trusted
+verified input, defaulting to unknown and serialized with reopen/finalization.
+The registry option is a new bounded architecture decision, not permission to
+implement clinical reporting or fabricate professional accounts. It was not
+introduced without that decision. A clarification was requested while the
+independent build/parser verification continued; no reply was available in this
+execution attempt. No W/B decision or task publication was reopened.
+
+Checkpoint 1–4 workspace application features, RAD-URL acceptance, browser,
+MySQL concurrency and full Operator/Grabber/MPIPS/AI regressions remain
+unimplemented/unverified. No production deployment, data change, real-patient
+access, production credentials/workflows, PR, main merge or G10 action occurred.
+
+## Historical first attempt — before GD authorization
 
 Date: 2026-10-14. Terminal state: **Planning Required**. Checkpoint 0 has
 **not passed**; this is a bounded execution attempt, not vertical-slice acceptance.

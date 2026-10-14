@@ -7,9 +7,10 @@
 FROM php:8.4-cli AS composer-deps
 
 RUN apt-get update -qq \
-    && apt-get install -yqq --no-install-recommends unzip git libzip-dev libicu-dev libonig-dev ca-certificates \
+    && apt-get install -yqq --no-install-recommends unzip git libzip-dev libicu-dev libonig-dev ca-certificates libpng-dev libjpeg62-turbo-dev libfreetype6-dev \
     && rm -rf /var/lib/apt/lists/* \
-    && docker-php-ext-install intl mbstring zip
+    && docker-php-ext-configure gd --with-freetype --with-jpeg \
+    && docker-php-ext-install intl mbstring zip gd
 
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 WORKDIR /app
@@ -38,9 +39,10 @@ FROM node:24.21.0-trixie-slim AS dicom-runtime
 FROM php:8.4-fpm-trixie AS app
 
 RUN apt-get update -qq \
-    && apt-get install -yqq --no-install-recommends libzip-dev libicu-dev libonig-dev \
+    && apt-get install -yqq --no-install-recommends libzip-dev libicu-dev libonig-dev libpng-dev libjpeg62-turbo-dev libfreetype6-dev \
     && rm -rf /var/lib/apt/lists/* \
-    && docker-php-ext-install bcmath intl mbstring opcache pcntl pdo pdo_mysql zip
+    && docker-php-ext-configure gd --with-freetype --with-jpeg \
+    && docker-php-ext-install bcmath intl mbstring opcache pcntl pdo pdo_mysql zip gd
 
 WORKDIR /var/www/html
 COPY --chown=www-data:www-data . .

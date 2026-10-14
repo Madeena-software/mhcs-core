@@ -97,6 +97,23 @@ final class BoundedDicomVerifierTest extends TestCase
         }
     }
 
+    public function test_exception_traces_redact_bytes_and_owner_identity(): void
+    {
+        $previous = ini_set('zend.exception_ignore_args', '0');
+        try {
+            (new BoundedDicomVerifier)->verify('SYNTHETIC-BYTE-SENTINEL', str_repeat('0', 64), 23, ['patientId' => 'SYNTHETIC-IDENTITY-SENTINEL']);
+            $this->fail('Invalid input was accepted.');
+        } catch (ImageGatewayException $exception) {
+            $frame = array_values(array_filter($exception->getTrace(), fn ($frame) => ($frame['class'] ?? '') === BoundedDicomVerifier::class && ($frame['function'] ?? '') === 'verify'))[0];
+            $this->assertInstanceOf(\SensitiveParameterValue::class, $frame['args'][0]);
+            $this->assertInstanceOf(\SensitiveParameterValue::class, $frame['args'][3]);
+            $this->assertStringNotContainsString('SYNTHETIC-BYTE-SENTINEL', (string) $exception);
+            $this->assertStringNotContainsString('SYNTHETIC-IDENTITY-SENTINEL', (string) $exception);
+        } finally {
+            ini_set('zend.exception_ignore_args', $previous);
+        }
+    }
+
     public function test_kernel_network_denial_and_cpu_memory_limits(): void
     {
         $filter = (new ReflectionMethod(BoundedDicomVerifier::class, 'networkFilter'))->invoke(new BoundedDicomVerifier);
@@ -111,14 +128,14 @@ final class BoundedDicomVerifierTest extends TestCase
         } finally {
             fclose($filter);
         }
-        $cpu = new Process(['prlimit', '--cpu=1', '--core=0', '--', 'node', '--no-expose-wasm', '--jitless', '-e', 'while(true){}'], timeout: 3);
+        $cpu = new Process(['prlimit', '--cpu=1', '--core=0', '--', 'node', '--jitless', '-e', 'while(true){}'], timeout: 3);
         try {
             $cpu->run();
         } catch (ProcessSignaledException $exception) {
             $this->assertContains($exception->getSignal(), [9, 24]);
         }
         $this->assertFalse($cpu->isSuccessful());
-        $memory = new Process(['prlimit', '--as=1073741824', '--core=0', '--', 'node', '--no-expose-wasm', '--jitless', '--max-old-space-size=64', '-e', 'Buffer.alloc(2*1024*1024*1024)']);
+        $memory = new Process(['prlimit', '--as=1073741824', '--core=0', '--', 'node', '--jitless', '--max-old-space-size=64', '-e', 'Buffer.alloc(2*1024*1024*1024)']);
         $memory->run();
         $this->assertFalse($memory->isSuccessful());
     }

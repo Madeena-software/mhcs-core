@@ -13,7 +13,7 @@ final class BoundedDicomVerifier
     public const MAX_BYTES = 64 * 1024 * 1024;
 
     /** Owner-resolved identity/manifest values only; this adapter never grants disclosure. */
-    public function verify(string $bytes, string $sha256, int $byteSize, array $expected): array
+    public function verify(#[\SensitiveParameter] string $bytes, string $sha256, int $byteSize, #[\SensitiveParameter] array $expected): array
     {
         if ($byteSize < 133 || $byteSize > self::MAX_BYTES || strlen($bytes) !== $byteSize
             || ! hash_equals($sha256, hash('sha256', $bytes))
@@ -30,7 +30,7 @@ final class BoundedDicomVerifier
         $process = new Process([
             '/usr/bin/prlimit', '--as=1073741824', '--cpu=5', '--core=0', '--fsize=0', '--nofile=32', '--',
             '/usr/bin/setpriv', '--no-new-privs', '--seccomp-filter', $filterPath, '--',
-            'node', '--no-expose-wasm', '--jitless', '--max-old-space-size=64', '--permission',
+            'node', '--jitless', '--max-old-space-size=64', '--permission',
             '--allow-fs-read='.$script, '--allow-fs-read='.base_path('node_modules/dicom-parser'), $script,
         ], __DIR__, $environment, $bytes, 5);
         $process->disableOutput();
