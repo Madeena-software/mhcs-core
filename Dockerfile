@@ -32,7 +32,10 @@ RUN --mount=type=cache,target=/root/.npm \
     npm ci --no-audit --no-fund --prefer-offline \
     && npm run build
 
-FROM php:8.4-fpm AS app
+# Both server runtimes use Debian trixie; Alpine's musl binary is incompatible.
+FROM node:24.21.0-trixie-slim AS dicom-runtime
+
+FROM php:8.4-fpm-trixie AS app
 
 RUN apt-get update -qq \
     && apt-get install -yqq --no-install-recommends libzip-dev libicu-dev libonig-dev \
@@ -43,6 +46,12 @@ WORKDIR /var/www/html
 COPY --chown=www-data:www-data . .
 COPY --from=composer-deps --chown=www-data:www-data /app/vendor ./vendor
 COPY --from=node-builder --chown=www-data:www-data /app/public/build ./public/build
+COPY --from=dicom-runtime /usr/local/bin/node /usr/local/bin/node
+COPY --from=node-builder /app/node_modules/dicom-parser/package.json ./node_modules/dicom-parser/package.json
+COPY --from=node-builder /app/node_modules/dicom-parser/dist/dicomParser.min.js ./node_modules/dicom-parser/dist/dicomParser.min.js
+COPY --from=node-builder /app/node_modules/dicom-parser/LICENSE ./node_modules/dicom-parser/LICENSE
+RUN node --version \
+    && node -e 'if (require("dicom-parser/package.json").version !== "1.8.21") process.exit(1)'
 COPY docker/php.ini "$PHP_INI_DIR/conf.d/99-mhcs.ini"
 
 RUN mkdir -p storage/app/private storage/framework/cache/data storage/framework/sessions \

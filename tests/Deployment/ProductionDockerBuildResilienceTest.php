@@ -8,6 +8,20 @@ use Tests\TestCase;
 
 final class ProductionDockerBuildResilienceTest extends TestCase
 {
+    public function test_server_parser_packages_only_the_locked_parser_with_compatible_node_runtime(): void
+    {
+        $dockerfile = file_get_contents(base_path('Dockerfile'));
+        $this->assertStringContainsString('FROM node:24.21.0-trixie-slim AS dicom-runtime', $dockerfile);
+        $this->assertStringContainsString('FROM php:8.4-fpm-trixie AS app', $dockerfile);
+        $this->assertStringContainsString('COPY --from=dicom-runtime /usr/local/bin/node /usr/local/bin/node', $dockerfile);
+        $this->assertStringContainsString('/app/node_modules/dicom-parser/dist/dicomParser.min.js', $dockerfile);
+        $this->assertStringNotContainsString('/app/node_modules ./node_modules', $dockerfile);
+        $this->assertStringContainsString('USER www-data', $dockerfile);
+        $this->assertStringContainsString('ENTRYPOINT ["/usr/local/bin/mhcs-entrypoint"]', $dockerfile);
+        $lock = json_decode(file_get_contents(base_path('package-lock.json')), true, flags: JSON_THROW_ON_ERROR);
+        $this->assertSame('1.8.21', $lock['packages']['node_modules/dicom-parser']['version']);
+    }
+
     public function test_production_node_build_uses_bounded_npm_fetch_resilience(): void
     {
         $dockerfilePath = base_path('Dockerfile');
