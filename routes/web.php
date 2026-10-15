@@ -8,6 +8,7 @@ use App\Http\Controllers\Operator\ImageGatewayController;
 use App\Http\Controllers\Operator\OperatorAiReportController;
 use App\Http\Controllers\Operator\PortalController as OperatorPortalController;
 use App\Http\Controllers\PublicQueueDisplayController;
+use App\Http\Controllers\Radiographer\WorkspaceController;
 use App\Http\Middleware\EnsureMemberPortalAccess;
 use App\Http\Middleware\EnsureOperatorPortalAccess;
 use Illuminate\Support\Facades\Route;
@@ -113,3 +114,12 @@ Route::middleware(['auth', EnsureOperatorPortalAccess::class])->group(function (
 Route::post('/logout', [AuthenticationController::class, 'logout'])
     ->middleware('auth')
     ->name('logout');
+
+Route::middleware('throttle:60,1')->group(function (): void {
+    Route::get('/radiographer/entry/{workspace}', [WorkspaceController::class, 'entry'])->name('radiographer.entry');
+    Route::get('/radiographer/workspaces/{workspace}', [WorkspaceController::class, 'show'])->name('radiographer.workspace');
+    Route::get('/radiographer/workspaces/{workspace}/dicom', [WorkspaceController::class, 'dicom'])->name('radiographer.dicom');
+    Route::post('/radiographer/workspaces/{workspace}/save', [WorkspaceController::class, 'save'])->name('radiographer.save');
+    Route::post('/radiographer/workspaces/{workspace}/handoff', [WorkspaceController::class, 'handoff'])->name('radiographer.handoff');
+    Route::match(['get', 'post'], '/admin/radiographer-workspaces/{reference}', [WorkspaceController::class, 'manage'])->name('radiographer.manage');
+});

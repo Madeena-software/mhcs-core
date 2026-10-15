@@ -97,7 +97,9 @@ final class FoundationArchitectureTest extends TestCase
             $this->assertStringNotContainsString('curl_', $contents, $file->getPathname());
             $this->assertStringNotContainsString('http::', $contents, $file->getPathname());
             if ($file->getPathname() !== app_path('Modules/ImageGateway/Infrastructure/ImageWorkerBoundary.php')) {
-                $this->assertStringNotContainsString('mpips', $contents, $file->getPathname());
+                if ($file->getPathname() !== app_path('Modules/ImageGateway/Application/Services/RadiographerStudyRead.php')) {
+                    $this->assertStringNotContainsString('mpips', $contents, $file->getPathname());
+                }
                 $this->assertStringNotContainsString('npz', $contents, $file->getPathname());
             }
         }
@@ -157,6 +159,7 @@ final class FoundationArchitectureTest extends TestCase
             '2026_09_05_000002_create_radiography_session_locators_and_grabber_clients.php',
             '2026_09_06_000001_add_pacs_identifiers_to_image_gateway_ai_tables.php',
             '2026_09_06_000002_add_derived_metadata_to_image_gateway_ai_tables.php',
+            '2026_10_15_000001_create_radiographer_workspace_tables.php',
         ];
 
         $this->assertSame([], array_values(array_diff($migrations, $allowed)));

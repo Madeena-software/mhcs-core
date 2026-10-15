@@ -227,6 +227,6 @@ final class AuthenticationController extends Controller
 
         $path = $parts['path'] ?? null;
 
-        return is_string($path) && str_starts_with($path, '/') && ! str_starts_with($path, '//') ? $path : null;
+        return is_string($path) && str_starts_with($path, '/') && ! str_starts_with($path, '//') ? $path.(str_starts_with($path, '/radiographer/entry/') && isset($parts['query']) ? '?'.$parts['query'] : '') : null;
     }
 }

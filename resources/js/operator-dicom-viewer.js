@@ -38,6 +38,10 @@ function viewerStatusNodes(root) {
 export function setViewerState(root, state, message = '') {
     const errorNode = root.querySelector('#dicom-viewer-error');
     root.dataset.viewerState = state;
+    const rendered = root.querySelector('#workspace-rendered');
+    if (rendered) {
+        rendered.value = state === 'ready' ? '1' : '0';
+    }
     for (const status of viewerStatusNodes(root)) {
         status.textContent = state === 'error' ? root.dataset.unavailableMessage : message;
     }

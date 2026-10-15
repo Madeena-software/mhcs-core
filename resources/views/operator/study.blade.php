@@ -1,4 +1,4 @@
-@extends('operator.layout')
+@extends(($workspace_mode ?? false) ? 'radiographer.layout' : 'operator.layout')
 
 @section('title', __('DICOM study :reference', ['reference' => $display_reference ?? __('Identifier withheld')]))
 
@@ -159,7 +159,7 @@
 
 <div class="dicom-study-shell" id="dicom-study"
      data-dicom-viewer
-     data-image-url="{{ route('operator.study.dicom', $study_id) }}"
+     data-image-url="{{ $viewer_image_url ?? route('operator.study.dicom', $study_id) }}"
      data-unavailable-message="{{ __('DICOM study unavailable.') }}"
      data-parser-unavailable-message="{{ __('The DICOM viewer is unavailable.') }}"
      data-loading-message="{{ __('Loading DICOM…') }}"
@@ -170,7 +170,7 @@
      @if (isset($window_center) && $window_center !== null) data-window-center="{{ $window_center }}" @endif
      @if (isset($window_width) && $window_width !== null) data-window-width="{{ $window_width }}" @endif>
     <header class="dicom-topbar">
-        <a class="dicom-brand" href="{{ route('operator.study.results') }}">
+        <a class="dicom-brand" href="{{ $viewer_return_url ?? route('operator.study.results') }}">
             <span class="dicom-brand-mark">MH</span>
             <span><span class="dicom-brand-title">MHCS Core</span><span class="dicom-brand-subtitle">{{ __('DICOM workstation') }}</span></span>
         </a>
@@ -224,7 +224,7 @@
                         <div class="viewer-error-icon">!</div>
                         <strong>{{ __('The DICOM study could not be displayed.') }}</strong>
                         <p>{{ __('DICOM study unavailable.') }}</p>
-                        <a href="{{ route('operator.study.download', $study_id) }}" class="primary-action">{{ __('Download DICOM') }}</a>
+                        @if(!($workspace_mode ?? false))<a href="{{ route('operator.study.download', $study_id) }}" class="primary-action">{{ __('Download DICOM') }}</a>@endif
                     </div>
                 </div>
                 <p id="dicom-viewer-error" role="alert" hidden></p>
@@ -237,6 +237,8 @@
         </main>
 
         <aside class="right-sidebar" aria-label="{{ __('Viewer tools') }}">
+            @if($workspace_mode ?? false) @include('radiographer.qc') @endif
+
             <section>
                 <div class="panel-header">{{ __('Viewer tools') }} <span class="viewer-readonly">{{ __('Read-only') }}</span></div>
                 <div class="tools-card">
@@ -255,7 +257,7 @@
                 <ol class="workflow-list">
                     <li class="workflow-step active"><span>1</span><div><strong>{{ __('Study received') }}</strong><small>{{ __('Automatic VOI') }}</small></div></li>
                     <li class="workflow-step"><span>2</span><div><strong>{{ __('Current tab') }}</strong><small>{{ __('Read-only') }}</small></div></li>
-                    <li class="workflow-step"><span>3</span><div><strong>{{ __('Download DICOM') }}</strong><small>{{ __('Back to DICOM results') }}</small></div></li>
+                    <li class="workflow-step"><span>3</span><div><strong>{{ ($workspace_mode ?? false) ? 'QC / tinjauan radiolog' : __('Download DICOM') }}</strong><small>{{ ($workspace_mode ?? false) ? 'Handoff teknis terpisah dari laporan klinis' : __('Back to DICOM results') }}</small></div></li>
                 </ol>
             </section>
             <p class="viewer-help"><strong>{{ __('Image controls') }}</strong><br>{{ __('Pointer drag pans the image. Use the mouse wheel to zoom.') }} {{ __('Reset, rotate, flip, and fullscreen affect this view only.') }}</p>
@@ -265,8 +267,8 @@
     <footer class="dicom-bottom-bar">
         <span class="bottom-meta">{{ $studyReference }} · {{ __('Read-only') }}</span>
         <div class="dicom-actions-group">
-            <a href="{{ route('operator.study.download', $study_id) }}" class="primary-action">{{ __('Download DICOM') }}</a>
-            <a href="{{ route('operator.study.results') }}" class="secondary">{{ __('Back to DICOM results') }}</a>
+            @if(!($workspace_mode ?? false))<a href="{{ route('operator.study.download', $study_id) }}" class="primary-action">{{ __('Download DICOM') }}</a>@endif
+            <a href="{{ $viewer_return_url ?? route('operator.study.results') }}" class="secondary">{{ ($workspace_mode ?? false) ? 'Kembali ke ruang kerja' : __('Back to DICOM results') }}</a>
         </div>
     </footer>
 </div>

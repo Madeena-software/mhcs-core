@@ -1,0 +1,5 @@
+<!doctype html>
+<html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer"><title>@yield('title', 'Ruang kerja Radiografer') — MHCS</title>
+<style>
+body{margin:0;background:#101010;color:#f3f0ef;font-family:system-ui,sans-serif}.shell{padding:16px}a{color:#8fdfff}label{display:block;margin:12px 0 4px}input,select,textarea{box-sizing:border-box;width:100%;background:#171f26;color:#f3f0ef;border:1px solid #71808b;padding:8px;border-radius:4px}input[type=checkbox]{width:auto}button{margin:12px 0;padding:8px;background:#8fdfff;color:#08202b;border:0;border-radius:4px}button:disabled{opacity:.5}a:focus,button:focus,input:focus,select:focus,textarea:focus{outline:3px solid #48b8ad;outline-offset:2px}.workspace-note{line-height:1.5;font-size:12px}.workspace-status{padding:12px;border:1px solid #71808b}form{margin-bottom:18px}code{overflow-wrap:anywhere}dl{font-size:12px}dd{margin-left:0;overflow-wrap:anywhere}
+</style></head><body><div class="shell">@yield('content')</div></body></html>

@@ -10,9 +10,11 @@ use App\Modules\ImageGateway\Application\Contracts\AiPacsDerivedPdfGeneratorCont
 use App\Modules\ImageGateway\Application\Contracts\AiPacsReportDownloaderContract;
 use App\Modules\ImageGateway\Application\Contracts\ImageGatewayAiServiceContract;
 use App\Modules\ImageGateway\Application\Contracts\OperatorStudyQuery;
+use App\Modules\ImageGateway\Application\Contracts\RadiographerStudySource;
 use App\Modules\ImageGateway\Application\Services\AdminStudyWorklistRead;
 use App\Modules\ImageGateway\Application\Services\ImageGatewayAiService;
 use App\Modules\ImageGateway\Application\Services\ImageGatewayCaptureService;
+use App\Modules\ImageGateway\Application\Services\RadiographerStudyRead;
 use App\Modules\ImageGateway\Domain\Security\ManifestSigner;
 use App\Modules\ImageGateway\Domain\Security\UntrustedImagePolicy;
 use App\Modules\ImageGateway\Infrastructure\AiPacs\AiPacsLaravelDerivedPdfGenerator;
@@ -28,6 +30,7 @@ final class ImageGatewayServiceProvider extends ServiceProvider
     {
         $this->app->bind(AdminStudyWorklist::class, AdminStudyWorklistRead::class);
         $this->app->make(ModuleRegistry::class)->register('Image Gateway');
+        $this->app->bind(RadiographerStudySource::class, RadiographerStudyRead::class);
         $this->app->scoped(OperatorStudyQuery::class, ImageGatewayCaptureService::class);
         $this->app->scoped(ImageGatewayAiServiceContract::class, ImageGatewayAiService::class);
         $this->app->scoped(AiPacsAdapterContract::class, AiPacsClient::class);

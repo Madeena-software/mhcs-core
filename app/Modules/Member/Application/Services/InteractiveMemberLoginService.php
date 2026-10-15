@@ -6,6 +6,7 @@ namespace App\Modules\Member\Application\Services;
 
 use App\Models\User;
 use App\Modules\Member\Application\Contracts\InteractiveOperatorAccessResolver;
+use App\Modules\Member\Application\Contracts\InteractiveRadiographerAccess;
 use App\Modules\Member\Application\Data\InteractiveMemberLoginResult;
 use App\Shared\Security\CredentialVerifier;
 
@@ -37,6 +38,10 @@ final readonly class InteractiveMemberLoginService
 
     public function destinationFor(User $user, ?string $intendedPath = null): ?string
     {
+        $workspace = app(InteractiveRadiographerAccess::class)->destination($user, $intendedPath);
+        if ($workspace !== null) {
+            return $workspace;
+        }
         $member = $this->members->resolveForUserId((string) $user->getAuthIdentifier());
         $memberEligible = $member !== null && $this->members->isEligibleAdult($member);
         $operatorEligible = $this->operators->canAccess($user);
