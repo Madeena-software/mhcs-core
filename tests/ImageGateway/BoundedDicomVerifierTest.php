@@ -17,6 +17,21 @@ final class BoundedDicomVerifierTest extends TestCase
 {
     private const IDENTITY = ['patientId' => 'SYNTHETIC-MRN', 'patientName' => 'SYNTHETIC^ONLY'];
 
+    public function test_verification_with_inherited_request_file_descriptors(): void
+    {
+        $handles = [];
+        try {
+            for ($i = 0; $i < 16; $i++) {
+                $handles[] = fopen('/dev/null', 'r');
+            }
+            $this->assertSame('2.25.300', $this->verify(SyntheticDicom::bytes())['sopInstanceUid']);
+        } finally {
+            foreach ($handles as $handle) {
+                fclose($handle);
+            }
+        }
+    }
+
     public function test_explicit_and_implicit_direct_and_supplied_uid_converted_inputs(): void
     {
         foreach ([false, true] as $implicit) {

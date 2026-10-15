@@ -2,7 +2,10 @@
 
 declare(strict_types=1);
 use App\Modules\Doctor\Application\Contracts\ClinicalStatusSource;
+use App\Shared\Time\Clock;
+use App\Shared\Time\FrozenClock;
 use Illuminate\Contracts\Console\Kernel;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Tests\Support\SyntheticClinicalStatusSource;
 
@@ -15,6 +18,14 @@ $app->make(Kernel::class)->bootstrap();
 $directory = storage_path('framework/testing/radiographer-browser');
 if (! is_dir($directory)) {
     mkdir($directory, 0700, true);
+}
+// Share one current test instant across fixture commands and HTTP requests.
+if (PHP_SAPI === 'cli' && ($argv[1] ?? null) === 'seed') {
+    file_put_contents($directory.'/clock', gmdate('c'));
+}
+if (is_file($directory.'/clock')) {
+    Carbon::setTestNow(trim(file_get_contents($directory.'/clock')));
+    $app->instance(Clock::class, new FrozenClock(now()->toDateTimeImmutable()));
 }
 $database = $directory.'/radiographer-browser.sqlite';
 if (! file_exists($database)) {

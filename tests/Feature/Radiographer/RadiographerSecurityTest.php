@@ -22,6 +22,8 @@ final class RadiographerSecurityTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        $this->freezeTime();
+        $this->app->instance(Clock::class, new FrozenClock(now()->toDateTimeImmutable()));
         $this->artisan('migrate:fresh', ['--force' => true])->assertExitCode(0);
         Storage::fake('local');
     }

@@ -48,7 +48,7 @@ final class RadiographerStudyRead implements RadiographerStudySource
 
     public function inspect(string $workspace, int $generation): array
     {
-        return app(RadiographerAccess::class)->run($workspace, 'dicom-delivered', function ($w) {
+        return app(RadiographerAccess::class)->run($workspace, 'dicom-inspected', function ($w) {
             $s = DB::table('image_gateway_studies')->where('id', $w->study_id)->lockForUpdate()->first();
             $c = $s ? DB::table('image_gateway_capture_sets')->where('id', $s->capture_set_id)->lockForUpdate()->first() : null;
             if (! $s || ! $c || $s->format !== 'application/dicom'

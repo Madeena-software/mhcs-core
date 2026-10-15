@@ -8,6 +8,7 @@ use App\Http\Controllers\Controller;
 use App\Modules\Operator\Application\Services\RadiographerWorkspace;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
+use Symfony\Component\HttpFoundation\Response;
 use Throwable;
 
 final class WorkspaceController extends Controller
@@ -40,7 +41,9 @@ final class WorkspaceController extends Controller
             $generation = $this->sessionGate($request, $workspace, $service);
             $data = $service->read($workspace, $generation);
 
-            return response()->view('operator.study', $data + ['workspace' => $workspace, 'study_id' => $workspace, 'workspace_mode' => true, 'rows' => $data['actual']['rows'], 'columns' => $data['actual']['columns'], 'viewer_image_url' => route('radiographer.dicom', $workspace), 'viewer_return_url' => route('radiographer.workspace', $workspace), 'handoff_key' => (string) Str::uuid()])->withHeaders(self::HEADERS);
+            $response = response()->view('operator.study', $data + ['workspace' => $workspace, 'study_id' => $workspace, 'workspace_mode' => true, 'rows' => $data['actual']['rows'], 'columns' => $data['actual']['columns'], 'viewer_image_url' => route('radiographer.dicom', $workspace), 'viewer_return_url' => route('radiographer.workspace', $workspace), 'handoff_key' => (string) Str::uuid()])->withHeaders(self::HEADERS);
+
+            return $this->disclosure($response, $service, $workspace, $generation);
         } catch (Throwable) {
             return $this->unavailable($service);
         }
@@ -52,7 +55,9 @@ final class WorkspaceController extends Controller
             $generation = $this->sessionGate($request, $workspace, $service);
             $bytes = $service->dicom($workspace, $generation);
 
-            return response($bytes, 200, self::HEADERS + ['Content-Type' => 'application/dicom', 'Content-Disposition' => 'inline; filename="study.dcm"']);
+            $response = response($bytes, 200, self::HEADERS + ['Content-Type' => 'application/dicom', 'Content-Disposition' => 'inline; filename="study.dcm"']);
+
+            return $this->disclosure($response, $service, $workspace, $generation, $request->isMethod('HEAD') ? 'response-disclosure-authorized' : 'dicom-delivery-authorized');
         } catch (Throwable) {
             return $this->unavailable($service);
         }
@@ -65,7 +70,9 @@ final class WorkspaceController extends Controller
             $input = $request->except('_token');
             $result = $service->save($workspace, $input, $generation);
 
-            return $request->expectsJson() ? response()->json($result)->withHeaders(self::HEADERS) : redirect('/radiographer/workspaces/'.$workspace)->withHeaders(self::HEADERS);
+            $response = $request->expectsJson() ? response()->json($result)->withHeaders(self::HEADERS) : redirect('/radiographer/workspaces/'.$workspace)->withHeaders(self::HEADERS);
+
+            return $this->disclosure($response, $service, $workspace, $generation);
         } catch (Throwable) {
             return $this->unavailable($service);
         }
@@ -77,7 +84,9 @@ final class WorkspaceController extends Controller
             $generation = $this->sessionGate($request, $workspace, $service);
             $result = $service->handoff($workspace, $request->except('_token'), $generation);
 
-            return $request->expectsJson() ? response()->json($result)->withHeaders(self::HEADERS) : redirect('/radiographer/workspaces/'.$workspace)->withHeaders(self::HEADERS);
+            $response = $request->expectsJson() ? response()->json($result)->withHeaders(self::HEADERS) : redirect('/radiographer/workspaces/'.$workspace)->withHeaders(self::HEADERS);
+
+            return $this->disclosure($response, $service, $workspace, $generation);
         } catch (Throwable) {
             return $this->unavailable($service);
         }
@@ -97,15 +106,33 @@ final class WorkspaceController extends Controller
     {
         try {
             if ($request->isMethod('get')) {
-                return response()->view('radiographer.manage', ['reference' => $reference, 'state' => $service->manage($reference, 'read', [])])->withHeaders(self::HEADERS);
+                $response = response()->view('radiographer.manage', ['reference' => $reference, 'state' => $service->manage($reference, 'read', [])])->withHeaders(self::HEADERS);
+
+                return $this->managementDisclosure($response, $service, $reference);
             }
             $input = $request->except('_token', 'action');
             $result = $service->manage($reference, (string) $request->input('action'), $input);
 
-            return $request->expectsJson() ? response()->json($result)->withHeaders(self::HEADERS) : response()->view('radiographer.manage', ['reference' => $reference, 'state' => $service->manage($reference, 'read', []), 'result' => $result])->withHeaders(self::HEADERS);
+            $response = $request->expectsJson() ? response()->json($result)->withHeaders(self::HEADERS) : response()->view('radiographer.manage', ['reference' => $reference, 'state' => $service->manage($reference, 'read', []), 'result' => $result])->withHeaders(self::HEADERS);
+
+            return $this->managementDisclosure($response, $service, $reference);
         } catch (Throwable) {
             return $this->unavailable($service);
         }
+    }
+
+    private function disclosure(Response $response, RadiographerWorkspace $service, string $workspace, int $generation, string $action = 'response-disclosure-authorized'): WorkspaceResponse
+    {
+        return new WorkspaceResponse($response,
+            fn () => $service->run($workspace, $action, fn () => null, $generation),
+            fn () => $this->unavailable($service));
+    }
+
+    private function managementDisclosure(Response $response, RadiographerWorkspace $service, string $reference): WorkspaceResponse
+    {
+        return new WorkspaceResponse($response,
+            fn () => $service->manage($reference, 'read', []),
+            fn () => $this->unavailable($service));
     }
 
     private function unavailable(RadiographerWorkspace $service)

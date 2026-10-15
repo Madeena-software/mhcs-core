@@ -28,7 +28,8 @@ final class BoundedDicomVerifier
         $filter = $this->networkFilter();
         $filterPath = stream_get_meta_data($filter)['uri'];
         $process = new Process([
-            '/usr/bin/prlimit', '--as=1073741824', '--cpu=5', '--core=0', '--fsize=0', '--nofile=32', '--',
+            // Node also needs descriptors inherited from the authenticated request/process.
+            '/usr/bin/prlimit', '--as=1073741824', '--cpu=5', '--core=0', '--fsize=0', '--nofile=64', '--',
             '/usr/bin/setpriv', '--no-new-privs', '--seccomp-filter', $filterPath, '--',
             'node', '--jitless', '--max-old-space-size=64', '--permission',
             '--allow-fs-read='.$script, '--allow-fs-read='.base_path('node_modules/dicom-parser'), $script,

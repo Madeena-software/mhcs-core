@@ -9,6 +9,8 @@ use App\Modules\Operator\Application\Services\RadiographerWorkspace;
 use App\Shared\Audit\AuditEvent;
 use App\Shared\Audit\AuditStore;
 use App\Shared\Audit\DatabaseAuditStore;
+use App\Shared\Time\Clock;
+use App\Shared\Time\FrozenClock;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -20,6 +22,8 @@ final class RadiographerIntegrityTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        $this->freezeTime();
+        $this->app->instance(Clock::class, new FrozenClock(now()->toDateTimeImmutable()));
         $this->artisan('migrate:fresh', ['--force' => true])->assertExitCode(0);
         Storage::fake('local');
     }
@@ -189,13 +193,21 @@ final class RadiographerIntegrityTest extends TestCase
         {
             public function append(AuditEvent $e): void
             {
-                if ($e->action === 'radiographer-workspace.dicom-delivered') {
+                if ($e->action === 'radiographer-workspace.dicom-delivery-authorized') {
                     DB::table('operator_radiographer_workspaces')->update(['revoked' => true, 'generation' => 2]);
                 }
                 (new DatabaseAuditStore)->append($e);
             }
         });
-        $this->get('/radiographer/workspaces/'.$w['id'].'/dicom')->assertForbidden()->assertDontSee('DICM');
+        $response = $this->get('/radiographer/workspaces/'.$w['id'].'/dicom')->baseResponse;
+        ob_start();
+        try {
+            $response->sendContent();
+            $this->assertStringNotContainsString('DICM', ob_get_contents());
+        } finally {
+            ob_end_clean();
+        }
+        $this->assertSame(403, $response->getStatusCode());
     }
 
     public function test_verified_synthetic_reopen_preserves_history_and_expiry(): void

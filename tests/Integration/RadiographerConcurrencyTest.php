@@ -10,10 +10,13 @@ use App\Modules\Operator\Application\Services\RadiographerWorkspace;
 use App\Shared\Audit\AuditEvent;
 use App\Shared\Audit\AuditStore;
 use App\Shared\Audit\DatabaseAuditStore;
+use App\Shared\Time\Clock;
+use App\Shared\Time\FrozenClock;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Support\RadiographerFixtures;
 use Tests\Support\SyntheticClinicalStatusSource;
 use Tests\TestCase;
@@ -25,6 +28,8 @@ final class RadiographerConcurrencyTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        $this->freezeTime();
+        $this->app->instance(Clock::class, new FrozenClock(now()->toDateTimeImmutable()));
         if (getenv('MHCS_RAD_MYSQL_TESTS') !== '1') {
             $this->markTestSkipped('Requires disposable mhcs_rad_synthetic MySQL.');
         }
@@ -98,6 +103,79 @@ final class RadiographerConcurrencyTest extends TestCase
         $this->assertArrayNotHasKey('error', $result);
 
         return $result;
+    }
+
+    public static function disclosureRaces(): array
+    {
+        $cases = [];
+        foreach (['revoke', 'reassign', 'suspend'] as $change) {
+            foreach (['', '/dicom'] as $suffix) {
+                $cases[$change.($suffix ?: '/html')] = [$change, $suffix];
+            }
+        }
+
+        return $cases;
+    }
+
+    #[DataProvider('disclosureRaces')]
+    public function test_committed_change_after_response_preparation_prevents_disclosure(string $change, string $suffix): void
+    {
+        [$f, $w] = $this->prepared();
+        $this->withSession(['radiographer' => ['generations' => [$w['id'] => 1]]]);
+        $response = $this->get('/radiographer/workspaces/'.$w['id'].$suffix)->assertOk()->baseResponse;
+        $this->assertSame(0, DB::transactionLevel());
+        DB::disconnect();
+        $writer = $this->child(function ($pipe) use ($change, $f) {
+            fwrite($pipe, "ready\n");
+            fgets($pipe);
+            if ($change === 'suspend') {
+                DB::table('users')->where('id', $f['worker']->id)->update(['account_status' => 'suspended']);
+            } else {
+                $this->actingAs($f['admin']);
+                app(RadiographerWorkspace::class)->manage($f['reference'], $change, $change === 'reassign' ? ['user' => $f['worker']->id] : []);
+            }
+
+            return 'committed';
+        });
+        $this->assertSame("ready\n", fgets($writer[1]));
+        fwrite($writer[1], "change\n");
+        $this->assertTrue($this->finish($writer)['ok']);
+        ob_start();
+        try {
+            $response->send(false);
+            $body = ob_get_contents();
+        } finally {
+            ob_end_clean();
+        }
+        $this->assertSame(403, $response->getStatusCode());
+        foreach (['DICM', 'SYNTHETIC-MRN', 'SYNTHETIC^ONLY'] as $sentinel) {
+            $this->assertStringNotContainsString($sentinel, $body);
+        }
+        $this->assertFalse($response->headers->has('Content-Disposition'));
+        $this->assertSame(0, DB::table('audit_events')->whereIn('action', ['radiographer-workspace.dicom-delivery-authorized', 'radiographer-workspace.response-disclosure-authorized'])->count());
+        $this->assertGreaterThan(0, DB::table('audit_events')->where('action', 'radiographer-workspace.denied')->count());
+        $this->assertSame(0, DB::transactionLevel());
+    }
+
+    public function test_original_emission_has_one_committed_audit_and_no_database_lock_during_output(): void
+    {
+        [, $w] = $this->prepared();
+        $this->withSession(['radiographer' => ['generations' => [$w['id'] => 1]]]);
+        $response = $this->get('/radiographer/workspaces/'.$w['id'].'/dicom')->assertOk()->baseResponse;
+        $observed = null;
+        ob_start(function ($body) use (&$observed) {
+            if ($body !== '') {
+                $observed = [DB::transactionLevel(), DB::table('audit_events')->where('action', 'radiographer-workspace.dicom-delivery-authorized')->count(), str_contains($body, 'DICM')];
+            }
+
+            return '';
+        }, 1);
+        try {
+            $response->send(false);
+        } finally {
+            ob_end_clean();
+        }
+        $this->assertSame([0, 1, true], $observed);
     }
 
     public function test_two_connections_create_one_idempotent_handoff(): void

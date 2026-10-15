@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Tests\Feature\Radiographer;
 
 use App\Modules\Operator\Application\Services\RadiographerWorkspace;
+use App\Shared\Time\Clock;
+use App\Shared\Time\FrozenClock;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
@@ -16,6 +18,8 @@ final class RadiographerWorkspaceTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        $this->freezeTime();
+        $this->app->instance(Clock::class, new FrozenClock(now()->toDateTimeImmutable()));
         $this->artisan('migrate:fresh', ['--force' => true])->assertExitCode(0);
         Storage::fake('local');
     }
