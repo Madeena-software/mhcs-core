@@ -6,6 +6,10 @@ namespace App\Modules\Operator\Application\Services;
 
 use App\Modules\Doctor\Application\Contracts\RadiologistAccess;
 use App\Modules\Operator\Application\Contracts\RadiologistHandoff;
+use App\Shared\Audit\AuditEvent;
+use App\Shared\Audit\AuditStore;
+use App\Shared\Context\AuthenticatedContextProvider;
+use App\Shared\Time\Clock;
 use DomainException;
 use Illuminate\Support\Facades\DB;
 
@@ -52,6 +56,9 @@ final class RadiologistHandoffRead implements RadiologistHandoff
             throw new DomainException('unavailable');
         }
 
-        return (object) ['study_id' => $w->study_id, 'booking_id' => $w->booking_id, 'admission_id' => $w->admission_id, 'site_id' => $w->site_id, 'member_schedule_id' => $a->member_schedule_id, 'binding' => $h->binding, 'handoff_id' => $h->id, 'protocol' => DB::table('operator_workspace_protocols')->where('study_id', $w->study_id)->orderByDesc('revision')->lockForUpdate()->first(), 'snapshot' => json_decode($h->snapshot, true, flags: JSON_THROW_ON_ERROR)];
+        $snapshot = json_decode($h->snapshot, true, flags: JSON_THROW_ON_ERROR);
+        app(AuditStore::class)->append(AuditEvent::fromContext(app(AuthenticatedContextProvider::class)->current()->forPurpose('radiologist.workspace'), 'radiologist-workspace.handoff-read', 'operator', 'success', app(Clock::class)->now(), targetType: 'handoff', targetId: $handoff));
+
+        return (object) ['study_id' => $w->study_id, 'booking_id' => $w->booking_id, 'admission_id' => $w->admission_id, 'site_id' => $w->site_id, 'member_schedule_id' => $a->member_schedule_id, 'binding' => $h->binding, 'handoff_id' => $h->id, 'protocol' => DB::table('operator_workspace_protocols')->where('study_id', $w->study_id)->orderByDesc('revision')->lockForUpdate()->first(), 'snapshot' => ['protocol' => $snapshot['protocol'] ?? null, 'actual' => array_intersect_key($snapshot['actual'] ?? [], array_flip(['modality']))]];
     }
 }

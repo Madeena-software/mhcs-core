@@ -21,7 +21,7 @@ final class RadiologistFixtures
         $handoff = (string) Str::uuid();
         $binding = str_repeat('b', 64);
         $protocol = (array) DB::table('operator_workspace_protocols')->where('study_id', $f['study'])->first();
-        $snapshot = ['protocol' => $protocol, 'actual' => ['modality' => 'DX']];
+        $snapshot = ['protocol' => $protocol, 'actual' => ['modality' => 'DX', 'patientId' => 'SYNTHETIC-MRN', 'patientName' => 'SYNTHETIC^ONLY']];
         DB::table('operator_radiographer_handoffs')->insert(['id' => $handoff, 'workspace_id' => $w['id'], 'cycle' => 1, 'actor_id' => $f['worker']->id, 'idempotency_key' => 'synthetic-command-fixture', 'payload_digest' => str_repeat('a', 64), 'binding' => $binding, 'snapshot' => json_encode($snapshot, JSON_THROW_ON_ERROR), 'occurred_at' => now()]);
         DB::table('operator_radiographer_workspaces')->where('id', $w['id'])->update(['active_handoff' => $handoff, 'binding' => $binding]);
         foreach (['issue', 'reassign', 'revoke', 'credential'] as $action) {

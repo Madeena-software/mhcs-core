@@ -10,6 +10,10 @@ use App\Modules\Member\Application\Contracts\RadiologistCaseIdentity;
 use App\Modules\Operator\Application\Contracts\AdminSessionArrivals;
 use App\Modules\Operator\Application\Contracts\RadiographerAccess;
 use App\Modules\Operator\Application\Contracts\RadiologistHandoff;
+use App\Shared\Audit\AuditEvent;
+use App\Shared\Audit\AuditStore;
+use App\Shared\Context\AuthenticatedContextProvider;
+use App\Shared\Time\Clock;
 use DomainException;
 use Illuminate\Support\Facades\DB;
 
@@ -39,7 +43,10 @@ final class RadiographerCaseIdentityRead implements RadiographerCaseIdentity, Ra
         $h = app(RadiologistHandoff::class)->selection($handoff);
         app(RadiologistAccess::class)->authorizeManager($h->site_id);
 
-        return $this->read($h->booking_id, $h->member_schedule_id, $h->site_id);
+        $identity = $this->read($h->booking_id, $h->member_schedule_id, $h->site_id);
+        app(AuditStore::class)->append(AuditEvent::fromContext(app(AuthenticatedContextProvider::class)->current()->forPurpose('radiologist.workspace'), 'radiologist-workspace.assignment-identity-read', 'member', 'success', app(Clock::class)->now(), targetType: 'case', targetId: $h->booking_id));
+
+        return $identity;
     }
 
     public function service(string $booking, string $schedule, string $site): string

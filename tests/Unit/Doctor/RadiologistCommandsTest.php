@@ -9,6 +9,8 @@ use App\Modules\Doctor\Application\Services\ClinicalFinalizationGuard;
 use App\Modules\Doctor\Application\Services\RadiologistWorkspace;
 use App\Modules\ImageGateway\Application\Contracts\RadiologistStudySource;
 use App\Modules\ImageGateway\Application\Services\RadiographerStudyRead;
+use App\Modules\Member\Application\Contracts\RadiologistCaseIdentity;
+use App\Modules\Operator\Application\Contracts\RadiologistHandoff;
 use App\Modules\Operator\Application\Services\RadiographerWorkspace;
 use App\Shared\Audit\AuditEvent;
 use App\Shared\Audit\AuditStore;
@@ -403,5 +405,17 @@ final class RadiologistCommandsTest extends TestCase
     public static function approvedRepeatReasons(): array
     {
         return [['operator_error'], ['equipment_failure'], ['incorrect_order'], ['medical_limitation'], ['other']];
+    }
+
+    public function test_assignment_owner_reads_are_audited_and_handoff_projection_minimizes_identity(): void
+    {
+        [$f,$w] = $this->issued();
+        $this->actingAs($f['admin']);
+        $h = DB::transaction(fn () => app(RadiologistHandoff::class)->selection($f['handoff']));
+        $this->assertStringNotContainsString('SYNTHETIC-MRN', json_encode($h, JSON_THROW_ON_ERROR));
+        $identity = DB::transaction(fn () => app(RadiologistCaseIdentity::class)->forAssignment($f['handoff']));
+        $this->assertSame('SYNTHETIC-MRN', $identity['patientId']);
+        $this->assertGreaterThan(0, DB::table('audit_events')->where('action', 'radiologist-workspace.handoff-read')->count());
+        $this->assertSame(1, DB::table('audit_events')->where('action', 'radiologist-workspace.assignment-identity-read')->count());
     }
 }
