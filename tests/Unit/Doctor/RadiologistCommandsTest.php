@@ -66,7 +66,7 @@ final class RadiologistCommandsTest extends TestCase
         $this->get($base.'/viewer')->assertOk();
         $this->get($base.'/dicom')->assertOk()->assertContent($f['bytes']);
         $this->postJson($base.'/quality', $this->payload($f, 0) + ['decision' => 'usable'])->assertOk()->assertJsonPath('revision', 1);
-        $this->postJson($base.'/draft', $this->payload($f, 1) + ['findings' => 'Synthetic authored findings', 'conclusion' => 'Synthetic authored conclusion', 'recommendations' => ''])->assertOk()->assertJsonPath('revision', 2);
+        $this->postJson($base.'/draft', $this->payload($f, 1) + ['findings' => 'Synthetic authored findings', 'conclusion' => 'Synthetic authored conclusion'])->assertOk()->assertJsonPath('revision', 2);
         $this->postJson($base.'/finalize', $this->payload($f, 2) + ['attest' => true, 'password' => 'wrong', 'key' => 'test-final'])->assertForbidden();
         $this->assertSame(0, DB::table('doctor_finalizations')->count());
         $final = $this->payload($f, 2) + ['attest' => true, 'password' => 'password', 'key' => 'test-final'];

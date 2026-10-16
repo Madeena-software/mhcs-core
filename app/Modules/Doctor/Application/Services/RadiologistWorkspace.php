@@ -354,7 +354,7 @@ final class RadiologistWorkspace implements RadiologistAccess
             $rules = ['revision' => 'required|integer|min:0', 'binding' => 'required|string|size:64', 'handoff' => 'required|string|max:36'];
             $rules += match ($action) {
                 'quality' => ['decision' => 'required|in:usable,repeat_required', 'reason' => 'nullable|in:'.implode(',', self::REASONS), 'explanation' => 'nullable|string|max:1000'],
-                'draft' => ['findings' => 'present|nullable|string|max:20000', 'conclusion' => 'present|nullable|string|max:20000', 'recommendations' => 'present|nullable|string|max:20000'],
+                'draft' => ['findings' => 'present|nullable|string|max:20000', 'conclusion' => 'present|nullable|string|max:20000', 'recommendations' => 'nullable|string|max:20000'],
                 'finalize' => ['password' => 'required|string|max:4096', 'attest' => 'required|accepted', 'key' => 'required|string|max:64|regex:/^[a-zA-Z0-9_-]+$/'],
                 default => throw new DomainException('invalid_action'),
             };
