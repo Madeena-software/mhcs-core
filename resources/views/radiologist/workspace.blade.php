@@ -10,7 +10,7 @@
 @if(!$read_only)
 <form method="post" action="{{ route('radiologist.command',[$workspace,'quality']) }}">@csrf
 @include('radiologist.binding')
-<label for="decision">Keputusan kualitas klinis</label><select id="decision" name="decision"><option value="usable">usable</option><option value="repeat_required">repeat_required</option></select>
+<label for="decision">Keputusan kualitas klinis</label><select id="decision" name="decision" required><option value="" disabled selected>Pilih keputusan klinis</option><option value="usable">usable</option><option value="repeat_required">repeat_required</option></select>
 <label for="reason">Alasan pengulangan</label><select id="reason" name="reason"><option value="">—</option>@foreach(\App\Modules\Doctor\Application\Services\RadiologistWorkspace::REASONS as $reason)<option>{{ $reason }}</option>@endforeach</select>
 <label for="explanation">Penjelasan (wajib untuk other)</label><textarea id="explanation" name="explanation" maxlength="1000"></textarea><button>Simpan keputusan klinis</button>
 </form>

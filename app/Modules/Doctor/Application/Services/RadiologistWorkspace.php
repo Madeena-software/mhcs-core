@@ -30,7 +30,7 @@ use Throwable;
 
 final class RadiologistWorkspace implements RadiologistAccess
 {
-    public const REASONS = ['positioning', 'coverage', 'exposure', 'artifacts', 'identity_concern', 'other'];
+    public const REASONS = ['operator_error', 'equipment_failure', 'incorrect_order', 'medical_limitation', 'other'];
 
     private int $depth = 0;
 

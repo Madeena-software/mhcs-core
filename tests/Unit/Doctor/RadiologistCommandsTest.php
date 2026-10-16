@@ -389,4 +389,19 @@ final class RadiologistCommandsTest extends TestCase
         $this->get('/operator/studies/'.$f['study'].'/download')->assertForbidden();
         $this->get('/operator/studies/'.$f['study'].'/ai-report')->assertForbidden();
     }
+
+    #[DataProvider('approvedRepeatReasons')]
+    public function test_task_approved_repeat_reason_vocabulary_is_preserved(string $reason): void
+    {
+        [$f,$w] = $this->issued();
+        $base = '/radiologist/workspaces/'.$w['id'];
+        $this->postJson($base.'/quality', $this->payload($f, 0) + ['decision' => 'repeat_required', 'reason' => $reason, 'explanation' => $reason === 'other' ? 'Synthetic explanation' : ''])->assertOk()->assertJsonPath('state', 'repeat_pending');
+        $this->postJson($base.'/quality', $this->payload($f, 1) + ['decision' => 'repeat_required', 'reason' => 'positioning'])->assertForbidden();
+        $this->assertSame(1, DB::table('doctor_workspace_history')->where('action', 'quality')->count());
+    }
+
+    public static function approvedRepeatReasons(): array
+    {
+        return [['operator_error'], ['equipment_failure'], ['incorrect_order'], ['medical_limitation'], ['other']];
+    }
 }
