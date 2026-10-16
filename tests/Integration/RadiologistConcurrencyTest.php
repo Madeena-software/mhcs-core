@@ -6,8 +6,11 @@ namespace Tests\Integration;
 
 use App\Modules\Doctor\Application\Services\RadiologistWorkspace;
 use App\Modules\Operator\Application\Services\RadiographerWorkspace;
+use App\Shared\Audit\AuditEvent;
+use App\Shared\Audit\AuditStore;
 use App\Shared\Time\Clock;
 use App\Shared\Time\FrozenClock;
+use Illuminate\Database\Events\TransactionCommitting;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
@@ -215,5 +218,48 @@ final class RadiologistConcurrencyTest extends TestCase
     public static function disclosures(): array
     {
         return [[''], ['/viewer'], ['/dicom']];
+    }
+
+    #[DataProvider('atomicFailures')]
+    public function test_required_audit_or_commit_failure_rolls_back_finalization(string $failure): void
+    {
+        [$f,$w,$p] = $this->prepared();
+        $before = DB::table('doctor_workspace_history')->count();
+        if ($failure === 'append') {
+            $store = app(AuditStore::class);
+            $this->app->instance(AuditStore::class, new class($store) implements AuditStore
+            {
+                public function __construct(private AuditStore $store) {}
+
+                public function append(AuditEvent $event): void
+                {
+                    if ($event->action === 'radiologist-workspace.finalize-committed') {
+                        throw new \RuntimeException('Synthetic append failure');
+                    }
+                    $this->store->append($event);
+                }
+            });
+        } else {
+            $this->app['events']->listen(TransactionCommitting::class, function () {
+                if (DB::table('doctor_finalizations')->count() > 0) {
+                    throw new \RuntimeException('Synthetic commit failure');
+                }
+            });
+        }
+        try {
+            app(RadiologistWorkspace::class)->command($w['id'], 'finalize', $p + ['password' => 'password', 'attest' => true, 'key' => 'atomic-failure'], 1);
+            $this->fail('Failure committed final report');
+        } catch (\DomainException) {
+        }
+        $this->assertSame(0, DB::table('doctor_finalizations')->count());
+        $this->assertSame($before, DB::table('doctor_workspace_history')->count());
+        $this->assertSame('not_finalized', DB::table('doctor_workspaces')->value('clinical_status'));
+        $this->assertSame(0, DB::transactionLevel());
+        $this->assertFalse(DB::connection()->getPdo()->inTransaction());
+    }
+
+    public static function atomicFailures(): array
+    {
+        return [['append'], ['commit']];
     }
 }

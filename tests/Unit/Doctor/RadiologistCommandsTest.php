@@ -59,6 +59,7 @@ final class RadiologistCommandsTest extends TestCase
     {
         [$f,$w] = $this->issued();
         $base = '/radiologist/workspaces/'.$w['id'];
+        $excludedBefore = [DB::table('outbox_messages')->count(), DB::table('point_ledger_entries')->count()];
         $this->get($base)->assertOk()->assertSee('SYNTHETIC^ONLY')->assertDontSee('AI report');
         $this->get($base.'/viewer')->assertOk();
         $this->get($base.'/dicom')->assertOk()->assertContent($f['bytes']);
@@ -86,6 +87,7 @@ final class RadiologistCommandsTest extends TestCase
             $this->assertStringNotContainsString($s, $audit);
         }
         $this->assertSame(0, DB::table('image_gateway_ai_jobs')->count());
+        $this->assertSame($excludedBefore, [DB::table('outbox_messages')->count(), DB::table('point_ledger_entries')->count()]);
     }
 
     public function test_repeat_pending_preserves_draft_and_blocks_finalize(): void
@@ -371,5 +373,20 @@ final class RadiologistCommandsTest extends TestCase
         $this->assertSame('2099-05-06 05:00:00', DB::table('doctor_eligibility')->orderByDesc('revision')->value('valid_until'));
         $this->actingAs($f['doctor']);
         $this->get('/radiologist/workspaces/'.$w['id'])->assertForbidden();
+    }
+
+    public function test_individual_login_rejects_forwarded_locator_and_accepts_only_current_assignee(): void
+    {
+        [$f,$w] = $this->issued();
+        Auth::logout();
+        $this->flushSession();
+        $this->get($w['url'])->assertRedirect('/login');
+        $this->post('/login', ['identifier' => $f['worker']->email, 'password' => 'password'])->assertSessionHasErrors('identifier');
+        $this->assertGuest();
+        $this->post('/login', ['identifier' => $f['doctor']->email, 'password' => 'password'])->assertRedirect($w['url']);
+        $this->assertAuthenticatedAs($f['doctor']);
+        $this->get($w['url'])->assertRedirect('/radiologist/workspaces/'.$w['id']);
+        $this->get('/operator/studies/'.$f['study'].'/download')->assertForbidden();
+        $this->get('/operator/studies/'.$f['study'].'/ai-report')->assertForbidden();
     }
 }
