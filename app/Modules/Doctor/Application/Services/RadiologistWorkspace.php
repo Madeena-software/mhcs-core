@@ -302,7 +302,7 @@ final class RadiologistWorkspace implements RadiologistAccess
                     }
                 }
 
-                return ['id' => $w?->id, 'generation' => $w?->generation, 'revision' => $w?->revision, 'revoked' => (bool) $w?->revoked, 'finalized' => $w?->final_id !== null, 'candidates' => $candidates, 'eligibilities' => DB::table('doctor_eligibility')->where('site_id', $h->site_id)->where('service_id', $service)->orderByDesc('revision')->get(['id', 'user_id', 'modality', 'revision', 'status'])->all()];
+                return ['case' => $h->booking_id, 'id' => $w?->id, 'generation' => $w?->generation, 'revision' => $w?->revision, 'revoked' => (bool) $w?->revoked, 'finalized' => $w?->final_id !== null, 'candidates' => $candidates, 'eligibilities' => DB::table('doctor_eligibility')->where('site_id', $h->site_id)->where('service_id', $service)->orderByDesc('revision')->get(['id', 'user_id', 'modality', 'revision', 'status'])->all()];
             }
             if (! in_array($action, ['issue', 'reassign', 'revoke'], true)) {
                 throw new DomainException('invalid_action');

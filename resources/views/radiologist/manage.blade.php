@@ -2,6 +2,7 @@
 @section('title','Penugasan Radiolog')
 @section('content')
 <h1>Penugasan Radiolog</h1><p role="status">{{ $state['finalized'] ? 'Final internal — hanya baca' : ($state['id'] ? ($state['revoked'] ? 'Akses dicabut' : 'Ditugaskan') : 'Belum ditugaskan') }}</p>
+@if($state['finalized'])<p><a href="{{ route('member.result.manage', $state['case']) }}">Publikasi hasil Member (keputusan Admin terpisah)</a></p>@endif
 @if(isset($result['url']))<label for="assignment-url">Tautan untuk individu yang ditugaskan</label><input id="assignment-url" readonly value="{{ $result['url'] }}">@endif
 @if(!$state['finalized'])
 <form method="post">@csrf<input type="hidden" name="action" value="{{ $state['id'] ? 'reassign' : 'issue' }}">@if($state['id'])<input type="hidden" name="generation" value="{{ $state['generation'] }}">@endif

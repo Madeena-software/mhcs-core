@@ -14,6 +14,7 @@ use App\Modules\Operator\Application\Contracts\AdminStudyIntakes;
 use App\Modules\Operator\Application\Contracts\PendingRadiographerHandoff;
 use App\Modules\Operator\Application\Contracts\RadiographerAccess;
 use App\Modules\Operator\Application\Contracts\RadiologistHandoff;
+use App\Modules\Operator\Application\Contracts\ResultHandoff;
 use App\Modules\Operator\Application\Services\AdminSessionArrivalRead;
 use App\Modules\Operator\Application\Services\AdminStudyIntakeRead;
 use App\Modules\Operator\Application\Services\InteractiveOperatorAccessService;
@@ -22,6 +23,7 @@ use App\Modules\Operator\Application\Services\RadiographerLoginAccess;
 use App\Modules\Operator\Application\Services\RadiographerWorkspace;
 use App\Modules\Operator\Application\Services\RadiographySessionLocatorService;
 use App\Modules\Operator\Application\Services\RadiologistHandoffRead;
+use App\Modules\Operator\Application\Services\ResultHandoffRead;
 use App\Modules\Operator\Infrastructure\OperatorActiveSiteResolver;
 use App\Modules\Operator\Infrastructure\TrustedOperatorIdentityVerificationContextResolver as OperatorTrustedOperatorIdentityVerificationContextResolver;
 use App\Modules\Operator\Infrastructure\TrustedOperatorSiteContextResolver as OperatorTrustedOperatorSiteContextResolver;
@@ -33,6 +35,7 @@ final class OperatorServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
+        $this->app->bind(ResultHandoff::class, ResultHandoffRead::class);
         $this->app->bind(RadiologistHandoff::class, RadiologistHandoffRead::class);
         $this->app->bind(AdminStudyIntakes::class, AdminStudyIntakeRead::class);
         $this->app->bind(AdminSessionArrivals::class, AdminSessionArrivalRead::class);

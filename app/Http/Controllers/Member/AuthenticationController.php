@@ -53,6 +53,7 @@ final class AuthenticationController extends Controller
 
         Auth::guard('web')->login($result->user);
         $request->session()->regenerate();
+        $request->session()->put('member.result.credential', hash('sha256', $result->user->getAuthPassword()));
 
         if ($result->state === InteractiveLoginState::PasswordChangeRequired) {
             return redirect()->route('password.change-required');
@@ -93,6 +94,7 @@ final class AuthenticationController extends Controller
 
         Auth::guard('web')->login($result->user);
         $request->session()->regenerate();
+        $request->session()->put('member.result.credential', hash('sha256', $result->user->getAuthPassword()));
         $request->session()->put('url.intended', route('operator.dashboard'));
 
         if ($result->state === InteractiveLoginState::PasswordChangeRequired) {
@@ -174,6 +176,7 @@ final class AuthenticationController extends Controller
         $user->refresh();
         Auth::guard('web')->setUser($user);
         $request->session()->regenerate();
+        $request->session()->put('member.result.credential', hash('sha256', $user->getAuthPassword()));
         $intendedPath = $this->intendedPath($request);
         $request->session()->forget('url.intended');
         $destination = $login->destinationFor($user, $intendedPath);
@@ -227,6 +230,6 @@ final class AuthenticationController extends Controller
 
         $path = $parts['path'] ?? null;
 
-        return is_string($path) && str_starts_with($path, '/') && ! str_starts_with($path, '//') ? $path.((str_starts_with($path, '/radiographer/entry/') || str_starts_with($path, '/radiologist/entry/')) && isset($parts['query']) ? '?'.$parts['query'] : '') : null;
+        return is_string($path) && str_starts_with($path, '/') && ! str_starts_with($path, '//') ? $path.((str_starts_with($path, '/radiographer/entry/') || str_starts_with($path, '/radiologist/entry/') || str_starts_with($path, '/member/results/entry/')) && isset($parts['query']) ? '?'.$parts['query'] : '') : null;
     }
 }

@@ -4,6 +4,7 @@ use App\Http\Controllers\Member\AuthenticationController;
 use App\Http\Controllers\Member\DashboardController;
 use App\Http\Controllers\Member\Mvp03BookingController;
 use App\Http\Controllers\Member\ProfileController;
+use App\Http\Controllers\Member\ResultController;
 use App\Http\Controllers\Operator\ImageGatewayController;
 use App\Http\Controllers\Operator\OperatorAiReportController;
 use App\Http\Controllers\Operator\PortalController as OperatorPortalController;
@@ -133,4 +134,9 @@ Route::middleware('web')->group(function (): void {
     Route::post('/radiologist/workspaces/{workspace}/{action}', [$controller, 'command'])->whereIn('action', ['quality', 'draft', 'finalize'])->name('radiologist.command');
     Route::get('/admin/radiologist-studies/{reference}', [$controller, 'study'])->name('radiologist.study');
     Route::match(['get', 'post'], '/admin/radiologist-workspaces/{handoff}', [$controller, 'manage'])->name('radiologist.manage');
+});
+
+Route::middleware('throttle:60,1')->group(function (): void {
+    Route::get('/member/results/entry/{publication}', [ResultController::class, 'entry'])->name('member.result.entry');
+    Route::match(['get', 'post'], '/admin/member-results/{case}', [ResultController::class, 'manage'])->name('member.result.manage');
 });

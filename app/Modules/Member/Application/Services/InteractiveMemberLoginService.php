@@ -10,6 +10,7 @@ use App\Modules\Member\Application\Contracts\InteractiveRadiographerAccess;
 use App\Modules\Member\Application\Contracts\InteractiveRadiologistAccess;
 use App\Modules\Member\Application\Data\InteractiveMemberLoginResult;
 use App\Shared\Security\CredentialVerifier;
+use Illuminate\Http\Request;
 
 final readonly class InteractiveMemberLoginService
 {
@@ -39,6 +40,10 @@ final readonly class InteractiveMemberLoginService
 
     public function destinationFor(User $user, ?string $intendedPath = null): ?string
     {
+        if (is_string($intendedPath) && preg_match('~^/member/results/entry/[a-f0-9-]{36}\?~', $intendedPath)
+            && Request::create(url($intendedPath))->hasValidSignature()) {
+            return $intendedPath;
+        }
         $clinical = app(InteractiveRadiologistAccess::class)->destination($user, $intendedPath);
         if ($clinical !== null) {
             return $clinical;
