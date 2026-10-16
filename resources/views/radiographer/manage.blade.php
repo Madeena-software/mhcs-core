@@ -1,5 +1,6 @@
 @extends('radiographer.layout')
 @section('content')
+@if(!empty($state['handoff']))<p><a href="{{ route('radiologist.manage',$state['handoff']) }}">Penugasan Radiolog / laporan klinis</a></p>@endif
 <h1>Penugasan Radiografer — {{ $reference }}</h1><a href="/admin/study-worklist">Kembali ke daftar studi</a>
 <p role="status">{{ $state['state'] }} @if(isset($state['expires_at'])) — {{ $state['expires_at'] }} UTC @endif @if($state['revoked'] ?? false) — Dicabut @endif</p>
 @if(isset($result['url']))<label for="assignment-url">Tautan penugasan (hanya untuk petugas yang dipilih)</label><input readonly id="assignment-url" value="{{ $result['url'] }}"><button type="button" onclick="navigator.clipboard.writeText(document.getElementById('assignment-url').value)">Salin tautan</button>@endif

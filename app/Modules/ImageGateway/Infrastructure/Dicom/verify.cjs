@@ -101,6 +101,11 @@ async function main() {
         studyDescription: text('x00081030', 64, 'LO'), bodyPart: text('x00180015', 16, 'CS'),
         projection: text('x00185101', 16, 'CS'), laterality: text('x00200062', 16, 'CS'),
     };
+    if (elements.x00080060) {
+        result.modality = text('x00080060', 16, 'CS', true);
+        assert(['CR', 'DX'].includes(result.modality));
+        assert((result.modality === 'CR') === (sopClassUid === '1.2.840.10008.5.1.4.1.1.1'));
+    }
     assert(result.packageVersion === '1.8.21');
     assert(!result.birthDate || /^\d{8}$/.test(result.birthDate));
     assert(!result.sex || ['M', 'F', 'O'].includes(result.sex));

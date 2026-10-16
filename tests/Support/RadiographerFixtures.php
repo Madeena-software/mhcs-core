@@ -19,7 +19,7 @@ use Ramsey\Uuid\Uuid;
 
 final class RadiographerFixtures
 {
-    public static function create(): array
+    public static function create(array $sourceTags = []): array
     {
         $f = AdminOperationsFixtures::create(['member.schedule.read', 'member.booking.read', 'operator.audit.read', 'operator.radiographer-workspace.issue', 'operator.radiographer-workspace.revoke', 'operator.radiographer-workspace.reassign', 'operator.radiographer-workspace.reopen']);
         $i = StudyWorklistFixtures::intake($f);
@@ -28,7 +28,7 @@ final class RadiographerFixtures
         $worker = User::factory()->create(['email' => 'synthetic-radiographer-'.Str::lower(Str::random(6)).'@example.test']);
         DB::table('operator_workspace_managers')->insert(['user_id' => $f['admin']->id, 'site_id' => $f['operatorSiteId'], 'active' => true]);
         DB::table('operator_radiographer_eligibility')->insert(['id' => (string) Str::uuid(), 'user_id' => $worker->id, 'site_id' => $f['operatorSiteId'], 'revision' => 1, 'status' => 'verified', 'evidence_reference' => 'SYNTHETIC-QUALIFICATION', 'verifying_authority' => 'SYNTHETIC-ONLY', 'verified_at' => now()]);
-        $bytes = SyntheticDicom::bytes();
+        $bytes = SyntheticDicom::bytes($sourceTags);
         $object = app(PrivateObjectStore::class)->put($bytes, new AuthenticatedContext(actorId: LocalId::fromString($worker->id), operationId: CorrelationId::random(), purpose: 'radiographer.workspace'), 'radiographer.workspace');
         $uids = [];
         foreach (['study', 'series', 'sop'] as $kind) {
@@ -46,7 +46,7 @@ final class RadiographerFixtures
         return $f + compact('i', 'capture', 'study', 'worker', 'member', 'bytes', 'reference');
     }
 
-    public static function converted(array $f, bool $supplied = false, string $manifestSex = 'female'): array
+    public static function converted(array $f, bool $supplied = false, string $manifestSex = 'female', array $sourceTags = []): array
     {
         $job = 'synthetic-job-'.$f['capture'];
         $uids = [];
@@ -56,7 +56,7 @@ final class RadiographerFixtures
             $tags[$tag] = ['UI', $supplied ? ['study' => '2.25.101', 'series' => '2.25.201', 'sop' => '2.25.301'][$kind] : $uids[$kind.'_instance_uid']];
         }
         $tags['00020003'] = $tags['00080018'];
-        $bytes = SyntheticDicom::bytes($tags);
+        $bytes = SyntheticDicom::bytes($sourceTags + $tags);
         $context = new AuthenticatedContext(actorId: LocalId::fromString($f['worker']->id), operationId: CorrelationId::random(), purpose: 'radiographer.workspace');
         $store = app(PrivateObjectStore::class);
         $object = $store->put($bytes, $context, 'radiographer.workspace');

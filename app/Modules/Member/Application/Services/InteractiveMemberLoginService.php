@@ -7,6 +7,7 @@ namespace App\Modules\Member\Application\Services;
 use App\Models\User;
 use App\Modules\Member\Application\Contracts\InteractiveOperatorAccessResolver;
 use App\Modules\Member\Application\Contracts\InteractiveRadiographerAccess;
+use App\Modules\Member\Application\Contracts\InteractiveRadiologistAccess;
 use App\Modules\Member\Application\Data\InteractiveMemberLoginResult;
 use App\Shared\Security\CredentialVerifier;
 
@@ -38,6 +39,10 @@ final readonly class InteractiveMemberLoginService
 
     public function destinationFor(User $user, ?string $intendedPath = null): ?string
     {
+        $clinical = app(InteractiveRadiologistAccess::class)->destination($user, $intendedPath);
+        if ($clinical !== null) {
+            return $clinical;
+        }
         $workspace = app(InteractiveRadiographerAccess::class)->destination($user, $intendedPath);
         if ($workspace !== null) {
             return $workspace;

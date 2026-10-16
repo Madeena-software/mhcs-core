@@ -123,3 +123,14 @@ Route::middleware('throttle:60,1')->group(function (): void {
     Route::post('/radiographer/workspaces/{workspace}/handoff', [WorkspaceController::class, 'handoff'])->name('radiographer.handoff');
     Route::match(['get', 'post'], '/admin/radiographer-workspaces/{reference}', [WorkspaceController::class, 'manage'])->name('radiographer.manage');
 });
+
+Route::middleware('web')->group(function (): void {
+    $controller = App\Http\Controllers\Radiologist\WorkspaceController::class;
+    Route::get('/radiologist/entry/{workspace}', [$controller, 'entry'])->name('radiologist.entry');
+    Route::get('/radiologist/workspaces/{workspace}', [$controller, 'show'])->name('radiologist.workspace');
+    Route::get('/radiologist/workspaces/{workspace}/viewer', [$controller, 'viewer'])->name('radiologist.viewer');
+    Route::get('/radiologist/workspaces/{workspace}/dicom', [$controller, 'dicom'])->name('radiologist.dicom');
+    Route::post('/radiologist/workspaces/{workspace}/{action}', [$controller, 'command'])->whereIn('action', ['quality', 'draft', 'finalize'])->name('radiologist.command');
+    Route::get('/admin/radiologist-studies/{reference}', [$controller, 'study'])->name('radiologist.study');
+    Route::match(['get', 'post'], '/admin/radiologist-workspaces/{handoff}', [$controller, 'manage'])->name('radiologist.manage');
+});

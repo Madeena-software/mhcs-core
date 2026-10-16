@@ -4,17 +4,55 @@ declare(strict_types=1);
 
 namespace App\Modules\Member\Application\Services;
 
+use App\Modules\Doctor\Application\Contracts\RadiologistAccess;
 use App\Modules\Member\Application\Contracts\RadiographerCaseIdentity;
+use App\Modules\Member\Application\Contracts\RadiologistCaseIdentity;
 use App\Modules\Operator\Application\Contracts\AdminSessionArrivals;
 use App\Modules\Operator\Application\Contracts\RadiographerAccess;
+use App\Modules\Operator\Application\Contracts\RadiologistHandoff;
 use DomainException;
 use Illuminate\Support\Facades\DB;
 
-final class RadiographerCaseIdentityRead implements RadiographerCaseIdentity
+final class RadiographerCaseIdentityRead implements RadiographerCaseIdentity, RadiologistCaseIdentity
 {
     public function resolve(string $workspace, int $generation): array
     {
         return app(RadiographerAccess::class)->run($workspace, 'read', fn ($w) => $this->read($w->booking_id, $w->member_schedule_id, $w->site_id), $generation);
+    }
+
+    public function resolveClinical(string $workspace, int $generation): array
+    {
+        return app(RadiologistAccess::class)->run($workspace, 'identity-read', function ($w) {
+            $identity = $this->read($w->booking_id, $w->member_schedule_id, $w->site_id);
+            $booking = DB::table('bookings')->where('id', $w->booking_id)->first();
+            $schedule = DB::table('shift_schedules')->where('id', $w->member_schedule_id)->first();
+            if ($booking->service_offering_id !== $w->service_id || $schedule->service_offering_id !== $w->service_id || ! DB::table('service_offerings')->where('id', $w->service_id)->where('active', true)->lockForUpdate()->exists()) {
+                throw new DomainException('identity_unverified');
+            }
+
+            return $identity;
+        }, $generation);
+    }
+
+    public function forAssignment(string $handoff): array
+    {
+        $h = app(RadiologistHandoff::class)->selection($handoff);
+        app(RadiologistAccess::class)->authorizeManager($h->site_id);
+
+        return $this->read($h->booking_id, $h->member_schedule_id, $h->site_id);
+    }
+
+    public function service(string $booking, string $schedule, string $site): string
+    {
+        app(RadiologistAccess::class)->authorizeManager($site);
+        $this->read($booking, $schedule, $site);
+        $b = DB::table('bookings')->where('id', $booking)->first();
+        $s = DB::table('service_offerings')->where('id', $b->service_offering_id)->lockForUpdate()->first();
+        if (! $s || ! $s->active) {
+            throw new DomainException('unavailable');
+        }
+
+        return $s->id;
     }
 
     private function read(string $booking, string $schedule, string $site): array

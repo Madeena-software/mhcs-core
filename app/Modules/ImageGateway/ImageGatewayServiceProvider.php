@@ -11,6 +11,7 @@ use App\Modules\ImageGateway\Application\Contracts\AiPacsReportDownloaderContrac
 use App\Modules\ImageGateway\Application\Contracts\ImageGatewayAiServiceContract;
 use App\Modules\ImageGateway\Application\Contracts\OperatorStudyQuery;
 use App\Modules\ImageGateway\Application\Contracts\RadiographerStudySource;
+use App\Modules\ImageGateway\Application\Contracts\RadiologistStudySource;
 use App\Modules\ImageGateway\Application\Services\AdminStudyWorklistRead;
 use App\Modules\ImageGateway\Application\Services\ImageGatewayAiService;
 use App\Modules\ImageGateway\Application\Services\ImageGatewayCaptureService;
@@ -28,6 +29,7 @@ final class ImageGatewayServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
+        $this->app->bind(RadiologistStudySource::class, RadiographerStudyRead::class);
         $this->app->bind(AdminStudyWorklist::class, AdminStudyWorklistRead::class);
         $this->app->make(ModuleRegistry::class)->register('Image Gateway');
         $this->app->bind(RadiographerStudySource::class, RadiographerStudyRead::class);

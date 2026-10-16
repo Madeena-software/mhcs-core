@@ -237,7 +237,7 @@
         </main>
 
         <aside class="right-sidebar" aria-label="{{ __('Viewer tools') }}">
-            @if($workspace_mode ?? false) @include('radiographer.qc') @endif
+            @if(($workspace_mode ?? false) && !($clinical_mode ?? false)) @include('radiographer.qc') @endif
 
             <section>
                 <div class="panel-header">{{ __('Viewer tools') }} <span class="viewer-readonly">{{ __('Read-only') }}</span></div>

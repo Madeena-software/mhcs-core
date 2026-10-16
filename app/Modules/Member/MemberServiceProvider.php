@@ -15,6 +15,7 @@ use App\Modules\Member\Application\Contracts\OperatorServiceOfferingQuery;
 use App\Modules\Member\Application\Contracts\OperatorSiteReferenceSynchronizer;
 use App\Modules\Member\Application\Contracts\OperatorVitalSignsContract;
 use App\Modules\Member\Application\Contracts\RadiographerCaseIdentity;
+use App\Modules\Member\Application\Contracts\RadiologistCaseIdentity;
 use App\Modules\Member\Application\Services\AdminArrivalReferenceIntegrity;
 use App\Modules\Member\Application\Services\AdminStudyReferenceRead;
 use App\Modules\Member\Application\Services\MemberContextResolver;
@@ -40,6 +41,7 @@ final class MemberServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
+        $this->app->bind(RadiologistCaseIdentity::class, RadiographerCaseIdentityRead::class);
         $this->app->bind(AdminStudyReferences::class, AdminStudyReferenceRead::class);
         $this->app->bind(ArrivalReferenceIntegrity::class, AdminArrivalReferenceIntegrity::class);
         $this->app->make(ModuleRegistry::class)->register('Member');
