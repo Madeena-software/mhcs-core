@@ -211,11 +211,20 @@ final class RadiographerWorkspace implements RadiographerAccess
         try {
             return DB::transaction(function () use ($reference, $action, $input) {
                 $this->admin($action === 'status' ? 'read' : $action);
-                $source = app(RadiographerStudySource::class)->selection($reference);
+                $source = app(RadiographerStudySource::class)->selection($reference, false);
                 if (! $source) {
                     throw new DomainException('access_denied');
                 }
                 $this->admin($action === 'status' ? 'read' : $action, $source->site_id);
+                // Existing case serialization precedes Gateway source locks, as in clinical access.
+                $discovered = DB::table('operator_radiographer_workspaces')->where('study_id', $source->study_id)->first();
+                if ($discovered) {
+                    DB::table('operator_radiographer_workspaces')->where('id', $discovered->id)->lockForUpdate()->first();
+                }
+                $current = app(RadiographerStudySource::class)->selection($reference);
+                if ((array) $current !== (array) $source) {
+                    throw new DomainException('source_changed');
+                }
                 $w = DB::table('operator_radiographer_workspaces')->where('study_id', $source->study_id)->lockForUpdate()->first();
                 if ($action === 'status') {
                     if (! $w) {

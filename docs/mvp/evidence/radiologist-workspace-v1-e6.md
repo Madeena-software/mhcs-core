@@ -1,5 +1,9 @@
 # Radiologist Workspace v1 — E6 execution evidence
 
+Historical execution record. The [consolidated R8 evidence](radiologist-workspace-v1-r8.md)
+supersedes its clinical-source completeness claim and its browser/MySQL runtime gaps.
+The original observations below are retained for provenance.
+
 Status: **REVIEW REQUIRED**. This is a reviewable synthetic-development implementation,
 not V7/A9 acceptance or release authorization. Required original-image/browser and MySQL
 verification is incomplete; no pass is inferred from test doubles or unavailable tools.

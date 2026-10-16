@@ -8,23 +8,29 @@ Explicit `doctor.radiologist-workspace.issue`, `.revoke`, `.reassign` and
 are required. No roles or permissions are granted automatically. Credentialing and
 sensitive assignment changes require the acting administrator's password again.
 
-The current clinical reporting-source inventory is `doctor-workspace-v1`:
-`doctor_workspaces` is the explicitly initialized clinical aggregate,
-`doctor_report_versions` holds immutable authored content, and
-`doctor_finalizations` binds one final report per case to its actual author,
-finalizer, handoff, content digest, session and explicit internal attestation.
-Existing Image Gateway AI reports are processing artifacts, never clinical reports.
-Adding another clinical reporting source requires coordinated writers and extending
-this inventory; absence of a report or the guard registry alone is not evidence.
+The internal reporting tables prove only their own consistency. They do not
+establish a complete inventory of historical or external clinical sources.
+`WorkspaceClinicalStatusSource` therefore explicitly reports incomplete coverage;
+the guard records unknown and denies technical reopen even for an issued workspace
+without a final report. Positive not-finalized production authority remains unavailable
+until an authoritative case/handoff-specific inventory and coordinated source adapter
+are established. Test-only complete-source fixtures are not production authority.
 
-`WorkspaceClinicalStatusSource` replaces the unavailable adapter only for registered,
-current, consistent reporting aggregates. Unknown/unregistered/inconsistent state
-still denies technical reopen. Every clinical command and assignment locks the
-current Operator handoff before the Doctor guard; source verification, report,
-history, status and required audit share a transaction. Protected responses recheck
-current authorization, source integrity and durable audit before sending headers,
-without holding a lock during network output. Output already authorized in flight
-cannot be recalled.
+Account locks precede the Operator current-handoff lock, followed by the Doctor
+case guard, workspace and eligibility locks. Management discovers participating
+accounts first, locks them in ID order and rechecks the current assignee after
+locking the workspace. A changed discovery fails closed. Login takes eligibility
+locks only after the handoff lock. Candidate listings are advisory unlocked reads;
+assignment independently locks and revalidates the chosen individual's eligibility.
+Protected responses recheck authorization, original integrity and durable audit
+before sending headers, without holding locks during network output.
+
+Credential revocation names an existing eligibility revision, whose exact facility,
+service and modality are preserved. It requires the credentialing capability,
+managed facility, fresh administrator authentication and attributable evidence.
+It appends history even if the target is suspended or its eligibility expired;
+DICOM inspection is required for verification, not revocation. A superseded revision
+is rejected rather than silently revoking a different scope or revision.
 
 Access defaults to 24 elapsed hours, at most 72, with no automatic renewal.
 Eligibility must remain current for the exact facility, service and actual embedded

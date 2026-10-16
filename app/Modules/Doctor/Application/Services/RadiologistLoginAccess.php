@@ -32,11 +32,13 @@ final class RadiologistLoginAccess implements InteractiveRadiologistAccess
                 || new DateTimeImmutable($w->starts_at) > $now || new DateTimeImmutable($w->expires_at) <= $now) {
                 return false;
             }
+            if (! app(PendingRadiographerHandoff::class)->isCurrent($w->handoff_id, $w->binding)) {
+                return false;
+            }
             $e = DB::table('doctor_eligibility')->where('user_id', $user->id)->where('site_id', $w->site_id)->where('service_id', $w->service_id)->where('modality', $w->modality)->orderByDesc('revision')->lockForUpdate()->first();
 
             return $e && $e->id === $w->eligibility_id && $e->status === 'verified' && $e->evidence_reference && $e->verifier_id
-                && new DateTimeImmutable($e->verified_at) <= $now && new DateTimeImmutable($e->valid_until) > $now
-                && app(PendingRadiographerHandoff::class)->isCurrent($w->handoff_id, $w->binding);
+                && new DateTimeImmutable($e->verified_at) <= $now && new DateTimeImmutable($e->valid_until) > $now;
         });
 
         // Entry independently rechecks full clinical scope and original-source integrity after login.

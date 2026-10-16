@@ -114,10 +114,16 @@ final class RadiologistWorkspace implements RadiologistAccess
         return hash('sha256', $session);
     }
 
-    private function eligible(string $user, string $site, string $service, string $modality): object
+    private function lockParticipants(array $users): void
     {
-        $u = User::query()->whereKey($user)->lockForUpdate()->first();
-        $e = DB::table('doctor_eligibility')->where('user_id', $user)->where('site_id', $site)->where('service_id', $service)->where('modality', $modality)->orderByDesc('revision')->lockForUpdate()->first();
+        // Acquire all participating accounts before the Operator workspace, in stable order.
+        User::query()->whereIn('id', array_unique([Auth::id(), ...$users]))->orderBy('id')->lockForUpdate()->get();
+    }
+
+    private function eligible(string $user, string $site, string $service, string $modality, bool $lock = true): object
+    {
+        $u = User::query()->whereKey($user)->when($lock, fn ($q) => $q->lockForUpdate())->first();
+        $e = DB::table('doctor_eligibility')->where('user_id', $user)->where('site_id', $site)->where('service_id', $service)->where('modality', $modality)->orderByDesc('revision')->when($lock, fn ($q) => $q->lockForUpdate())->first();
         $now = app(Clock::class)->now();
         if (! in_array($modality, ['DX', 'CR'], true) || ! $u || ! $u->canAuthenticate() || ! $e || $e->status !== 'verified' || ! $e->evidence_reference || ! $e->verifier_id
             || new DateTimeImmutable($e->verified_at) > $now || new DateTimeImmutable($e->valid_until) <= $now) {
@@ -130,23 +136,37 @@ final class RadiologistWorkspace implements RadiologistAccess
     public function verifyEligibility(string $handoff, #[\SensitiveParameter] array $input): array
     {
         return $this->transaction(function () use ($handoff, $input) {
+            $this->validate($input, ['user' => 'required|string|max:36', 'status' => 'required|in:verified,revoked', 'evidence' => 'required|string|max:255', 'valid_until' => 'required_if:status,verified|date', 'eligibility' => 'required_if:status,revoked|string|max:36', 'password' => 'required|string|max:4096']);
+            $this->lockParticipants([$input['user']]);
             $this->capability('credential');
             $h = app(RadiologistHandoff::class)->selection($handoff);
             $this->capability('credential', $h->site_id);
-            $this->validate($input, ['user' => 'required|string|max:36', 'status' => 'required|in:verified,revoked', 'evidence' => 'required|string|max:255', 'valid_until' => 'required|date', 'password' => 'required|string|max:4096']);
             $this->credential($input['password']);
             $service = app(RadiologistCaseIdentity::class)->service($h->booking_id, $h->member_schedule_id, $h->site_id);
-            $modality = app(RadiologistStudySource::class)->assignment($handoff)['modality'];
-            if (! in_array($modality, ['DX', 'CR'], true) || new DateTimeImmutable($input['valid_until']) <= app(Clock::class)->now()) {
-                throw new DomainException('invalid_input');
-            }
             $u = User::query()->whereKey($input['user'])->lockForUpdate()->first();
-            if (! $u || ! $u->canAuthenticate()) {
+            if (! $u) {
                 throw new DomainException('access_denied');
             }
+            if ($input['status'] === 'revoked') {
+                // Existing evidence fixes the exact scope; revocation needs no image parsing or login eligibility.
+                $selected = DB::table('doctor_eligibility')->where('id', $input['eligibility'])->where('user_id', $u->id)->where('site_id', $h->site_id)->where('service_id', $service)->first();
+                if (! $selected) {
+                    throw new DomainException('access_denied');
+                }
+                $modality = $selected->modality;
+            } else {
+                $modality = app(RadiologistStudySource::class)->assignment($handoff)['modality'];
+                if (! $u->canAuthenticate() || ! in_array($modality, ['DX', 'CR'], true) || new DateTimeImmutable($input['valid_until']) <= app(Clock::class)->now()) {
+                    throw new DomainException('invalid_input');
+                }
+            }
             $old = DB::table('doctor_eligibility')->where('user_id', $u->id)->where('site_id', $h->site_id)->where('service_id', $service)->where('modality', $modality)->orderByDesc('revision')->lockForUpdate()->first();
+            if ($input['status'] === 'revoked' && $old?->id !== $selected->id) {
+                throw new DomainException('conflict');
+            }
+            $validUntil = $input['status'] === 'revoked' ? $old->valid_until : $input['valid_until'];
             $id = (string) Str::uuid();
-            DB::table('doctor_eligibility')->insert(['id' => $id, 'user_id' => $u->id, 'site_id' => $h->site_id, 'service_id' => $service, 'modality' => $modality, 'revision' => ($old?->revision ?? 0) + 1, 'status' => $input['status'], 'evidence_reference' => $input['evidence'], 'verifier_id' => Auth::id(), 'verified_at' => app(Clock::class)->now(), 'valid_until' => (new DateTimeImmutable($input['valid_until']))->setTimezone(new \DateTimeZone('UTC'))]);
+            DB::table('doctor_eligibility')->insert(['id' => $id, 'user_id' => $u->id, 'site_id' => $h->site_id, 'service_id' => $service, 'modality' => $modality, 'revision' => ($old?->revision ?? 0) + 1, 'status' => $input['status'], 'evidence_reference' => $input['evidence'], 'verifier_id' => Auth::id(), 'verified_at' => app(Clock::class)->now(), 'valid_until' => (new DateTimeImmutable($validUntil))->setTimezone(new \DateTimeZone('UTC'))]);
             $this->audit((object) ['id' => $id, 'site_id' => $h->site_id, 'booking_id' => $h->booking_id, 'generation' => 0, 'revision' => ($old?->revision ?? 0) + 1], 'credential-'.$input['status']);
 
             return ['eligibility' => $id];
@@ -256,27 +276,33 @@ final class RadiologistWorkspace implements RadiologistAccess
     public function manage(string $handoff, string $action, #[\SensitiveParameter] array $input): array
     {
         return $this->transaction(function () use ($handoff, $action, $input) {
+            $discovered = DB::table('doctor_workspaces')->where('handoff_id', $handoff)->first();
+            $this->lockParticipants(array_filter([$discovered?->user_id, $input['user'] ?? null]));
             $this->authorizeManager();
             $h = app(RadiologistHandoff::class)->selection($handoff);
             app(ClinicalFinalizationGuard::class)->initialize($h->booking_id);
             $w = DB::table('doctor_workspaces')->where('handoff_id', $handoff)->lockForUpdate()->first();
+            if ($w?->user_id !== $discovered?->user_id) {
+                throw new DomainException('conflict');
+            }
             $service = app(RadiologistCaseIdentity::class)->service($h->booking_id, $h->member_schedule_id, $h->site_id);
             $modality = $w?->modality ?? ($h->snapshot['actual']['modality'] ?? null);
-            if (in_array($action, ['issue', 'reassign'], true) || ($action === 'read' && $modality === null)) {
+            if (in_array($action, ['issue', 'reassign'], true)) {
                 $modality = app(RadiologistStudySource::class)->assignment($handoff)['modality'];
             }
             if ($action === 'read') {
                 $this->audit($w ?? (object) ['id' => $h->handoff_id, 'site_id' => $h->site_id, 'booking_id' => $h->booking_id, 'generation' => 0, 'revision' => 0], 'management-read');
                 $candidates = [];
-                foreach (DB::table('doctor_eligibility')->where('site_id', $h->site_id)->where('service_id', $service)->where('modality', $modality)->distinct()->limit(100)->pluck('user_id') as $id) {
+                foreach (DB::table('doctor_eligibility')->where('site_id', $h->site_id)->where('service_id', $service)->when($modality !== null, fn ($q) => $q->where('modality', $modality))->select(['user_id', 'modality'])->distinct()->limit(100)->get() as $candidate) {
+                    $id = $candidate->user_id;
                     try {
-                        $this->eligible($id, $h->site_id, $service, $modality);
+                        $this->eligible($id, $h->site_id, $service, $candidate->modality, false);
                         $candidates[$id] = User::query()->whereKey($id)->value('email');
                     } catch (DomainException) {
                     }
                 }
 
-                return ['id' => $w?->id, 'generation' => $w?->generation, 'revision' => $w?->revision, 'revoked' => (bool) $w?->revoked, 'finalized' => $w?->final_id !== null, 'candidates' => $candidates];
+                return ['id' => $w?->id, 'generation' => $w?->generation, 'revision' => $w?->revision, 'revoked' => (bool) $w?->revoked, 'finalized' => $w?->final_id !== null, 'candidates' => $candidates, 'eligibilities' => DB::table('doctor_eligibility')->where('site_id', $h->site_id)->where('service_id', $service)->orderByDesc('revision')->get(['id', 'user_id', 'modality', 'revision', 'status'])->all()];
             }
             if (! in_array($action, ['issue', 'reassign', 'revoke'], true)) {
                 throw new DomainException('invalid_action');

@@ -29,14 +29,14 @@ use Ramsey\Uuid\Uuid;
 
 final class RadiographerStudyRead implements RadiographerStudySource, RadiologistStudySource
 {
-    public function selection(string $reference): ?object
+    public function selection(string $reference, bool $lock = true): ?object
     {
         try {
-            return DB::transaction(function () use ($reference) {
+            return DB::transaction(function () use ($reference, $lock) {
                 $access = app(RadiographerAccess::class);
                 $access->authorizeManager();
                 $row = DB::table('image_gateway_studies as s')->join('image_gateway_capture_sets as c', 'c.id', '=', 's.capture_set_id')
-                    ->where('s.display_reference', $reference)->lockForUpdate()->select(['s.id as study_id', 'c.booking_id', 'c.admission_id', 'c.operator_site_id as site_id'])->first();
+                    ->where('s.display_reference', $reference)->when($lock, fn ($q) => $q->lockForUpdate())->select(['s.id as study_id', 'c.booking_id', 'c.admission_id', 'c.operator_site_id as site_id'])->first();
                 if ($row) {
                     $access->authorizeManager($row->site_id);
                 }
@@ -63,13 +63,20 @@ final class RadiographerStudyRead implements RadiographerStudySource, Radiologis
             throw new DomainException('unavailable');
         }
         app(RadiologistAccess::class)->authorizeManager();
-        $s = DB::table('image_gateway_studies as s')->join('image_gateway_capture_sets as c', 'c.id', '=', 's.capture_set_id')->where('s.display_reference', $reference)->lockForUpdate()->select(['s.id', 'c.operator_site_id'])->first();
+        $query = DB::table('image_gateway_studies as s')->join('image_gateway_capture_sets as c', 'c.id', '=', 's.capture_set_id')->where('s.display_reference', $reference)->select(['s.id', 'c.operator_site_id']);
+        $s = (clone $query)->first();
         if (! $s) {
             return null;
         }
         app(RadiologistAccess::class)->authorizeManager($s->operator_site_id);
 
-        return app(RadiologistHandoff::class)->forStudy($s->id);
+        $handoff = app(RadiologistHandoff::class)->forStudy($s->id);
+        $current = (clone $query)->lockForUpdate()->first();
+        if ((array) $current !== (array) $s) {
+            throw new DomainException('source_changed');
+        }
+
+        return $handoff;
     }
 
     public function assignment(string $handoff): array

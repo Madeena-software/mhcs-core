@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Integration;
 
+use App\Modules\Doctor\Application\Services\RadiologistLoginAccess;
 use App\Modules\Doctor\Application\Services\RadiologistWorkspace;
 use App\Modules\Operator\Application\Services\RadiographerWorkspace;
 use App\Shared\Audit\AuditEvent;
@@ -58,6 +59,7 @@ final class RadiologistConcurrencyTest extends TestCase
         $f = RadiologistFixtures::create();
         $this->actingAs($f['admin']);
         $this->get('/login');
+        request()->session()->start();
         $s = app(RadiologistWorkspace::class);
         $s->verifyEligibility($f['handoff'], ['user' => $f['doctor']->id, 'status' => 'verified', 'evidence' => 'SYNTHETIC', 'valid_until' => now()->addDays(10)->toAtomString(), 'password' => 'password']);
         if (! $assign) {
@@ -66,6 +68,7 @@ final class RadiologistConcurrencyTest extends TestCase
         $w = $s->manage($f['handoff'], 'issue', ['user' => $f['doctor']->id, 'password' => 'password']);
         $this->actingAs($f['doctor']);
         $this->get($w['url'])->assertRedirect();
+        request()->session()->start();
         $p = ['revision' => 0, 'binding' => $f['binding'], 'handoff' => $f['handoff']];
         $s->command($w['id'], 'quality', $p + ['decision' => 'usable'], 1);
         $p['revision'] = 1;
@@ -171,7 +174,7 @@ final class RadiologistConcurrencyTest extends TestCase
             }
             $this->actingAs($f['admin']);
             if ($change === 'eligibility') {
-                return app(RadiologistWorkspace::class)->verifyEligibility($f['handoff'], ['user' => $f['doctor']->id, 'status' => 'revoked', 'evidence' => 'SYNTHETIC-REVOCATION', 'valid_until' => now()->addDays(10)->toAtomString(), 'password' => 'password']);
+                return app(RadiologistWorkspace::class)->verifyEligibility($f['handoff'], ['user' => $f['doctor']->id, 'status' => 'revoked', 'eligibility' => DB::table('doctor_eligibility')->orderByDesc('revision')->value('id'), 'evidence' => 'SYNTHETIC-REVOCATION', 'valid_until' => now()->addDays(10)->toAtomString(), 'password' => 'password']);
             }
             if ($change === 'reopen') {
                 return app(RadiographerWorkspace::class)->manage($f['reference'], 'reopen', ['handoff' => $f['handoff'], 'reason' => 'Synthetic race']);
@@ -181,8 +184,12 @@ final class RadiologistConcurrencyTest extends TestCase
         };
         [$a,$b] = $this->pair($finalize, $mutation);
         $this->assertTrue($a['ok'] || $b['ok']);
-        if ($change === 'reassign' || $change === 'reopen') {
+        if ($change === 'reassign') {
             $this->assertSame(1, (int) $a['ok'] + (int) $b['ok']);
+        }
+        if ($change === 'reopen') {
+            $this->assertTrue($a['ok'], 'Unknown-coverage reopen must not abort valid finalization');
+            $this->assertFalse($b['ok'], 'Unproven reporting coverage must deny reopen');
         }
         $this->assertSame($a['ok'] ? 1 : 0, DB::table('doctor_finalizations')->count());
         if ($a['ok']) {
@@ -196,13 +203,17 @@ final class RadiologistConcurrencyTest extends TestCase
     }
 
     #[DataProvider('disclosures')]
-    public function test_committed_reassignment_withholds_prepared_response(string $suffix): void
+    public function test_committed_access_loss_withholds_prepared_response(string $suffix, string $change): void
     {
         [$f,$w] = $this->prepared();
         $response = $this->get('/radiologist/workspaces/'.$w['id'].$suffix)->assertOk()->baseResponse;
         DB::disconnect();
-        $child = $this->child(function () use ($f) {
+        $child = $this->child(function () use ($f, $change) {
             $this->actingAs($f['admin']);
+            request()->session()->start();
+            if ($change === 'credential') {
+                return app(RadiologistWorkspace::class)->verifyEligibility($f['handoff'], ['user' => $f['doctor']->id, 'status' => 'revoked', 'eligibility' => DB::table('doctor_eligibility')->orderByDesc('revision')->value('id'), 'evidence' => 'SYNTHETIC-REVOKE', 'password' => 'password']);
+            }
 
             return app(RadiologistWorkspace::class)->manage($f['handoff'], 'reassign', ['generation' => 1, 'user' => $f['doctor']->id, 'password' => 'password']);
         });
@@ -217,7 +228,7 @@ final class RadiologistConcurrencyTest extends TestCase
 
     public static function disclosures(): array
     {
-        return [[''], ['/viewer'], ['/dicom']];
+        return [['', 'reassign'], ['/viewer', 'reassign'], ['/dicom', 'reassign'], ['', 'credential'], ['/viewer', 'credential'], ['/dicom', 'credential']];
     }
 
     #[DataProvider('atomicFailures')]
@@ -261,5 +272,115 @@ final class RadiologistConcurrencyTest extends TestCase
     public static function atomicFailures(): array
     {
         return [['append'], ['commit']];
+    }
+
+    #[DataProvider('loginMutations')]
+    public function test_login_account_lock_precedes_management_operator_lock(string $action): void
+    {
+        [$f, $w] = $this->prepared();
+        $eligibility = DB::table('doctor_eligibility')->value('id');
+        $intended = parse_url($w['url'], PHP_URL_PATH).'?'.parse_url($w['url'], PHP_URL_QUERY);
+        DB::disconnect();
+        $login = $this->child(function ($pipe) use ($f, $intended) {
+            return DB::transaction(function () use ($pipe, $f, $intended) {
+                DB::table('users')->where('id', $f['doctor']->id)->lockForUpdate()->first();
+                fwrite($pipe, "account-held\n");
+                fgets($pipe);
+
+                return app(RadiologistLoginAccess::class)->destination($f['doctor'], $intended);
+            });
+        });
+        $this->assertSame("account-held\n", fgets($login[1]));
+        $management = $this->child(function ($pipe) use ($f, $action, $eligibility) {
+            $this->actingAs($f['admin']);
+            $signalled = false;
+            DB::connection()->beforeExecuting(function ($sql, $bindings) use ($pipe, &$signalled, $f) {
+                if (! $signalled && str_contains($sql, '`users`') && str_contains($sql, 'for update') && in_array($f['doctor']->id, $bindings, true)) {
+                    $signalled = true;
+                    fwrite($pipe, "account-requested\n");
+                }
+            });
+            if ($action === 'credential') {
+                return app(RadiologistWorkspace::class)->verifyEligibility($f['handoff'], ['user' => $f['doctor']->id, 'eligibility' => $eligibility, 'status' => 'revoked', 'evidence' => 'SYNTHETIC-RACE', 'password' => 'password']);
+            }
+
+            return app(RadiologistWorkspace::class)->manage($f['handoff'], $action, ['generation' => 1, 'password' => 'password'] + ($action === 'reassign' ? ['user' => $f['doctor']->id] : []));
+        });
+        $this->assertSame("account-requested\n", fgets($management[1]));
+        try {
+            // Management must wait on the account without holding the upstream row login needs.
+            DB::transaction(fn () => DB::table('operator_radiographer_workspaces')->where('id', $f['radiographer_workspace'])->lock('for update nowait')->first());
+        } finally {
+            fwrite($login[1], "continue\n");
+        }
+        $admitted = $this->finish($login);
+        $changed = $this->finish($management);
+        $this->assertTrue($admitted['ok']);
+        $this->assertSame($intended, $admitted['result']);
+        $this->assertTrue($changed['ok']);
+        $this->actingAs($f['doctor']);
+        $this->assertNull(app(RadiologistLoginAccess::class)->destination($f['doctor'], $intended));
+    }
+
+    public static function loginMutations(): array
+    {
+        return [['credential'], ['reassign'], ['revoke']];
+    }
+
+    public function test_mysql_migration_rollback_preserves_original_and_handoff(): void
+    {
+        [$f] = $this->prepared(false);
+        $original = (array) DB::table('image_gateway_studies')->first();
+        $handoff = (array) DB::table('operator_radiographer_handoffs')->first();
+        $migration = require database_path('migrations/2026_10_16_000001_create_radiologist_workspace_tables.php');
+        $migration->down();
+        $this->assertSame($original, (array) DB::table('image_gateway_studies')->first());
+        $this->assertSame($handoff, (array) DB::table('operator_radiographer_handoffs')->first());
+        $migration->up();
+        $this->assertSame(0, DB::table('doctor_workspaces')->count());
+    }
+
+    public function test_finalization_operator_lock_precedes_reopen_source_lock(): void
+    {
+        [$f, $w, $p] = $this->prepared();
+        DB::disconnect();
+        $finalize = $this->child(function ($pipe) use ($w, $p) {
+            $paused = false;
+            DB::connection()->beforeExecuting(function ($sql) use ($pipe, &$paused) {
+                if (! $paused && str_contains($sql, 'insert ignore into `doctor_clinical_guards`')) {
+                    $paused = true;
+                    fwrite($pipe, "operator-held\n");
+                    fgets($pipe);
+                }
+            });
+
+            return app(RadiologistWorkspace::class)->command($w['id'], 'finalize', $p + ['password' => 'password', 'attest' => true, 'key' => 'ordered-final'], 1);
+        });
+        $this->assertSame("operator-held\n", fgets($finalize[1]));
+        $reopen = $this->child(function ($pipe) use ($f) {
+            $this->actingAs($f['admin']);
+            $paused = false;
+            DB::connection()->beforeExecuting(function ($sql) use ($pipe, &$paused) {
+                if (! $paused && str_contains($sql, 'operator_radiographer_workspaces') && str_contains($sql, 'for update')) {
+                    $paused = true;
+                    fwrite($pipe, "operator-requested\n");
+                    fgets($pipe);
+                }
+            });
+
+            return app(RadiographerWorkspace::class)->manage($f['reference'], 'reopen', ['handoff' => $f['handoff'], 'reason' => 'Synthetic ordered reopen']);
+        });
+        $this->assertSame("operator-requested\n", fgets($reopen[1]));
+        try {
+            // Reopen must not hold Gateway rows while waiting for the Operator row.
+            DB::transaction(fn () => DB::table('image_gateway_studies')->where('id', $f['study'])->lock('for update nowait')->first());
+        } finally {
+            fwrite($finalize[1], "continue\n");
+            fwrite($reopen[1], "continue\n");
+        }
+        $this->assertTrue($this->finish($finalize)['ok']);
+        $this->assertFalse($this->finish($reopen)['ok']);
+        $this->assertSame(1, DB::table('doctor_finalizations')->count());
+        $this->assertSame($f['handoff'], DB::table('operator_radiographer_workspaces')->value('active_handoff'));
     }
 }

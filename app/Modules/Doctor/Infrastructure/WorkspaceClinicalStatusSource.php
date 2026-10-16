@@ -37,8 +37,9 @@ final class WorkspaceClinicalStatusSource implements ClinicalStatusSource
             }
         }
 
+        // Internal consistency cannot establish coverage of external or historical reporting sources.
         return ['case_id' => $case, 'binding' => $binding, 'handoff_id' => $handoff, 'status' => $w->clinical_status,
-            'verified' => true, 'current' => true, 'coordinated' => true, 'complete_sources' => true, 'sources' => ['doctor-workspace-v1'],
+            'verified' => true, 'current' => true, 'coordinated' => true, 'complete_sources' => false, 'sources' => ['doctor-workspace-v1'],
             'source_reference' => $w->id, 'revision' => $w->revision + 1, 'observed_at' => app(Clock::class)->now()->format(DATE_ATOM)];
     }
 }

@@ -7,6 +7,7 @@ namespace Tests\Unit\Doctor;
 use App\Models\User;
 use App\Modules\Doctor\Application\Services\ClinicalFinalizationGuard;
 use App\Modules\Doctor\Application\Services\RadiologistWorkspace;
+use App\Modules\Doctor\Infrastructure\WorkspaceClinicalStatusSource;
 use App\Modules\ImageGateway\Application\Contracts\RadiologistStudySource;
 use App\Modules\ImageGateway\Application\Services\RadiographerStudyRead;
 use App\Modules\Member\Application\Contracts\RadiologistCaseIdentity;
@@ -345,7 +346,7 @@ final class RadiologistCommandsTest extends TestCase
     {
         [$f,$w] = $this->issued();
         $guard = app(ClinicalFinalizationGuard::class);
-        $this->assertSame('not_finalized', $guard->refresh($f['i']['booking'], $f['binding'], $f['handoff']));
+        $this->assertSame('unknown', $guard->refresh($f['i']['booking'], $f['binding'], $f['handoff']));
         DB::table('doctor_workspaces')->update(['clinical_status' => 'unknown']);
         $this->assertSame('unknown', $guard->refresh($f['i']['booking'], $f['binding'], $f['handoff']));
         DB::table('doctor_workspaces')->update(['clinical_status' => 'finalized']);
@@ -417,5 +418,96 @@ final class RadiologistCommandsTest extends TestCase
         $this->assertSame('SYNTHETIC-MRN', $identity['patientId']);
         $this->assertGreaterThan(0, DB::table('audit_events')->where('action', 'radiologist-workspace.handoff-read')->count());
         $this->assertSame(1, DB::table('audit_events')->where('action', 'radiologist-workspace.assignment-identity-read')->count());
+    }
+
+    #[DataProvider('revocationStates')]
+    public function test_scoped_revocation_needs_no_dicom_or_active_target(string $state): void
+    {
+        [$f, $w] = $this->issued();
+        $pending = $this->get('/radiologist/workspaces/'.$w['id'])->assertOk()->baseResponse;
+        $old = DB::table('doctor_eligibility')->first();
+        if ($state === 'suspended') {
+            DB::table('users')->where('id', $f['doctor']->id)->update(['account_status' => 'suspended']);
+        } elseif ($state === 'expired') {
+            DB::table('doctor_eligibility')->where('id', $old->id)->update(['valid_until' => now()->subDay()]);
+            $old = DB::table('doctor_eligibility')->where('id', $old->id)->first();
+        }
+        $this->mock(RadiologistStudySource::class)->shouldNotReceive('assignment');
+        $this->actingAs($f['admin']);
+        $input = ['action' => 'credential', 'user' => $f['doctor']->id, 'status' => 'revoked', 'eligibility' => $old->id, 'evidence' => 'SYNTHETIC-REVOCATION', 'password' => 'password'];
+        $this->postJson('/admin/radiologist-workspaces/'.$f['handoff'], $input)->assertOk();
+        $latest = DB::table('doctor_eligibility')->orderByDesc('revision')->first();
+        foreach (['user_id', 'site_id', 'service_id', 'modality', 'valid_until'] as $field) {
+            $this->assertSame($old->$field, $latest->$field);
+        }
+        $this->assertSame($old->revision + 1, $latest->revision);
+        $this->assertSame('revoked', $latest->status);
+        $this->assertSame($f['admin']->id, $latest->verifier_id);
+        $this->assertSame((array) $old, (array) DB::table('doctor_eligibility')->where('id', $old->id)->first());
+        $this->assertSame(1, DB::table('audit_events')->where('action', 'radiologist-workspace.credential-revoked')->count());
+        $this->postJson('/admin/radiologist-workspaces/'.$f['handoff'], $input)->assertForbidden();
+        $this->assertSame(2, DB::table('doctor_eligibility')->count());
+        $this->actingAs($f['doctor']);
+        ob_start();
+        $pending->sendContent();
+        $body = ob_get_clean();
+        $this->assertSame(403, $pending->getStatusCode());
+        $this->assertStringNotContainsString('SYNTHETIC-MRN', $body);
+    }
+
+    public static function revocationStates(): array
+    {
+        return [['dicom-unavailable'], ['suspended'], ['expired']];
+    }
+
+    public function test_credential_revocation_cannot_expand_scope_or_capability(): void
+    {
+        [$f, $w] = $this->issued();
+        $old = DB::table('doctor_eligibility')->first();
+        $other = (array) $old;
+        $other['id'] = (string) Str::uuid();
+        $other['modality'] = 'CR';
+        DB::table('doctor_eligibility')->insert($other);
+        $this->actingAs($f['admin']);
+        $input = ['action' => 'credential', 'user' => $f['doctor']->id, 'status' => 'revoked', 'eligibility' => $old->id, 'evidence' => 'SYNTHETIC', 'password' => 'password'];
+        $this->postJson('/admin/radiologist-workspaces/'.$f['handoff'], $input + ['modality' => 'CR'])->assertForbidden();
+        DB::table('authorization_permission_assignments')->where('user_id', $f['admin']->id)->where('permission', 'doctor.radiologist-workspace.credential')->update(['active' => false]);
+        $this->postJson('/admin/radiologist-workspaces/'.$f['handoff'], $input)->assertForbidden();
+        $this->assertSame(2, DB::table('doctor_eligibility')->count());
+        $this->assertSame('verified', DB::table('doctor_eligibility')->where('id', $other['id'])->value('status'));
+    }
+
+    public function test_internal_source_consistency_does_not_prove_complete_coverage(): void
+    {
+        [$f, $w] = $this->issued();
+        $e = DB::transaction(fn () => app(WorkspaceClinicalStatusSource::class)->readWhileLocked($f['i']['booking'], $f['binding'], $f['handoff']));
+        $this->assertSame('not_finalized', $e['status']);
+        $this->assertFalse($e['complete_sources']);
+        $this->assertSame('unknown', app(ClinicalFinalizationGuard::class)->refresh($f['i']['booking'], $f['binding'], $f['handoff']));
+        $this->actingAs($f['admin']);
+        try {
+            app(RadiographerWorkspace::class)->manage($f['reference'], 'reopen', ['handoff' => $f['handoff'], 'reason' => 'Synthetic incomplete inventory']);
+            $this->fail('Incomplete inventory allowed reopen');
+        } catch (\DomainException) {
+        }
+        $this->assertSame($f['handoff'], DB::table('operator_radiographer_workspaces')->value('active_handoff'));
+    }
+
+    public function test_credential_revocation_page_needs_no_image_parser_or_issued_workspace(): void
+    {
+        [$f, $w] = $this->issued();
+        $old = DB::table('doctor_eligibility')->first();
+        DB::table('doctor_workspace_history')->delete();
+        DB::table('doctor_workspaces')->delete();
+        $h = DB::table('operator_radiographer_handoffs')->first();
+        $snapshot = json_decode($h->snapshot, true, flags: JSON_THROW_ON_ERROR);
+        unset($snapshot['actual']['modality']);
+        DB::table('operator_radiographer_handoffs')->where('id', $h->id)->update(['snapshot' => json_encode($snapshot, JSON_THROW_ON_ERROR)]);
+        DB::table('users')->where('id', $f['doctor']->id)->update(['account_status' => 'suspended']);
+        $this->mock(RadiologistStudySource::class)->shouldNotReceive('assignment');
+        $this->actingAs($f['admin']);
+        $this->get('/admin/radiologist-workspaces/'.$f['handoff'])->assertOk()->assertSee($old->id);
+        $this->postJson('/admin/radiologist-workspaces/'.$f['handoff'], ['action' => 'credential', 'user' => $f['doctor']->id, 'status' => 'revoked', 'eligibility' => $old->id, 'evidence' => 'SYNTHETIC', 'password' => 'password'])->assertOk();
+        $this->assertSame('revoked', DB::table('doctor_eligibility')->orderByDesc('revision')->value('status'));
     }
 }
