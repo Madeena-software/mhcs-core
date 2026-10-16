@@ -240,11 +240,21 @@ final class RadiographerWorkspace implements RadiographerAccess
                     if (! $w) {
                         $this->audit((object) ['id' => null, 'site_id' => $source->site_id, 'booking_id' => $source->booking_id, 'generation' => 0, 'revision' => 0, 'cycle' => 0], 'read');
 
-                        return ['state' => 'unassigned', 'candidates' => $this->candidates($source->site_id)];
+                        return ['state' => 'unassigned', 'access_status' => 'unassigned', 'candidates' => $this->candidates($source->site_id)];
                     }
                     $this->audit($w, 'read');
 
-                    return ['state' => $w->active_handoff ? 'pending_radiologist_review' : 'unreviewed', 'id' => $w->id, 'generation' => $w->generation, 'expires_at' => $w->expires_at, 'revoked' => (bool) $w->revoked, 'handoff' => $w->active_handoff, 'candidates' => $this->candidates($source->site_id)];
+                    $candidates = $this->candidates($source->site_id);
+                    $eligible = true;
+                    try {
+                        $this->eligible($w->user_id, $w->site_id);
+                    } catch (DomainException) {
+                        $eligible = false;
+                    }
+                    $now = app(Clock::class)->now();
+                    $access = $w->revoked ? 'revoked' : (new DateTimeImmutable($w->expires_at) <= $now ? 'expired' : (new DateTimeImmutable($w->starts_at) > $now || ! $eligible ? 'unavailable' : 'active'));
+
+                    return ['access_status' => $access, 'assignee' => User::query()->whereKey($w->user_id)->value('email'), 'state' => $w->active_handoff ? 'pending_radiologist_review' : 'unreviewed', 'id' => $w->id, 'generation' => $w->generation, 'expires_at' => $w->expires_at, 'revoked' => (bool) $w->revoked, 'handoff' => $w->active_handoff, 'candidates' => $candidates];
                 }
                 if (in_array($action, ['issue', 'reassign'], true)) {
                     $input += ['hours' => 24];
@@ -266,7 +276,7 @@ final class RadiographerWorkspace implements RadiographerAccess
                     $this->history($w, $event, ['user' => $w->user_id, 'expires_at' => $w->expires_at]);
                     $this->audit($w, $event);
 
-                    return ['id' => $id, 'url' => URL::temporarySignedRoute('radiographer.entry', new DateTimeImmutable($w->expires_at), ['workspace' => $id, 'generation' => $w->generation])];
+                    return ['id' => $id, 'generation' => $w->generation, 'url' => URL::temporarySignedRoute('radiographer.entry', new DateTimeImmutable($w->expires_at), ['workspace' => $id, 'generation' => $w->generation])];
                 }
                 if (! $w) {
                     throw new DomainException('conflict');

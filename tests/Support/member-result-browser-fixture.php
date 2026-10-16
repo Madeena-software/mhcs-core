@@ -34,7 +34,7 @@ try {
         $doctor = User::factory()->create(['email' => 'synthetic-result-doctor@example.test']);
         $f = MemberResultFixtures::prepare(base: $f + ['doctor' => $doctor]);
         file_put_contents($directory.'/member-fixture.json', json_encode(['study' => $f['study'], 'capture' => $f['capture'], 'member' => $f['member'], 'i' => $f['i']], JSON_THROW_ON_ERROR));
-        echo json_encode(['admin' => $f['admin']->email, 'worker' => $f['worker']->email, 'workerId' => $f['worker']->id, 'doctor' => $doctor->email, 'doctorId' => $doctor->id, 'member' => $f['memberUser']->email, 'reference' => $f['reference'], 'case' => $f['i']['booking']], JSON_THROW_ON_ERROR);
+        echo json_encode(['admin' => $f['admin']->email, 'worker' => $f['worker']->email, 'workerId' => $f['worker']->id, 'doctor' => $doctor->email, 'doctorId' => $doctor->id, 'member' => $f['memberUser']->email, 'reference' => $f['reference'], 'case' => $f['i']['booking'], 'facility' => $f['siteId'], 'date' => $f['date'], 'session' => $f['scheduleId']], JSON_THROW_ON_ERROR);
     } elseif ($command === 'handoff') {
         $h = DB::table('operator_radiographer_handoffs')->first();
         if (! $h) {
@@ -49,6 +49,14 @@ try {
         $inventory = ClosedSyntheticClinicalInventory::seal($f);
         file_put_contents($directory.'/member-inventory.json', json_encode($inventory->export(), JSON_THROW_ON_ERROR));
         echo json_encode(['finalizations' => DB::table('doctor_finalizations')->count(), 'publications' => DB::table('member_result_publications')->count()], JSON_THROW_ON_ERROR);
+    } elseif ($command === 'expire-profession') {
+        $table = match ($argv[2] ?? '') {
+            'radiographer' => 'operator_radiographer_workspaces',
+            'radiologist' => 'doctor_workspaces',
+            default => throw new RuntimeException,
+        };
+        DB::table($table)->update(['expires_at' => app(Clock::class)->now()->modify('-1 second')]);
+        echo 'Synthetic professional entitlement expired';
     } elseif ($command === 'expire') {
         DB::table('member_result_publications')->update(['expires_at' => app(Clock::class)->now()->modify('-1 second')]);
         echo 'Synthetic publication expired';

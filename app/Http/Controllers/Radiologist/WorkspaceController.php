@@ -109,15 +109,28 @@ final class WorkspaceController extends Controller
     {
         try {
             $result = [];
-            if (! $request->isMethod('get')) {
+            if ($request->isMethod('post')) {
                 $action = (string) $request->input('action');
                 $input = $request->except('_token', 'action');
                 $result = $action === 'credential' ? $service->verifyEligibility($handoff, $input) : $service->manage($handoff, $action, $input);
+                if (! $request->expectsJson()) {
+                    return redirect()->route('radiologist.manage', $handoff, 303)->with('radiologist.issuance', ['handoff' => $handoff, 'result' => $result])->withHeaders(self::HEADERS);
+                }
+            } else {
+                $issuance = $request->session()->pull('radiologist.issuance');
+                $result = ($issuance['handoff'] ?? null) === $handoff ? $issuance['result'] : [];
             }
             $state = $service->manage($handoff, 'read', []);
+            if (isset($result['url']) && (($result['generation'] ?? null) !== $state['generation'] || $state['access_status'] !== 'active')) {
+                $result = [];
+            }
             $response = $request->expectsJson() ? response()->json($result ?: $state)->withHeaders(self::HEADERS) : response()->view('radiologist.manage', compact('state', 'result', 'handoff'))->withHeaders(self::HEADERS);
 
-            return new WorkspaceResponse($response, fn () => $service->manage($handoff, 'read', []), fn () => $this->unavailable($service));
+            return new WorkspaceResponse($response, function () use ($service, $handoff, $state) {
+                if ($service->manage($handoff, 'read', []) != $state) {
+                    throw new \DomainException;
+                }
+            }, fn () => $this->unavailable($service));
         } catch (Throwable) {
             return $this->unavailable($service);
         }

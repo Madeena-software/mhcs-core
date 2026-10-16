@@ -1,9 +1,13 @@
 @extends('radiographer.layout')
 @section('title','Penugasan Radiolog')
 @section('content')
-<h1>Penugasan Radiolog</h1><p role="status">{{ $state['finalized'] ? 'Final internal — hanya baca' : ($state['id'] ? ($state['revoked'] ? 'Akses dicabut' : 'Ditugaskan') : 'Belum ditugaskan') }}</p>
+<h1>Penugasan Radiolog — {{ $state['case'] }}</h1>
+<a href="/admin/study-worklist">Kembali ke daftar studi</a>
+@include('components.task-access-status')
+@if(empty($state['candidates']))<p role="status">Tidak ada individu terverifikasi yang tersedia untuk penugasan ini. Hubungi pengelola kelayakan profesional.</p>@endif
+@if($state['finalized'])<p role="status">Final internal — hanya baca</p>@endif
 @if($state['finalized'])<p><a href="{{ route('member.result.manage', $state['case']) }}">Publikasi hasil Member (keputusan Admin terpisah)</a></p>@endif
-@if(isset($result['url']))<label for="assignment-url">Tautan untuk individu yang ditugaskan</label><input id="assignment-url" readonly value="{{ $result['url'] }}">@endif
+@if(isset($result['url']))@include('components.task-link')@endif
 @if(!$state['finalized'])
 <form method="post">@csrf<input type="hidden" name="action" value="{{ $state['id'] ? 'reassign' : 'issue' }}">@if($state['id'])<input type="hidden" name="generation" value="{{ $state['generation'] }}">@endif
 <label for="assigned-user">Radiolog dengan kelayakan terverifikasi</label><select id="assigned-user" name="user" required>@foreach($state['candidates'] as $id=>$label)<option value="{{ $id }}">{{ $label }}</option>@endforeach</select>

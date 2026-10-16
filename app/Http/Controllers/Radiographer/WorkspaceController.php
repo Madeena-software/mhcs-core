@@ -105,17 +105,23 @@ final class WorkspaceController extends Controller
     public function manage(Request $request, string $reference, RadiographerWorkspace $service)
     {
         try {
-            if ($request->isMethod('get')) {
-                $response = response()->view('radiographer.manage', ['reference' => $reference, 'state' => $service->manage($reference, 'read', [])])->withHeaders(self::HEADERS);
-
-                return $this->managementDisclosure($response, $service, $reference);
+            $result = [];
+            if ($request->isMethod('post')) {
+                $result = $service->manage($reference, (string) $request->input('action'), $request->except('_token', 'action'));
+                if (! $request->expectsJson()) {
+                    return redirect()->route('radiographer.manage', $reference, 303)->with('radiographer.issuance', ['reference' => $reference, 'result' => $result])->withHeaders(self::HEADERS);
+                }
+            } else {
+                $issuance = $request->session()->pull('radiographer.issuance');
+                $result = ($issuance['reference'] ?? null) === $reference ? $issuance['result'] : [];
             }
-            $input = $request->except('_token', 'action');
-            $result = $service->manage($reference, (string) $request->input('action'), $input);
+            $state = $service->manage($reference, 'read', []);
+            if (isset($result['url']) && (($result['generation'] ?? null) !== $state['generation'] || $state['access_status'] !== 'active')) {
+                $result = [];
+            }
+            $response = $request->expectsJson() ? response()->json($result ?: $state)->withHeaders(self::HEADERS) : response()->view('radiographer.manage', compact('reference', 'state', 'result'))->withHeaders(self::HEADERS);
 
-            $response = $request->expectsJson() ? response()->json($result)->withHeaders(self::HEADERS) : response()->view('radiographer.manage', ['reference' => $reference, 'state' => $service->manage($reference, 'read', []), 'result' => $result])->withHeaders(self::HEADERS);
-
-            return $this->managementDisclosure($response, $service, $reference);
+            return $this->managementDisclosure($response, $service, $reference, $state);
         } catch (Throwable) {
             return $this->unavailable($service);
         }
@@ -128,10 +134,14 @@ final class WorkspaceController extends Controller
             fn () => $this->unavailable($service));
     }
 
-    private function managementDisclosure(Response $response, RadiographerWorkspace $service, string $reference): WorkspaceResponse
+    private function managementDisclosure(Response $response, RadiographerWorkspace $service, string $reference, array $state): WorkspaceResponse
     {
         return new WorkspaceResponse($response,
-            fn () => $service->manage($reference, 'read', []),
+            function () use ($service, $reference, $state) {
+                if ($service->manage($reference, 'read', []) != $state) {
+                    throw new \DomainException;
+                }
+            },
             fn () => $this->unavailable($service));
     }
 
@@ -140,9 +150,9 @@ final class WorkspaceController extends Controller
         try {
             $service->denied();
         } catch (Throwable) {
-            return response('Ruang kerja tidak tersedia.', 503, self::HEADERS);
+            return response()->view('radiologist.unavailable', [], 503, self::HEADERS);
         }
 
-        return response('Ruang kerja tidak tersedia. Silakan masuk melalui tautan penugasan yang berlaku.', 403, self::HEADERS);
+        return response()->view('radiologist.unavailable', [], 403, self::HEADERS);
     }
 }

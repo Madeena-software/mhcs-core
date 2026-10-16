@@ -302,7 +302,17 @@ final class RadiologistWorkspace implements RadiologistAccess
                     }
                 }
 
-                return ['case' => $h->booking_id, 'id' => $w?->id, 'generation' => $w?->generation, 'revision' => $w?->revision, 'revoked' => (bool) $w?->revoked, 'finalized' => $w?->final_id !== null, 'candidates' => $candidates, 'eligibilities' => DB::table('doctor_eligibility')->where('site_id', $h->site_id)->where('service_id', $service)->orderByDesc('revision')->get(['id', 'user_id', 'modality', 'revision', 'status'])->all()];
+                $eligible = false;
+                if ($w) {
+                    try {
+                        $eligible = $this->eligible($w->user_id, $w->site_id, $w->service_id, $w->modality, false)->id === $w->eligibility_id;
+                    } catch (DomainException) {
+                    }
+                }
+                $now = app(Clock::class)->now();
+                $access = ! $w ? 'unassigned' : ($w->revoked ? 'revoked' : (new DateTimeImmutable($w->expires_at) <= $now ? 'expired' : (new DateTimeImmutable($w->starts_at) > $now || ! $eligible ? 'unavailable' : 'active')));
+
+                return ['access_status' => $access, 'assignee' => $w ? User::query()->whereKey($w->user_id)->value('email') : null, 'expires_at' => $w?->expires_at, 'case' => $h->booking_id, 'id' => $w?->id, 'generation' => $w?->generation, 'revision' => $w?->revision, 'revoked' => (bool) $w?->revoked, 'finalized' => $w?->final_id !== null, 'candidates' => $candidates, 'eligibilities' => DB::table('doctor_eligibility')->where('site_id', $h->site_id)->where('service_id', $service)->orderByDesc('revision')->get(['id', 'user_id', 'modality', 'revision', 'status'])->all()];
             }
             if (! in_array($action, ['issue', 'reassign', 'revoke'], true)) {
                 throw new DomainException('invalid_action');

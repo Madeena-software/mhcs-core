@@ -135,6 +135,40 @@ final class RadiologistConcurrencyTest extends TestCase
         return [$this->finish($one), $this->finish($two)];
     }
 
+    public static function managementChanges(): array
+    {
+        return [['radiographer', 'reassign'], ['radiographer', 'revoke'], ['radiologist', 'reassign'], ['radiologist', 'revoke']];
+    }
+
+    #[DataProvider('managementChanges')]
+    public function test_management_response_withholds_after_an_independent_assignment_change(string $role, string $change): void
+    {
+        [$f] = $this->prepared();
+        $this->actingAs($f['admin']);
+        $locator = $f[$role === 'radiographer' ? 'reference' : 'handoff'];
+        $response = $this->getJson('/admin/'.$role.'-workspaces/'.$locator)->assertOk()->baseResponse;
+        DB::disconnect();
+        $child = $this->child(function () use ($f, $role, $change, $locator) {
+            request()->session()->start();
+            $service = app($role === 'radiographer' ? RadiographerWorkspace::class : RadiologistWorkspace::class);
+            $input = $change === 'reassign' ? ['user' => $f[$role === 'radiographer' ? 'worker' : 'doctor']->id] : [];
+            if ($role === 'radiologist') {
+                $input += ['generation' => 1, 'password' => 'password'];
+            }
+            $service->manage($locator, $change, $input);
+
+            return null;
+        });
+        $this->assertTrue($this->finish($child)['ok']);
+        ob_start();
+        $response->sendContent();
+        $body = ob_get_clean();
+        $this->assertSame(403, $response->getStatusCode());
+        $this->assertStringNotContainsString('signature=', $body);
+        $this->assertStringNotContainsString($f['doctor']->email, $body);
+        $this->assertStringNotContainsString($f['worker']->email, $body);
+    }
+
     public function test_assign_assign_creates_one_generation(): void
     {
         [$f] = $this->prepared(false);

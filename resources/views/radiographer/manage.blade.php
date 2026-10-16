@@ -2,8 +2,10 @@
 @section('content')
 @if(!empty($state['handoff']))<p><a href="{{ route('radiologist.manage',$state['handoff']) }}">Penugasan Radiolog / laporan klinis</a></p>@endif
 <h1>Penugasan Radiografer — {{ $reference }}</h1><a href="/admin/study-worklist">Kembali ke daftar studi</a>
-<p role="status">{{ $state['state'] }} @if(isset($state['expires_at'])) — {{ $state['expires_at'] }} UTC @endif @if($state['revoked'] ?? false) — Dicabut @endif</p>
-@if(isset($result['url']))<label for="assignment-url">Tautan penugasan (hanya untuk petugas yang dipilih)</label><input readonly id="assignment-url" value="{{ $result['url'] }}"><button type="button" onclick="navigator.clipboard.writeText(document.getElementById('assignment-url').value)">Salin tautan</button>@endif
+@include('components.task-access-status')
+@if(empty($state['candidates']))<p role="status">Tidak ada individu terverifikasi yang tersedia untuk penugasan ini. Hubungi pengelola kelayakan profesional.</p>@endif
+<p>Status teknis: {{ $state['state'] }}</p>
+@if(isset($result['url']))@include('components.task-link')@endif
 <form method="post">@csrf<input type="hidden" name="action" value="{{ isset($state['id']) ? 'reassign' : 'issue' }}">
 <label for="assigned-user">ID akun petugas terverifikasi</label><select id="assigned-user" name="user" required><option value="">Pilih petugas terverifikasi</option>@foreach($state['candidates'] ?? [] as $candidate)<option value="{{ $candidate['id'] }}">{{ $candidate['label'] }}</option>@endforeach</select>
 <label for="lifetime">Masa berlaku</label><select id="lifetime" name="hours"><option value="24">24 jam</option><option value="72">3 hari</option><option value="168">7 hari</option></select><button type="submit">{{ isset($state['id']) ? 'Tugaskan ulang' : 'Terbitkan tautan' }}</button>
