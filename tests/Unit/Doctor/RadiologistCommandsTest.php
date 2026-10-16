@@ -19,6 +19,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Support\RadiologistFixtures;
 use Tests\Support\SyntheticRadiologistSource;
@@ -133,6 +134,11 @@ final class RadiologistCommandsTest extends TestCase
             'eligibility' => DB::table('doctor_eligibility')->update(['status' => 'revoked']),
             'expired-eligibility' => DB::table('doctor_eligibility')->update(['valid_until' => now()->subSecond()]),
             'scope' => DB::table('doctor_eligibility')->update(['modality' => 'CR']),
+            'facility' => DB::table('doctor_eligibility')->update(['site_id' => (string) Str::uuid()]),
+            'service' => DB::table('doctor_eligibility')->update(['service_id' => (string) Str::uuid()]),
+            'future-verification' => DB::table('doctor_eligibility')->update(['verified_at' => now()->addHour()]),
+            'missing-evidence' => DB::table('doctor_eligibility')->update(['evidence_reference' => '']),
+            'not-issued-yet' => DB::table('doctor_workspaces')->update(['starts_at' => now()->addSecond()]),
             'handoff' => DB::table('operator_radiographer_workspaces')->update(['active_handoff' => null]),
             'revoke' => DB::table('doctor_workspaces')->update(['revoked' => true, 'generation' => 2]),
         };
@@ -151,7 +157,7 @@ final class RadiologistCommandsTest extends TestCase
 
     public static function accessChanges(): array
     {
-        return array_map(fn ($x) => [$x], ['account', 'password', 'eligibility', 'expired-eligibility', 'scope', 'handoff', 'revoke']);
+        return array_map(fn ($x) => [$x], ['account', 'password', 'eligibility', 'expired-eligibility', 'scope', 'facility', 'service', 'future-verification', 'missing-evidence', 'not-issued-yet', 'handoff', 'revoke']);
     }
 
     public function test_wrong_doctor_guest_and_missing_entry_session_are_denied(): void
@@ -355,5 +361,15 @@ final class RadiologistCommandsTest extends TestCase
         $this->get('/admin/radiologist-workspaces/'.$f['handoff'])->assertOk()->assertSee($f['doctor']->email);
         DB::table('doctor_workspace_managers')->update(['active' => false]);
         $this->get('/admin/radiologist-studies/'.$f['reference'])->assertForbidden();
+    }
+
+    public function test_credential_validity_offsets_are_stored_as_utc(): void
+    {
+        [$f,$w] = $this->issued();
+        $this->actingAs($f['admin']);
+        $this->postJson('/admin/radiologist-workspaces/'.$f['handoff'], ['action' => 'credential', 'user' => $f['doctor']->id, 'status' => 'verified', 'evidence' => 'SYNTHETIC-OFFSET', 'valid_until' => '2099-05-06T12:00:00+07:00', 'password' => 'password'])->assertOk();
+        $this->assertSame('2099-05-06 05:00:00', DB::table('doctor_eligibility')->orderByDesc('revision')->value('valid_until'));
+        $this->actingAs($f['doctor']);
+        $this->get('/radiologist/workspaces/'.$w['id'])->assertForbidden();
     }
 }

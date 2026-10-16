@@ -146,7 +146,7 @@ final class RadiologistWorkspace implements RadiologistAccess
             }
             $old = DB::table('doctor_eligibility')->where('user_id', $u->id)->where('site_id', $h->site_id)->where('service_id', $service)->where('modality', $modality)->orderByDesc('revision')->lockForUpdate()->first();
             $id = (string) Str::uuid();
-            DB::table('doctor_eligibility')->insert(['id' => $id, 'user_id' => $u->id, 'site_id' => $h->site_id, 'service_id' => $service, 'modality' => $modality, 'revision' => ($old?->revision ?? 0) + 1, 'status' => $input['status'], 'evidence_reference' => $input['evidence'], 'verifier_id' => Auth::id(), 'verified_at' => app(Clock::class)->now(), 'valid_until' => new DateTimeImmutable($input['valid_until'])]);
+            DB::table('doctor_eligibility')->insert(['id' => $id, 'user_id' => $u->id, 'site_id' => $h->site_id, 'service_id' => $service, 'modality' => $modality, 'revision' => ($old?->revision ?? 0) + 1, 'status' => $input['status'], 'evidence_reference' => $input['evidence'], 'verifier_id' => Auth::id(), 'verified_at' => app(Clock::class)->now(), 'valid_until' => (new DateTimeImmutable($input['valid_until']))->setTimezone(new \DateTimeZone('UTC'))]);
             $this->audit((object) ['id' => $id, 'site_id' => $h->site_id, 'booking_id' => $h->booking_id, 'generation' => 0, 'revision' => ($old?->revision ?? 0) + 1], 'credential-'.$input['status']);
 
             return ['eligibility' => $id];

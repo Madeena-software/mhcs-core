@@ -209,7 +209,7 @@ final class RadiologistConcurrencyTest extends TestCase
         $body = ob_get_clean();
         $this->assertSame(403, $response->getStatusCode());
         $this->assertStringNotContainsString('SYNTHETIC-MRN', $body);
-        $this->assertStringNotContainsString('DICM',$body);
+        $this->assertStringNotContainsString('DICM', $body);
     }
 
     public static function disclosures(): array

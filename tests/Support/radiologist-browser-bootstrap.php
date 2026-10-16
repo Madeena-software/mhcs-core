@@ -37,7 +37,7 @@ config(['app.env' => 'testing', 'app.debug' => false, 'app.url' => 'http://127.0
     'mhcs.security.identifier_key' => 'synthetic-identifier-key', 'mhcs.security.grant_key' => 'synthetic-grant-key',
     'mhcs.security.manifest_key' => str_repeat('m', 32), 'mhcs.security.manifest_key_id' => 'synthetic-key', 'telescope.enabled' => false, 'pulse.enabled' => false]);
 DB::purge('sqlite');
-if (is_file($directory.'/audit-failure')) {
+if (is_file($directory.'/audit-failure') && ! (PHP_SAPI === 'cli' && ($argv[1] ?? null) === 'seed')) {
     $app->instance(AuditStore::class, new class implements AuditStore
     {
         public function append(AuditEvent $event): void
