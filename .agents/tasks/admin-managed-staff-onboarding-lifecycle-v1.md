@@ -1,12 +1,12 @@
 ---
 title: Admin-Issued Task Links & Minimal-Interaction Access v1
 document_id: MHCS-TASK-ADMIN-STAFF-LIFECYCLE-001
-version: 0.2
-status: Draft
+version: 1.0
+status: Validated/Published
 language: en-US
 last_updated: 2026-10-16
 role: Task Remediation Executor
-authority_note: The Product Owner supersedes the staff-onboarding objective with the bounded link-first journey. This candidate contract remains Draft pending independent review and exact-revision publication. Local task remediation only is authorized now; no T5 self-approval or E6.
+authority_note: The Product Owner explicitly authorizes finalizing the independently reviewed v0.2 link-first candidate as version 1.0 Validated/Published, one task-only ordinary commit and push to the existing branch, remote identity verification and the external checkpoint update. Independent exact-publication T5 review and separate explicit E6 authorization remain required; no T5 self-approval or application implementation.
 ---
 
 # Admin-Issued Task Links & Minimal-Interaction Access v1
@@ -14,7 +14,7 @@ authority_note: The Product Owner supersedes the staff-onboarding objective with
 ## Task identity and delivery context
 
 **Task path:** `.agents/tasks/admin-managed-staff-onboarding-lifecycle-v1.md` (stable path and document identity retained).
-**Task contract state:** **Draft — TASK REVIEW REQUIRED; not executable**.
+**Task contract state:** **Validated/Published — independent exact-publication T5 review required; E6 not authorized**.
 **Delivery mode / parent:** one MVP-oriented Admin-first journey under MVP-DEC-044–046, bounded MVP-GAP-027/028/029/031 and the accepted Radiographer, Radiologist and Member result contracts. No whole Work Package or broader gap closure is claimed.
 **Owner / designated planning authority:** Product Owner and independent Planner–Reviewer. Admin coordinates presentation; Operator owns Radiographer/technical workflow, Doctor owns Radiologist/clinical finalization, Member owns patient identity and result-recipient authority, and Image Gateway owns imaging sources. Shared authentication/security ownership remains unchanged; these roles appoint no new authority.
 
@@ -28,28 +28,34 @@ This is remediation of the existing candidate following the Product Owner's mini
 |---|---|
 | Repository / worktree | `Madeena-software/mhcs-core`, `/var/www/mhcs-core` |
 | Existing planning branch | `task/admin-managed-staff-onboarding-lifecycle-v1` |
-| Reviewed Draft v0.1 / actual remediation-start HEAD | `07a580004ff72ab7074c36d00a5ad355d78541d7` |
-| Reviewed task blob | `cb5cb8e96ecfc9d9ed573087e5aebcf0d4b414e2` |
+| Historical Draft v0.1 / prior remediation-start HEAD | `07a580004ff72ab7074c36d00a5ad355d78541d7` |
+| Historical v0.1 task blob | `cb5cb8e96ecfc9d9ed573087e5aebcf0d4b414e2` |
 | Starting assessment evidence / implementation baseline | `cfe110efefdd0884e86e0be21d02f8c2565dd8af` |
 | Accepted application candidate | `9804642c60b678ca004fd9d69a51c682f352d517` |
 | Accepted Radiologist / Radiographer | `cd5128fdf78c2ad8ef95b62786e24858cc57e7ca` / `0f27d2b58c804183b907e236aa9735f5fac876ac` |
 | Historical integrated main anchor | `f8f0bb9e2e0cd12d1b797cf6a6689f26336274ba`; not a newly fetched main claim |
-| Revised governing task revision | **Resolved when published — Draft placeholder only**; revised local bytes are not a published immutable task revision |
+| Independently reviewed v0.2 / publication-start HEAD | `e3db4799873f1b910ffce8df5c0bea709763f596` |
+| Independently reviewed v0.2 task blob | `e8555384fb675c5be434f6161d0bce6631f24330` |
+| Published governing task revision | This stable task path at the containing version 1.0 publication commit; full commit and task blob identities are resolved and verified externally in the publication return/checkpoint. |
 
-Observed 2026-10-16 Asia/Jakarta: clean initial checkout; local HEAD, fetched `FETCH_HEAD`, origin tracking branch and live remote planning branch all equal the reviewed Draft SHA; its blob matches exactly. The Draft is the only file changed between assessment baseline and remediation-start HEAD. Application/test/schema/route/resource/config/package surfaces match the accepted application candidate. Preserve the assessment implementation baseline; a later task-only publication is a documentation overlay, not a new accepted application baseline. Reconcile actual execution-start drift before any later E6.
+Historical remediation observation, 2026-10-16 Asia/Jakarta: clean initial checkout; local HEAD, fetched `FETCH_HEAD`, origin tracking branch and live remote planning branch all equal the reviewed Draft SHA; its blob matches exactly. The Draft is the only file changed between assessment baseline and remediation-start HEAD. Application/test/schema/route/resource/config/package surfaces match the accepted application candidate. Preserve the assessment implementation baseline; a later task-only publication is a documentation overlay, not a new accepted application baseline. Reconcile actual execution-start drift before any later E6.
 
 Acceptance provenance remains the earlier human-supplied independent acceptance of the integrated assessment, as recorded in v0.1. No original independent verdict artifact was supplied here and no predecessor review is repeated. Older assessment evidence/checkpoint REVIEW REQUIRED language is historical. The older project context does not supersede these verified identities or broaden acceptance into integration, production or release readiness.
+
+Publication-start observation, 2026-10-16 Asia/Jakarta: clean worktree on the existing planning branch; local HEAD, fetched `FETCH_HEAD`, origin tracking branch and live remote branch equal `e3db4799873f1b910ffce8df5c0bea709763f596`; task blob equals `e8555384fb675c5be434f6161d0bce6631f24330`. The implementation baseline remains `cfe110efefdd0884e86e0be21d02f8c2565dd8af`.
 
 ### Revision history and supersession
 
 - **v0.1 at `07a580004ff72ab7074c36d00a5ad355d78541d7`:** Staff Onboarding & Lifecycle Draft, 227 added lines, manually committed/pushed by the Product Owner. Preserve its content in Git history; it was not validated execution authority.
-- **v0.2, local remediation:** Product Owner handoff **“MHCS — TASK REMEDIATION / REPUBLICATION HANDOFF”**, supplied 2026-10-16, replaces the delivery objective with Admin-Issued Task Links & Minimal-Interaction Access v1. Prior D1 Create & Link direction and Draft D1–D8 proposals (create/link, activation, credential setup/invitation, verifier-entry expansion, new grants/directory scope, global suspension and recovery) are **deferred/out of scope**, not prerequisites for v1. STAFF-001–009 and prior AC1–AC11 remain historical identifiers; they are not repurposed or claimed complete. Existing owner eligibility and access-withdrawal mechanisms remain mandatory preservation constraints.
+- **v0.2 at `e3db4799873f1b910ffce8df5c0bea709763f596` (blob `e8555384fb675c5be434f6161d0bce6631f24330`), independently reviewed candidate:** Product Owner handoff **“MHCS — TASK REMEDIATION / REPUBLICATION HANDOFF”**, supplied 2026-10-16, replaces the delivery objective with Admin-Issued Task Links & Minimal-Interaction Access v1. Prior D1 Create & Link direction and Draft D1–D8 proposals (create/link, activation, credential setup/invitation, verifier-entry expansion, new grants/directory scope, global suspension and recovery) are **deferred/out of scope**, not prerequisites for v1. STAFF-001–009 and prior AC1–AC11 remain historical identifiers; they are not repurposed or claimed complete. Existing owner eligibility and access-withdrawal mechanisms remain mandatory preservation constraints.
+
+- **v1.0, Validated/Published:** The current Product Owner republication handoff accepts the exact v0.2 candidate content through independent Planner/Reviewer review and explicitly authorizes only task-publication changes, ordinary commit/push to the existing branch, exact remote verification and external checkpoint update. Independent exact-publication T5 review and separate E6 authorization remain pending.
 
 ## Authoritative inputs and traceability
 
 ### Governing authority
 
-- Current Product Owner remediation handoff: approved minimal-interaction objective, manual external delivery, preservation/security boundaries, same-file Draft-only remediation and explicit hold before T5/E6. This attributable decision supersedes only the prior onboarding direction; it does not approve real professional credentials or production use.
+- Product Owner remediation decision: approved minimal-interaction objective, manual external delivery and preservation/security boundaries, superseding only the prior onboarding direction. Current republication handoff records independent acceptance of the exact v0.2 candidate content and explicit scoped approval for version 1.0 task-only publication, ordinary commit/push on the existing branch, remote verification and checkpoint update. It retains independent exact-publication T5 review and separate E6 authorization; no real professional credentials or production use is approved.
 - [Root adapter](../../AGENTS.md), [repository contract](../AGENTS.md), [normative software workflow](../software-workflow.md), [planning procedure](../prompts/plan-create-task.md), [template](_template.md), and [project context](../context/project.md). Context/procedure are supporting aids under repository authority.
 - [Planner/Reviewer Contract](https://github.com/faliqadlan/agent-work-governance/blob/main/Planner-Reviewer%20Contract.md), read via GitHub with returned blob **`39adb286f6b28229872898389ce3c7a05f0151a0`**. The blob, not the mutable URL, identifies the consulted content; it grants no extra publication or implementation permission.
 - [MVP decisions](../../docs/mvp/decision-log.md), especially MVP-DEC-044–046 and MVP-DEC-051; [active scope](../../docs/mvp/beta-scope.md), [gaps](../../docs/mvp/beta-gap-register.md), [roadmap](../../docs/mvp/roadmap.md), [requirements](../../docs/implementation/mhcs-core-requirements-matrix.md), [source coverage](../../docs/implementation/mhcs-core-source-coverage.md) and [implementation plan](../../docs/implementation/mhcs-core-implementation-plan.md). Preserve stable IDs and scoped approvals; historical status columns are not current implementation evidence. OPR-074 broader account management and the separate Patient target remain deferred here.
@@ -117,15 +123,15 @@ Already authenticatable eligible individual accounts, existing grants, managed f
 | Gate | Reconciled candidate state / next obligation |
 |---|---|
 | B0 | PO explicitly prioritizes fewer recipient interactions and Admin coordination; earlier staff-platform framing is superseded for v1. |
-| P1 | The supplied link-first decision defines the journey and exclusions. D1–D8 onboarding decisions are deferred, not blockers. Existing authentication, eligibility, duration and publication policy is preserved. Independent review must assess this bounded decomposition. |
+| P1 | The supplied link-first decision defines the journey and exclusions. D1–D8 onboarding decisions are deferred, not blockers. Existing authentication, eligibility, duration and publication policy is preserved. Independent candidate review accepted this bounded decomposition; exact-publication review remains required. |
 | R2 | LINK-001–007/AC1–AC10 provide scoped traceability to current PO and exact predecessors. Historical STAFF IDs/global requirements remain unchanged; no whole-gap closure. |
 | A3 | Reuse existing domain owners, manager permissions, signed entry/login and disclosure/audit mechanisms; presentation and minimal owner-read projections only. No new architecture/security decision identified by source inspection. |
 | D4 | One sequential journey: inspect/reuse → bounded UI/read-projection repairs → HTTP/owner security checks → actual Admin/copy/recipient browsers → regression/evidence. Sequence overlapping owner/auth surfaces; no parallel independent implementation objective. |
-| T5 | **NOT PASSED.** Reviewable Draft only; independent candidate review, approved exact contract, authorized immutable publication and exact-revision checks remain. No published governing revision for v0.2 or E6 permission. |
+| T5 | **Independent exact-publication review required.** The exact v0.2 candidate content was independently accepted and the Product Owner authorized version 1.0 publication. Publication identity must be verified and returned to the independent Planner–Reviewer; no self-approved T5 or E6 permission. |
 
 No remaining product/authority/security decision was identified that prevents this bounded candidate from being reviewed. Do not revive D1–D8 as approval demands. A materially new discovery affecting authority, protected status visibility, security or acceptance returns to planning rather than being assumed approved.
 
-**Remaining approvals:** independent Planner–Reviewer review of the resulting exact candidate bytes; applicable explicit authority before task commit/publication, remote push or PR; resolution and verification of the new immutable governing revision with independent exact-publication T5 review; separate explicit E6 source/test/isolated synthetic verification authorization. The PO's earlier manual push grants no additional push permission. Production professional/institutional, privacy/security/audit-retention and Release authorities remain necessary before affected real use/G10; no real-world or release approval is implied.
+**Remaining approvals:** independent exact-publication T5 review of the verified version 1.0 immutable governing revision; separate explicit E6 source/test/isolated synthetic verification authorization. The current Product Owner approval permits only this task-publication commit/push and remote verification, plus the external checkpoint update; no PR is authorized. Production professional/institutional, privacy/security/audit-retention and Release authorities remain necessary before affected real use/G10; no real-world or release approval is implied.
 
 ## Acceptance criteria
 
@@ -144,7 +150,7 @@ All criteria are unchecked future evidence obligations, not declarations that ex
 
 ## Verification requirements and capabilities
 
-**Current remediation capabilities:** repository/history/source reads, read-only remote identity/contract access, this task-file edit and the specified external checkpoint update only. No application tests or operational access are required or authorized now.
+**Current publication capabilities:** repository/history reads, read-only remote identity/contract access, this task-file publication edit, one ordinary task-only commit/push to the existing branch, exact remote verification and the specified external checkpoint update only. No application tests or operational access are required or authorized now.
 
 **Later E6 capabilities needed:** installed PHP/Node/Filament tooling, isolated disposable synthetic database/storage/session environment, browser with observable clipboard behavior and source-backed repository discovery. Use existing fixtures/harnesses, not operational databases or real patients. Missing tools do not authorize installation, security bypass or production access.
 
@@ -165,12 +171,12 @@ Return exact task/start/implementation identities, changed-file list/diff, sourc
 
 Stop and return to planning for material baseline/worktree drift; contradictory/missing authority; a new account/grant/eligibility/authentication model or protected-status disclosure policy; owner-boundary conflict; inability to preserve current entitlement, audit/atomicity, fresh finalization or independent publication; acceptance infeasible within scope; mandatory evidence unavailable; or required unauthorized side effects. Routine UI/detail choices remain bounded Executor discretion. Ordinary invalid/ineligible case input is denied rather than treated as new product scope.
 
-**Authorized now:** revise this one existing task locally and update `/home/faliq/.codex/task-state/mhcs-core/CHAT_MEMORY.md`, preserving history. Keep existing branch and leave task uncommitted. No new branch/task/PR, application source, test, schema, configuration, permission or credential changes; no E6, commit/push/merge, production/external mutation, real-data access, deployment or release. Read-only fetch/remote checks do not grant publication authority. Prior manual/automated push permissions do not carry over.
+**Authorized now:** finalize only this existing task to version 1.0 Validated/Published, create one ordinary task-only commit, push only to the existing `task/admin-managed-staff-onboarding-lifecycle-v1` branch, fetch and independently verify the resulting remote commit/task blob, and update `/home/faliq/.codex/task-state/mhcs-core/CHAT_MEMORY.md` preserving history. Stage only this task path. No reset, cleanup of unknown files, force-push, new branch/task/PR, PR modification, merge, application source, test, schema, dependency, configuration, permission or credential changes; no E6, production activity, real-data access, deployment, release or external messaging.
 
-**Future boundaries:** this Draft grants no implementation or side-effect permission. A later reviewed/published contract and explicit E6 handoff must define permitted local source/test/synthetic actions; any commit, remote publication, PR, operational action or release must have applicable explicit authorization. No execution launcher now.
+**Future boundaries:** publication does not authorize implementation. Independent exact-publication T5 review and a separate explicit E6 handoff must precede any local source/test/isolated synthetic work; later commits, remote publication, PRs, operational actions and release require their own applicable explicit authorization. No execution launcher now.
 
 ## Expected terminal outcome, review and remediation handling
 
-**TASK REVIEW REQUIRED.** Return exact repository/branch/HEAD, assessment baseline and accepted application identity, revised Draft state/fingerprint, complete changed-file list and diff, reviewed source/reuse evidence, refined objective/ACs, T5 readiness, genuine blockers and remaining publication authority. This is a mutable candidate for independent contract review, not implementation acceptance, A9 or G10. Keep the same stable path for bounded corrections; establish a new exact immutable governing revision only under authorized publication, followed by independent exact-revision checks and a separate E6 handoff. No self-approved T5.
+**VALIDATED TASK PUBLISHED — INDEPENDENT EXACT-PUBLICATION T5 REVIEW REQUIRED.** Return repository/branch, actual publication-start revision and worktree state, exact task path/version/status, full publication commit and task blob SHAs, changed-file inventory/diff summary, verification commands and observed results, remote/local equality, unchanged application files, retained implementation baseline, deviations/blockers and confirmation that E6 has not started. Update the external checkpoint while preserving history. Stop after publication and return these exact identities to the independent Planner–Reviewer; no T5 self-approval, E6 launcher, implementation acceptance, A9 or G10. Keep the stable path for any later bounded corrections.
 
 **Remediation verification record:** initial clean checkout, reviewed SHA/blob and fetched/live branch equality observed; application surfaces unchanged from accepted candidate; canonical inputs/external governance blob and relevant current sources/test definitions inspected. Final task structure, references, requirement/AC coverage, whitespace, changed-file boundaries and fingerprint checks are reported in the return. Application/browser/MySQL/CI checks remain unrun in this task-only cycle.
